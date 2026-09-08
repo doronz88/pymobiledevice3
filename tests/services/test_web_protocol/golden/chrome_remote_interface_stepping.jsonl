@@ -1,0 +1,74 @@
+{"dir": "device->bridge", "msg": {"method": "Target.targetCreated", "params": {"targetInfo": {"targetId": "page-30", "type": "page"}}}, "page": ""}
+{"dir": "editor->bridge", "msg": {"id": 1, "method": "Page.enable", "params": {}}, "page": "1"}
+{"dir": "bridge->device", "msg": {"id": 1, "method": "Page.enable", "params": {}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Target.targetCreated", "params": {"targetInfo": {"targetId": "frame-8589934593", "type": "frame"}}}, "page": ""}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 1}, "page": ""}
+{"dir": "device->bridge", "msg": {"method": "Page.defaultUserPreferencesDidChange", "params": {"preferences": [{"name": "PrefersReducedMotion", "value": "NoPreference"}, {"name": "PrefersContrast", "value": "NoPreference"}, {"name": "PrefersColorScheme", "value": "Light"}]}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 1}, "page": "page-30"}
+{"dir": "editor->bridge", "msg": {"id": 2, "method": "Runtime.enable", "params": {}}, "page": "1"}
+{"dir": "bridge->device", "msg": {"id": 2, "method": "Runtime.enable", "params": {}}, "page": "page-30"}
+{"dir": "bridge->device", "msg": {"id": -1, "method": "Inspector.enable", "params": {}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 2}, "page": ""}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 3}, "page": ""}
+{"dir": "device->bridge", "msg": {"method": "Runtime.executionContextCreated", "params": {"context": {"id": 2, "type": "normal", "name": "", "frameId": "0.1"}}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 2}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": -1}, "page": "page-30"}
+{"dir": "editor->bridge", "msg": {"id": 3, "method": "Debugger.enable", "params": {}}, "page": "1"}
+{"dir": "bridge->device", "msg": {"id": 3, "method": "Debugger.enable", "params": {}}, "page": "page-30"}
+{"dir": "bridge->device", "msg": {"id": -3, "method": "Debugger.setPauseOnDebuggerStatements", "params": {"enabled": true}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 5}, "page": ""}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 6}, "page": ""}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 3}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": -3}, "page": "page-30"}
+{"dir": "editor->bridge", "msg": {"id": 4, "method": "Debugger.setBreakpointsActive", "params": {"active": true}}, "page": "1"}
+{"dir": "bridge->device", "msg": {"id": -4, "method": "Debugger.setPauseOnDebuggerStatements", "params": {"enabled": true}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 7}, "page": ""}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 8}, "page": ""}
+{"dir": "device->bridge", "msg": {"result": {}, "id": -4}, "page": "page-30"}
+{"dir": "editor->bridge", "msg": {"id": 5, "method": "Page.navigate", "params": {"url": "https://example.com/"}}, "page": "1"}
+{"dir": "bridge->device", "msg": {"id": -5, "method": "Runtime.evaluate", "params": {"expression": "location.href = \"https://example.com/\"\n//# sourceURL=__pymobiledevice3_internal__"}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 9}, "page": ""}
+{"dir": "device->bridge", "msg": {"method": "Debugger.scriptParsed", "params": {"scriptId": "2", "url": "", "startLine": 0, "startColumn": 0, "endLine": 1, "endColumn": 42, "isContentScript": false, "sourceURL": "__pymobiledevice3_internal__", "module": false}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {"result": {"type": "string", "value": "https://example.com/"}, "wasThrown": false}, "id": -5}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Page.frameNavigated", "params": {"frame": {"id": "0.1", "loaderId": "0.2", "url": "https://example.com/", "mimeType": "text/html", "securityOrigin": "https://example.com"}}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.globalObjectCleared"}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Runtime.executionContextCreated", "params": {"context": {"id": 3, "type": "normal", "name": "", "frameId": "0.1"}}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Runtime.executionContextCreated", "params": {"context": {"id": 4, "type": "internal", "name": "SafariQuickWebsiteSearch", "frameId": "0.1"}}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.scriptParsed", "params": {"scriptId": "3", "url": "user-script:1", "startLine": 0, "startColumn": 0, "endLine": 3, "endColumn": 2, "isContentScript": true, "sourceURL": "__InjectedScript_OpenSearchURLFinder.js", "module": false}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.scriptParsed", "params": {"scriptId": "4", "url": "user-script:2", "startLine": 0, "startColumn": 0, "endLine": 3, "endColumn": 2, "isContentScript": true, "sourceURL": "__InjectedScript_QuickWebsiteSearchURLDetector.js", "module": false}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Page.loadEventFired", "params": {"timestamp": 0.1394632083331544}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Page.domContentEventFired", "params": {"timestamp": 0.1399493750000147}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Runtime.executionContextCreated", "params": {"context": {"id": 5, "type": "internal", "name": "SafariSchemaDataExtractor", "frameId": "0.1"}}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.scriptParsed", "params": {"scriptId": "5", "url": "https://example.com/", "startLine": 0, "startColumn": 0, "endLine": 2, "endColumn": 6962, "isContentScript": true, "sourceURL": "__InjectedScript_SchemaDataExtractor.js", "module": false}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Runtime.executionContextCreated", "params": {"context": {"id": 6, "type": "internal", "name": "SafariReaderArticleFinder", "frameId": "0.1"}}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.scriptParsed", "params": {"scriptId": "6", "url": "", "startLine": 0, "startColumn": 0, "endLine": 4, "endColumn": 2, "isContentScript": true, "sourceURL": "__InjectedScript_ReaderShared.js", "module": false}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.scriptParsed", "params": {"scriptId": "7", "url": "", "startLine": 0, "startColumn": 0, "endLine": 13, "endColumn": 2, "isContentScript": true, "sourceURL": "__InjectedScript_ReaderArticleFinder.js", "module": false}}, "page": "page-30"}
+{"dir": "editor->bridge", "msg": {"id": 6, "method": "Runtime.evaluate", "params": {"expression": "function crStep(){\n  var a=1;\n  debugger;\n  var b=2;\n  return a+b;\n}\nsetTimeout(crStep, 30);", "userGesture": true}}, "page": "1"}
+{"dir": "bridge->device", "msg": {"id": 6, "method": "Runtime.evaluate", "params": {"expression": "function crStep(){\n  var a=1;\n  debugger;\n  var b=2;\n  return a+b;\n}\nsetTimeout(crStep, 30);", "emulateUserGesture": true}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 10}, "page": ""}
+{"dir": "device->bridge", "msg": {"method": "Debugger.scriptParsed", "params": {"scriptId": "8", "url": "", "startLine": 0, "startColumn": 0, "endLine": 6, "endColumn": 23, "isContentScript": false, "module": false}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {"result": {"type": "number", "value": 1, "description": "1"}, "wasThrown": false}, "id": 6}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.paused", "params": {"callFrames": [{"callFrameId": "{\"ordinal\":0,\"injectedScriptId\":3}", "functionName": "crStep", "location": {"scriptId": "8", "lineNumber": 2, "columnNumber": 2}, "scopeChain": [{"object": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":1}", "className": "DebuggerScope", "description": "DebuggerScope"}, "type": "closure", "name": "crStep", "location": {"scriptId": "8", "lineNumber": 1, "columnNumber": 16}}, {"object": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":2}", "className": "DebuggerScope", "description": "DebuggerScope"}, "type": "globalLexicalEnvironment", "empty": true}, {"object": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":3}", "className": "Window", "description": "Window"}, "type": "global"}], "this": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":4}", "className": "Window", "description": "Window"}, "isTailDeleted": false}], "reason": "DebuggerStatement"}}, "page": "page-30"}
+{"dir": "editor->bridge", "msg": {"id": 7, "method": "Debugger.stepOver", "params": {}}, "page": "1"}
+{"dir": "bridge->device", "msg": {"id": 7, "method": "Debugger.stepOver", "params": {}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 11}, "page": ""}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 7}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.paused", "params": {"callFrames": [{"callFrameId": "{\"ordinal\":0,\"injectedScriptId\":3}", "functionName": "crStep", "location": {"scriptId": "8", "lineNumber": 3, "columnNumber": 2}, "scopeChain": [{"object": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":5}", "className": "DebuggerScope", "description": "DebuggerScope"}, "type": "closure", "name": "crStep", "location": {"scriptId": "8", "lineNumber": 1, "columnNumber": 16}}, {"object": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":6}", "className": "DebuggerScope", "description": "DebuggerScope"}, "type": "globalLexicalEnvironment", "empty": true}, {"object": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":7}", "className": "Window", "description": "Window"}, "type": "global"}], "this": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":8}", "className": "Window", "description": "Window"}, "isTailDeleted": false}], "reason": "other"}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Runtime.executionContextCreated", "params": {"context": {"id": 7, "type": "internal", "name": "SafariReaderArticleFinder", "frameId": "0.1"}}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.scriptParsed", "params": {"scriptId": "6", "url": "", "startLine": 0, "startColumn": 0, "endLine": 4, "endColumn": 2, "isContentScript": true, "sourceURL": "__InjectedScript_ReaderShared.js", "module": false}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.scriptParsed", "params": {"scriptId": "7", "url": "", "startLine": 0, "startColumn": 0, "endLine": 13, "endColumn": 2, "isContentScript": true, "sourceURL": "__InjectedScript_ReaderArticleFinder.js", "module": false}}, "page": "page-30"}
+{"dir": "editor->bridge", "msg": {"id": 8, "method": "Debugger.stepOver", "params": {}}, "page": "1"}
+{"dir": "bridge->device", "msg": {"id": 8, "method": "Debugger.stepOver", "params": {}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 12}, "page": ""}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 8}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.paused", "params": {"callFrames": [{"callFrameId": "{\"ordinal\":0,\"injectedScriptId\":3}", "functionName": "crStep", "location": {"scriptId": "8", "lineNumber": 4, "columnNumber": 2}, "scopeChain": [{"object": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":9}", "className": "DebuggerScope", "description": "DebuggerScope"}, "type": "closure", "name": "crStep", "location": {"scriptId": "8", "lineNumber": 1, "columnNumber": 16}}, {"object": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":10}", "className": "DebuggerScope", "description": "DebuggerScope"}, "type": "globalLexicalEnvironment", "empty": true}, {"object": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":11}", "className": "Window", "description": "Window"}, "type": "global"}], "this": {"type": "object", "objectId": "{\"injectedScriptId\":3,\"id\":12}", "className": "Window", "description": "Window"}, "isTailDeleted": false}], "reason": "other"}}, "page": "page-30"}
+{"dir": "editor->bridge", "msg": {"id": 9, "method": "Runtime.evaluate", "params": {"expression": "6*7", "returnByValue": true}}, "page": "1"}
+{"dir": "bridge->device", "msg": {"id": 9, "method": "Runtime.evaluate", "params": {"expression": "6*7", "returnByValue": true}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 13}, "page": ""}
+{"dir": "device->bridge", "msg": {"method": "Debugger.scriptParsed", "params": {"scriptId": "9", "url": "", "startLine": 0, "startColumn": 0, "endLine": 0, "endColumn": 3, "isContentScript": false, "module": false}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {"result": {"type": "number", "value": 42, "description": "42"}, "wasThrown": false}, "id": 9}, "page": "page-30"}
+{"dir": "editor->bridge", "msg": {"id": 10, "method": "Debugger.resume", "params": {}}, "page": "1"}
+{"dir": "bridge->device", "msg": {"id": 10, "method": "Debugger.resume", "params": {}}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 14}, "page": ""}
+{"dir": "device->bridge", "msg": {"result": {}, "id": 10}, "page": "page-30"}
+{"dir": "device->bridge", "msg": {"method": "Debugger.resumed"}, "page": "page-30"}

@@ -28,7 +28,10 @@ output, not the recording.
 `golden_flow` models both paths: `replay_flat_session` for the un-multiplexed JSContext path and
 `replay_page_session` for the Target-multiplexed page path (the fixture is the same unwrapped form
 either way; the page replay re-wraps device messages in the Target envelope). Fixtures:
-`webstorm_jscontext_stepping.jsonl` and `safari_page_stepping.jsonl`.
+
+- `webstorm_jscontext_stepping.jsonl` - WebStorm on a JSContext.
+- `safari_page_stepping.jsonl` - a Safari page.
+- `chrome_remote_interface_stepping.jsonl` - the raw chrome-remote-interface client on a page.
 
 Each golden test also runs `protocol_inventory.validate_editor_event` over every emitted event, so
 a missing required parameter of Chrome's protocol fails the test.

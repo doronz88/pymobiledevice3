@@ -229,6 +229,26 @@ class CdpBrowserWebsocketClient(CdpWebsocketClient):
         return await asyncio.wait_for(wait_for_response(), TIMEOUT)
 
 
+async def testp_cdp_browser_endpoint_answers_puppeteer_connect(lockdown: LockdownClient) -> None:
+    """Puppeteer's connect() over the browser endpoint calls Target.getBrowserContexts and iterates
+    the result; a bare {} ack made it throw "contextIds is not iterable" before it saw a page. The
+    endpoint must return the (empty) browser-context list Chrome does."""
+    async with cdp_server_with_safari_page(lockdown) as (port, _):
+        version = await http_get_json(port, "/json/version/")
+        browser_id = urlsplit(version["webSocketDebuggerUrl"]).path.rsplit("/", 1)[1]
+        client = CdpBrowserWebsocketClient(port, browser_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        ids = itertools.count(1)
+        try:
+            await client.command(next(ids), "Target.attachToBrowserTarget", {})
+            contexts = await client.command(next(ids), "Target.getBrowserContexts", {})
+            assert isinstance(contexts["result"].get("browserContextIds"), list), (
+                f"Target.getBrowserContexts must return a browserContextIds array: {contexts}"
+            )
+        finally:
+            await client.close()
+
+
 async def testp_cdp_browser_endpoint_announces_targets_after_get_targets(lockdown: LockdownClient) -> None:
     """
     VS Code's js-debug builds its target picker by calling Target.getTargets first and then
@@ -2665,6 +2685,33 @@ async def test_a_page_target_takes_over_the_session(monkeypatch: pytest.MonkeyPa
         assert target.output_queue.get_nowait()["method"] == "Target.targetInfoChanged"
 
 
+async def test_call_function_on_without_object_id_targets_the_context_global(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chrome lets Runtime.callFunctionOn target a bare execution context; WebKit requires an
+    object. Puppeteer's page.evaluate relies on the former. The bridge resolves the context's
+    global object (evaluate `this`) and calls the function on it."""
+    with offline_cdp_target(monkeypatch) as (target, sent):
+        target._flat = True  # a JSContext: the one, default context
+
+        async def fake_result(method: str, params: dict[str, Any], *args: Any, **kwargs: Any) -> dict[str, Any]:
+            assert method == "Runtime.evaluate" and params["expression"] == "this"
+            return {"result": {"result": {"type": "object", "objectId": "GLOBAL"}}}
+
+        monkeypatch.setattr(target, "send_message_with_result", fake_result)
+        await target._runtime_call_function_on({
+            "id": 1,
+            "method": "Runtime.callFunctionOn",
+            "params": {
+                "functionDeclaration": "function () { return 6 * 7; }",
+                "executionContextId": 5,
+                "returnByValue": True,
+            },
+        })
+        forwarded = sent[-1]  # the flat path sends the raw message (no Target envelope)
+        assert forwarded["method"] == "Runtime.callFunctionOn"
+        assert forwarded["params"]["objectId"] == "GLOBAL", "the call targets the resolved global object"
+        assert "executionContextId" not in forwarded["params"], "WebKit takes no execution context here"
+
+
 async def test_user_preference_overrides_are_translated_and_replayed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Chrome's dark-mode emulation - Emulation.setAutoDarkModeOverride and the media features of
     Emulation.setEmulatedMedia - maps onto WebKit's Page.overrideUserPreference (the command that
@@ -2886,6 +2933,25 @@ async def test_a_paused_stack_keeps_the_top_frame_even_if_it_looks_native(monkey
         })
         frames = target.output_queue.get_nowait()["params"]["callFrames"]
         assert [f["callFrameId"] for f in frames] == ["cf0"]
+
+
+async def test_golden_chrome_remote_interface_stepping_flow() -> None:
+    """Replay a real chrome-remote-interface debugging session - a raw CDP client that speaks the
+    protocol with almost no abstraction - and assert stepping advances with the paused/resumed
+    alternation and every emitted event matches Chrome's schema. A different client than WebStorm
+    or js-debug over the same page path."""
+    emitted = await replay_page_session(load_fixture("chrome_remote_interface_stepping"))
+    methods = [m.get("method", "<reply>") for m in emitted]
+    paused = [m for m in emitted if m.get("method") == "Debugger.paused"]
+    assert [p["params"]["callFrames"][0]["location"]["lineNumber"] for p in paused] == [2, 3, 4], methods
+    paused_at = [i for i, method in enumerate(methods) if method == "Debugger.paused"]
+    for first, second in zip(paused_at, paused_at[1:]):
+        assert "Debugger.resumed" in methods[first + 1 : second], (
+            f"each step must read paused -> resumed -> paused: {methods}"
+        )
+    cdp = load_spec("cdp")
+    problems = [problem for message in emitted for problem in validate_editor_event(cdp, message)]
+    assert problems == [], f"emitted events violate Chrome's schema: {sorted(set(problems))}"
 
 
 async def test_golden_safari_page_stepping_flow() -> None:
