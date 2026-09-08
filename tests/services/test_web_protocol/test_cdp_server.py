@@ -2624,6 +2624,71 @@ async def test_a_page_target_takes_over_the_session(monkeypatch: pytest.MonkeyPa
         assert target.output_queue.get_nowait()["method"] == "Target.targetInfoChanged"
 
 
+async def test_user_preference_overrides_are_translated_and_replayed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chrome's dark-mode emulation - Emulation.setAutoDarkModeOverride and the media features of
+    Emulation.setEmulatedMedia - maps onto WebKit's Page.overrideUserPreference (the command that
+    replaced Page.setForcedAppearance, which iOS 26 no longer knows). A feature dropped from the
+    list is reset, as in Chrome, and the latest override per preference survives a process swap."""
+    with offline_cdp_target(monkeypatch) as (target, sent):
+
+        def device_messages() -> list[dict[str, Any]]:
+            return [json.loads(m["params"]["message"]) for m in sent]
+
+        await target._emulation_set_auto_dark_mode_override({
+            "id": 1,
+            "method": "Emulation.setAutoDarkModeOverride",
+            "params": {"enabled": True},
+        })
+        assert device_messages()[-1] == {
+            "id": 1,
+            "method": "Page.overrideUserPreference",
+            "params": {"name": "PrefersColorScheme", "value": "Dark"},
+        }
+
+        await target._emulation_set_emulated_media({
+            "id": 2,
+            "method": "Emulation.setEmulatedMedia",
+            "params": {
+                "media": "print",
+                "features": [
+                    {"name": "prefers-reduced-motion", "value": "reduce"},
+                    {"name": "prefers-contrast", "value": "less"},
+                    {"name": "color-gamut", "value": "p3"},
+                ],
+            },
+        })
+        methods = [(m["method"], m["params"]) for m in device_messages()[1:]]
+        assert methods == [
+            ("Page.overrideUserPreference", {"name": "PrefersReducedMotion", "value": "Reduce"}),
+            # No WebKit value for "less": the override is cleared rather than guessed.
+            ("Page.overrideUserPreference", {"name": "PrefersContrast"}),
+            ("Page.setEmulatedMedia", {"media": "print"}),
+        ]
+        assert device_messages()[-1]["id"] == 2, "the client's reply must come from setEmulatedMedia"
+
+        # Reduced motion is gone from the list, so it is reset; media is required by WebKit.
+        del sent[:]
+        await target._emulation_set_emulated_media({"id": 3, "method": "Emulation.setEmulatedMedia", "params": {}})
+        assert [(m["method"], m["params"]) for m in device_messages()] == [
+            ("Page.overrideUserPreference", {"name": "PrefersReducedMotion"}),
+            ("Page.setEmulatedMedia", {"media": ""}),
+        ]
+
+        # `enabled` absent means "stop overriding", and replaces the earlier Dark for replay.
+        await target._emulation_set_auto_dark_mode_override({
+            "id": 4,
+            "method": "Emulation.setAutoDarkModeOverride",
+            "params": {},
+        })
+        replayed = {k: v for k, v in target._setup_messages.items() if isinstance(k, tuple)}
+        assert replayed == {
+            ("Page.overrideUserPreference", "PrefersColorScheme"): {"name": "PrefersColorScheme"},
+            ("Page.overrideUserPreference", "PrefersReducedMotion"): {"name": "PrefersReducedMotion"},
+            ("Page.overrideUserPreference", "PrefersContrast"): {"name": "PrefersContrast"},
+        }
+        assert target._setup_messages["Page.setEmulatedMedia"] == {"media": ""}
+
+
 async def test_a_frame_target_does_not_take_over_the_session(monkeypatch: pytest.MonkeyPatch) -> None:
     """WebKit announces site-isolated subframes as "frame" targets. Their backend implements a
     far smaller domain set than a page's - with site isolation off, no domains at all - so a
@@ -2824,5 +2889,63 @@ async def testp_cdp_server_handles_editing_keys(lockdown: LockdownClient) -> Non
                 "the page's keydown listener must see every key with its modifiers"
             )
             assert await field_value() == "helloz", "a page that prevents Cmd-A's default must keep its value"
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_emulates_user_preferences(lockdown: LockdownClient) -> None:
+    """
+    Chrome's rendering emulation (prefers-color-scheme, prefers-reduced-motion, prefers-contrast,
+    print media) must reach the page. The WebKit command the bridge used to send for dark mode no
+    longer exists on iOS 26 ("'Page.setForcedAppearance' was not found"), so the page kept its own
+    scheme while the editor showed the emulation as active.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        ids = itertools.count(1)
+        try:
+            await client.command(next(ids), "Page.enable", {})
+            await client.command(next(ids), "Runtime.enable", {})
+            await client.command(next(ids), "Page.navigate", {"url": "https://example.com/"})
+            await asyncio.sleep(3)
+
+            async def preferences() -> str:
+                reply = await client.command(
+                    next(ids),
+                    "Runtime.evaluate",
+                    {
+                        "expression": "['(prefers-color-scheme: dark)', '(prefers-reduced-motion: reduce)', "
+                        "'(prefers-contrast: more)', 'print'].map((m) => matchMedia(m).matches).join('/')",
+                        "returnByValue": True,
+                    },
+                )
+                return reply["result"]["result"]["value"]
+
+            assert await preferences() == "false/false/false/false"
+
+            reply = await client.command(next(ids), "Emulation.setAutoDarkModeOverride", {"enabled": True})
+            assert "error" not in reply, reply
+            assert await preferences() == "true/false/false/false"
+            await client.command(next(ids), "Emulation.setAutoDarkModeOverride", {})
+            assert await preferences() == "false/false/false/false"
+
+            features = [
+                {"name": "prefers-color-scheme", "value": "dark"},
+                {"name": "prefers-reduced-motion", "value": "reduce"},
+                {"name": "prefers-contrast", "value": "more"},
+            ]
+            reply = await client.command(next(ids), "Emulation.setEmulatedMedia", {"media": "", "features": features})
+            assert "error" not in reply, reply
+            assert await preferences() == "true/true/true/false"
+            # Chrome semantics: features left out of the next list are reset.
+            await client.command(next(ids), "Emulation.setEmulatedMedia", {"media": "", "features": features[:1]})
+            assert await preferences() == "true/false/false/false"
+            # WebKit renders an emulated print media type with the light scheme, whatever the
+            # override says (verified on iOS 26 in either order), so print is checked on its own.
+            await client.command(next(ids), "Emulation.setEmulatedMedia", {"media": "print", "features": []})
+            assert await preferences() == "false/false/false/true"
+            await client.command(next(ids), "Emulation.setEmulatedMedia", {"media": "", "features": []})
+            assert await preferences() == "false/false/false/false"
         finally:
             await client.close()

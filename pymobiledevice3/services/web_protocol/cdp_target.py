@@ -130,7 +130,6 @@ TARGET_CLOSED_ERROR: dict[str, Any] = {"code": -32000, "message": "Inspected tar
 REPLAYED_SETUP_METHODS = frozenset({
     "Network.setResourceCachingDisabled",
     "Page.setEmulatedMedia",
-    "Page.setForcedAppearance",
     "Debugger.setBreakpointsActive",
     "Debugger.setPauseOnExceptions",
     "Debugger.setAsyncStackTraceDepth",
@@ -143,6 +142,20 @@ REPLAYED_MULTI_SETUP_METHODS = frozenset({
     "Debugger.setBreakpointByUrl",
     "Debugger.setShouldBlackboxURL",
 })
+
+# Replayed setup methods whose latest params are kept per value of one parameter: the user
+# preference overrides are independent per preference name, and a later clear must replace (not
+# join) the override it clears.
+REPLAYED_KEYED_SETUP_METHODS: dict[str, str] = {"Page.overrideUserPreference": "name"}
+
+# Chrome's Emulation.setEmulatedMedia features -> WebKit's Page.overrideUserPreference
+# (Page.UserPreferenceName, Page.UserPreferenceValue). A feature value with no WebKit counterpart
+# ("" is Chrome's reset; "less"/"custom" contrast has no WebKit value) clears that override.
+USER_PREFERENCE_FEATURES: dict[str, tuple[str, dict[str, str]]] = {
+    "prefers-color-scheme": ("PrefersColorScheme", {"dark": "Dark", "light": "Light"}),
+    "prefers-reduced-motion": ("PrefersReducedMotion", {"reduce": "Reduce", "no-preference": "NoPreference"}),
+    "prefers-contrast": ("PrefersContrast", {"more": "More", "no-preference": "NoPreference"}),
+}
 
 NETWORK_RESOURCE_TYPES = [
     "Document",
@@ -588,7 +601,6 @@ class CdpTarget:
             "Debugger.scriptFailedToParse": self._debugger_script_failed_to_parse,
             "Debugger.paused": self._debugger_paused,
             "Debugger.globalObjectCleared": self._debugger_global_object_cleared,
-            "Page.defaultAppearanceDidChange": self._page_default_appearance_did_change,
             "Runtime.executionContextCreated": self._runtime_execution_context_created,
             "Console.messageAdded": self._console_message_added,
             "Network.responseReceived": self._network_response_received,
@@ -666,6 +678,8 @@ class CdpTarget:
         self._unresponsive_last_probe: dict[str, float] = {}
         # setup (domain enables & co.) the frontend established, replayed onto new targets
         self._setup_messages: dict[Any, dict[str, Any]] = {}
+        # WebKit user preferences currently overridden through Emulation.setEmulatedMedia features.
+        self._emulated_preferences: set[str] = set()
         self._setup_sent_targets: set[str] = {target_id}
         # Targets announced as pages - the only kind this session talks to (see _target_created).
         self._page_targets: set[str] = {target_id}
@@ -1156,6 +1170,8 @@ class CdpTarget:
             self._setup_messages[method] = params
         elif method in REPLAYED_MULTI_SETUP_METHODS:
             self._setup_messages[(method, json.dumps(params, sort_keys=True))] = params
+        elif method in REPLAYED_KEYED_SETUP_METHODS:
+            self._setup_messages[(method, str(params.get(REPLAYED_KEYED_SETUP_METHODS[method])))] = params
 
     async def _send_setup_to_target(self, target_id: str):
         """Replay the frontend's recorded setup onto a new target (once per target)."""
@@ -2298,17 +2314,47 @@ class CdpTarget:
         for child in cast(list[Any], tree.get("childFrames") or []):
             self._remember_frame_tree(child)
 
+    async def _override_user_preference(self, name: str, value: Optional[str]) -> None:
+        """Page.overrideUserPreference: `value` absent clears the override (WebKit main and iOS 26)."""
+        params: dict[str, Any] = {"name": name}
+        if value is not None:
+            params["value"] = value
+        await self._send_message_to_target({
+            "id": self.next_internal_id(),
+            "method": "Page.overrideUserPreference",
+            "params": params,
+        })
+
     async def _emulation_set_emulated_media(self, message: dict[str, Any]):
+        # Chrome carries the media type and the media features in one command; WebKit takes the
+        # type (Page.setEmulatedMedia, `media` required) and each feature as a separate user
+        # preference override. Features absent from the list are reset, as in Chrome.
+        params: dict[str, Any] = message.get("params") or {}
+        features: list[dict[str, Any]] = params.get("features") or []
+        wanted: dict[str, Optional[str]] = {}
+        for feature in features:
+            mapping = USER_PREFERENCE_FEATURES.get(str(feature.get("name", "")))
+            if mapping is None:
+                continue
+            name, values = mapping
+            wanted[name] = values.get(str(feature.get("value", "")))
+        for name in sorted(self._emulated_preferences - set(wanted)):
+            wanted[name] = None
+        for name, value in wanted.items():
+            await self._override_user_preference(name, value)
+        self._emulated_preferences = {name for name, value in wanted.items() if value is not None}
         message["method"] = "Page.setEmulatedMedia"
+        message["params"] = {"media": params.get("media") or ""}
         await self._send_message_to_target(message)
 
     async def _emulation_set_auto_dark_mode_override(self, message: dict[str, Any]):
-        message["method"] = "Page.setForcedAppearance"
-        params = message["params"]
-        if not params:
-            await self._simple_response(message, None)
-            return
-        message["params"] = {"appearance": "Dark" if params["enabled"] else "Light"}
+        # `enabled` absent restores the page's own color scheme; so does a valueless override.
+        params: dict[str, Any] = message.get("params") or {}
+        enabled: Optional[bool] = params.get("enabled")
+        message["method"] = "Page.overrideUserPreference"
+        message["params"] = {"name": "PrefersColorScheme"}
+        if enabled is not None:
+            message["params"]["value"] = "Dark" if enabled else "Light"
         await self._send_message_to_target(message)
 
     async def _debugger_enable(self, message: dict[str, Any]):
@@ -3271,9 +3317,6 @@ class CdpTarget:
         self._announced_worlds.clear()
         await self.output_queue.put({"method": "Runtime.executionContextsCleared"})
         await self.output_queue.put({"method": "DOM.documentUpdated"})
-
-    async def _page_default_appearance_did_change(self, message: dict[str, Any]):
-        pass
 
     async def _runtime_execution_context_created(self, message: dict[str, Any]):
         context = message["params"]["context"]
