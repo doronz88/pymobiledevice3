@@ -9,7 +9,7 @@ import time
 import urllib.request
 import uuid
 from collections.abc import AsyncGenerator, Generator
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, suppress
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional, cast
@@ -3741,5 +3741,192 @@ async def testp_cdp_server_binds_url_breakpoints_set_before_a_jscontext_script(l
             await command("Runtime.evaluate", {"expression": "bpTarget()", "returnByValue": True})
             await drain(1)
             assert not [e for e in events if e["method"] == "Debugger.paused"], "removed breakpoints must not hit"
+        finally:
+            await client.close()
+
+
+async def test_a_child_frame_navigation_ends_its_contexts_and_recreates_its_worlds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A child frame committing a new document loses the contexts its old document had, and the
+    worlds a client registered are created afresh for the new one, as Chrome does. WebKit only
+    announces the new main-world context; without the destroy, a client kept using what it built
+    in the old document (Playwright its injected utility script in the synthesized world) and a
+    payment iframe the SDK navigated after the client first touched it was never found (#1919)."""
+    with offline_cdp_target(monkeypatch) as (target, _):
+        await target._page_add_script_to_evaluate_on_new_document({
+            "id": 1,
+            "method": "Page.addScriptToEvaluateOnNewDocument",
+            "params": {"source": "", "worldName": "utility"},
+        })
+        # The top frame commits, then a child frame commits its first document.
+        await target._page_frame_navigated({
+            "method": "Page.frameNavigated",
+            "params": {"frame": {"id": "0.1", "loaderId": "0.2", "url": "https://a/"}},
+        })
+        await target._runtime_execution_context_created({
+            "method": "Runtime.executionContextCreated",
+            "params": {"context": {"id": 5, "type": "normal", "name": "", "frameId": "0.1"}},
+        })
+        child = {"id": "0.26", "loaderId": "0.27", "url": "https://pay/bootstrap", "parentId": "0.1", "name": "card"}
+        await target._page_frame_navigated({"method": "Page.frameNavigated", "params": {"frame": child}})
+        await target._runtime_execution_context_created({
+            "method": "Runtime.executionContextCreated",
+            "params": {"context": {"id": 68, "type": "normal", "name": "", "frameId": "0.26"}},
+        })
+        announced: list[dict[str, Any]] = []
+        while not target.output_queue.empty():
+            announced.append(target.output_queue.get_nowait())
+        worlds = [
+            m["params"]["context"]["id"]
+            for m in announced
+            if m.get("method") == "Runtime.executionContextCreated" and m["params"]["context"]["name"] == "utility"
+        ]
+        first_world = [w for w in worlds if target._isolated_world_frames.get(w) == "0.26"]
+        assert len(first_world) == 1, "the registered world is created in the child frame's first document"
+        assert target._real_context_id(first_world[0]) == 68
+
+        # The payment SDK navigates the frame to the real form; WebKit reports it (didCommitLoad)
+        # and then announces the new document's context.
+        child = {**child, "loaderId": "0.28", "url": "https://pay/form"}
+        await target._page_frame_navigated({"method": "Page.frameNavigated", "params": {"frame": child}})
+        await target._runtime_execution_context_created({
+            "method": "Runtime.executionContextCreated",
+            "params": {"context": {"id": 71, "type": "normal", "name": "", "frameId": "0.26"}},
+        })
+        emitted: list[dict[str, Any]] = []
+        while not target.output_queue.empty():
+            emitted.append(target.output_queue.get_nowait())
+        methods = [m["method"] for m in emitted]
+        assert methods[:3] == [
+            "Runtime.executionContextDestroyed",
+            "Runtime.executionContextDestroyed",
+            "Page.frameNavigated",
+        ], methods
+        assert emitted[0]["params"]["executionContextId"] == first_world[0]
+        assert emitted[1]["params"]["executionContextId"] == 68
+        created = [m["params"]["context"] for m in emitted if m["method"] == "Runtime.executionContextCreated"]
+        assert [c["id"] for c in created if c["name"] == ""] == [71]
+        new_worlds = [c["id"] for c in created if c["name"] == "utility"]
+        assert len(new_worlds) == 1 and new_worlds[0] != first_world[0], "a fresh world for the new document"
+        assert target._real_context_id(new_worlds[0]) == 71
+        # The old world is gone for good: it is no longer resolved to any context of the frame.
+        assert first_world[0] not in target._isolated_world_context_ids
+        assert target._real_context_id(first_world[0]) == first_world[0]
+
+
+async def testp_cdp_server_reaches_a_child_frame_after_it_navigates(lockdown: LockdownClient) -> None:
+    """A world created in a child frame before the frame navigated to a new document is ended,
+    and a fresh one announced, so a client that touched the frame early still reaches the
+    document it shows now (#1919: a payment iframe navigated by its SDK after Playwright's first
+    look at it kept being queried in the old document, and fill() never found the field)."""
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        page_id = targets[0]["id"]
+        client = CdpWebsocketClient(port, page_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        events: list[dict[str, Any]] = []
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                id_ = next(message_ids)
+                await client.send({"id": id_, "method": method, "params": params})
+
+                async def wait_for_response() -> dict[str, Any]:
+                    while True:
+                        message = await client.receive()
+                        if "id" not in message:
+                            events.append(message)
+                        elif message["id"] == id_:
+                            return message
+
+                return await asyncio.wait_for(wait_for_response(), TIMEOUT)
+
+            async def drain(seconds: float) -> None:
+                deadline = asyncio.get_event_loop().time() + seconds
+                while asyncio.get_event_loop().time() < deadline:
+                    with suppress(asyncio.TimeoutError):
+                        events.append(await asyncio.wait_for(client.receive(), 0.5))
+
+            def child_frame_id() -> Optional[str]:
+                for event in events:
+                    if event.get("method") == "Page.frameNavigated":
+                        frame = event["params"]["frame"]
+                        if frame.get("parentId") == page_id and frame.get("name") == "pmd3-card":
+                            return frame["id"]
+                return None
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+            await drain(2)
+            events.clear()
+            await command(
+                "Runtime.evaluate",
+                {
+                    "expression": (
+                        "const f = document.createElement('iframe'); f.name = 'pmd3-card';"
+                        " f.src = 'https://httpbin.org/html'; document.body.appendChild(f); 'added'"
+                    ),
+                    "returnByValue": True,
+                },
+            )
+            await drain(4)
+            frame_id = child_frame_id()
+            assert frame_id is not None, "the child frame's first document was announced"
+            world = await command(
+                "Page.createIsolatedWorld",
+                {"frameId": frame_id, "worldName": "__pmd3_touch__", "grantUniveralAccess": True},
+            )
+            old_world = world["result"]["executionContextId"]
+            first = await command(
+                "Runtime.evaluate", {"expression": "document.URL", "contextId": old_world, "returnByValue": True}
+            )
+            assert first["result"]["result"]["value"] == "https://httpbin.org/html", (
+                "the world starts in the first document"
+            )
+
+            # The frame's owner (a payment SDK) navigates it to the real form.
+            events.clear()
+            await command(
+                "Runtime.evaluate",
+                {
+                    "expression": "document.querySelector('iframe[name=pmd3-card]').src = 'https://httpbin.org/forms/post'; 'swapped'",
+                    "returnByValue": True,
+                },
+            )
+            await drain(5)
+            destroyed = [
+                e["params"]["executionContextId"]
+                for e in events
+                if e.get("method") == "Runtime.executionContextDestroyed"
+            ]
+            assert old_world in destroyed, "the world of the old document is ended"
+            fresh = [
+                e["params"]["context"]
+                for e in events
+                if e.get("method") == "Runtime.executionContextCreated"
+                and e["params"]["context"].get("auxData", {}).get("frameId") == frame_id
+            ]
+            assert fresh, "the new document's context is announced"
+            new_world = await command(
+                "Page.createIsolatedWorld",
+                {"frameId": frame_id, "worldName": "__pmd3_after__", "grantUniveralAccess": True},
+            )
+            found = await command(
+                "Runtime.evaluate",
+                {
+                    "expression": "[document.URL, !!document.querySelector('input[name=custname]')]",
+                    "contextId": new_world["result"]["executionContextId"],
+                    "returnByValue": True,
+                },
+            )
+            assert found["result"]["result"]["value"] == ["https://httpbin.org/forms/post", True]
+            stale = await command(
+                "Runtime.evaluate", {"expression": "document.URL", "contextId": old_world, "returnByValue": True}
+            )
+            assert (
+                "error" in stale or stale.get("result", {}).get("result", {}).get("value") != "https://example.com/"
+            ), "a world that is gone is refused, not answered from the top frame"
         finally:
             await client.close()

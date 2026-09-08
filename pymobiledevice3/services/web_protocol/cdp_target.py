@@ -1438,6 +1438,17 @@ class CdpTarget:
         mapped = message.get("params", {}).get("frame", {})
         client_frame_id = mapped.get("id")
         client_parent_id = mapped.get("parentId")
+        if client_parent_id is not None and isinstance(client_frame_id, str):
+            # WebKit reports a child frame's navigation only when a new document commits (the
+            # hook is didCommitLoad; a same-document navigation reports nothing), so every context
+            # the frame's previous document had is gone. Chrome announces their end; a client keeps
+            # what it built in them until it is told - Playwright its injected utility script, in
+            # an isolated world the bridge synthesizes - and would keep querying the old, detached
+            # document: a field in a payment iframe the SDK navigated after the client first
+            # touched it was never found, and fill() timed out (#1919). Announce the end, and let
+            # the worlds the client registered be re-created for the new document.
+            await self._destroy_frame_contexts(client_frame_id)
+            self._announced_worlds = {world for world in self._announced_worlds if world[0] != client_frame_id}
         if (
             client_parent_id is not None
             and isinstance(client_frame_id, str)
@@ -3629,6 +3640,11 @@ class CdpTarget:
                 await self._emit_execution_context_destroyed(context_id, frame_id)
                 del self._isolated_world_frames[context_id]
                 self._isolated_world_names.pop(context_id, None)
+                # A world that is gone must not be resolved any more: a client that keeps using it
+                # would otherwise be answered from the top frame's context, silently. Forgotten,
+                # the id is forwarded as-is and the device refuses it, the way Chrome refuses a
+                # destroyed context.
+                self._isolated_world_context_ids.discard(context_id)
         main_context = self._frame_execution_ids.get(frame_id)
         if main_context is not None:
             await self._emit_execution_context_destroyed(main_context, frame_id)
