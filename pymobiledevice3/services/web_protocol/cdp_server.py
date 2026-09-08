@@ -682,12 +682,13 @@ def version(request: Request):
 
 
 async def refresh_listings() -> None:
-    """Ask every connected application to re-report its pages, without waiting for the replies.
+    """Ask every connected application to re-report its pages, and wait for the replies.
 
     `webinspectord` pushes a fresh listing on its own whenever a page opens, closes or navigates,
-    so the cached state is already live and the answer can be built from it straight away; the
-    request is only a nudge for anything that does not announce itself. Blocking on the replies
-    instead put a fixed half-second on every listing request - the whole cost of serving one.
+    but not the instant an application connects or a page moves to another process - answering
+    from the cache alone then left those out, and an editor that lists targets once attached to
+    whatever was left without offering a choice. The wait is for the replies themselves (a few
+    milliseconds), not a fixed delay; see WebinspectorService.get_open_pages.
     """
     await app.state.inspector.get_open_pages()
 

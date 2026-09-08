@@ -23,6 +23,9 @@ from pymobiledevice3.services.web_protocol.inspector_session import InspectorSes
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 
 SAFARI = "com.apple.mobilesafari"
+# How long a page listing waits, at most, for the applications' replies (see get_open_pages). A
+# reply takes a few milliseconds; this only bounds an application that never answers.
+LISTING_REPLY_TIMEOUT = 0.3
 WEBINSPECTORD_DISABLED_NOTIFICATION = "com.apple.webinspectord.disabled"
 
 
@@ -373,18 +376,45 @@ class WebinspectorService(LockdownService):
             wait_target=page.type_ != WirTypes.JAVASCRIPT,
         )
 
-    async def get_open_pages(self) -> dict[str, Any]:
+    async def get_open_pages(self, timeout: float = LISTING_REPLY_TIMEOUT) -> dict[str, Any]:
         """Request and return the currently open pages of all connected applications.
 
+        The answer is built from the listings the applications reply with, not from whatever was
+        cached before the request: answering straight after asking left out any page the device
+        had not reported yet - an application that had only just connected, a process a page had
+        just moved to - and an editor that lists targets once attached to whatever was left
+        without offering a choice. A reply takes a few milliseconds; `timeout` bounds the wait
+        for an application that never answers.
+
+        :param timeout: Seconds to wait, at most, for the applications' listings.
         :returns: A mapping of application name to the collection of its `Page` objects, including
             only applications that currently report at least one page.
         """
         apps: dict[str, Any] = {}
-        # One failing listing (or a lost connection) must not break the whole answer; serve what
-        # was last reported instead.
-        await asyncio.gather(
-            *[self._forward_get_listing(app) for app in self.connected_application], return_exceptions=True
-        )
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        # Subscribed before asking, so that no reply can slip by between the two.
+        listings = self.subscribe_listings()
+        try:
+            # Right after connecting, even the application list may still be on its way.
+            while not self.connected_application and not self._connection_lost and loop.time() < deadline:
+                await asyncio.sleep(0.01)
+            pending = set(self.connected_application)
+            # One failing listing (or a lost connection) must not break the whole answer; serve what
+            # was last reported instead.
+            await asyncio.gather(*[self._forward_get_listing(app) for app in pending], return_exceptions=True)
+            while pending and not self._connection_lost:
+                # An application that went away meanwhile will not answer.
+                pending &= set(self.connected_application)
+                remaining = deadline - loop.time()
+                if not pending or remaining <= 0:
+                    break
+                try:
+                    pending.discard(await asyncio.wait_for(listings.get(), remaining))
+                except asyncio.TimeoutError:
+                    break
+        finally:
+            self.unsubscribe_listings(listings)
         for app in self.connected_application:
             if self.application_pages.get(app, False):
                 apps[self.connected_application[app].name] = self.application_pages[app].values()
@@ -622,6 +652,9 @@ class WebinspectorService(LockdownService):
     async def _handle_application_connected(self, arg: dict[str, Any]):
         app = Application.from_application_dictionary(arg)
         self.connected_application[app.id_] = app
+        # Ask for its pages right away rather than waiting for the device to volunteer them (it
+        # does, but some hundred milliseconds later), so a listing served meanwhile has them.
+        await self._forward_get_listing(app.id_)
 
     async def _handle_application_sent_data(self, arg: dict[str, Any]):
         response = json.loads(arg["WIRMessageDataKey"])

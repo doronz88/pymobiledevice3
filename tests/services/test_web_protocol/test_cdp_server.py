@@ -2839,6 +2839,7 @@ async def test_a_lost_device_connection_is_handled_gracefully() -> None:
     })
     inspector.connected_application = {"PID:1": application}
     inspector.application_pages = {"PID:1": {1: page}}
+    inspector._listing_subscribers = []
 
     class DeadService:
         async def send_plist(self, _: Any) -> None:
@@ -3743,3 +3744,76 @@ async def testp_cdp_server_binds_url_breakpoints_set_before_a_jscontext_script(l
             assert not [e for e in events if e["method"] == "Debugger.paused"], "removed breakpoints must not hit"
         finally:
             await client.close()
+
+
+async def test_a_listing_waits_for_the_replies_it_asked_for() -> None:
+    """get_open_pages answers from the listings the applications reply with, not from the cache
+    as it was before asking: an application that had only just connected had no pages cached, so
+    an editor listing targets right then saw a shorter list than the truth and attached to what
+    was left without offering a choice. The wait is for the replies, bounded for one that never
+    comes."""
+    inspector = WebinspectorService.__new__(WebinspectorService)
+    inspector._connection_lost = False
+    inspector.logger = logging.getLogger("test.webinspector")
+    inspector.connection_id = "CONN"
+    inspector._listing_subscribers = []
+    inspector.connected_application = {
+        "PID:1": Application(
+            "PID:1", "com.example.app", 1, "App", AutomationAvailability.NOT_AVAILABLE, 1, False, True
+        ),
+        "PID:2": Application(
+            "PID:2", "com.example.new", 2, "New", AutomationAvailability.NOT_AVAILABLE, 1, False, True
+        ),
+    }
+    inspector.application_pages = {"PID:1": {}, "PID:2": {}}
+    asked: list[str] = []
+
+    async def reply_later(app_id: str) -> None:
+        await asyncio.sleep(0.02)
+        await inspector._handle_application_sent_listing({
+            "WIRApplicationIdentifierKey": app_id,
+            "WIRListingKey": {
+                "1": {
+                    "WIRPageIdentifierKey": 1,
+                    "WIRTypeKey": "WIRTypeWeb",
+                    "WIRTitleKey": app_id,
+                    "WIRURLKey": "https://e/",
+                }
+            },
+        })
+
+    async def send_message(selector: str, args: Optional[dict[str, Any]] = None) -> None:
+        if selector == "_rpc_forwardGetListing:":
+            app_id = cast(dict[str, Any], args)["WIRApplicationIdentifierKey"]
+            asked.append(app_id)
+            if app_id != "PID:2":
+                asyncio.get_event_loop().create_task(reply_later(app_id))
+
+    inspector._send_message = send_message  # type: ignore[method-assign]
+
+    started = asyncio.get_event_loop().time()
+    pages = await inspector.get_open_pages(timeout=0.3)
+    elapsed = asyncio.get_event_loop().time() - started
+    assert sorted(asked) == ["PID:1", "PID:2"]
+    assert "App" in pages, "the reply that arrived after the request is in the answer"
+    assert elapsed >= 0.3 - 0.05, "an application that never answers is waited for up to the bound"
+
+    asked.clear()
+    started = asyncio.get_event_loop().time()
+    inspector.connected_application.pop("PID:2")
+    pages = await inspector.get_open_pages(timeout=0.3)
+    elapsed = asyncio.get_event_loop().time() - started
+    assert asked == ["PID:1"] and "App" in pages
+    assert elapsed < 0.2, "with every reply in, the answer does not wait out the bound"
+    assert inspector._listing_subscribers == [], "the wait's subscription is released"
+
+
+async def testp_cdp_server_lists_an_application_the_moment_it_connects(lockdown: LockdownClient) -> None:
+    """The listing an editor fetches right after an application connected includes that
+    application's pages. It once answered from the cache, which webinspectord fills a hundred
+    milliseconds or so later, so the list came back without them - and an editor that saw a single
+    target attached to it without asking."""
+    async with cdp_server(lockdown) as (port, inspector):
+        await inspector.open_app(SAFARI)
+        targets = [target for target in await http_get_json(port, "/json/list") if target["type"] == "page"]
+        assert targets, "the freshly connected Safari's page is listed straight away"
