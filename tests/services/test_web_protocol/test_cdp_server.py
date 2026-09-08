@@ -227,6 +227,45 @@ class CdpBrowserWebsocketClient(CdpWebsocketClient):
         return await asyncio.wait_for(wait_for_response(), TIMEOUT)
 
 
+async def testp_cdp_browser_endpoint_announces_targets_after_get_targets(lockdown: LockdownClient) -> None:
+    """
+    VS Code's js-debug builds its target picker by calling Target.getTargets first and then
+    Target.setDiscoverTargets, and waits for the initial Target.targetCreated batch before it will
+    attach. The bridge announced only targets that were *new* since it last listed, so a page
+    already learnt through getTargets produced no targetCreated on setDiscoverTargets and js-debug
+    hung with no targets offered. Chrome reports every existing target when discovery is enabled;
+    the batch must arrive whatever was asked before.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        version = await http_get_json(port, "/json/version/")
+        browser_id = urlsplit(version["webSocketDebuggerUrl"]).path.rsplit("/", 1)[1]
+        page_id = targets[0]["id"]
+        client = CdpBrowserWebsocketClient(port, browser_id)
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        ids = itertools.count(1)
+        try:
+            await client.command(next(ids), "Target.attachToBrowserTarget", {})
+            listed = await client.command(next(ids), "Target.getTargets", {})
+            target_ids = {t["targetId"] for t in listed["result"]["targetInfos"]}
+            assert page_id in target_ids, f"the Safari page must be listed: {target_ids}"
+
+            # Discovery is enabled only now, after getTargets already learnt the page.
+            await client.send({"id": next(ids), "method": "Target.setDiscoverTargets", "params": {"discover": True}})
+
+            async def announced() -> set[str]:
+                seen: set[str] = set()
+                while page_id not in seen:
+                    message = await client.receive()
+                    if message.get("method") == "Target.targetCreated":
+                        seen.add(message["params"]["targetInfo"]["targetId"])
+                return seen
+
+            seen = await asyncio.wait_for(announced(), TIMEOUT)
+            assert page_id in seen, "setDiscoverTargets must announce the page even after getTargets"
+        finally:
+            await client.close()
+
+
 async def testp_cdp_browser_endpoint_attaches_playwright_style(lockdown: LockdownClient) -> None:
     """
     A Chrome-protocol client attaching over the browser endpoint (Puppeteer/Playwright's
