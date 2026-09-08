@@ -40,6 +40,7 @@ from pymobiledevice3.services.web_protocol.cdp_target import (
 )
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 from pymobiledevice3.services.webinspector import SAFARI, Application, AutomationAvailability, Page, WebinspectorService
+from tests.services.test_web_protocol.golden_flow import load_fixture, replay_flat_session
 
 TIMEOUT = 30
 
@@ -2884,6 +2885,38 @@ async def test_a_paused_stack_keeps_the_top_frame_even_if_it_looks_native(monkey
         })
         frames = target.output_queue.get_nowait()["params"]["callFrames"]
         assert [f["callFrameId"] for f in frames] == ["cf0"]
+
+
+async def test_golden_webstorm_jscontext_stepping_flow() -> None:
+    """Replay a real WebStorm JSContext debugging session (its editor commands and the device's
+    responses) through the current bridge and assert the editor-visible behavior the step-over bug
+    broke: the paused stack is the single user frame node reports, and a step reads as
+    paused -> resumed -> paused (WebKit sends no resumed of its own). A regression in either
+    breaks this without a device."""
+    emitted = await replay_flat_session(load_fixture("webstorm_jscontext_stepping"))
+    methods = [m.get("method", "<reply>") for m in emitted]
+
+    paused = [m for m in emitted if m.get("method") == "Debugger.paused"]
+    assert len(paused) == 2, f"the debugger; statement and the step each pause: {methods}"
+    for event in paused:
+        frames = event["params"]["callFrames"]
+        assert len(frames) == 1, f"only the user's own frame survives, not WebKit's harness: {frames}"
+        location = frames[0]["location"]
+        assert location["scriptId"] != "0" and location["lineNumber"] >= 0
+    assert paused[0]["params"]["callFrames"][0]["location"]["lineNumber"] == 1
+    assert paused[1]["params"]["callFrames"][0]["location"]["lineNumber"] == 2, "the step advanced a line"
+
+    # The alternation: a resumed between the two pauses (synthesized; WebKit sends none).
+    first, second = (
+        methods.index("Debugger.paused"),
+        methods.index("Debugger.paused", methods.index("Debugger.paused") + 1),
+    )
+    assert "Debugger.resumed" in methods[first + 1 : second], f"a step must read paused -> resumed -> paused: {methods}"
+
+    assert "Runtime.consoleAPICalled" in methods, "console output reaches the editor"
+    assert not any(
+        m.get("method") == "Log.entryAdded" and m["params"]["entry"].get("source") == "javascript" for m in emitted
+    ), "engine errors are Runtime.exceptionThrown, not Log entries"
 
 
 async def test_javascript_errors_become_runtime_exception_thrown(monkeypatch: pytest.MonkeyPatch) -> None:
