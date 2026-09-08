@@ -662,6 +662,9 @@ class CdpTarget:
         # scriptId -> url, from Debugger.scriptParsed; used to fill the `url` WebKit omits from the
         # callFrames of Debugger.paused (Chrome's CallFrame requires it).
         self._script_id_to_url: dict[str, str] = {}
+        # Scripts WebKit reports that are its own inspector machinery (the InjectedScript that runs
+        # console evaluations), not the debuggee's. Their frames are stripped from a paused stack.
+        self._internal_script_ids: set[str] = set()
         # For a flat JSContext: the synthetic URL handed to the frontend for a URL-less script ->
         # the script's id. Lets a URL breakpoint (how editors set breakpoints) be turned into a
         # scriptId-location breakpoint, the only kind that binds on a URL-less script.
@@ -3315,6 +3318,9 @@ class CdpTarget:
         params = message.get("params", {})
         source = params.get("sourceURL", "") or params.get("url", "")
         if any(marker in source for marker in WEBKIT_INTERNAL_SCRIPT_MARKERS):
+            internal_id = params.get("scriptId")
+            if internal_id is not None:
+                self._internal_script_ids.add(str(internal_id))
             return
         script_id = params.get("scriptId")
         if not source and self._flat and script_id is not None:
@@ -3411,6 +3417,24 @@ class CdpTarget:
         line_number: int = location.get("lineNumber", -1)
         return bool(script_id) and script_id != "0" and line_number >= 0
 
+    def _is_inspector_frame(self, frame: dict[str, Any]) -> bool:
+        """Whether a call frame belongs to WebKit's own InjectedScript, not the debuggee.
+
+        WebKit runs a console evaluation *through* its InjectedScript (JavaScript), so a pause
+        inside the evaluation carries that harness at the bottom of the stack - `_wrapCall` and an
+        anonymous frame in a script with no source URL. V8 evaluates natively and shows only the
+        user's frame; WebStorm builds the stack strictly and, given the phantom frames, stopped
+        advancing after the first step (a `debugger;` typed in its console). A real breakpoint in
+        the debuggee's own code has no such frame. Recognized by the id of a script the bridge
+        already hides as internal, or - on a JSContext, whose scripts the bridge has all seen and
+        given synthetic URLs - any frame in a script it never saw parsed.
+        """
+        location: dict[str, Any] = frame.get("location") or {}
+        script_id = location.get("scriptId")
+        if script_id in self._internal_script_ids:
+            return True
+        return bool(self._flat) and script_id is not None and script_id not in self._script_id_to_url
+
     async def _debugger_paused(self, message: dict[str, Any]):
         params = message["params"]
         params["reason"] = DEBUGGER_PAUSED_REASON.get(params["reason"], "other")
@@ -3420,9 +3444,10 @@ class CdpTarget:
         # has (see _is_real_call_frame), omits the required `url`, and uses scope-type enum values
         # Chrome rejects. Untranslated, Chrome's SDK throws while building the paused state and the
         # Sources panel never shows the pause. Drop the native frame and reshape the rest in place.
-        frames = [frame for frame in params.get("callFrames", []) if self._is_real_call_frame(frame)]
-        # Keep the top frame even if it somehow fails the test, so a pause is never frameless.
-        params["callFrames"] = frames or params.get("callFrames", [])[:1]
+        all_frames: list[dict[str, Any]] = params.get("callFrames", [])
+        frames = [f for f in all_frames if self._is_real_call_frame(f) and not self._is_inspector_frame(f)]
+        # Keep the top frame even if it somehow fails the tests, so a pause is never frameless.
+        params["callFrames"] = frames or all_frames[:1]
         for frame in params["callFrames"]:
             if "url" not in frame:
                 script_id = frame.get("location", {}).get("scriptId")

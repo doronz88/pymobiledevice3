@@ -2731,6 +2731,64 @@ async def test_a_paused_stack_drops_webkit_native_frames(monkeypatch: pytest.Mon
         assert event["params"]["reason"] == "other", "DebuggerStatement maps to Chrome's 'other'"
 
 
+async def test_a_paused_stack_drops_the_injected_script_harness(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WebKit runs a console evaluation through its InjectedScript, so a pause inside it carries
+    that harness beneath the user's frame - `_wrapCall` and an anon frame in a script with no
+    source. V8 shows only the user frame; WebStorm built the stack strictly and stopped stepping
+    after one step. On a JSContext (flat) session the bridge strips those frames, leaving the
+    single user frame node reports. Recognized by the id of a script hidden as internal, or - the
+    JSContext case, where every real script is known - a frame in a script never seen parsed."""
+    with offline_cdp_target(monkeypatch) as (target, _):
+        target._flat = True
+        # The console eval's own script, given a synthetic URL when it was parsed.
+        await target._debugger_script_parsed({
+            "method": "Debugger.scriptParsed",
+            "params": {"scriptId": "675", "url": "", "startLine": 0, "endLine": 0, "endColumn": 3},
+        })
+        # WebKit's InjectedScript, hidden from the client (its source carries the marker).
+        await target._debugger_script_parsed({
+            "method": "Debugger.scriptParsed",
+            "params": {"scriptId": "27", "sourceURL": "__InjectedScript_WebKit.js"},
+        })
+        assert "27" in target._internal_script_ids
+        assert target.output_queue.get_nowait()["method"] == "Debugger.scriptParsed", (
+            "only the user script is forwarded"
+        )
+        assert target.output_queue.empty()
+
+        await target._debugger_paused({
+            "method": "Debugger.paused",
+            "params": {
+                "reason": "DebuggerStatement",
+                "callFrames": [
+                    {
+                        "callFrameId": "cf0",
+                        "functionName": "global code",
+                        "location": {"scriptId": "675", "lineNumber": 1, "columnNumber": 0},
+                    },
+                    {
+                        "callFrameId": "cf1",
+                        "functionName": "",
+                        "location": {"scriptId": "0", "lineNumber": -1, "columnNumber": -1},
+                    },
+                    {
+                        "callFrameId": "cf2",
+                        "functionName": "",
+                        "location": {"scriptId": "27", "lineNumber": 444, "columnNumber": 79},
+                    },
+                    {
+                        "callFrameId": "cf3",
+                        "functionName": "_wrapCall",
+                        "location": {"scriptId": "27", "lineNumber": 451, "columnNumber": 9},
+                    },
+                ],
+            },
+        })
+        frames = target.output_queue.get_nowait()["params"]["callFrames"]
+        assert [f["callFrameId"] for f in frames] == ["cf0"], "only the user's own frame survives"
+        assert frames[0]["url"] == "jscontext:///675.js"
+
+
 async def test_a_paused_stack_keeps_the_top_frame_even_if_it_looks_native(monkeypatch: pytest.MonkeyPatch) -> None:
     """A pause must never be frameless: if every frame failed the real-source test, keep the top one."""
     with offline_cdp_target(monkeypatch) as (target, _):
