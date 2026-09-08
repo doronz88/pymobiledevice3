@@ -117,6 +117,11 @@ Configuration notes:
 
 - `urlFilter` selects which pages to attach to. `"*"` attaches to every inspectable
   page; narrow it (e.g. `"*myapp.example.com*"`) to pick a specific tab.
+- `"targetSelection": "pick"` prompts you to choose which page to attach to instead of
+  attaching to every match. The prompt appears only when two or more pages match the
+  `urlFilter`; with a single match js-debug attaches to it directly, with no prompt.
+  JSContexts never appear in this prompt — js-debug's picker lists only `page` targets
+  (attach to a JSContext through the `node` configuration below).
 - `webRoot` maps source-mapped URLs to workspace files so breakpoints bind to your
   original sources — point it at the folder your dev server serves from.
 - Source-map warnings for third-party pages you don't control are harmless; silence
