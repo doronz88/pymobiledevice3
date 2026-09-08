@@ -889,6 +889,94 @@ async def testp_cdp_server_makes_child_frames_reachable(lockdown: LockdownClient
             await client.close()
 
 
+async def testp_cdp_server_correlates_frames_by_identity_not_document_order(lockdown: LockdownClient) -> None:
+    """
+    An <iframe> element must resolve to the frame it actually hosts, whichever order the frames
+    sit in. iOS 26 orders a document's entries in the frame tree by when each frame was created,
+    not by where its element sits in the document; pairing the nth <iframe> with the nth tree
+    child then mis-mapped every frame whose DOM position differed from its creation order, so a
+    client's frameLocator().fill()/click() drove a different cross-origin frame than the one it
+    addressed. The name a frame was given, or the URL it loaded, identifies it regardless of order.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+        try:
+
+            async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                id_ = next(message_ids)
+                await client.send({"id": id_, "method": method, "params": params})
+                while True:
+                    message = await asyncio.wait_for(client.receive(), TIMEOUT)
+                    if message.get("id") == id_:
+                        return message
+
+            await command("Page.enable", {})
+            await command("Runtime.enable", {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+            # Create four named child frames whose document order (d, c, a, b) is deliberately not
+            # the order they were created in (a, b, c, d) - the case that mis-correlated.
+            await command(
+                "Runtime.evaluate",
+                {
+                    "expression": (
+                        "(() => {"
+                        "  const make = (n) => { const f = document.createElement('iframe');"
+                        "    f.name = n; f.src = 'https://example.com/?' + n; return f; };"
+                        "  const a = make('a'), b = make('b');"
+                        "  document.body.append(a, b);"
+                        "  document.body.insertBefore(make('c'), a);"
+                        "  document.body.insertBefore(make('d'), document.body.firstChild);"
+                        "  return 'ok';"
+                        "})()"
+                    ),
+                    "returnByValue": True,
+                },
+            )
+
+            async def child_frame_count() -> int:
+                tree = await command("Page.getFrameTree", {})
+                return len(tree["result"]["frameTree"].get("childFrames") or [])
+
+            for _ in range(TIMEOUT):
+                if await child_frame_count() == 4:
+                    break
+                await asyncio.sleep(0.5)
+            assert await child_frame_count() == 4, "all four child frames must be reported"
+
+            document_order = await command(
+                "Runtime.evaluate",
+                {"expression": "[...document.querySelectorAll('iframe')].map(f => f.name)", "returnByValue": True},
+            )
+            names = document_order["result"]["result"]["value"]
+            assert names == ["d", "c", "a", "b"], names
+
+            for index, name in enumerate(names):
+                element = await command(
+                    "Runtime.evaluate", {"expression": f"document.querySelectorAll('iframe')[{index}]"}
+                )
+                described = await command("DOM.describeNode", {"objectId": element["result"]["result"]["objectId"]})
+                frame_id = described["result"]["node"].get("frameId")
+                assert frame_id, f"the iframe element must resolve to a frame: {described}"
+                # The frame it resolves to must be the one whose document is this element's own
+                # src, proven by reading document.URL inside that frame's own world.
+                world = await command("Page.createIsolatedWorld", {"frameId": frame_id, "worldName": "probe"})
+                url = await command(
+                    "Runtime.evaluate",
+                    {
+                        "expression": "document.URL",
+                        "contextId": world["result"]["executionContextId"],
+                        "returnByValue": True,
+                    },
+                )
+                assert url["result"]["result"]["value"] == f"https://example.com/?{name}", (
+                    f"iframe named {name} must resolve to its own frame, not another's: {url}"
+                )
+        finally:
+            await client.close()
+
+
 async def testp_cdp_browser_endpoint_gives_each_attachment_its_own_session(lockdown: LockdownClient) -> None:
     """
     A client may attach to one page more than once - Playwright drives a page through the session

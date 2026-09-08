@@ -1875,17 +1875,22 @@ class CdpTarget:
             tree = await self.send_message_with_result("Page.getResourceTree", {})
             frame_tree = tree.get("result", {}).get("frameTree")
             self._map_frame_tree_ids(frame_tree)
-            owner = self._frame_of_object(cast(str, object_id))
-            index = info.get("index")
-            frame_id: Optional[str] = None
-            if owner is not None and isinstance(index, int):
-                frame_id = self._child_frame_at(frame_tree, owner, index)
+            # Correlate the element with the frame it hosts. Prefer the name it was given or the
+            # URL it loaded, which identify the frame outright: iOS 26 orders a document's entries
+            # in the frame tree by when each frame was created, not by where its <iframe> sits in
+            # the document, so pairing the nth <iframe> with the nth tree child (the positional
+            # fallback below) mis-maps every frame whose DOM position differs from its creation
+            # order - which is what left fill()/click() acting on the wrong cross-origin frame.
+            # Positional matching stays as the last resort, for a frame that a unique name or URL
+            # cannot pick out: a srcdoc or about:blank frame, or several sharing a URL.
+            frame_id: Optional[str] = self._find_frame_in_tree(
+                frame_tree, cast(str, info.get("name") or ""), cast(str, info.get("url") or "")
+            )
             if frame_id is None:
-                # Nothing to position against (an object from a context we never saw); fall back
-                # to whatever the element itself identifies the frame by.
-                frame_id = self._find_frame_in_tree(
-                    frame_tree, cast(str, info.get("name") or ""), cast(str, info.get("url") or "")
-                )
+                owner = self._frame_of_object(cast(str, object_id))
+                index = info.get("index")
+                if owner is not None and isinstance(index, int):
+                    frame_id = self._child_frame_at(frame_tree, owner, index)
             if frame_id is not None:
                 node["frameId"] = frame_id
         await self.output_queue.put({"id": message["id"], "result": {"node": node}})
