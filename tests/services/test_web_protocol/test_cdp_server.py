@@ -2689,6 +2689,64 @@ async def test_user_preference_overrides_are_translated_and_replayed(monkeypatch
         assert target._setup_messages["Page.setEmulatedMedia"] == {"media": ""}
 
 
+async def test_a_paused_stack_drops_webkit_native_frames(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WebKit puts a native entry frame - scriptId "0", lineNumber -1 - at the bottom of a paused
+    call stack. Chrome's protocol has no such frame and js-debug/WebStorm build the stack strictly;
+    the bad frame desynced their step handling, so stepping stopped advancing after one step. The
+    bridge drops it and reshapes the real frames (url filled in, scope types mapped)."""
+    with offline_cdp_target(monkeypatch) as (target, _):
+        target._script_id_to_url["294"] = "jscontext:///294.js"
+        await target._debugger_paused({
+            "method": "Debugger.paused",
+            "params": {
+                "reason": "DebuggerStatement",
+                "callFrames": [
+                    {
+                        "callFrameId": "cf0",
+                        "functionName": "global code",
+                        "location": {"scriptId": "294", "lineNumber": 2, "columnNumber": 0},
+                        "scopeChain": [
+                            {
+                                "type": "global",
+                                "object": {"objectId": "s0"},
+                                "location": {"scriptId": "294", "lineNumber": 0},
+                            }
+                        ],
+                    },
+                    {
+                        "callFrameId": "cf1",
+                        "functionName": "",
+                        "location": {"scriptId": "0", "lineNumber": -1, "columnNumber": -1},
+                        "scopeChain": [],
+                    },
+                ],
+            },
+        })
+        event = target.output_queue.get_nowait()
+        frames = event["params"]["callFrames"]
+        assert [f["callFrameId"] for f in frames] == ["cf0"], "the native scriptId-0 frame must be gone"
+        assert frames[0]["url"] == "jscontext:///294.js", "the real frame gets its url filled in"
+        scope = frames[0]["scopeChain"][0]
+        assert scope["type"] == "global" and "startLocation" in scope and "location" not in scope
+        assert event["params"]["reason"] == "other", "DebuggerStatement maps to Chrome's 'other'"
+
+
+async def test_a_paused_stack_keeps_the_top_frame_even_if_it_looks_native(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A pause must never be frameless: if every frame failed the real-source test, keep the top one."""
+    with offline_cdp_target(monkeypatch) as (target, _):
+        await target._debugger_paused({
+            "method": "Debugger.paused",
+            "params": {
+                "reason": "other",
+                "callFrames": [
+                    {"callFrameId": "cf0", "functionName": "x", "location": {"scriptId": "0", "lineNumber": -1}}
+                ],
+            },
+        })
+        frames = target.output_queue.get_nowait()["params"]["callFrames"]
+        assert [f["callFrameId"] for f in frames] == ["cf0"]
+
+
 async def test_javascript_errors_become_runtime_exception_thrown(monkeypatch: pytest.MonkeyPatch) -> None:
     """WebKit reports uncaught exceptions, unhandled rejections and parse errors as error console
     messages of source "javascript"; Chrome reports them as Runtime.exceptionThrown, the only form

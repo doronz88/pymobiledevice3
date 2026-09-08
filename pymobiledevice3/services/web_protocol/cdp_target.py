@@ -3395,15 +3395,35 @@ class CdpTarget:
         }
         await self.output_queue.put(message)
 
+    @staticmethod
+    def _is_real_call_frame(frame: dict[str, Any]) -> bool:
+        """Whether a WebKit call frame denotes real source Chrome can locate.
+
+        WebKit puts a native entry frame at the bottom of a stack - scriptId "0", lineNumber -1 -
+        for the global/native code beneath the script. Chrome's protocol has no such frame (a
+        Location must name a real script at a non-negative line), and js-debug and WebStorm build
+        the stack strictly: the bad frame desynced their step handling, so after one step the
+        session stopped advancing. V8 never emits it; verified against `node --inspect`, whose
+        stacks carry only real script frames.
+        """
+        location: dict[str, Any] = frame.get("location") or {}
+        script_id = location.get("scriptId")
+        line_number: int = location.get("lineNumber", -1)
+        return bool(script_id) and script_id != "0" and line_number >= 0
+
     async def _debugger_paused(self, message: dict[str, Any]):
         params = message["params"]
         params["reason"] = DEBUGGER_PAUSED_REASON.get(params["reason"], "other")
         if "breakpointId" in params.get("data", {}):
             params["hitBreakpoints"] = [params["data"]["breakpointId"]]
-        # WebKit's CallFrame differs from Chrome's: it omits the required `url` and uses scope-type
-        # enum values Chrome rejects. Untranslated, Chrome's SDK throws while building the paused
-        # state and the Sources panel never shows the pause. Reshape each frame in place.
-        for frame in params.get("callFrames", []):
+        # WebKit's CallFrame differs from Chrome's: it carries a bottom native frame Chrome never
+        # has (see _is_real_call_frame), omits the required `url`, and uses scope-type enum values
+        # Chrome rejects. Untranslated, Chrome's SDK throws while building the paused state and the
+        # Sources panel never shows the pause. Drop the native frame and reshape the rest in place.
+        frames = [frame for frame in params.get("callFrames", []) if self._is_real_call_frame(frame)]
+        # Keep the top frame even if it somehow fails the test, so a pause is never frameless.
+        params["callFrames"] = frames or params.get("callFrames", [])[:1]
+        for frame in params["callFrames"]:
             if "url" not in frame:
                 script_id = frame.get("location", {}).get("scriptId")
                 frame["url"] = self._script_id_to_url.get(script_id, "")
