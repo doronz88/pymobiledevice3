@@ -2689,6 +2689,164 @@ async def test_user_preference_overrides_are_translated_and_replayed(monkeypatch
         assert target._setup_messages["Page.setEmulatedMedia"] == {"media": ""}
 
 
+async def test_stepping_gets_a_synthesized_resumed_between_pauses(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WebKit emits no Debugger.resumed when a step resumes then repauses (it sends none at all),
+    so a client would see paused-after-paused; V8 always alternates, and WebStorm's step machine
+    waits for the resumed and will not step again without it. The bridge injects one before a pause
+    the client is not expecting, keeping the paused/resumed alternation."""
+
+    async def a_pause(line: int) -> dict[str, Any]:
+        return {
+            "method": "Debugger.paused",
+            "params": {
+                "reason": "other",
+                "callFrames": [
+                    {
+                        "callFrameId": "cf",
+                        "functionName": "f",
+                        "location": {"scriptId": "9", "lineNumber": line, "columnNumber": 0},
+                    }
+                ],
+            },
+        }
+
+    with offline_cdp_target(monkeypatch) as (target, _):
+        target._script_id_to_url["9"] = "x.js"
+
+        await target._debugger_paused(await a_pause(1))
+        assert target.output_queue.get_nowait()["method"] == "Debugger.paused", "the first pause stands alone"
+        assert target.output_queue.empty()
+
+        # A step: WebKit sends only the next pause. The bridge precedes it with a resumed.
+        await target._debugger_paused(await a_pause(2))
+        assert target.output_queue.get_nowait() == {"method": "Debugger.resumed"}
+        assert target.output_queue.get_nowait()["params"]["callFrames"][0]["location"]["lineNumber"] == 2
+        assert target.output_queue.empty()
+
+        # A real resumed from the device (an explicit resume-to-run) is forwarded once and clears.
+        await target._debugger_resumed({"method": "Debugger.resumed"})
+        assert target.output_queue.get_nowait() == {"method": "Debugger.resumed"}
+        # A stray resumed while the client is already running is dropped (would break alternation).
+        await target._debugger_resumed({"method": "Debugger.resumed"})
+        assert target.output_queue.empty()
+
+
+async def test_a_paused_stack_drops_webkit_native_frames(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WebKit puts a native entry frame - scriptId "0", lineNumber -1 - at the bottom of a paused
+    call stack. Chrome's protocol has no such frame and js-debug/WebStorm build the stack strictly;
+    the bad frame desynced their step handling, so stepping stopped advancing after one step. The
+    bridge drops it and reshapes the real frames (url filled in, scope types mapped)."""
+    with offline_cdp_target(monkeypatch) as (target, _):
+        target._script_id_to_url["294"] = "jscontext:///294.js"
+        await target._debugger_paused({
+            "method": "Debugger.paused",
+            "params": {
+                "reason": "DebuggerStatement",
+                "callFrames": [
+                    {
+                        "callFrameId": "cf0",
+                        "functionName": "global code",
+                        "location": {"scriptId": "294", "lineNumber": 2, "columnNumber": 0},
+                        "scopeChain": [
+                            {
+                                "type": "global",
+                                "object": {"objectId": "s0"},
+                                "location": {"scriptId": "294", "lineNumber": 0},
+                            }
+                        ],
+                    },
+                    {
+                        "callFrameId": "cf1",
+                        "functionName": "",
+                        "location": {"scriptId": "0", "lineNumber": -1, "columnNumber": -1},
+                        "scopeChain": [],
+                    },
+                ],
+            },
+        })
+        event = target.output_queue.get_nowait()
+        frames = event["params"]["callFrames"]
+        assert [f["callFrameId"] for f in frames] == ["cf0"], "the native scriptId-0 frame must be gone"
+        assert frames[0]["url"] == "jscontext:///294.js", "the real frame gets its url filled in"
+        scope = frames[0]["scopeChain"][0]
+        assert scope["type"] == "global" and "startLocation" in scope and "location" not in scope
+        assert event["params"]["reason"] == "other", "DebuggerStatement maps to Chrome's 'other'"
+
+
+async def test_a_paused_stack_drops_the_injected_script_harness(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WebKit runs a console evaluation through its InjectedScript, so a pause inside it carries
+    that harness beneath the user's frame - `_wrapCall` and an anon frame in a script with no
+    source. V8 shows only the user frame; WebStorm built the stack strictly and stopped stepping
+    after one step. On a JSContext (flat) session the bridge strips those frames, leaving the
+    single user frame node reports. Recognized by the id of a script hidden as internal, or - the
+    JSContext case, where every real script is known - a frame in a script never seen parsed."""
+    with offline_cdp_target(monkeypatch) as (target, _):
+        target._flat = True
+        # The console eval's own script, given a synthetic URL when it was parsed.
+        await target._debugger_script_parsed({
+            "method": "Debugger.scriptParsed",
+            "params": {"scriptId": "675", "url": "", "startLine": 0, "endLine": 0, "endColumn": 3},
+        })
+        # WebKit's InjectedScript, hidden from the client (its source carries the marker).
+        await target._debugger_script_parsed({
+            "method": "Debugger.scriptParsed",
+            "params": {"scriptId": "27", "sourceURL": "__InjectedScript_WebKit.js"},
+        })
+        assert "27" in target._internal_script_ids
+        assert target.output_queue.get_nowait()["method"] == "Debugger.scriptParsed", (
+            "only the user script is forwarded"
+        )
+        assert target.output_queue.empty()
+
+        await target._debugger_paused({
+            "method": "Debugger.paused",
+            "params": {
+                "reason": "DebuggerStatement",
+                "callFrames": [
+                    {
+                        "callFrameId": "cf0",
+                        "functionName": "global code",
+                        "location": {"scriptId": "675", "lineNumber": 1, "columnNumber": 0},
+                    },
+                    {
+                        "callFrameId": "cf1",
+                        "functionName": "",
+                        "location": {"scriptId": "0", "lineNumber": -1, "columnNumber": -1},
+                    },
+                    {
+                        "callFrameId": "cf2",
+                        "functionName": "",
+                        "location": {"scriptId": "27", "lineNumber": 444, "columnNumber": 79},
+                    },
+                    {
+                        "callFrameId": "cf3",
+                        "functionName": "_wrapCall",
+                        "location": {"scriptId": "27", "lineNumber": 451, "columnNumber": 9},
+                    },
+                ],
+            },
+        })
+        frames = target.output_queue.get_nowait()["params"]["callFrames"]
+        assert [f["callFrameId"] for f in frames] == ["cf0"], "only the user's own frame survives"
+        assert frames[0]["url"] == "jscontext:///675.js"
+
+
+async def test_a_paused_stack_keeps_the_top_frame_even_if_it_looks_native(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A pause must never be frameless: if every frame failed the real-source test, keep the top one."""
+    with offline_cdp_target(monkeypatch) as (target, _):
+        await target._debugger_paused({
+            "method": "Debugger.paused",
+            "params": {
+                "reason": "other",
+                "callFrames": [
+                    {"callFrameId": "cf0", "functionName": "x", "location": {"scriptId": "0", "lineNumber": -1}}
+                ],
+            },
+        })
+        frames = target.output_queue.get_nowait()["params"]["callFrames"]
+        assert [f["callFrameId"] for f in frames] == ["cf0"]
+
+
 async def test_javascript_errors_become_runtime_exception_thrown(monkeypatch: pytest.MonkeyPatch) -> None:
     """WebKit reports uncaught exceptions, unhandled rejections and parse errors as error console
     messages of source "javascript"; Chrome reports them as Runtime.exceptionThrown, the only form
