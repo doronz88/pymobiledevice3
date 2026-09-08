@@ -35,6 +35,11 @@ from pymobiledevice3.services.web_protocol.cdp_browser import (
     target_url,
 )
 from pymobiledevice3.services.web_protocol.cdp_target import CdpTarget
+from pymobiledevice3.services.web_protocol.cdp_trace import (
+    BRIDGE_TO_EDITOR,
+    EDITOR_TO_BRIDGE,
+    ProtocolTrace,
+)
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 from pymobiledevice3.services.webinspector import (
     Application,
@@ -955,16 +960,27 @@ async def devtools_frontend(path: str) -> Response:
     return Response(content=data, media_type=content_type)
 
 
+def _trace() -> Optional[ProtocolTrace]:
+    """The protocol trace this run records to, if `--trace` was given."""
+    return getattr(app.state, "trace", None)
+
+
 async def from_cdp(target: CdpTarget, websocket: WebSocket) -> None:
+    trace = _trace()
     async for message in websocket.iter_json():
         logger.debug(f"CDP INPUT:  {message}")
+        if trace is not None:
+            trace.record(EDITOR_TO_BRIDGE, message, session=target.session_id, page=str(target.page_id))
         await target.send(message)
 
 
 async def to_cdp(target: CdpTarget, websocket: WebSocket) -> None:
+    trace = _trace()
     while True:
         message = await target.receive()
         logger.debug(f"CDP OUTPUT:  {message}")
+        if trace is not None:
+            trace.record(BRIDGE_TO_EDITOR, message, session=target.session_id, page=str(target.page_id))
         await websocket.send_json(message)
 
 
@@ -973,7 +989,12 @@ async def browser_debugger(websocket: WebSocket, connection_id: str):
     """Browser-level endpoint (the one /json/version advertises): flat-session Target-domain
     debugging for Chrome-compatible clients such as VS Code's js-debug and Puppeteer."""
     await websocket.accept()
-    browser = CdpBrowser(app.state.inspector, websocket, pause_on_start=getattr(app.state, "pause_new_targets", False))
+    browser = CdpBrowser(
+        app.state.inspector,
+        websocket,
+        pause_on_start=getattr(app.state, "pause_new_targets", False),
+        trace=_trace(),
+    )
     try:
         await browser.run()
     finally:

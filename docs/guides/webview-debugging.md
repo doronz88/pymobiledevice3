@@ -236,6 +236,21 @@ for it; the bridge switches this off again when the client detaches. Candidates
 nobody can take — for example a page that never made it into the listing — are
 declined immediately so no app waits.
 
+### Recording a protocol trace
+
+When something in an editor misbehaves - a step that does not land, an evaluate that never
+answers - a trace of the protocol is the report that lets it be diagnosed rather than
+guessed at:
+
+```shell
+pymobiledevice3 webinspector cdp --trace cdp-trace.jsonl
+```
+
+Attach the editor, reproduce the problem, stop the bridge, and attach the file. It records
+every message in both directions, on both sides of the bridge (editor to bridge, and bridge
+to device), one JSON line each with a timestamp. It contains page content, evaluation results
+and script sources, so treat it as sensitive.
+
 ### Pause new JSContexts on launch
 
 Safari's "Automatically Pause Connecting to JSContexts" has a bridge equivalent that

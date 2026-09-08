@@ -8,6 +8,11 @@ from typing import Any, Optional, cast
 from fastapi import WebSocket
 
 from pymobiledevice3.services.web_protocol.cdp_target import CdpTarget
+from pymobiledevice3.services.web_protocol.cdp_trace import (
+    BRIDGE_TO_EDITOR,
+    EDITOR_TO_BRIDGE,
+    ProtocolTrace,
+)
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 from pymobiledevice3.services.webinspector import (
     Application,
@@ -176,9 +181,18 @@ class CdpBrowser:
         Safari's "Automatically Pause Connecting to JSContexts" (see CdpTarget.pause_on_start).
     """
 
-    def __init__(self, inspector: WebinspectorService, websocket: WebSocket, pause_on_start: bool = False) -> None:
+    def __init__(
+        self,
+        inspector: WebinspectorService,
+        websocket: WebSocket,
+        pause_on_start: bool = False,
+        trace: Optional[ProtocolTrace] = None,
+    ) -> None:
         self.inspector = inspector
         self.websocket = websocket
+        # The --trace recorder, if any: the browser endpoint is what VS Code's js-debug and
+        # Playwright attach to, so its editor side is recorded here.
+        self._trace = trace
         self._pause_on_start = pause_on_start
         # Target.setAutoAttach(waitForDebuggerOnStart): attach before the debuggable runs.
         self._wait_for_debugger = False
@@ -219,6 +233,8 @@ class CdpBrowser:
         """Serve the connection until the client disconnects."""
         async for message in self.websocket.iter_json():
             logger.debug(f"BROWSER CDP INPUT: {message}")
+            if self._trace is not None:
+                self._trace.record(EDITOR_TO_BRIDGE, message, session="browser")
             try:
                 await self._handle(message)
             except Exception:
@@ -307,6 +323,8 @@ class CdpBrowser:
     async def _send(self, message: dict[str, Any]) -> None:
         logger.debug(f"BROWSER CDP OUTPUT: {message}")
         async with self._send_lock:
+            if self._trace is not None:
+                self._trace.record(BRIDGE_TO_EDITOR, message, session="browser")
             await self.websocket.send_json(message)
 
     async def _reply(self, message: dict[str, Any], result: dict[str, Any]) -> None:
