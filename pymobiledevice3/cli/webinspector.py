@@ -137,6 +137,25 @@ OSUTILS = get_os_utils()
 logger = logging.getLogger(__name__)
 
 
+class _GetAccessToDebug(logging.Filter):
+    """Treat uvicorn's access log for GET requests as DEBUG.
+
+    The landing page polls GET /api/targets (and fetches icons) every second, which floods the
+    default output; those lines are only useful when debugging. A GET is relabelled DEBUG and
+    dropped unless debug logging is on (the app's stream handler has no level of its own, so
+    relabelling alone would not hide it); POSTs and the rest are left untouched. uvicorn logs
+    access as '%s - "%s %s HTTP/%s" %d' with args (client, method, path, http_version, status).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 2 and args[1] == "GET":
+            record.levelno = logging.DEBUG
+            record.levelname = "DEBUG"
+            return logging.getLogger().isEnabledFor(logging.DEBUG)
+        return True
+
+
 cli = InjectingTyper(
     name="webinspector",
     help=(
@@ -462,6 +481,7 @@ async def cdp(
         app.state.inspector.trace = recorder.device_hook
         typer.echo(f"Recording the protocol trace to {trace}")
     print(f"Web Inspector ready. Open in Google Chrome: http://{host}:{port}/")
+    logging.getLogger("uvicorn.access").addFilter(_GetAccessToDebug())
     server = uvicorn.Server(
         uvicorn.Config(
             app,
