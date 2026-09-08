@@ -193,6 +193,33 @@ child frames - including cross-origin ones nested several levels deep, through
 Attaching to a page that is *already open* works too: you do not have to be connected
 before it loads.
 
+### Request interception and HTTP Basic auth
+
+Chrome's `Fetch` domain is available, translated onto WebKit's own request
+interception. Arm it and every matching request pauses as `Fetch.requestPaused`,
+which you answer with `Fetch.continueRequest` (optionally rewriting the URL, method,
+headers or body), `Fetch.fulfillRequest` (a canned response) or `Fetch.failRequest`.
+This is how Playwright's `route()` and Puppeteer's `setRequestInterception()` mock,
+block or rewrite requests against a real device.
+
+The practical use is **answering an HTTP Basic auth challenge without the on-device
+credential dialog** — which otherwise needs a person to tap through it once per
+Safari/WebView process, blocking any unattended run. Supply the credentials on the
+request yourself:
+
+```javascript
+await page.route('**/*', (route) => {
+  const headers = { ...route.request().headers(), authorization: 'Basic ' + btoa('user:pass') };
+  route.continue({ headers });
+});
+await page.goto('https://example.com/behind-basic-auth');  // no dialog
+```
+
+One WebKit limitation to know: it surfaces no auth-challenge event of its own (the OS
+dialog owns the challenge), so Playwright's reactive `httpCredentials` option — which
+waits for a `401` and answers it — does not fire. Supplying the `Authorization` header
+proactively on the request, as above, answers the challenge before it is ever raised.
+
 Notes worth knowing when scripting against a device:
 
 - The first interaction with a newly created frame takes a few seconds while the
