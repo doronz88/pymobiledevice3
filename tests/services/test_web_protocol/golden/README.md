@@ -25,4 +25,10 @@ output, not the recording.
 3. Use only public/synthetic page content - a trace carries page content and is otherwise sensitive.
 4. Add a test that calls `replay_flat_session` and asserts the behavior the flow exercises.
 
-`golden_flow` currently models the un-multiplexed JSContext path only.
+`golden_flow` models both paths: `replay_flat_session` for the un-multiplexed JSContext path and
+`replay_page_session` for the Target-multiplexed page path (the fixture is the same unwrapped form
+either way; the page replay re-wraps device messages in the Target envelope). Fixtures:
+`webstorm_jscontext_stepping.jsonl` and `safari_page_stepping.jsonl`.
+
+Each golden test also runs `protocol_inventory.validate_editor_event` over every emitted event, so
+a missing required parameter of Chrome's protocol fails the test.

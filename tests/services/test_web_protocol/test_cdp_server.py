@@ -40,7 +40,8 @@ from pymobiledevice3.services.web_protocol.cdp_target import (
 )
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 from pymobiledevice3.services.webinspector import SAFARI, Application, AutomationAvailability, Page, WebinspectorService
-from tests.services.test_web_protocol.golden_flow import load_fixture, replay_flat_session
+from tests.services.test_web_protocol.golden_flow import load_fixture, replay_flat_session, replay_page_session
+from tests.services.test_web_protocol.protocol_inventory import load_spec, validate_editor_event
 
 TIMEOUT = 30
 
@@ -2887,6 +2888,33 @@ async def test_a_paused_stack_keeps_the_top_frame_even_if_it_looks_native(monkey
         assert [f["callFrameId"] for f in frames] == ["cf0"]
 
 
+async def test_golden_safari_page_stepping_flow() -> None:
+    """Replay a real Safari-page debugging session - the Target-multiplexed path - through the
+    current bridge and assert stepping advances line by line with the paused/resumed alternation
+    editors need, and that every event emitted carries Chrome's required parameters. Guards the
+    page path (most editor use) the way the JSContext golden guards the flat path, without a device."""
+    emitted = await replay_page_session(load_fixture("safari_page_stepping"))
+    methods = [m.get("method", "<reply>") for m in emitted]
+
+    paused = [m for m in emitted if m.get("method") == "Debugger.paused"]
+    assert [p["params"]["callFrames"][0]["location"]["lineNumber"] for p in paused] == [2, 3, 4], (
+        f"the debugger; statement pauses, then two steps advance a line each: {methods}"
+    )
+    for event in paused:
+        for frame in event["params"]["callFrames"]:
+            assert frame["location"]["scriptId"] != "0" and frame["location"]["lineNumber"] >= 0
+
+    paused_at = [i for i, method in enumerate(methods) if method == "Debugger.paused"]
+    for first, second in zip(paused_at, paused_at[1:]):
+        assert "Debugger.resumed" in methods[first + 1 : second], (
+            f"each step must read paused -> resumed -> paused: {methods}"
+        )
+
+    cdp = load_spec("cdp")
+    problems = [problem for message in emitted for problem in validate_editor_event(cdp, message)]
+    assert problems == [], f"emitted events violate Chrome's schema: {sorted(set(problems))}"
+
+
 async def test_golden_webstorm_jscontext_stepping_flow() -> None:
     """Replay a real WebStorm JSContext debugging session (its editor commands and the device's
     responses) through the current bridge and assert the editor-visible behavior the step-over bug
@@ -2917,6 +2945,11 @@ async def test_golden_webstorm_jscontext_stepping_flow() -> None:
     assert not any(
         m.get("method") == "Log.entryAdded" and m["params"]["entry"].get("source") == "javascript" for m in emitted
     ), "engine errors are Runtime.exceptionThrown, not Log entries"
+
+    # Every event the bridge emitted must carry the required parameters of Chrome's protocol.
+    cdp = load_spec("cdp")
+    problems = [problem for message in emitted for problem in validate_editor_event(cdp, message)]
+    assert problems == [], f"emitted events violate Chrome's schema: {sorted(set(problems))}"
 
 
 async def test_javascript_errors_become_runtime_exception_thrown(monkeypatch: pytest.MonkeyPatch) -> None:

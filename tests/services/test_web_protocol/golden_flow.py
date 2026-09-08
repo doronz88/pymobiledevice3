@@ -146,3 +146,99 @@ async def replay_flat_session(fixture: list[dict[str, Any]], settle: float = 0.4
         for task in (target._input_task, target._receiving_task):
             task.cancel()
     return emitted
+
+
+async def replay_page_session(fixture: list[dict[str, Any]], settle: float = 0.5) -> list[dict[str, Any]]:
+    """Drive a Target-multiplexed (page) CdpTarget with the fixture and return its editor output.
+
+    A page speaks through WebKit's Target domain: the bridge wraps each request in
+    Target.sendMessageToTarget and the device answers inside Target.dispatchMessageFromTarget. The
+    fixture's device messages are the unwrapped inner ones (as `--trace` records); this re-wraps
+    them. The device request the fixture scripts is matched by method, as on the flat path.
+    """
+    editor, initial_events, turns = _device_turns(fixture)
+    scripted = [turn for turn in turns if turn.method not in AUTO_ACKNOWLEDGED]
+    turn_iter = iter(scripted)
+
+    target_id = "page"
+    for entry in fixture:
+        message = entry["msg"]
+        if entry["dir"] == "device->bridge" and message.get("method") == "Target.targetCreated":
+            target_id = message["params"]["targetInfo"]["targetId"]
+            break
+
+    inspector = WebinspectorService.__new__(WebinspectorService)
+    inspector.wir_events = {}
+    inspector.wir_message_results = {}
+    results = cast(dict[Any, Any], inspector.wir_message_results)
+    session_id = "GOLDEN"
+
+    def deliver_wrapped(inner_messages: list[dict[str, Any]]) -> None:
+        queue = inspector.session_events(session_id)
+        for inner in inner_messages:
+            # The target is adopted up front; a replayed Target.targetCreated would only be
+            # re-announced (and, wrapped, mis-forwarded to the editor).
+            if inner.get("method") == "Target.targetCreated":
+                continue
+            queue.append({
+                "method": "Target.dispatchMessageFromTarget",
+                "params": {"targetId": target_id, "message": json.dumps(inner)},
+            })
+
+    async def send_socket_data(session: str, app_id: str, page_id: int, data: dict[str, Any]) -> None:
+        outer_id = data.get("id")
+        if isinstance(outer_id, int):
+            results[outer_id] = {"id": outer_id, "result": {}}  # ack the Target.sendMessageToTarget envelope
+        if data.get("method") != "Target.sendMessageToTarget":
+            return
+        inner = json.loads(data["params"]["message"])
+        inner_id = inner.get("id")
+        method = inner.get("method", "")
+        if method in AUTO_ACKNOWLEDGED:
+            if isinstance(inner_id, int):
+                deliver_wrapped([{"id": inner_id, "result": {}}])
+            return
+        turn = next(turn_iter, None)
+        if turn is None:
+            return
+        wrapped: list[dict[str, Any]] = []
+        if isinstance(inner_id, int) and turn.reply is not None:
+            wrapped.append({**{k: v for k, v in turn.reply.items() if k != "id"}, "id": inner_id})
+        wrapped.extend(dict(event) for event in turn.events)
+        if wrapped:
+            deliver_wrapped(wrapped)
+
+    inspector.send_socket_data = send_socket_data  # type: ignore[method-assign]
+
+    page = Page.from_page_dictionary({
+        "WIRPageIdentifierKey": 1,
+        "WIRTypeKey": "WIRTypeWeb",
+        "WIRTitleKey": "Example",
+        "WIRURLKey": "https://example.com/",
+    })
+    application = Application(
+        "PID:1", "com.apple.mobilesafari", 1, "MobileSafari", AutomationAvailability.NOT_AVAILABLE, 1, False, True
+    )
+    target = CdpTarget(SessionProtocol(inspector, session_id, application, page, method_prefix=""), target_id)
+    assert not target._flat, "the page replay models the Target-multiplexed path"
+    target._page_targets.add(target_id)
+
+    emitted: list[dict[str, Any]] = []
+
+    async def drain() -> None:
+        while True:
+            emitted.append(await target.receive())
+
+    drain_task = asyncio.ensure_future(drain())
+    try:
+        if initial_events:
+            deliver_wrapped(initial_events)
+        for command in editor:
+            await target.send(dict(command))
+            await asyncio.sleep(0.02)
+        await asyncio.sleep(settle)
+    finally:
+        drain_task.cancel()
+        for task in (target._input_task, target._receiving_task):
+            task.cancel()
+    return emitted
