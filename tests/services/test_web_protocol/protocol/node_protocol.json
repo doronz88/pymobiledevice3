@@ -1,0 +1,152 @@
+{
+ "domains": {
+  "NodeRuntime": {
+   "commands": {
+    "disable": {
+     "params": {},
+     "returns": []
+    },
+    "enable": {
+     "params": {},
+     "returns": []
+    },
+    "notifyWhenWaitingForDisconnect": {
+     "params": {
+      "enabled": {
+       "optional": false,
+       "type": "boolean"
+      }
+     },
+     "returns": []
+    }
+   },
+   "events": {
+    "waitingForDebugger": {
+     "params": {}
+    },
+    "waitingForDisconnect": {
+     "params": {}
+    }
+   }
+  },
+  "NodeTracing": {
+   "commands": {
+    "getCategories": {
+     "params": {},
+     "returns": [
+      "categories"
+     ]
+    },
+    "start": {
+     "params": {
+      "traceConfig": {
+       "optional": false,
+       "type": "TraceConfig"
+      }
+     },
+     "returns": []
+    },
+    "stop": {
+     "params": {},
+     "returns": []
+    }
+   },
+   "events": {
+    "dataCollected": {
+     "params": {
+      "value": {
+       "optional": false,
+       "type": "array of object"
+      }
+     }
+    },
+    "tracingComplete": {
+     "params": {}
+    }
+   }
+  },
+  "NodeWorker": {
+   "commands": {
+    "detach": {
+     "params": {
+      "sessionId": {
+       "optional": false,
+       "type": "SessionID"
+      }
+     },
+     "returns": []
+    },
+    "disable": {
+     "params": {},
+     "returns": []
+    },
+    "enable": {
+     "params": {
+      "waitForDebuggerOnStart": {
+       "optional": false,
+       "type": "boolean"
+      }
+     },
+     "returns": []
+    },
+    "sendMessageToWorker": {
+     "params": {
+      "message": {
+       "optional": false,
+       "type": "string"
+      },
+      "sessionId": {
+       "optional": false,
+       "type": "SessionID"
+      }
+     },
+     "returns": []
+    }
+   },
+   "events": {
+    "attachedToWorker": {
+     "params": {
+      "sessionId": {
+       "optional": false,
+       "type": "SessionID"
+      },
+      "waitingForDebugger": {
+       "optional": false,
+       "type": "boolean"
+      },
+      "workerInfo": {
+       "optional": false,
+       "type": "WorkerInfo"
+      }
+     }
+    },
+    "detachedFromWorker": {
+     "params": {
+      "sessionId": {
+       "optional": false,
+       "type": "SessionID"
+      }
+     }
+    },
+    "receivedMessageFromWorker": {
+     "params": {
+      "message": {
+       "optional": false,
+       "type": "string"
+      },
+      "sessionId": {
+       "optional": false,
+       "type": "SessionID"
+      }
+     }
+    }
+   }
+  }
+ },
+ "source": {
+  "commit": "ec564135f429b6eb0b82910cace8b29eb1868b2a",
+  "fetched": "2026-09-08",
+  "path": "src/inspector",
+  "repo": "nodejs/node"
+ }
+}

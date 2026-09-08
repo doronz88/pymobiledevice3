@@ -74,6 +74,15 @@ A `JSContext` only answers the inspector while the thread hosting it services it
 loop. One whose host is blocked elsewhere is still listed (its process registered it) but
 never replies; the bridge gives up on it after a while rather than hanging.
 
+Because the frontend is Node.js's, the bridge presents the Node.js inspector surface on top
+of WebKit's: an uncaught exception, an unhandled rejection or a parse error is reported as
+`Runtime.exceptionThrown` (WebKit reports these as console messages, which VS Code's debugger
+does not render on their own); `Runtime.addBinding` exposes a page function whose calls arrive
+as `Runtime.bindingCalled`; the console's `inspect()` becomes `Runtime.inspectRequested`; and
+the `NodeRuntime`, `NodeWorker` and `NodeTracing` domains an editor enables on attach are
+acknowledged (WebKit has none of them). A URL breakpoint set before its script exists binds and
+reports `Debugger.breakpointResolved` once the script loads, as it would against Node.js.
+
 ## VS Code
 
 VS Code's built-in JavaScript debugger (js-debug) attaches through the browser-level

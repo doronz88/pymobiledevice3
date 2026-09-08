@@ -117,6 +117,32 @@ _ISOLATED_WORLD_IDS = itertools.count(0x50000000)
 JS_CONTEXT_EXECUTION_ID = 1
 JS_CONTEXT_UNIQUE_ID = "jscontext.1"
 
+# WebKit reports the engine's own errors - uncaught exceptions, unhandled rejections, parse errors
+# - as console messages of this source; Chrome reports them as Runtime.exceptionThrown, which is
+# the only form VS Code's debugger renders (it has no handler for Log.entryAdded at all).
+JAVASCRIPT_ERROR_SOURCE = "javascript"
+UNHANDLED_REJECTION_PREFIX = "Unhandled Promise Rejection: "
+
+# A binding installed by Runtime.addBinding reports its calls through console.debug with this
+# marker as the first argument; the bridge turns those into Runtime.bindingCalled and never
+# forwards them as console output. WebKit has no binding mechanism of its own.
+BINDING_MARKER = "__pymobiledevice3_binding__"
+
+# The domains a Node.js inspector target adds on top of Chrome's. Editors attaching "as Node"
+# (VS Code's node attach, WebStorm) send these to a JSContext; WebKit has none of them, so they
+# are acknowledged here the way an idle Node process would (no workers, nothing traced).
+NODE_ACKNOWLEDGED_METHODS = (
+    "NodeRuntime.enable",
+    "NodeRuntime.disable",
+    "NodeRuntime.notifyWhenWaitingForDisconnect",
+    "NodeWorker.enable",
+    "NodeWorker.disable",
+    "NodeWorker.detach",
+    "NodeWorker.sendMessageToWorker",
+    "NodeTracing.start",
+    "NodeTracing.stop",
+)
+
 # Target.TargetInfo.type of the targets this bridge debugs. WebKit announces "frame", "worker"
 # and "service-worker" ones too - see _target_created.
 PAGE_TARGET_TYPE = "page"
@@ -435,6 +461,7 @@ class CdpTarget:
         # Synthetic isolated world -> the frame it was created for, so its evaluations reach that
         # frame's real context rather than whichever one happened to be announced last.
         self._isolated_world_frames: dict[int, str] = {}
+        self._isolated_world_names: dict[int, str] = {}
         # Frame -> the id of the main-world execution context WebKit announced for it. A page with
         # subframes announces one per frame, and they are not interchangeable.
         self._frame_execution_ids: dict[str, int] = {}
@@ -500,7 +527,8 @@ class CdpTarget:
             "Emulation.setEmulatedVisionDeficiency": partial(self._simple_response, value=None),
             "Emulation.setAutoDarkModeOverride": self._emulation_set_auto_dark_mode_override,
             "Emulation.setEmitTouchEventsForMouse": partial(self._simple_response, value=None),
-            "Debugger.setAsyncCallStackDepth": partial(self._simple_response, value=True),
+            "Debugger.setAsyncCallStackDepth": partial(self._simple_response, value=None),
+            "Debugger.removeBreakpoint": self._debugger_remove_breakpoint,
             "Debugger.enable": self._debugger_enable,
             "Debugger.setSkipAllPauses": self._debugger_set_skip_all_pauses,
             "Debugger.setBreakpointsActive": self._debugger_set_breakpoints_active,
@@ -562,7 +590,10 @@ class CdpTarget:
             "Accessibility.enable": partial(self._simple_response, value=None),
             "Autofill.enable": partial(self._simple_response, value=None),
             "Autofill.setAddresses": partial(self._simple_response, value=None),
-            "Runtime.addBinding": partial(self._simple_response, value=None),
+            "Runtime.addBinding": self._runtime_add_binding,
+            "Runtime.removeBinding": self._runtime_remove_binding,
+            "NodeTracing.getCategories": partial(self._result_response, result={"categories": []}),
+            **{method: partial(self._simple_response, value=None) for method in NODE_ACKNOWLEDGED_METHODS},
             "Runtime.globalLexicalScopeNames": self._runtime_global_lexical_scope_names,
             "Runtime.getProperties": self._runtime_get_properties,
             "Network.setBlockedURLs": partial(self._simple_response, value=None),
@@ -603,6 +634,7 @@ class CdpTarget:
             "Debugger.globalObjectCleared": self._debugger_global_object_cleared,
             "Runtime.executionContextCreated": self._runtime_execution_context_created,
             "Console.messageAdded": self._console_message_added,
+            "Inspector.inspect": self._inspector_inspect,
             "Network.responseReceived": self._network_response_received,
             "Network.loadingFinished": self._network_loading_finished,
             "Network.requestWillBeSent": self._network_request_will_be_sent,
@@ -634,6 +666,14 @@ class CdpTarget:
         # the script's id. Lets a URL breakpoint (how editors set breakpoints) be turned into a
         # scriptId-location breakpoint, the only kind that binds on a URL-less script.
         self._flat_script_url_to_id: dict[str, str] = {}
+        # URL breakpoints a JSContext client set before their script existed: the bridge's own
+        # breakpoint id -> the request, plus the device breakpoint ids it produced once bound.
+        self._flat_pending_url_breakpoints: dict[str, dict[str, Any]] = {}
+        self._flat_bound_url_breakpoints: dict[str, list[str]] = {}
+        # Runtime.addBinding: name -> the executionContextName it is scoped to (None = every main
+        # world). Re-installed into every context created later, as Chrome does.
+        self._bindings: dict[str, Optional[str]] = {}
+        self._exception_ids = itertools.count(1)
         self._eval_side_effect_id = 0
         self._default_execution_id = 0
         self._last_console_api_call: Optional[dict[str, Any]] = None
@@ -1187,7 +1227,10 @@ class CdpTarget:
             )
 
     async def _simple_response(self, message: dict[str, Any], value: Any):
-        await self.output_queue.put({"id": message["id"], "result": {"result": value}})
+        """Acknowledge a request the bridge answers itself: an empty result, as Chrome's protocol
+        defines for commands that return nothing, or {"result": value} for the few that do."""
+        result: dict[str, Any] = {} if value is None else {"result": value}
+        await self.output_queue.put({"id": message["id"], "result": result})
 
     async def _result_response(self, message: dict[str, Any], result: dict[str, Any]):
         """Respond with an exact result body, for methods whose response fields the frontend reads."""
@@ -1411,6 +1454,7 @@ class CdpTarget:
         self._map_frame_ids_outbound(message)
         frame_id = message.get("params", {}).get("frameId")
         if isinstance(frame_id, str):
+            await self._destroy_frame_contexts(frame_id)
             self._announced_frames.discard(frame_id)
             self._frame_execution_ids.pop(frame_id, None)
         await self.output_queue.put(message)
@@ -2042,6 +2086,7 @@ class CdpTarget:
         _page_create_isolated_world for why these are synthesized at all."""
         context_id = next(_ISOLATED_WORLD_IDS)
         self._isolated_world_context_ids.add(context_id)
+        self._isolated_world_names[context_id] = world_name
         if isinstance(frame_id, str):
             self._isolated_world_frames[context_id] = frame_id
             self._announced_worlds.add((frame_id, world_name))
@@ -2057,6 +2102,7 @@ class CdpTarget:
                 }
             },
         })
+        await self._install_bindings_for_context(context_id, world_name)
         return context_id
 
     async def _dom_get_box_model(self, message: dict[str, Any]):
@@ -2447,6 +2493,13 @@ class CdpTarget:
                 locations = [result["actualLocation"]] if "actualLocation" in result else []
                 await self._result_response(message, {"breakpointId": breakpoint_id, "locations": locations})
                 return
+            # No such script yet. Its synthetic URL cannot bind on the device (see
+            # _debugger_script_parsed), so keep the request and bind it when the script appears,
+            # reporting Debugger.breakpointResolved then - what V8 does for a not-yet-loaded file.
+            breakpoint_id = f"{params.get('url') or params.get('urlRegex') or ''}:{params.get('lineNumber', 0)}:{params.get('columnNumber', 0)}"
+            self._flat_pending_url_breakpoints[breakpoint_id] = dict(params)
+            await self._result_response(message, {"breakpointId": breakpoint_id, "locations": []})
+            return
         condition = params.pop("condition", "")
         if condition:
             params["options"]["condition"] = condition
@@ -2508,6 +2561,9 @@ class CdpTarget:
 
     async def _runtime_enable(self, message: dict[str, Any]):
         await self._send_message_to_target(message)
+        # WebKit only reports the console's inspect() through Inspector.inspect once the Inspector
+        # domain is enabled - something no Chrome client sends, as V8 has no such domain.
+        await self._send_message_to_target({"id": self.next_internal_id(), "method": "Inspector.enable", "params": {}})
         if not self._flat:
             return
         # Chrome's frontend expects console output to follow from Runtime.enable alone (V8 emits
@@ -3272,6 +3328,54 @@ class CdpTarget:
         if script_id is not None:
             self._script_id_to_url[script_id] = source
         await self.output_queue.put(message)
+        if self._flat and script_id is not None:
+            await self._bind_pending_url_breakpoints(str(script_id))
+
+    async def _bind_pending_url_breakpoints(self, script_id: str) -> None:
+        """Bind the URL breakpoints waiting for this JSContext script and announce each as resolved.
+
+        Runs in the receive loop (scriptParsed is an event), so the binding request is forwarded
+        with a reply translator rather than awaited here."""
+        for breakpoint_id, request in list(self._flat_pending_url_breakpoints.items()):
+            if self._flat_breakpoint_script(request) != script_id:
+                continue
+            location: dict[str, Any] = {"scriptId": script_id, "lineNumber": request.get("lineNumber", 0)}
+            if "columnNumber" in request:
+                location["columnNumber"] = request["columnNumber"]
+            set_params: dict[str, Any] = {"location": location}
+            if request.get("condition"):
+                set_params["options"] = {"condition": request["condition"]}
+
+            async def resolved(
+                reply: dict[str, Any], breakpoint_id: str = breakpoint_id, location: dict[str, Any] = location
+            ) -> None:
+                result = reply.get("result", {})
+                if "breakpointId" not in result:
+                    logger.warning(f"URL breakpoint {breakpoint_id} did not bind: {reply.get('error')}")
+                    return
+                self._flat_bound_url_breakpoints.setdefault(breakpoint_id, []).append(result["breakpointId"])
+                await self.output_queue.put({
+                    "method": "Debugger.breakpointResolved",
+                    "params": {"breakpointId": breakpoint_id, "location": result.get("actualLocation", location)},
+                })
+
+            await self._forward_and_translate(
+                {"id": self.next_internal_id()}, {"method": "Debugger.setBreakpoint", "params": set_params}, resolved
+            )
+
+    async def _debugger_remove_breakpoint(self, message: dict[str, Any]) -> None:
+        breakpoint_id = message.get("params", {}).get("breakpointId")
+        if breakpoint_id in self._flat_pending_url_breakpoints or breakpoint_id in self._flat_bound_url_breakpoints:
+            self._flat_pending_url_breakpoints.pop(breakpoint_id, None)
+            for device_id in self._flat_bound_url_breakpoints.pop(breakpoint_id, []):
+                await self._send_message_to_target({
+                    "id": self.next_internal_id(),
+                    "method": "Debugger.removeBreakpoint",
+                    "params": {"breakpointId": device_id},
+                })
+            await self._result_response(message, {})
+            return
+        await self._send_message_to_target(message)
 
     async def _debugger_script_failed_to_parse(self, message: dict[str, Any]):
         # The failing source is only known from Runtime.compileScript; parse failures of other
@@ -3312,11 +3416,200 @@ class CdpTarget:
 
     async def _debugger_global_object_cleared(self, message: dict[str, Any]):
         # Contexts are gone; allow their uniqueIds to be re-announced after the reload.
+        for frame_id in list(self._frame_execution_ids):
+            await self._destroy_frame_contexts(frame_id)
         self._emitted_context_unique_ids.clear()
         self._frame_execution_ids.clear()
         self._announced_worlds.clear()
         await self.output_queue.put({"method": "Runtime.executionContextsCleared"})
         await self.output_queue.put({"method": "DOM.documentUpdated"})
+
+    @staticmethod
+    def _is_binding_call(console_message: dict[str, Any]) -> bool:
+        parameters: list[dict[str, Any]] = console_message.get("parameters") or []
+        return (
+            console_message.get("source") == "console-api"
+            and len(parameters) == 4
+            and parameters[0].get("value") == BINDING_MARKER
+        )
+
+    async def _binding_called(self, console_message: dict[str, Any]) -> None:
+        """A call of a function installed by Runtime.addBinding (see _install_binding)."""
+        parameters: list[dict[str, Any]] = console_message["parameters"]
+        context_id = parameters[3].get("value")
+        await self.output_queue.put({
+            "method": "Runtime.bindingCalled",
+            "params": {
+                "name": str(parameters[1].get("value", "")),
+                "payload": str(parameters[2].get("value", "")),
+                "executionContextId": context_id if isinstance(context_id, int) else self._default_execution_id,
+            },
+        })
+
+    def _error_script_url(self, script_id: Any, url: Any) -> str:
+        """The URL of the script an error came from. WebKit stringifies a missing one as
+        "undefined"; the script's announced URL (empty for an evaluation) is what Chrome reports."""
+        if isinstance(script_id, str) and script_id in self._script_id_to_url:
+            return self._script_id_to_url[script_id]
+        return "" if not isinstance(url, str) or url == "undefined" else url
+
+    async def _exception_thrown(self, console_message: dict[str, Any]) -> None:
+        """Runtime.exceptionThrown from WebKit's error console message.
+
+        WebKit numbers lines and columns from 1 in these messages (a throw on the third line of a
+        script reports line 3); Chrome's ExceptionDetails and StackTrace count from 0. Chrome
+        describes the exception through a RemoteObject whose description is the "Name: message"
+        text, with `text` reduced to "Uncaught" (or "Uncaught (in promise)"); editors format the
+        two together.
+        """
+        text = str(console_message.get("text", ""))
+        summary = "Uncaught"
+        if text.startswith(UNHANDLED_REJECTION_PREFIX):
+            text = text[len(UNHANDLED_REJECTION_PREFIX) :]
+            summary = "Uncaught (in promise)"
+        class_name = text.split(":", 1)[0].strip() if ":" in text else "Error"
+        frames: list[dict[str, Any]] = []
+        stack: dict[str, Any] = console_message.get("stackTrace") or {}
+        call_frames: list[dict[str, Any]] = stack.get("callFrames") or []
+        for frame in call_frames:
+            frames.append({
+                "functionName": frame.get("functionName", ""),
+                "scriptId": str(frame.get("scriptId", "")),
+                "url": self._error_script_url(frame.get("scriptId"), frame.get("url")),
+                "lineNumber": max(int(frame.get("lineNumber", 1)) - 1, 0),
+                "columnNumber": max(int(frame.get("columnNumber", 1)) - 1, 0),
+            })
+        top = frames[0] if frames else {}
+        details: dict[str, Any] = {
+            "exceptionId": next(self._exception_ids),
+            "text": summary,
+            "lineNumber": top.get("lineNumber", max(int(console_message.get("line", 1)) - 1, 0)),
+            "columnNumber": top.get("columnNumber", max(int(console_message.get("column", 1)) - 1, 0)),
+            "url": top.get("url", self._error_script_url(None, console_message.get("url"))),
+            "executionContextId": self._default_execution_id,
+            "exception": {"type": "object", "subtype": "error", "className": class_name, "description": text},
+        }
+        if top.get("scriptId"):
+            details["scriptId"] = top["scriptId"]
+        if frames:
+            details["stackTrace"] = {"callFrames": frames}
+        await self.output_queue.put({
+            "method": "Runtime.exceptionThrown",
+            "params": {"timestamp": datetime.now().timestamp() * 1000, "exceptionDetails": details},
+        })
+
+    async def _inspector_inspect(self, message: dict[str, Any]) -> None:
+        """The console's inspect(object): WebKit's Inspector.inspect is Chrome's Runtime.inspectRequested."""
+        params = message.get("params", {})
+        await self.output_queue.put({
+            "method": "Runtime.inspectRequested",
+            "params": {
+                "object": params.get("object", {}),
+                "hints": params.get("hints") or {},
+                "executionContextId": self._default_execution_id,
+            },
+        })
+
+    async def _emit_execution_context_destroyed(self, context_id: int, frame_id: Any) -> None:
+        await self.output_queue.put({
+            "method": "Runtime.executionContextDestroyed",
+            "params": {"executionContextId": context_id, "executionContextUniqueId": f"{frame_id}.{context_id}"},
+        })
+
+    async def _destroy_frame_contexts(self, frame_id: str) -> None:
+        """Announce the end of a frame's contexts - its main world and the isolated worlds
+        synthesized for it - before the frame itself goes; Chrome does the same on navigation."""
+        for context_id, world_frame in list(self._isolated_world_frames.items()):
+            if world_frame == frame_id:
+                await self._emit_execution_context_destroyed(context_id, frame_id)
+                del self._isolated_world_frames[context_id]
+                self._isolated_world_names.pop(context_id, None)
+        main_context = self._frame_execution_ids.get(frame_id)
+        if main_context is not None:
+            await self._emit_execution_context_destroyed(main_context, frame_id)
+
+    def _binding_install_script(self, name: str, context_id: int) -> str:
+        return (
+            f"globalThis[{json.dumps(name)}] = function (payload) {{ "
+            f"console.debug({json.dumps(BINDING_MARKER)}, {json.dumps(name)}, String(payload), {context_id}); }};"
+        )
+
+    async def _install_binding(self, name: str, context_id: int) -> None:
+        """Define the binding function in one execution context, without waiting for the reply."""
+        params: dict[str, Any] = {"expression": self._tag_internal(self._binding_install_script(name, context_id))}
+        real_context = self._real_context_id(context_id)
+        if real_context is not None:
+            params["contextId"] = real_context
+        await self._send_message_to_target({
+            "id": self.next_internal_id(),
+            "method": "Runtime.evaluate",
+            "params": params,
+        })
+
+    def _real_context_id(self, context_id: int) -> Optional[int]:
+        """The device's context for one the client knows: a synthesized isolated world runs in the
+        real main world of its frame; a JSContext has a single, unaddressed context."""
+        if self._flat:
+            return None
+        if context_id in self._isolated_world_context_ids:
+            world_frame = self._isolated_world_frames.get(context_id, self.frame_id)
+            return self._frame_execution_ids.get(world_frame) or self._default_execution_id or None
+        return context_id
+
+    def _binding_contexts(self, world_name: Optional[str]) -> list[int]:
+        """The client-visible contexts a binding scoped to `world_name` belongs in right now."""
+        if world_name is None:
+            if self._flat:
+                return [JS_CONTEXT_EXECUTION_ID]
+            return sorted(set(self._frame_execution_ids.values()))
+        return sorted(cid for cid, name in self._isolated_world_names.items() if name == world_name)
+
+    async def _install_bindings_for_context(self, context_id: int, world_name: Optional[str]) -> None:
+        """A context was just announced: give it every binding registered for its kind."""
+        for name, scope in self._bindings.items():
+            if scope == world_name:
+                await self._install_binding(name, context_id)
+
+    async def _runtime_add_binding(self, message: dict[str, Any]) -> None:
+        """
+        Runtime.addBinding: expose `name` in the page as a function whose calls reach the client as
+        Runtime.bindingCalled. Chrome's semantics: no context given = every main world, now and
+        after reloads; executionContextName = every isolated world of that name, now and later;
+        executionContextId = that one context only. Playwright's exposeFunction/exposeBinding and
+        its init-script plumbing are built on this.
+        """
+        params = message.get("params", {})
+        name = str(params.get("name", ""))
+        if not name:
+            await self._error_response(message, {"code": -32602, "message": "Runtime.addBinding needs a name"})
+            return
+        if isinstance(params.get("executionContextId"), int):
+            await self._install_binding(name, params["executionContextId"])
+        else:
+            world_name = params.get("executionContextName")
+            scope = world_name if isinstance(world_name, str) and world_name else None
+            self._bindings[name] = scope
+            for context_id in self._binding_contexts(scope):
+                await self._install_binding(name, context_id)
+        await self._result_response(message, {})
+
+    async def _runtime_remove_binding(self, message: dict[str, Any]) -> None:
+        name = str(message.get("params", {}).get("name", ""))
+        scope = self._bindings.pop(name, None)
+        contexts = self._binding_contexts(scope) if name else []
+        if scope is None:
+            contexts = sorted(set(contexts) | set(self._isolated_world_names))
+        for context_id in contexts:
+            params: dict[str, Any] = {"expression": self._tag_internal(f"delete globalThis[{json.dumps(name)}];")}
+            real_context = self._real_context_id(context_id)
+            if real_context is not None:
+                params["contextId"] = real_context
+            await self._send_message_to_target({
+                "id": self.next_internal_id(),
+                "method": "Runtime.evaluate",
+                "params": params,
+            })
+        await self._result_response(message, {})
 
     async def _runtime_execution_context_created(self, message: dict[str, Any]):
         context = message["params"]["context"]
@@ -3359,6 +3652,7 @@ class CdpTarget:
             }
         }
         await self.output_queue.put(message)
+        await self._install_bindings_for_context(context["id"], None)
 
     async def _announce_registered_worlds(self, frame_id: str) -> None:
         """Give a freshly loaded document the isolated worlds the client registered by name."""
@@ -3379,6 +3673,12 @@ class CdpTarget:
 
     async def _console_message_added(self, message: dict[str, Any]):
         console_message = message["params"]["message"]
+        if self._is_binding_call(console_message):
+            await self._binding_called(console_message)
+            return
+        if console_message["source"] == JAVASCRIPT_ERROR_SOURCE and console_message.get("level") == "error":
+            await self._exception_thrown(console_message)
+            return
         # Chrome renders console-API output (console.log & friends) from Runtime.consoleAPICalled,
         # complete with the argument objects; Log.entryAdded is only for browser-generated logs.
         if console_message["source"] == "console-api":

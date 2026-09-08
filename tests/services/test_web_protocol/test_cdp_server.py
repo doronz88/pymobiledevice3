@@ -2689,6 +2689,210 @@ async def test_user_preference_overrides_are_translated_and_replayed(monkeypatch
         assert target._setup_messages["Page.setEmulatedMedia"] == {"media": ""}
 
 
+async def test_javascript_errors_become_runtime_exception_thrown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WebKit reports uncaught exceptions, unhandled rejections and parse errors as error console
+    messages of source "javascript"; Chrome reports them as Runtime.exceptionThrown, the only form
+    VS Code's debugger renders. Lines and columns are 1-based in WebKit's message, 0-based in Chrome's."""
+    with offline_cdp_target(monkeypatch) as (target, _):
+        target._script_id_to_url["2308"] = ""
+        await target._console_message_added({
+            "method": "Console.messageAdded",
+            "params": {
+                "message": {
+                    "source": "javascript",
+                    "level": "error",
+                    "text": "TypeError: boom",
+                    "type": "log",
+                    "line": 3,
+                    "column": 23,
+                    "url": "undefined",
+                    "stackTrace": {
+                        "callFrames": [
+                            {
+                                "functionName": "later",
+                                "url": "undefined",
+                                "scriptId": "2308",
+                                "lineNumber": 3,
+                                "columnNumber": 23,
+                            },
+                            {"functionName": "", "url": "", "scriptId": "2308", "lineNumber": 1, "columnNumber": 84},
+                        ]
+                    },
+                }
+            },
+        })
+        event = target.output_queue.get_nowait()
+        assert event["method"] == "Runtime.exceptionThrown"
+        details = event["params"]["exceptionDetails"]
+        assert details["text"] == "Uncaught"
+        assert details["exception"] == {
+            "type": "object",
+            "subtype": "error",
+            "className": "TypeError",
+            "description": "TypeError: boom",
+        }
+        assert (details["lineNumber"], details["columnNumber"], details["url"], details["scriptId"]) == (
+            2,
+            22,
+            "",
+            "2308",
+        )
+        assert details["stackTrace"]["callFrames"][0] == {
+            "functionName": "later",
+            "scriptId": "2308",
+            "url": "",
+            "lineNumber": 2,
+            "columnNumber": 22,
+        }
+        assert target.output_queue.empty(), "the error must not also be reported as a Log entry"
+
+        await target._console_message_added({
+            "method": "Console.messageAdded",
+            "params": {
+                "message": {
+                    "source": "javascript",
+                    "level": "error",
+                    "text": "Unhandled Promise Rejection: Error: nope",
+                    "line": 1,
+                    "column": 15,
+                    "url": "",
+                }
+            },
+        })
+        details = target.output_queue.get_nowait()["params"]["exceptionDetails"]
+        assert details["text"] == "Uncaught (in promise)"
+        assert details["exception"]["description"] == "Error: nope"
+        assert details["exceptionId"] == 2
+
+        # Console output stays console output.
+        await target._console_message_added({
+            "method": "Console.messageAdded",
+            "params": {
+                "message": {
+                    "source": "console-api",
+                    "level": "error",
+                    "text": "plain",
+                    "type": "log",
+                    "parameters": [{"type": "string", "value": "plain"}],
+                }
+            },
+        })
+        assert target.output_queue.get_nowait()["method"] == "Runtime.consoleAPICalled"
+
+
+async def test_bindings_are_installed_per_context_and_calls_come_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Runtime.addBinding defines a page function whose calls surface as Runtime.bindingCalled;
+    it is (re)installed in every main-world context, including ones announced later, and the
+    console message that carries a call never reaches the client as console output."""
+    with offline_cdp_target(monkeypatch) as (target, sent):
+
+        def device_messages() -> list[dict[str, Any]]:
+            return [json.loads(m["params"]["message"]) for m in sent]
+
+        target._frame_execution_ids["page-1"] = 7
+        await target._runtime_add_binding({"id": 1, "method": "Runtime.addBinding", "params": {"name": "hook"}})
+        assert target.output_queue.get_nowait() == {"id": 1, "result": {}}
+        install = device_messages()[-1]
+        assert install["method"] == "Runtime.evaluate" and install["params"]["contextId"] == 7
+        assert 'globalThis["hook"]' in install["params"]["expression"]
+        assert "__pymobiledevice3_binding__" in install["params"]["expression"]
+
+        # A context created later gets the binding too, after its announcement.
+        del sent[:]
+        await target._runtime_execution_context_created({
+            "method": "Runtime.executionContextCreated",
+            "params": {"context": {"id": 9, "type": "normal", "frameId": "page-1", "name": ""}},
+        })
+        assert target.output_queue.get_nowait()["method"] == "Runtime.executionContextCreated"
+        assert device_messages()[-1]["params"]["contextId"] == 9
+
+        await target._console_message_added({
+            "method": "Console.messageAdded",
+            "params": {
+                "message": {
+                    "source": "console-api",
+                    "level": "debug",
+                    "type": "log",
+                    "text": "__pymobiledevice3_binding__",
+                    "parameters": [
+                        {"type": "string", "value": "__pymobiledevice3_binding__"},
+                        {"type": "string", "value": "hook"},
+                        {"type": "string", "value": '{"a":1}'},
+                        {"type": "number", "value": 9},
+                    ],
+                }
+            },
+        })
+        assert target.output_queue.get_nowait() == {
+            "method": "Runtime.bindingCalled",
+            "params": {"name": "hook", "payload": '{"a":1}', "executionContextId": 9},
+        }
+        assert target.output_queue.empty()
+
+        del sent[:]
+        await target._runtime_remove_binding({"id": 2, "method": "Runtime.removeBinding", "params": {"name": "hook"}})
+        assert target.output_queue.get_nowait() == {"id": 2, "result": {}}
+        assert all('delete globalThis["hook"]' in m["params"]["expression"] for m in device_messages())
+        assert "hook" not in target._bindings
+
+
+async def test_context_teardown_and_inspect_are_announced(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Runtime.executionContextDestroyed precedes executionContextsCleared on a reload and follows
+    a frame's detach; the console's inspect() becomes Runtime.inspectRequested."""
+    with offline_cdp_target(monkeypatch) as (target, _):
+        target._frame_execution_ids["page-1"] = 7
+        world = await target._announce_isolated_world("page-1", "utility")
+        target.output_queue.get_nowait()
+        await target._debugger_global_object_cleared({"method": "Debugger.globalObjectCleared", "params": {}})
+        methods = []
+        while not target.output_queue.empty():
+            methods.append(target.output_queue.get_nowait())
+        assert [m["method"] for m in methods] == [
+            "Runtime.executionContextDestroyed",
+            "Runtime.executionContextDestroyed",
+            "Runtime.executionContextsCleared",
+            "DOM.documentUpdated",
+        ]
+        assert methods[0]["params"] == {"executionContextId": world, "executionContextUniqueId": f"page-1.{world}"}
+        assert methods[1]["params"] == {"executionContextId": 7, "executionContextUniqueId": "page-1.7"}
+
+        await target._inspector_inspect({
+            "method": "Inspector.inspect",
+            "params": {"object": {"type": "object", "subtype": "node", "objectId": "x"}, "hints": {}},
+        })
+        assert target.output_queue.get_nowait() == {
+            "method": "Runtime.inspectRequested",
+            "params": {
+                "object": {"type": "object", "subtype": "node", "objectId": "x"},
+                "hints": {},
+                "executionContextId": 0,
+            },
+        }
+
+
+async def test_node_domains_are_acknowledged_with_empty_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An editor attaching "as Node" enables Node's own domains; WebKit has none, and Chrome's
+    protocol defines empty results for commands that return nothing."""
+    with offline_cdp_target(monkeypatch) as (target, sent):
+        for id_, (method, params) in enumerate(
+            [
+                ("NodeWorker.enable", {"waitForDebuggerOnStart": True}),
+                ("NodeRuntime.notifyWhenWaitingForDisconnect", {"enabled": True}),
+                ("Debugger.setAsyncCallStackDepth", {"maxDepth": 32}),
+            ],
+            start=1,
+        ):
+            await target.from_cdp_special_messages_methods[method]({"id": id_, "method": method, "params": params})
+            assert target.output_queue.get_nowait() == {"id": id_, "result": {}}, method
+        await target.from_cdp_special_messages_methods["NodeTracing.getCategories"]({
+            "id": 9,
+            "method": "NodeTracing.getCategories",
+            "params": {},
+        })
+        assert target.output_queue.get_nowait() == {"id": 9, "result": {"categories": []}}
+        assert sent == [], "nothing Node-specific may reach the device"
+
+
 async def test_a_frame_target_does_not_take_over_the_session(monkeypatch: pytest.MonkeyPatch) -> None:
     """WebKit announces site-isolated subframes as "frame" targets. Their backend implements a
     far smaller domain set than a page's - with site isolation off, no domains at all - so a
@@ -2947,5 +3151,224 @@ async def testp_cdp_server_emulates_user_preferences(lockdown: LockdownClient) -
             assert await preferences() == "false/false/false/true"
             await client.command(next(ids), "Emulation.setEmulatedMedia", {"media": "", "features": []})
             assert await preferences() == "false/false/false/false"
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_reports_the_node_inspector_events(lockdown: LockdownClient) -> None:
+    """
+    The events a Node.js inspector target emits and Chrome's debugger clients rely on, on a page:
+    an uncaught exception, an unhandled rejection and a parse error arrive as Runtime.exceptionThrown
+    (VS Code renders exceptions from nothing else), a Runtime.addBinding function calls back through
+    Runtime.bindingCalled, the console's inspect() becomes Runtime.inspectRequested, and a navigation
+    destroys the contexts it announced before clearing them.
+    """
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        ids = itertools.count(1)
+        events: list[dict[str, Any]] = []
+
+        async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+            id_ = next(ids)
+            await client.send({"id": id_, "method": method, "params": params})
+
+            async def wait() -> dict[str, Any]:
+                while True:
+                    message = await client.receive()
+                    if message.get("id") == id_:
+                        return message
+                    if "method" in message:
+                        events.append(message)
+
+            return await asyncio.wait_for(wait(), TIMEOUT)
+
+        async def drain(seconds: float) -> None:
+            end = asyncio.get_event_loop().time() + seconds
+            while True:
+                left = end - asyncio.get_event_loop().time()
+                if left <= 0:
+                    return
+                try:
+                    message = await asyncio.wait_for(client.receive(), left)
+                except asyncio.TimeoutError:
+                    return
+                if "method" in message:
+                    events.append(message)
+
+        def named(method: str) -> list[dict[str, Any]]:
+            return [e["params"] for e in events if e["method"] == method]
+
+        try:
+            for method in ("Page.enable", "Runtime.enable", "Debugger.enable", "Log.enable"):
+                await command(method, {})
+            await command("Page.navigate", {"url": "https://example.com/"})
+            await drain(3)
+            events.clear()
+
+            # An uncaught exception thrown on the third line of a timer callback.
+            await command(
+                "Runtime.evaluate",
+                {
+                    "expression": "setTimeout(function later() {\n  const a = 1;\n  throw new RangeError('line3');\n}, 10)"
+                },
+            )
+            await command("Runtime.evaluate", {"expression": "Promise.reject(new Error('nope'))"})
+            await drain(2)
+            thrown = named("Runtime.exceptionThrown")
+            assert len(thrown) == 2, thrown
+            # The rejection is reported before the timer fires; match by text, not order.
+            by_text = {t["exceptionDetails"]["text"]: t for t in thrown}
+            details = by_text["Uncaught"]["exceptionDetails"]
+            assert details["exception"]["description"] == "RangeError: line3"
+            assert details["exception"]["className"] == "RangeError"
+            assert details["lineNumber"] == 2, "Chrome counts lines from 0"
+            assert details["stackTrace"]["callFrames"][0]["functionName"] == "later"
+            assert details["url"] == "", "an evaluation has no URL; WebKit's 'undefined' must not leak"
+            assert by_text["Uncaught (in promise)"]["exceptionDetails"]["exception"]["description"] == "Error: nope"
+            assert not [e for e in named("Log.entryAdded") if e["entry"]["source"] == "javascript"], (
+                "exceptions must not be reported twice"
+            )
+
+            # A binding: install, call from the page, receive the call; survive a reload.
+            events.clear()
+            reply = await command("Runtime.addBinding", {"name": "toEditor"})
+            assert reply == {"id": reply["id"], "result": {}}
+            await drain(0.5)
+            reply = await command(
+                "Runtime.evaluate",
+                {"expression": "toEditor(JSON.stringify({n: 1})); typeof toEditor", "returnByValue": True},
+            )
+            assert reply["result"]["result"]["value"] == "function"
+            await drain(1)
+            calls = named("Runtime.bindingCalled")
+            assert calls and calls[0]["name"] == "toEditor" and calls[0]["payload"] == '{"n":1}', calls
+            assert not named("Runtime.consoleAPICalled"), "the binding's transport must not show as console output"
+
+            events.clear()
+            await command("Page.navigate", {"url": "https://example.com/?again"})
+            await drain(3)
+            methods = [e["method"] for e in events]
+            destroyed = methods.index("Runtime.executionContextDestroyed")
+            assert destroyed < methods.index("Runtime.executionContextsCleared"), methods
+            created = methods.index("Runtime.executionContextCreated", destroyed)
+            assert created > destroyed
+            reply = await command("Runtime.evaluate", {"expression": "typeof toEditor", "returnByValue": True})
+            assert reply["result"]["result"]["value"] == "function", "a binding outlives navigation, as in Chrome"
+
+            # inspect() from the console.
+            events.clear()
+            await command("Runtime.evaluate", {"expression": "inspect(document.body)", "includeCommandLineAPI": True})
+            await drain(1)
+            requested = named("Runtime.inspectRequested")
+            assert requested and requested[0]["object"]["className"] == "HTMLBodyElement", requested
+
+            await command("Runtime.removeBinding", {"name": "toEditor"})
+            await drain(0.5)
+            reply = await command("Runtime.evaluate", {"expression": "typeof toEditor", "returnByValue": True})
+            assert reply["result"]["result"]["value"] == "undefined"
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_binds_url_breakpoints_set_before_a_jscontext_script(lockdown: LockdownClient) -> None:
+    """
+    An editor sets its breakpoints by URL as soon as it attaches, before the script exists. A
+    JSContext script only gets its (synthetic) URL when it is parsed, so such a breakpoint could
+    not bind; the bridge now keeps it, binds it when the script appears, reports
+    Debugger.breakpointResolved as V8 would - and the breakpoint hits. (A bare JSContext has no
+    timers and reports no unhandled rejection through the console, so the exception path is
+    covered on a page, where WebKit does report them.)
+    """
+    async with cdp_server(lockdown) as (port, _):
+        targets = [target for target in await http_get_json(port, "/json/list") if target["type"] == "node"]
+        if not targets:
+            pytest.skip("no inspectable JSContext on the device")
+        for target in targets:
+            if await evaluate_and_log_in_javascript_context(port, target["id"]):
+                break
+        else:
+            pytest.skip("no listed JSContext answered the inspector")
+        client = CdpWebsocketClient(port, target["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        ids = itertools.count(1)
+        events: list[dict[str, Any]] = []
+
+        async def command(method: str, params: dict[str, Any]) -> dict[str, Any]:
+            id_ = next(ids)
+            await client.send({"id": id_, "method": method, "params": params})
+
+            async def wait() -> dict[str, Any]:
+                while True:
+                    message = await client.receive()
+                    if message.get("id") == id_:
+                        return message
+                    if "method" in message:
+                        events.append(message)
+
+            return await asyncio.wait_for(wait(), TIMEOUT)
+
+        async def until(method: str, seconds: float = 10) -> dict[str, Any]:
+            async def wait() -> dict[str, Any]:
+                while True:
+                    for event in events:
+                        if event["method"] == method:
+                            events.remove(event)
+                            return event["params"]
+                    message = await client.receive()
+                    if "method" in message:
+                        events.append(message)
+
+            return await asyncio.wait_for(wait(), seconds)
+
+        async def drain(seconds: float) -> None:
+            end = asyncio.get_event_loop().time() + seconds
+            while True:
+                left = end - asyncio.get_event_loop().time()
+                if left <= 0:
+                    return
+                try:
+                    message = await asyncio.wait_for(client.receive(), left)
+                except asyncio.TimeoutError:
+                    return
+                if "method" in message:
+                    events.append(message)
+
+        try:
+            await command("Runtime.enable", {})
+            await command("Debugger.enable", {})
+            await command("Debugger.setBreakpointsActive", {"active": True})
+            await drain(1.5)  # the context's existing scripts are announced on enable
+            events.clear()
+            # Learn the next script id from a throwaway evaluation: JSContext scripts are numbered
+            # consecutively, so the editor's breakpoint can target the script that follows.
+            await command("Runtime.evaluate", {"expression": "0"})
+            await drain(1)
+            parsed = [e["params"] for e in events if e["method"] == "Debugger.scriptParsed"]
+            next_id = int(parsed[-1]["scriptId"]) + 1
+            events.clear()
+            url = f"jscontext:///{next_id}.js"
+            reply = await command("Debugger.setBreakpointByUrl", {"url": url, "lineNumber": 1})
+            breakpoint_id = reply["result"]["breakpointId"]
+            assert reply["result"]["locations"] == [], "not bound yet: the script does not exist"
+
+            # The script defines a function; the breakpoint binds as it is parsed and hits when the
+            # function runs later (a one-shot evaluation would have finished before binding).
+            await command("Runtime.evaluate", {"expression": "function bpTarget() {\n  return 41 + 1;\n}\n'defined'"})
+            resolved = await until("Debugger.breakpointResolved")
+            assert resolved["breakpointId"] == breakpoint_id
+            assert resolved["location"]["scriptId"] == str(next_id) and resolved["location"]["lineNumber"] == 1
+            await client.send({"id": next(ids), "method": "Runtime.evaluate", "params": {"expression": "bpTarget()"}})
+            paused = await until("Debugger.paused")
+            location = paused["callFrames"][0]["location"]
+            assert (location["scriptId"], location["lineNumber"]) == (str(next_id), 1), location
+            await command("Debugger.resume", {})
+
+            reply = await command("Debugger.removeBreakpoint", {"breakpointId": breakpoint_id})
+            assert reply == {"id": reply["id"], "result": {}}
+            events.clear()
+            await command("Runtime.evaluate", {"expression": "bpTarget()", "returnByValue": True})
+            await drain(1)
+            assert not [e for e in events if e["method"] == "Debugger.paused"], "removed breakpoints must not hit"
         finally:
             await client.close()
