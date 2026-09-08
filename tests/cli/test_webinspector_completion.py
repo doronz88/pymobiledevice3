@@ -52,3 +52,41 @@ async def test_reserved_words_are_not_evaluated() -> None:
     completions = await _collect(completer, "x = await.")
     assert completions == []
     assert "exp" not in captured
+
+
+def test_get_access_logs_are_debug_only() -> None:
+    """The landing page polls GET /api/targets every second; those access lines are relabelled
+    DEBUG and dropped unless debug logging is on, while POSTs and the rest stay at their level."""
+    import logging
+
+    from pymobiledevice3.cli.webinspector import _GetAccessToDebug
+
+    access_filter = _GetAccessToDebug()
+
+    def record(method: str) -> logging.LogRecord:
+        return logging.LogRecord(
+            "uvicorn.access",
+            logging.INFO,
+            __file__,
+            0,
+            '%s - "%s %s HTTP/%s" %d',
+            ("127.0.0.1:1", method, "/api/targets", "1.1", 200),
+            None,
+        )
+
+    root = logging.getLogger()
+    previous = root.level
+    try:
+        root.setLevel(logging.INFO)
+        get_record = record("GET")
+        assert access_filter.filter(get_record) is False, "a GET access log is dropped at INFO"
+        assert get_record.levelno == logging.DEBUG and get_record.levelname == "DEBUG"
+
+        post_record = record("POST")
+        assert access_filter.filter(post_record) is True, "a POST access log is kept"
+        assert post_record.levelno == logging.INFO
+
+        root.setLevel(logging.DEBUG)
+        assert access_filter.filter(record("GET")) is True, "a GET access log is kept when debugging"
+    finally:
+        root.setLevel(previous)
