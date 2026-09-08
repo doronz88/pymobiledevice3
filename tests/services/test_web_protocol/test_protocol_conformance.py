@@ -44,7 +44,9 @@ FETCHER = REPO / "misc/protocol/fetch_protocols.py"
 
 inventory: Inventory = collect()
 webkit = load_spec("webkit")
-cdp = load_spec("cdp")
+# What a client may say: Chrome's protocol plus the domains Node.js adds to it, which editors
+# attaching "as Node" send to a JSContext.
+cdp = {**load_spec("cdp"), **load_spec("node")}
 
 
 def test_the_inventory_found_the_bridge() -> None:
@@ -62,7 +64,7 @@ def test_handled_cdp_methods_are_cdp_commands() -> None:
     unknown = sorted(
         m for m in inventory.client_handled if not in_commands(cdp, m) and m not in CDP_METHODS_NO_LONGER_IN_SPEC
     )
-    assert unknown == [], f"handled but not in Chrome's protocol: {unknown}"
+    assert unknown == [], f"handled but neither in Chrome's nor in Node's protocol: {unknown}"
     stale_allowlist = sorted(
         m for m in CDP_METHODS_NO_LONGER_IN_SPEC if in_commands(cdp, m) or m not in inventory.client_handled
     )
@@ -136,7 +138,7 @@ def test_every_protocol_name_in_the_bridge_belongs_to_a_spec() -> None:
 def fetcher_pins() -> dict[str, str]:
     source = FETCHER.read_text()
     pins: dict[str, str] = {}
-    for name in ("webkit", "cdp"):
+    for name in ("webkit", "cdp", "node"):
         match = re.search(rf'^{name.upper()}_COMMIT = "([0-9a-f]{{40}})"', source, re.M)
         assert match is not None, f"{name.upper()}_COMMIT pin missing from {FETCHER}"
         pins[name] = match.group(1)

@@ -168,7 +168,11 @@ def collect() -> Inventory:
                 if attr in WEBKIT_EVENT_TABLES:
                     for k in keys:
                         inv.webkit_events_handled[k] = attr
-                elif all(isinstance(v, (ast.Attribute, ast.Call, ast.Name)) for v in table_value.values):
+                elif all(
+                    isinstance(v, (ast.Attribute, ast.Call, ast.Name))
+                    for k, v in zip(table_value.keys, table_value.values)
+                    if k is not None  # a **{...} unpacking carries no literal key
+                ):
                     # any other Domain.name-keyed table of callables is a client handler table
                     for k in keys:
                         inv.client_handled.setdefault(k, attr)
