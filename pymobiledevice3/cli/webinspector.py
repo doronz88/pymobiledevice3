@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import inspect
 import logging
 import re
@@ -27,6 +29,7 @@ from typer_injector import InjectingTyper
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, prompt_selection
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
+    ConnectionTerminatedError,
     InspectorEvaluateError,
     LaunchingApplicationError,
     RemoteAutomationNotEnabledError,
@@ -473,6 +476,10 @@ async def cdp(
     default install location.
     """
     app.state.inspector = WebinspectorService(lockdown=service_provider)
+    # A device disconnect stops the bridge with a device-disconnected error, which
+    # pymobiledevice3's own --reconnect (a top-level option) then retries by re-running the command.
+    device_disconnected = asyncio.Event()
+    app.state.inspector.on_connection_lost = device_disconnected.set
     app.state.chrome_path = find_chrome(chrome)
     app.state.pause_new_targets = pause_new_targets
     recorder = ProtocolTrace(trace) if trace is not None else None
@@ -491,9 +498,21 @@ async def cdp(
             ws="wsproto",
         )
     )
+    serve_task = asyncio.ensure_future(server.serve())
+    disconnect_task = asyncio.ensure_future(device_disconnected.wait())
     try:
-        await server.serve()
+        await asyncio.wait({serve_task, disconnect_task}, return_when=asyncio.FIRST_COMPLETED)
+        if device_disconnected.is_set():
+            server.should_exit = True
+            await serve_task
+            # Raised to pymobiledevice3's top-level handler: with --reconnect it waits for the
+            # device and re-runs the command, otherwise it reports the disconnect and stops.
+            raise ConnectionTerminatedError("the device disconnected")
+        await serve_task
     finally:
+        disconnect_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await disconnect_task
         if recorder is not None:
             recorder.close()
 

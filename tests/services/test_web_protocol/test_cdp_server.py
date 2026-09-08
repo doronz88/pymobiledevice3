@@ -2,6 +2,7 @@ import asyncio
 import base64
 import itertools
 import json
+import logging
 import socket
 import threading
 import time
@@ -2819,6 +2820,46 @@ async def test_stepping_gets_a_synthesized_resumed_between_pauses(monkeypatch: p
         assert target.output_queue.empty()
 
 
+async def test_a_lost_device_connection_is_handled_gracefully() -> None:
+    """When the device restarts or disconnects, the Web Inspector socket dies. Serving the landing
+    page (get_open_pages) must not raise per request - it once spewed a traceback on every poll -
+    but note the loss, keep the last-known pages, and leave the bridge up to recover."""
+    inspector = WebinspectorService.__new__(WebinspectorService)
+    inspector._connection_lost = False
+    inspector.logger = logging.getLogger("test.webinspector")
+    inspector.connection_id = "CONN"
+    application = Application(
+        "PID:1", "com.example.app", 1, "App", AutomationAvailability.NOT_AVAILABLE, 1, False, True
+    )
+    page = Page.from_page_dictionary({
+        "WIRPageIdentifierKey": 1,
+        "WIRTypeKey": "WIRTypeWeb",
+        "WIRTitleKey": "Example",
+        "WIRURLKey": "https://example.com/",
+    })
+    inspector.connected_application = {"PID:1": application}
+    inspector.application_pages = {"PID:1": {1: page}}
+
+    class DeadService:
+        async def send_plist(self, _: Any) -> None:
+            raise ConnectionResetError("Connection lost")
+
+    inspector._service = DeadService()  # type: ignore[assignment]  # the `service` property returns this
+
+    disconnected: list[bool] = []
+    inspector.on_connection_lost = lambda: disconnected.append(True)
+
+    assert inspector.is_connected
+    pages = await inspector.get_open_pages()  # must not raise
+    assert inspector.is_connected is False, "the loss is noted"
+    assert list(pages) == ["App"] and list(pages["App"]) == [page], "the last-known pages are still served"
+    assert disconnected == [True], "with no reconnect wired, the loss fires on_connection_lost (the bridge fails fast)"
+
+    # A further send while lost is a quiet no-op, not another failure or a repeated callback.
+    await inspector._send_message("_rpc_forwardGetListing:", {"WIRApplicationIdentifierKey": "PID:1"})
+    assert disconnected == [True]
+
+
 async def test_a_paused_stack_drops_webkit_native_frames(monkeypatch: pytest.MonkeyPatch) -> None:
     """WebKit puts a native entry frame - scriptId "0", lineNumber -1 - at the bottom of a paused
     call stack. Chrome's protocol has no such frame and js-debug/WebStorm build the stack strictly;
@@ -3255,6 +3296,7 @@ def _landing_page_app() -> Any:
             self.application_pages: dict[str, dict[str, Page]] = {}
             self.connected_application: dict[str, Application] = {}
             self.indicated: list[tuple[str, int, bool]] = []
+            self.is_connected = True
 
         async def get_open_pages(self) -> None:
             pass
