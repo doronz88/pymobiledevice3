@@ -631,6 +631,7 @@ class CdpTarget:
             "Debugger.scriptParsed": self._debugger_script_parsed,
             "Debugger.scriptFailedToParse": self._debugger_script_failed_to_parse,
             "Debugger.paused": self._debugger_paused,
+            "Debugger.resumed": self._debugger_resumed,
             "Debugger.globalObjectCleared": self._debugger_global_object_cleared,
             "Runtime.executionContextCreated": self._runtime_execution_context_created,
             "Console.messageAdded": self._console_message_added,
@@ -665,6 +666,11 @@ class CdpTarget:
         # Scripts WebKit reports that are its own inspector machinery (the InjectedScript that runs
         # console evaluations), not the debuggee's. Their frames are stripped from a paused stack.
         self._internal_script_ids: set[str] = set()
+        # Whether the client currently believes execution is paused. WebKit emits no
+        # Debugger.resumed when a step resumes-then-repauses (verified: it sends zero of them),
+        # so the client would see paused-after-paused; V8 always alternates paused/resumed, and
+        # WebStorm's step machine waits for the resumed and will not step again without it.
+        self._client_debugger_paused = False
         # For a flat JSContext: the synthetic URL handed to the frontend for a URL-less script ->
         # the script's id. Lets a URL breakpoint (how editors set breakpoints) be turned into a
         # scriptId-location breakpoint, the only kind that binds on a URL-less script.
@@ -3457,10 +3463,23 @@ class CdpTarget:
                 # WebKit names the defining position `location`; Chrome calls it `startLocation`.
                 if "location" in scope:
                     scope["startLocation"] = scope.pop("location")
+        if self._client_debugger_paused:
+            # A step resumed then repaused without WebKit announcing the resume; keep the client's
+            # paused/resumed alternation intact so its stepping does not stall.
+            await self.output_queue.put({"method": "Debugger.resumed"})
+        self._client_debugger_paused = True
         await self.output_queue.put(message)
+
+    async def _debugger_resumed(self, message: dict[str, Any]):
+        # Only meaningful when the client thinks it is paused; a stray resumed otherwise would
+        # break the alternation the synthesized one (see _debugger_paused) maintains.
+        if self._client_debugger_paused:
+            self._client_debugger_paused = False
+            await self.output_queue.put(message)
 
     async def _debugger_global_object_cleared(self, message: dict[str, Any]):
         # Contexts are gone; allow their uniqueIds to be re-announced after the reload.
+        self._client_debugger_paused = False
         for frame_id in list(self._frame_execution_ids):
             await self._destroy_frame_contexts(frame_id)
         self._emitted_context_unique_ids.clear()

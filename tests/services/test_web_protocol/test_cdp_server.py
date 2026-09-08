@@ -2689,6 +2689,48 @@ async def test_user_preference_overrides_are_translated_and_replayed(monkeypatch
         assert target._setup_messages["Page.setEmulatedMedia"] == {"media": ""}
 
 
+async def test_stepping_gets_a_synthesized_resumed_between_pauses(monkeypatch: pytest.MonkeyPatch) -> None:
+    """WebKit emits no Debugger.resumed when a step resumes then repauses (it sends none at all),
+    so a client would see paused-after-paused; V8 always alternates, and WebStorm's step machine
+    waits for the resumed and will not step again without it. The bridge injects one before a pause
+    the client is not expecting, keeping the paused/resumed alternation."""
+
+    async def a_pause(line: int) -> dict[str, Any]:
+        return {
+            "method": "Debugger.paused",
+            "params": {
+                "reason": "other",
+                "callFrames": [
+                    {
+                        "callFrameId": "cf",
+                        "functionName": "f",
+                        "location": {"scriptId": "9", "lineNumber": line, "columnNumber": 0},
+                    }
+                ],
+            },
+        }
+
+    with offline_cdp_target(monkeypatch) as (target, _):
+        target._script_id_to_url["9"] = "x.js"
+
+        await target._debugger_paused(await a_pause(1))
+        assert target.output_queue.get_nowait()["method"] == "Debugger.paused", "the first pause stands alone"
+        assert target.output_queue.empty()
+
+        # A step: WebKit sends only the next pause. The bridge precedes it with a resumed.
+        await target._debugger_paused(await a_pause(2))
+        assert target.output_queue.get_nowait() == {"method": "Debugger.resumed"}
+        assert target.output_queue.get_nowait()["params"]["callFrames"][0]["location"]["lineNumber"] == 2
+        assert target.output_queue.empty()
+
+        # A real resumed from the device (an explicit resume-to-run) is forwarded once and clears.
+        await target._debugger_resumed({"method": "Debugger.resumed"})
+        assert target.output_queue.get_nowait() == {"method": "Debugger.resumed"}
+        # A stray resumed while the client is already running is dropped (would break alternation).
+        await target._debugger_resumed({"method": "Debugger.resumed"})
+        assert target.output_queue.empty()
+
+
 async def test_a_paused_stack_drops_webkit_native_frames(monkeypatch: pytest.MonkeyPatch) -> None:
     """WebKit puts a native entry frame - scriptId "0", lineNumber -1 - at the bottom of a paused
     call stack. Chrome's protocol has no such frame and js-debug/WebStorm build the stack strictly;
