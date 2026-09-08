@@ -91,7 +91,7 @@ MOUSEMOVE_MIN_INTERVAL = 0.08
 
 # CDP domains WebKit does not implement at all. Any method in these that isn't specially
 # translated is acknowledged with an empty response instead of being forwarded (and erroring).
-NOOP_ABSENT_DOMAINS = frozenset({"Input", "Overlay"})
+NOOP_ABSENT_DOMAINS = frozenset({"Input", "Overlay", "Performance"})
 
 # Events WebKit's Web Inspector emits that have no counterpart in Chrome's protocol. Forwarding
 # them is at best noise (Chrome ignores unknown events) and at worst fatal: an unrecognized event
@@ -2696,8 +2696,38 @@ class CdpTarget:
             params["emulateUserGesture"] = bool(params.pop("userGesture"))
 
     async def _runtime_call_function_on(self, message: dict[str, Any]):
-        self._translate_user_gesture(message.setdefault("params", {}))
+        params = message.setdefault("params", {})
+        self._translate_user_gesture(params)
+        if "objectId" not in params:
+            # Chrome lets callFunctionOn target a bare execution context (executionContextId /
+            # uniqueContextId); WebKit requires an object to call the function on. Resolve the
+            # context's global object and call on it - what Chrome does under the hood, and what
+            # Puppeteer's page.evaluate relies on.
+            object_id = await self._context_global_object_id(params.get("executionContextId"))
+            params.pop("executionContextId", None)
+            params.pop("uniqueContextId", None)
+            if object_id is not None:
+                params["objectId"] = object_id
+            else:
+                await self._error_response(
+                    message, {"code": -32000, "message": "callFunctionOn needs an object or a known execution context"}
+                )
+                return
         await self._send_message_to_target(message)
+
+    async def _context_global_object_id(self, context_id: Optional[int]) -> Optional[str]:
+        """The objectId of the global object of an execution context, for calling a function on it.
+
+        `context_id` absent, or the flat JSContext, means the one/default context."""
+        evaluate: dict[str, Any] = {"expression": "this"}
+        if isinstance(context_id, int):
+            real = self._real_context_id(context_id)
+            if real is not None:
+                evaluate["contextId"] = real
+        response = await self.send_message_with_result("Runtime.evaluate", evaluate)
+        result = response.get("result", {}).get("result", {})
+        object_id = result.get("objectId")
+        return object_id if isinstance(object_id, str) else None
 
     async def _runtime_compile_script(self, message: dict[str, Any]):
         self._script_source_to_context_id[message["params"]["expression"]] = message["params"]["executionContextId"]

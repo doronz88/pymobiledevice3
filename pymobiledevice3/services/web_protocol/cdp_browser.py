@@ -223,6 +223,7 @@ class CdpBrowser:
             "Target.attachToBrowserTarget": self._target_attach_to_browser_target,
             "Target.setDiscoverTargets": self._target_set_discover_targets,
             "Target.setAutoAttach": self._target_set_auto_attach,
+            "Target.getBrowserContexts": self._target_get_browser_contexts,
             "Target.getTargets": self._target_get_targets,
             "Target.getTargetInfo": self._target_get_target_info,
             "Target.attachToTarget": self._target_attach_to_target,
@@ -411,6 +412,12 @@ class CdpBrowser:
         else:
             await self._stop_waiting_for_new_targets()
         await self._reply(message, {})
+
+    async def _target_get_browser_contexts(self, message: dict[str, Any]) -> None:
+        # Only the default browser context exists (no incognito), and Chrome omits the default from
+        # this list, so it is empty. Puppeteer's connect iterates the result and fails on a missing
+        # array; a bare {} ack is not enough.
+        await self._reply(message, {"browserContextIds": []})
 
     async def _target_get_targets(self, message: dict[str, Any]) -> None:
         await self._refresh_targets()
