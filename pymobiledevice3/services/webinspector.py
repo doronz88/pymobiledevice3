@@ -207,6 +207,13 @@ class WebinspectorService(LockdownService):
             "_rpc_reportAutomaticInspectionCandidate:": self._handle_report_automatic_inspection_candidate,
         }
         self._recv_task: Optional[asyncio.Task[None]] = None
+        # Set once the device's Web Inspector connection drops (a restart, a cable pull). The
+        # listing endpoints then serve what was last known instead of raising per request; the
+        # bridge stays up rather than spewing a traceback on every landing-page poll.
+        self._connection_lost = False
+        # Called once when the connection drops, so the caller can act on it - the CDP bridge
+        # raises a device-disconnected error so pymobiledevice3's --reconnect can retry the command.
+        self.on_connection_lost: Optional[Callable[[], None]] = None
         # Queues handed out by subscribe_*: the receive task publishes into them without waiting,
         # so a subscriber that reacts by talking to the device (whose answers arrive through this
         # same receive task) never deadlocks it.
@@ -228,6 +235,24 @@ class WebinspectorService(LockdownService):
 
         await self._connect_or_raise_disabled()
         self._recv_task = asyncio.create_task(self._receiving_task())
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the device's Web Inspector connection is still up."""
+        return not self._connection_lost
+
+    @staticmethod
+    def _is_connection_lost(error: BaseException) -> bool:
+        return isinstance(
+            error, (ConnectionError, ConnectionTerminatedError, asyncio.IncompleteReadError, EOFError, OSError)
+        )
+
+    def _note_connection_lost(self, error: BaseException) -> None:
+        if not self._connection_lost:
+            self._connection_lost = True
+            self.logger.warning(f"Web Inspector connection to the device lost ({type(error).__name__})")
+            if self.on_connection_lost is not None:
+                self.on_connection_lost()
 
     async def close(self):
         """Cancel the background receive task and close the underlying service connection."""
@@ -301,8 +326,16 @@ class WebinspectorService(LockdownService):
             raise WebInspectorNotEnabledError from e
 
     async def _receiving_task(self):
-        while True:
-            await self._handle_recv(await self._recv_message())
+        try:
+            while True:
+                await self._handle_recv(await self._recv_message())
+        except asyncio.CancelledError:
+            raise
+        except BaseException as error:
+            if self._is_connection_lost(error):
+                self._note_connection_lost(error)
+                return
+            raise
 
     async def automation_session(self, app: Application) -> AutomationSession:
         """Start a WebDriver automation session against an application.
@@ -347,7 +380,11 @@ class WebinspectorService(LockdownService):
             only applications that currently report at least one page.
         """
         apps: dict[str, Any] = {}
-        await asyncio.gather(*[self._forward_get_listing(app) for app in self.connected_application])
+        # One failing listing (or a lost connection) must not break the whole answer; serve what
+        # was last reported instead.
+        await asyncio.gather(
+            *[self._forward_get_listing(app) for app in self.connected_application], return_exceptions=True
+        )
         for app in self.connected_application:
             if self.application_pages.get(app, False):
                 apps[self.connected_application[app].name] = self.application_pages[app].values()
@@ -691,7 +728,16 @@ class WebinspectorService(LockdownService):
         if args is None:
             args = {}
         args["WIRConnectionIdentifierKey"] = self.connection_id
-        await self.service.send_plist({"__selector": selector, "__argument": args})
+        # Never let a send establish the connection. While reconnecting, self._service is None and
+        # self.service would lazily run the handshake - a second reader on the socket the reconnect
+        # is already reading, which asyncio rejects ("readexactly() called while another coroutine
+        # is already waiting"). A send with no live service (lost, or mid-reconnect) is a no-op.
+        if self._connection_lost or self._service is None:
+            return
+        try:
+            await self._service.send_plist({"__selector": selector, "__argument": args})
+        except (ConnectionError, ConnectionTerminatedError, OSError, EOFError) as error:
+            self._note_connection_lost(error)
 
     def _page_by_automation_session(self, session_id: str) -> Page:
         for app_id in self.application_pages:
