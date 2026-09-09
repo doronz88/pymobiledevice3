@@ -60,6 +60,61 @@ def test_cli_from_python_m_with_invalid_option():
     assert "Traceback" not in result.stderr
 
 
+def test_cli_from_python_m_exits_zero_on_success():
+    """A genuinely successful command exits 0 via Typer's own SystemExit(0) on completion - not
+    anything invoke_cli_with_error_handling()/main() decide. `version` needs no device."""
+    result = subprocess.run(
+        [sys.executable, "-m", "pymobiledevice3", "version"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "Traceback" not in result.stderr
+
+
+def test_cli_from_python_m_exits_nonzero_on_typer_failure():
+    """A Typer usage error (the package path doesn't exist) is rejected before device resolution
+    is even attempted, and exits 2 - untouched by the invoke_cli_with_error_handling() fix below."""
+    result = subprocess.run(
+        [sys.executable, "-m", "pymobiledevice3", "apps", "install", "/no/such/package.ipa"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "does not exist" in ANSI_ESCAPE.sub("", result.stderr)
+
+
+def test_cli_from_python_m_exits_nonzero_on_logical_failure(tmp_path):
+    """Regression: Commands which failed because of internal CLI processing
+    exited 0, hiding the failure from scripts and CI. We test here that the CLI indicates a nonzero exit code on failure"""
+    package = tmp_path / "dummy.ipa"
+    package.touch()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pymobiledevice3",
+            "apps",
+            "install",
+            str(package),
+            "--developer",
+            "--udid",
+            "no-such-udid-123",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    # The specific handled exception depends on the environment (e.g. no usbmuxd daemon at all on
+    # a bare CI runner raises "Failed to connect to usbmuxd socket" instead of "Device not
+    # found") - what matters here is a clean, logged failure, not which one fired.
+    assert "Traceback" not in result.stderr
+
+
 def test_install_completion_uses_fish_for_xonsh_when_available(monkeypatch, tmp_path):
     monkeypatch.setattr(__main__, "_ORIGINAL_SHELLINGHAM_DETECT", lambda: ("xonsh", "/bin/xonsh"))
     monkeypatch.setattr(__main__.shutil, "which", lambda command: "/usr/bin/fish" if command == "fish" else None)
@@ -223,7 +278,7 @@ def test_reconnect_waits_for_the_target_device(monkeypatch):
 
         return _FakeLockdown()
 
-    invocations = iter([True, False])
+    invocations = iter([(__main__.ExitCode.ERROR, True), (__main__.ExitCode.SUCCESS, False)])
     monkeypatch.setattr(__main__, "invoke_cli_with_error_handling", lambda: next(invocations))
     monkeypatch.setattr(__main__, "RECONNECT", True)
     monkeypatch.setattr(__main__, "retry_create_using_usbmux", fake_retry_create_using_usbmux)
@@ -256,7 +311,7 @@ def test_reconnect_any_accepts_first_available_device(monkeypatch, caplog):
 
         return _FakeLockdown()
 
-    invocations = iter([True, False])
+    invocations = iter([(__main__.ExitCode.ERROR, True), (__main__.ExitCode.SUCCESS, False)])
     monkeypatch.setattr(__main__, "invoke_cli_with_error_handling", lambda: next(invocations))
     monkeypatch.setattr(__main__, "RECONNECT", True)
     monkeypatch.setattr(__main__, "retry_create_using_usbmux", fake_retry_create_using_usbmux)
@@ -287,7 +342,30 @@ def test_device_not_found_is_a_reconnectable_failure(monkeypatch):
         raise DeviceNotFoundError("TARGET-UDID")
 
     monkeypatch.setattr(__main__, "app", raise_not_found)
-    assert __main__.invoke_cli_with_error_handling() is True
+    assert __main__.invoke_cli_with_error_handling() == (__main__.ExitCode.ERROR, True)
+
+
+def test_non_reconnectable_error_fails_the_process(monkeypatch):
+    """A handled exception that isn't itself reconnectable (falls through to the bottom of
+    invoke_cli_with_error_handling()) must also fail the process, not just log a one-liner."""
+    from pymobiledevice3.exceptions import NotPairedError
+
+    def raise_not_paired(*args, **kwargs):
+        raise NotPairedError()
+
+    monkeypatch.setattr(__main__, "app", raise_not_paired)
+    monkeypatch.setattr(__main__, "RECONNECT", False)
+
+    assert __main__.main() == __main__.ExitCode.ERROR
+
+
+def test_app_returning_without_raising_is_a_success(monkeypatch):
+    """A command that returns without raising (a real Typer app instead exits earlier via its
+    own SystemExit(0)) must still resolve to ExitCode.SUCCESS."""
+    monkeypatch.setattr(__main__, "app", lambda *args, **kwargs: None)
+    monkeypatch.setattr(__main__, "RECONNECT", False)
+
+    assert __main__.main() == __main__.ExitCode.SUCCESS
 
 
 def test_tunneld_device_not_found_names_the_tunneld_instance(monkeypatch):
@@ -332,7 +410,7 @@ def test_native_tunnel_device_not_found_is_reconnectable(monkeypatch):
         )
 
     monkeypatch.setattr(__main__, "app", raise_not_found)
-    assert __main__.invoke_cli_with_error_handling() is True
+    assert __main__.invoke_cli_with_error_handling() == (__main__.ExitCode.ERROR, True)
 
 
 def test_reconnect_reuses_interactively_selected_device(monkeypatch):
@@ -355,7 +433,7 @@ def test_reconnect_reuses_interactively_selected_device(monkeypatch):
 
         return _FakeLockdown()
 
-    invocations = iter([True, False])
+    invocations = iter([(__main__.ExitCode.ERROR, True), (__main__.ExitCode.SUCCESS, False)])
     monkeypatch.setattr(__main__, "invoke_cli_with_error_handling", lambda: next(invocations))
     monkeypatch.setattr(__main__, "RECONNECT", True)
     monkeypatch.setattr(__main__, "retry_create_using_usbmux", fake_retry_create_using_usbmux)
