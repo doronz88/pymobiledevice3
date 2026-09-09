@@ -67,7 +67,8 @@ JavaScriptCore's own inspector: it implements the JavaScript half of the protoco
 it, so it has no URL and no DOM, page, or network domains.
 
 The landing page therefore opens them with Chrome's JavaScript-only DevTools frontend -
-the one Chrome uses for Node.js - which offers Console, Sources, and Memory. They are
+the one Chrome uses for Node.js - which offers Console, Sources, Memory and Performance
+(see [Memory and Performance panels](#memory-and-performance-panels)). They are
 advertised as `"type": "node"` in `/json`.
 
 A `JSContext` only answers the inspector while the thread hosting it services its run
@@ -82,6 +83,39 @@ as `Runtime.bindingCalled`; the console's `inspect()` becomes `Runtime.inspectRe
 the `NodeRuntime`, `NodeWorker` and `NodeTracing` domains an editor enables on attach are
 acknowledged (WebKit has none of them). A URL breakpoint set before its script exists binds and
 reports `Debugger.breakpointResolved` once the script loads, as it would against Node.js.
+
+## Memory and Performance panels
+
+WebKit records the same three things Chrome's profiling panels read - a heap snapshot,
+sampled call stacks and a log of main-thread work - in formats of its own, so the bridge
+converts them on the way to the frontend.
+
+**Memory panel.** *Take snapshot* and the *Collect garbage* button work on pages and
+JSContexts alike: the snapshot is WebKit's `Heap.snapshot` reshaped into V8's, with
+WebKit's class names as constructors, its property, index and variable edges as V8's
+property, element and context edges, and engine internals grouped under *(system)* and
+*(compiled code)* as V8's are. Object ids are WebKit's, so the console can still resolve
+an object picked in the snapshot. *Allocations on timeline* records through WebKit's
+`Heap.startTracking` and loads the closing snapshot; WebKit reports no live heap
+statistics, so the overview strip stays flat. *Allocation sampling* has no WebKit
+counterpart: starting it is refused (a protocol error), and since the panel starts a
+recording regardless, stopping it produces an empty profile.
+
+**CPU profiles.** The Sources panel's profiler and - on a JSContext - the Performance
+panel record through WebKit's `ScriptProfiler`; its samples become a
+Chrome call tree with 0-based locations, rooted at the outermost user frame (the frames of
+WebKit's own console machinery are dropped). WebKit samples at its own fixed interval;
+`Profiler.setSamplingInterval` is accepted and ignored.
+
+**Performance panel on a page.** A recording drives WebKit's `Timeline` (plus a
+`ScriptProfiler` recording for the flame chart) and delivers a Chrome trace when stopped:
+each WebKit rendering frame is a main-thread task, with function calls, script
+evaluations, timers, animation frames, style recalculation, layout, paint and composite
+nested inside it under Chrome's names, `console.time` spans and paint-timing marks as
+Chrome emits them, and screenshots (at most ten a second; WebKit captures every frame) when
+the panel's *Screenshots* box is ticked. There is
+no network, GPU or compositor-thread track: WebKit records only the page's main thread.
+A JSContext has no Timeline, so its Performance panel records a CPU profile only.
 
 ## VS Code
 

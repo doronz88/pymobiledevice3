@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import importlib.resources
 import json
 import shutil
@@ -15,7 +16,7 @@ from typing import Any, Optional
 from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, build_opener, urlopen
 
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.logger import logger
 from fastapi.responses import HTMLResponse, Response
 
@@ -1084,8 +1085,11 @@ async def page_debugger(websocket: WebSocket, page_id: str):
             await target.close()
             if taken_over.is_set():
                 # Close rather than leave it hanging: the superseded frontend shows a disconnect
-                # instead of silently going dead.
-                await websocket.close()
+                # instead of silently going dead. A client that reconnected in quick succession
+                # (taking its own previous session over) has often hung up already: Starlette
+                # then reports the disconnect, or refuses a second close.
+                with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+                    await websocket.close()
     finally:
         if PAGE_TAKEOVERS.get(page_id) is taken_over:
             del PAGE_TAKEOVERS[page_id]
