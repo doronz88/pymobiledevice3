@@ -98,7 +98,8 @@ property, element and context edges, and engine internals grouped under *(system
 an object picked in the snapshot. *Allocations on timeline* records through WebKit's
 `Heap.startTracking` and loads the closing snapshot; WebKit reports no live heap
 statistics, so the overview strip stays flat. *Allocation sampling* has no WebKit
-counterpart and is refused with a message the panel shows.
+counterpart: starting it is refused (a protocol error), and since the panel starts a
+recording regardless, stopping it produces an empty profile.
 
 **CPU profiles.** The Sources panel's profiler and - on a JSContext - the Performance
 panel record through WebKit's `ScriptProfiler`; its samples become a

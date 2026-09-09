@@ -117,6 +117,16 @@ TRACE_CATEGORIES = (
 )
 # Frames deeper than this are not attached to Timeline records (WebKit's maxCallStackDepth).
 TIMELINE_STACK_DEPTH = 20
+# What HeapProfiler.stopSampling answers: an allocation profile with nothing in it.
+EMPTY_SAMPLING_PROFILE: dict[str, Any] = {
+    "head": {
+        "callFrame": {"functionName": "(root)", "scriptId": "0", "url": "", "lineNumber": -1, "columnNumber": -1},
+        "selfSize": 0,
+        "id": 1,
+        "children": [],
+    },
+    "samples": [],
+}
 
 
 @dataclass
@@ -628,9 +638,14 @@ class CdpTarget:
             "HeapProfiler.getHeapObjectId": partial(
                 self._unsupported, reason="WebKit exposes no heap object id for a remote object"
             ),
+            # WebKit has no allocation sampling. Starting it is refused; the Memory panel ignores
+            # that answer and shows a recording anyway, then hangs at "Stopping..." if the stop is
+            # refused too, so stopping yields an empty profile instead.
             "HeapProfiler.startSampling": partial(self._unsupported, reason="WebKit has no allocation sampling"),
-            "HeapProfiler.stopSampling": partial(self._unsupported, reason="WebKit has no allocation sampling"),
-            "HeapProfiler.getSamplingProfile": partial(self._unsupported, reason="WebKit has no allocation sampling"),
+            "HeapProfiler.stopSampling": partial(self._result_response, result={"profile": EMPTY_SAMPLING_PROFILE}),
+            "HeapProfiler.getSamplingProfile": partial(
+                self._result_response, result={"profile": EMPTY_SAMPLING_PROFILE}
+            ),
             # Chrome's CPU profiler (the Performance panel of a JSContext, console.profile) on
             # WebKit's ScriptProfiler; the Performance panel of a page on WebKit's Timeline.
             "Profiler.disable": partial(self._simple_response, value=None),

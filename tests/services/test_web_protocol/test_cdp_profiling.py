@@ -2,12 +2,14 @@
 ScriptProfiler samples and Timeline records into V8's heap snapshot, CPU profile and trace-event
 formats. Checked against real payloads captured from a device (see profiling/README.md)."""
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from pymobiledevice3.services.web_protocol import cdp_target
 from pymobiledevice3.services.web_protocol.cdp_profiling import (
     V8_EDGE_FIELDS,
     V8_NODE_FIELDS,
@@ -608,13 +610,17 @@ async def test_heap_object_lookup_maps_onto_get_remote_object(monkeypatch: pytes
         assert _drain(target)[-1]["error"]["code"] == -32602
 
 
-async def test_allocation_sampling_is_refused_with_a_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_allocation_sampling_is_refused_and_stops_into_an_empty_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Memory panel ignores a refused start and shows a recording anyway; a refused stop
+    would leave it at "Stopping..." forever, so the stop yields an empty profile."""
     with offline_cdp_target(monkeypatch) as (target, sent):
         await _handle(target, {"id": 4, "method": "HeapProfiler.startSampling", "params": {}})
+        await _handle(target, {"id": 5, "method": "HeapProfiler.stopSampling", "params": {}})
         assert sent == []
-        (reply,) = _drain(target)
-    assert reply["id"] == 4 and reply["error"]["code"] == -32000
-    assert "allocation sampling" in reply["error"]["message"]
+        start, stop = _drain(target)
+    assert start["id"] == 4 and start["error"]["code"] == -32000
+    assert "allocation sampling" in start["error"]["message"]
+    assert stop["result"]["profile"]["samples"] == [] and stop["result"]["profile"]["head"]["children"] == []
 
 
 async def test_cpu_profile_is_built_from_the_samples_that_follow_the_stop(
@@ -735,3 +741,64 @@ async def test_timeline_events_outside_a_trace_are_dropped(monkeypatch: pytest.M
         await target._dispatch_target_message({"method": "Heap.garbageCollected", "params": {"collection": {}}})
         await target._dispatch_target_message({"method": "ScriptProfiler.trackingUpdate", "params": {"event": {}}})
         assert _drain(target) == []
+
+
+@pytest.mark.parametrize(
+    ("method", "device_method"),
+    [("Profiler.stop", "ScriptProfiler.stopTracking"), ("HeapProfiler.stopTrackingHeapObjects", "Heap.stopTracking")],
+)
+async def test_a_stop_webkit_never_completes_is_answered_with_an_error(
+    monkeypatch: pytest.MonkeyPatch, method: str, device_method: str
+) -> None:
+    """WebKit acknowledged the stop but the completing event (trackingComplete) never came:
+    the client must not hang on a request forever."""
+    monkeypatch.setattr(cdp_target, "PROFILING_STOP_TIMEOUT", 0.05)
+    with offline_cdp_target(monkeypatch) as (target, sent):
+        start = "Profiler.start" if method == "Profiler.stop" else "HeapProfiler.startTrackingHeapObjects"
+        await _handle(target, {"id": 1, "method": start, "params": {}})
+        await _handle(target, {"id": 2, "method": method, "params": {}})
+        assert _device_messages(sent)[-1]["method"] == device_method
+        await target._dispatch_target_message({"id": 2, "result": {}})
+        assert _drain(target) == []
+        await asyncio.sleep(0.2)
+        (reply,) = _drain(target)
+    assert reply["id"] == 2 and reply["error"]["code"] == -32000
+    assert "did not deliver" in reply["error"]["message"]
+    assert target._profile is None and target._heap_tracking is None
+
+
+async def test_a_trace_webkit_never_finishes_is_delivered_from_what_was_recorded(
+    monkeypatch: pytest.MonkeyPatch, timeline_events: list[dict[str, Any]]
+) -> None:
+    monkeypatch.setattr(cdp_target, "PROFILING_STOP_TIMEOUT", 0.05)
+    with offline_cdp_target(monkeypatch) as (target, _sent):
+
+        async def fake_result(method: str, params: dict[str, Any], *args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"result": {}}
+
+        monkeypatch.setattr(target, "send_message_with_result", fake_result)
+        await _handle(target, {"id": 1, "method": "Tracing.start", "params": {}})
+        for event in timeline_events:
+            if event["method"] in ("Timeline.recordingStarted", "Timeline.eventRecorded"):
+                await target._dispatch_target_message(event)
+        await _handle(target, {"id": 2, "method": "Tracing.end", "params": {}})
+        assert [m.get("id") for m in _drain(target)] == [1, 2]
+        await asyncio.sleep(0.2)
+        out = _drain(target)
+    assert [m["method"] for m in out] == ["Tracing.dataCollected", "Tracing.tracingComplete"]
+    names = {event["name"] for event in out[0]["params"]["value"]}
+    assert "RunTask" in names and "Profile" not in names, "the timeline made it, the never-delivered samples did not"
+    assert target._trace is None
+
+
+async def test_tracing_start_failure_leaves_no_recording_behind(monkeypatch: pytest.MonkeyPatch) -> None:
+    with offline_cdp_target(monkeypatch) as (target, _sent):
+
+        async def failing(method: str, params: dict[str, Any], *args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"error": {"code": -32000, "message": f"{method} refused"}}
+
+        monkeypatch.setattr(target, "send_message_with_result", failing)
+        await _handle(target, {"id": 1, "method": "Tracing.start", "params": {}})
+        (reply,) = _drain(target)
+    assert reply["error"]["message"] == "Timeline.enable refused"
+    assert target._trace is None and target._profile is None
