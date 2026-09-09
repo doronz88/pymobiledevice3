@@ -1,5 +1,6 @@
 import asyncio
 import difflib
+import enum
 import importlib
 import logging
 import os
@@ -150,6 +151,14 @@ CLI_GROUPS = {
 # Set if used the `--reconnect` option
 RECONNECT = False
 _ORIGINAL_SHELLINGHAM_DETECT: Optional[Callable[[], tuple[str, str]]] = None
+
+
+class ExitCode(enum.IntEnum):
+    """Process exit codes returned by `main()`."""
+
+    SUCCESS = 0
+    ERROR = 1
+    ABORTED = 130  # SIGINT convention: 128 + signal number
 
 
 def _detect_shell_for_completion() -> tuple[str, str]:
@@ -321,20 +330,23 @@ def product_version_needs_tunnel(product_version: str) -> bool:
     return Version(product_version) >= Version("17.0")
 
 
-def invoke_cli_with_error_handling() -> bool:
+def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
     """
-    Invoke the command line interface and return `True` if the failure reason of the command was that the device was
-    disconnected.
+    Invoke the command line interface once. Returns (exit_code, reconnectable) - reconnectable is
+    True when the failure was that the device disconnected, which keeps the `--reconnect` retry
+    loop alive. A successful command never reaches this function's own return statements: it
+    exits earlier, via the SystemExit that Typer's own `app(...)` call raises.
     """
+    reconnectable = False
     try:
         # Typer apps are callable; this executes the CLI with current sys.argv
         app(args=["--help"] if len(sys.argv) == 1 else None)
     except NoDeviceConnectedError:
         logger.error("Device is not connected")
-        return True
+        reconnectable = True
     except ConnectionTerminatedError:
         logger.error("Connection was terminated abruptly")
-        return True
+        reconnectable = True
     except NotPairedError:
         logger.error("Device is not paired")
     except UserDeniedPairingError:
@@ -353,7 +365,7 @@ def invoke_cli_with_error_handling() -> bool:
         logger.error("Failed to connect to usbmuxd socket. Make sure it's running.")
     except ConnectionFailedError:
         logger.error("Failed to connect to service port.")
-        return True
+        reconnectable = True
     except MessageNotSupportedError:
         logger.error("Message not supported for this iOS version")
         traceback.print_exc()
@@ -374,7 +386,7 @@ def invoke_cli_with_error_handling() -> bool:
         logger.error(str(e))
         # Reconnectable: after a disconnect the target device may still be re-enumerating
         # while other devices are attached, making re-invocation fail with this error.
-        return True
+        reconnectable = True
     except UserspaceTunnelUnavailableError as e:
         logger.error(str(e))
     except DeviceFeatureNotSupportedError as e:
@@ -419,8 +431,11 @@ def invoke_cli_with_error_handling() -> bool:
             # Target the same device the tunnel would otherwise resolve by default.
             if e.identifier and not os.getenv(UDID_ENV_VAR):
                 os.environ[UDID_ENV_VAR] = e.identifier
-            main()
-            return False
+            # main() only returns (rather than raising the SystemExit(0) a successful retry ends
+            # in) when the retried attempt also failed - propagate its actual exit code (e.g.
+            # ExitCode.ABORTED on Ctrl-C) instead of flattening it to a generic error.
+            exit_code = main()
+            return exit_code, False
         logger.error(INVALID_SERVICE_MESSAGE)
     except PasswordRequiredError:
         logger.error("Device is password protected. Please unlock and retry")
@@ -468,7 +483,11 @@ def invoke_cli_with_error_handling() -> bool:
         logger.error(f"File [{e.filename}] not found during afc operation: {e}")
     except AfcException as e:
         logger.error(f"Failed to perform Afc operation: {e}")
-    return False
+    else:
+        # No exception: in practice unreachable, since a real Typer app() raises SystemExit(0) on
+        # success before ever returning here
+        return ExitCode.SUCCESS, False
+    return ExitCode.ERROR, reconnectable
 
 
 def _retarget_reconnect_udid(udid: str) -> None:
@@ -482,13 +501,16 @@ def _retarget_reconnect_udid(udid: str) -> None:
     os.environ[UDID_ENV_VAR] = udid
 
 
-def main() -> None:
-    # Retry to invoke the CLI
-    while invoke_cli_with_error_handling():
-        # If reached here, this means the failure reason was that the device is disconnected
-        if not RECONNECT:
-            # If not invoked with the `--reconnect` option, break here
-            break
+def main() -> ExitCode:
+    """Returns the process exit code. A successful command exits earlier via the SystemExit that
+    Typer's own `app(...)` call raises, from within `invoke_cli_with_error_handling()`; this loop
+    only ever runs again (or returns ExitCode.ABORTED) once that call has already logged an
+    error."""
+    while True:
+        exit_code, reconnectable = invoke_cli_with_error_handling()
+        # Not a reconnectable failure, or not invoked with `--reconnect`: stop here.
+        if not reconnectable or not RECONNECT:
+            return exit_code
         try:
             logger.info("Waiting for the device to be available again")
             # Wait for the device the command targeted, not just any device. The target is the
@@ -517,8 +539,8 @@ def main() -> None:
             asyncio.run(lockdown.close())
         except KeyboardInterrupt:
             print("Aborted.")
-            break
+            return ExitCode.ABORTED
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
