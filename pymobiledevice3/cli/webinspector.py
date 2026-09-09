@@ -487,6 +487,13 @@ async def cdp(
         app.state.trace = recorder
         app.state.inspector.trace = recorder.device_hook
         typer.echo(f"Recording the protocol trace to {trace}")
+    # Connect before uvicorn owns the failure. The app's lifespan connects too (it is a no-op once
+    # this succeeded), but uvicorn runs the lifespan itself: an exception there is logged and
+    # turned into `sys.exit(3)`, which asyncio re-raises straight out of the event loop. A device
+    # that is rebooting when the bridge starts - exactly what `--reconnect` re-runs into - would
+    # kill the process before the top-level handler ever classified the error. Here it is an
+    # ordinary exception, and `--reconnect` waits for the device and re-runs the command.
+    await app.state.inspector.connect()
     print(f"Web Inspector ready. Open in Google Chrome: http://{host}:{port}/")
     logging.getLogger("uvicorn.access").addFilter(_GetAccessToDebug())
     server = uvicorn.Server(
