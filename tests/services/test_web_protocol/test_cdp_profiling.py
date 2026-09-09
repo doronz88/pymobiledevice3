@@ -18,6 +18,7 @@ from pymobiledevice3.services.web_protocol.cdp_profiling import (
     convert_samples_to_profile,
     profile_to_trace_events,
     snapshot_chunks,
+    thin_screenshots,
 )
 from tests.services.test_web_protocol.test_cdp_server import offline_cdp_target
 
@@ -471,6 +472,30 @@ def test_trace_embeds_the_cpu_profile_on_the_main_thread(
     assert [event["name"] for event in profile_events] == ["Profile", "ProfileChunk"]
     renderer_tid = next(e["tid"] for e in trace if e["ph"] == "M" and e["args"]["name"] == "CrRendererMain")
     assert all(event["pid"] == 419 and event["tid"] == renderer_tid for event in profile_events)
+
+
+def test_screenshots_are_thinned_to_one_per_interval() -> None:
+    """WebKit screenshots every rendering frame; a recording keeps one per interval."""
+
+    def frame(start: float) -> dict[str, Any]:
+        return {
+            "type": "RenderingFrame",
+            "startTime": start,
+            "endTime": start + 0.016,
+            "children": [
+                {"type": "Composite", "startTime": start, "endTime": start + 0.001},
+                {"type": "Screenshot", "startTime": start + 0.002, "endTime": start + 0.01, "data": {"imageData": "x"}},
+            ],
+        }
+
+    frames = [frame(1.0 + i * 0.016) for i in range(30)]  # ~half a second at 60 fps
+    last = float("-inf")
+    for record in frames:
+        last = thin_screenshots(record, last, interval=0.1)
+    kept = [child for record in frames for child in record["children"] if child["type"] == "Screenshot"]
+    assert len(kept) == 5, "one screenshot per 100 ms window survives"
+    assert all(len(record["children"]) >= 1 for record in frames), "the frame's other records stay"
+    assert kept[0]["startTime"] == frames[0]["children"][1]["startTime"], "the first screenshot is kept"
 
 
 def test_trace_of_an_empty_recording_still_announces_the_page() -> None:

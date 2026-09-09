@@ -112,7 +112,8 @@ WebKit's own console machinery are dropped). WebKit samples at its own fixed int
 each WebKit rendering frame is a main-thread task, with function calls, script
 evaluations, timers, animation frames, style recalculation, layout, paint and composite
 nested inside it under Chrome's names, `console.time` spans and paint-timing marks as
-Chrome emits them, and screenshots when the panel's *Screenshots* box is ticked. There is
+Chrome emits them, and screenshots (at most ten a second; WebKit captures every frame) when
+the panel's *Screenshots* box is ticked. There is
 no network, GPU or compositor-thread track: WebKit records only the page's main thread.
 A JSContext has no Timeline, so its Performance panel records a CPU profile only.
 

@@ -95,6 +95,12 @@ _CAT_CPU_PROFILE = "disabled-by-default-v8.cpu_profiler"
 _CAT_CONSOLE = "blink.console"
 _CAT_LOADING = "loading,rail,devtools.timeline"
 
+# WebKit's Screenshot instrument captures every rendering frame - up to 60 full-size PNGs a
+# second, tens of kilobytes each, which a long recording turns into hundreds of megabytes the
+# bridge must hold and the frontend must swallow. Chrome's filmstrip needs nothing like that
+# cadence; keep at most one screenshot per this many seconds.
+SCREENSHOT_INTERVAL = 0.1
+
 # Chrome's process/thread layout as the frontend's MetaHandler expects it: the browser process
 # announces tracing and the renderer's frames; the renderer's main thread carries the work.
 BROWSER_THREAD_ID = 1
@@ -430,6 +436,26 @@ def build_trace_events(
     # Parents before their children at the same instant, instants after the spans they fall in.
     events.sort(key=lambda event: (event["ts"], -event.get("dur", -1)))
     return events
+
+
+def thin_screenshots(record: dict[str, Any], last_kept: float, interval: float = SCREENSHOT_INTERVAL) -> float:
+    """Drop the Screenshot records nested in `record` that fall within `interval` seconds of the
+    last one kept, in place, and return the time of the last screenshot kept. Meant to run as
+    records arrive so a long recording does not pile up frames nobody will see."""
+    children: list[dict[str, Any]] = record.get("children", [])
+    kept: list[dict[str, Any]] = []
+    for child in children:
+        if child.get("type") == "Screenshot":
+            start = float(child.get("startTime", 0.0))
+            if start - last_kept < interval:
+                continue
+            last_kept = start
+        else:
+            last_kept = thin_screenshots(child, last_kept, interval)
+        kept.append(child)
+    if len(kept) != len(children):
+        record["children"] = kept
+    return last_kept
 
 
 def _metadata(name: str, pid: int, tid: int, value: str) -> dict[str, Any]:

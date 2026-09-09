@@ -17,6 +17,7 @@ from pymobiledevice3.services.web_protocol.cdp_profiling import (
     convert_heap_snapshot,
     convert_samples_to_profile,
     snapshot_chunks,
+    thin_screenshots,
 )
 from pymobiledevice3.services.web_protocol.cdp_screencast import ScreenCast
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
@@ -155,6 +156,8 @@ class TraceRecording:
     samples: Optional[dict[str, Any]] = None
     profile_start_time: Optional[float] = None
     profile_done: bool = False
+    # Time of the last screenshot kept (see thin_screenshots).
+    last_screenshot: float = float("-inf")
 
 
 @dataclass
@@ -4429,8 +4432,13 @@ class CdpTarget:
             self._trace.start_time = message.get("params", {}).get("startTime")
 
     async def _timeline_event_recorded(self, message: dict[str, Any]) -> None:
-        if self._trace is not None and not self._trace.timeline_stopped:
-            self._trace.records.append(message.get("params", {}).get("record", {}))
+        trace = self._trace
+        if trace is None or trace.timeline_stopped:
+            return
+        record = message.get("params", {}).get("record", {})
+        if trace.screenshots:
+            trace.last_screenshot = thin_screenshots(record, trace.last_screenshot)
+        trace.records.append(record)
 
     async def _timeline_recording_stopped(self, message: dict[str, Any]) -> None:
         trace = self._trace
