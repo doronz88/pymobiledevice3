@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import time
 import uuid
 from collections import deque
 from collections.abc import Coroutine
@@ -24,6 +25,10 @@ from pymobiledevice3.services.web_protocol.session_protocol import SessionProtoc
 
 SAFARI = "com.apple.mobilesafari"
 WEBINSPECTORD_DISABLED_NOTIFICATION = "com.apple.webinspectord.disabled"
+# How long webinspectord may keep refusing a session before it is taken to mean Web Inspector is
+# disabled, and how long to wait between attempts (see WebinspectorService._handshake).
+HANDSHAKE_RETRY_TIMEOUT = 20
+HANDSHAKE_RETRY_INTERVAL = 1
 
 
 def key_to_pid(key: str) -> int:
@@ -275,39 +280,55 @@ class WebinspectorService(LockdownService):
             if event.get("Name") == WEBINSPECTORD_DISABLED_NOTIFICATION:
                 raise WebInspectorNotEnabledError
 
-    async def _connect_service(self) -> None:
-        """Connect to webinspectord, waiting out the gate it puts on consecutive sessions.
-
-        A new session is admitted only about ten seconds after the previous one started: until
-        then webinspectord accepts the connection but never completes the TLS handshake. That is a
-        hair longer than DEFAULT_SSL_HANDSHAKE_TIMEOUT, so reattaching right after a session ended
-        - restarting the CDP bridge, or opening an automation session once inspection is done -
-        aborted the handshake and, since a disabled device also terminates the connection, was
-        reported as "Web Inspector is disabled". The attempt that timed out has already waited the
-        gate out, so a second one goes through.
-        """
-        try:
-            await super().connect()
-        except ConnectionTerminatedError as e:
-            if not isinstance(e.__cause__, ConnectionAbortedError):
-                # Terminated by the device rather than by our own handshake timeout.
-                raise
-            await super().connect()
-
     async def _connect_or_raise_disabled(self) -> None:
         async with NotificationProxyService(self.lockdown) as notification_proxy:
             await notification_proxy.notify_register_dispatch(WEBINSPECTORD_DISABLED_NOTIFICATION)
             disabled_task = asyncio.create_task(self._wait_for_disabled_notification(notification_proxy))
             try:
-                # Keep the disabled notification watcher active for the full WebInspector handshake. A disabled
-                # device may report either the explicit notification or an abrupt service termination.
-                await self._await_or_raise_disabled(self._connect_service(), disabled_task)
-                await self._await_or_raise_disabled(self._report_identifier(), disabled_task)
-                await self._handle_recv(await self._await_or_raise_disabled(self._recv_message(), disabled_task))
+                await self._handshake(disabled_task)
             finally:
                 disabled_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await disabled_task
+
+    async def _handshake(self, disabled_task: asyncio.Task[None]) -> None:
+        """Run the WebInspector handshake, retrying while webinspectord keeps refusing it.
+
+        webinspectord refuses a session by terminating the connection - accepting it and never
+        completing the TLS handshake, or closing it right after - and does so for three reasons
+        that look identical from here:
+
+        * Web Inspector is disabled on the device.
+        * The gate it puts on consecutive sessions has not elapsed: a new session is admitted only
+          about ten seconds after the previous one started, a hair longer than
+          DEFAULT_SSL_HANDSHAKE_TIMEOUT. Reattaching right after a session ended - restarting the
+          CDP bridge, or opening an automation session once inspection is done - hits this.
+        * It is not up yet because the device is still booting. `--reconnect` re-runs a command the
+          moment lockdownd answers again, which is seconds before webinspectord serves anything.
+
+        Only the first is permanent, so keep trying until the deadline and report the refusal as
+        Web Inspector being disabled only if it outlives it. A device that goes away mid-handshake
+        is reported as the disconnect it is, so that a caller which retries on a disconnect (the
+        CDP bridge under `--reconnect`) does. `disabled_task`, the device's own disabled
+        notification, ends the wait immediately.
+        """
+        deadline = time.monotonic() + HANDSHAKE_RETRY_TIMEOUT
+        while True:
+            try:
+                await self._await_or_raise_disabled(super().connect(), disabled_task)
+                await self._await_or_raise_disabled(self._report_identifier(), disabled_task)
+                await self._handle_recv(await self._await_or_raise_disabled(self._recv_message(), disabled_task))
+            except ConnectionTerminatedError as e:
+                if not await self._device_answers():
+                    raise
+                if time.monotonic() >= deadline:
+                    raise WebInspectorNotEnabledError from e
+            else:
+                return
+            self.logger.debug("webinspectord refused the session; retrying")
+            # Drop the refused connection so the next attempt starts a session of its own.
+            await self.close()
+            await asyncio.sleep(HANDSHAKE_RETRY_INTERVAL)
 
     async def _await_or_raise_disabled(self, coro: Coroutine[Any, Any, Any], disabled_task: asyncio.Task[None]):
         task = asyncio.create_task(coro)
@@ -320,10 +341,19 @@ class WebinspectorService(LockdownService):
             with contextlib.suppress(asyncio.CancelledError):
                 await task
             await disabled_task
+        return await task
+
+    async def _device_answers(self) -> bool:
+        """Whether lockdownd still answers.
+
+        A device that went away and one that refused the session both terminate the WebInspector
+        connection abruptly; only the one that is still there answers.
+        """
         try:
-            return await task
-        except ConnectionTerminatedError as e:
-            raise WebInspectorNotEnabledError from e
+            await self.lockdown.get_date()
+        except Exception:
+            return False
+        return True
 
     async def _receiving_task(self):
         try:

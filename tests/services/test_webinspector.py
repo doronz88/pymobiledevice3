@@ -1,3 +1,5 @@
+import asyncio
+import datetime
 import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -5,8 +7,10 @@ from typing import Any, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import WebInspectorNotEnabledError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, WebInspectorNotEnabledError
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.services import webinspector
+from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.services.webinspector import (
     SAFARI,
     Application,
@@ -188,3 +192,86 @@ async def testp_reattaching_immediately_after_a_session_succeeds(lockdown: Lockd
         assert reattached.connection_id
     finally:
         await reattached.close()
+
+
+class _ProbeableLockdown:
+    """A lockdown stand-in whose liveness probe answers or fails on demand."""
+
+    def __init__(self, answers: bool) -> None:
+        self.answers = answers
+
+    async def get_date(self) -> datetime.datetime:
+        if not self.answers:
+            raise ConnectionTerminatedError
+        return datetime.datetime.now()
+
+
+def _refusing_inspector(
+    monkeypatch: pytest.MonkeyPatch, lockdown: _ProbeableLockdown, refusals: int
+) -> tuple[WebinspectorService, list[int]]:
+    """A service whose handshake webinspectord refuses `refusals` times, with its attempt log."""
+    attempts: list[int] = []
+
+    async def connect(self: Any) -> None:
+        attempts.append(len(attempts))
+        if len(attempts) <= refusals:
+            raise ConnectionTerminatedError
+
+    async def handshake_step(*args: Any) -> None:
+        return None
+
+    monkeypatch.setattr(LockdownService, "connect", connect)
+    monkeypatch.setattr(webinspector, "HANDSHAKE_RETRY_INTERVAL", 0)
+    inspector = WebinspectorService(lockdown=cast(Any, lockdown))
+    monkeypatch.setattr(inspector, "_report_identifier", handshake_step)
+    monkeypatch.setattr(inspector, "_recv_message", handshake_step)
+    monkeypatch.setattr(inspector, "_handle_recv", handshake_step)
+    return inspector, attempts
+
+
+@asynccontextmanager
+async def _never_disabled() -> AsyncGenerator[Any, None]:
+    """The disabled-notification watcher of a device that never posts one."""
+    task = asyncio.create_task(asyncio.Event().wait())
+    try:
+        yield task
+    finally:
+        task.cancel()
+
+
+async def test_a_refused_handshake_is_retried_until_webinspectord_serves_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """webinspectord refuses a session it will not serve yet - the gate on consecutive sessions,
+    or a device that is still booting - exactly as a device with Web Inspector disabled does. Both
+    transient refusals clear within seconds, so the handshake is retried rather than reported."""
+    inspector, attempts = _refusing_inspector(monkeypatch, _ProbeableLockdown(answers=True), refusals=2)
+    async with _never_disabled() as disabled_task:
+        await inspector._handshake(disabled_task)
+    assert len(attempts) == 3
+
+
+async def test_a_refusal_that_outlives_the_deadline_reports_web_inspector_as_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The device is there and keeps refusing: that is Web Inspector being off."""
+    monkeypatch.setattr(webinspector, "HANDSHAKE_RETRY_TIMEOUT", 0)
+    inspector, attempts = _refusing_inspector(monkeypatch, _ProbeableLockdown(answers=True), refusals=1)
+    async with _never_disabled() as disabled_task:
+        with pytest.raises(WebInspectorNotEnabledError) as raised:
+            await inspector._handshake(disabled_task)
+    assert isinstance(raised.value.__cause__, ConnectionTerminatedError)
+    assert len(attempts) == 1
+
+
+async def test_a_disconnect_during_the_handshake_is_not_reported_as_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A device that goes away mid-handshake (a reboot, a cable pull) terminates the connection
+    just like one refusing the session does - but reporting it as disabled stops the callers that
+    would otherwise retry the disconnect (the CDP bridge under `--reconnect`)."""
+    inspector, attempts = _refusing_inspector(monkeypatch, _ProbeableLockdown(answers=False), refusals=1)
+    async with _never_disabled() as disabled_task:
+        with pytest.raises(ConnectionTerminatedError):
+            await inspector._handshake(disabled_task)
+    assert len(attempts) == 1
