@@ -1,0 +1,509 @@
+[
+ {
+  "method": "Timeline.recordingStarted",
+  "params": {
+   "startTime": 51014.65359758333
+  }
+ },
+ {
+  "method": "Timeline.eventRecorded",
+  "params": {
+   "record": {
+    "startTime": 51014.651016874996,
+    "data": {},
+    "children": [
+     {
+      "startTime": 51014.657267874994,
+      "stackTrace": {
+       "callFrames": [
+        {
+         "functionName": "setTimeout",
+         "url": "[native code]",
+         "scriptId": "0",
+         "lineNumber": 0,
+         "columnNumber": 0
+        },
+        {
+         "functionName": "global code",
+         "url": "",
+         "scriptId": "60",
+         "lineNumber": 1,
+         "columnNumber": 36
+        }
+       ]
+      },
+      "data": {
+       "timerId": 1,
+       "timeout": 50,
+       "singleShot": true
+      },
+      "type": "TimerInstall"
+     },
+     {
+      "startTime": 51014.657275541664,
+      "stackTrace": {
+       "callFrames": [
+        {
+         "functionName": "time",
+         "url": "[native code]",
+         "scriptId": "0",
+         "lineNumber": 0,
+         "columnNumber": 0
+        },
+        {
+         "functionName": "global code",
+         "url": "",
+         "scriptId": "60",
+         "lineNumber": 1,
+         "columnNumber": 184
+        }
+       ]
+      },
+      "data": {
+       "message": "t"
+      },
+      "type": "Time"
+     },
+     {
+      "startTime": 51014.659768541664,
+      "stackTrace": {
+       "callFrames": [
+        {
+         "functionName": "timeEnd",
+         "url": "[native code]",
+         "scriptId": "0",
+         "lineNumber": 0,
+         "columnNumber": 0
+        },
+        {
+         "functionName": "global code",
+         "url": "",
+         "scriptId": "60",
+         "lineNumber": 1,
+         "columnNumber": 261
+        }
+       ]
+      },
+      "data": {
+       "message": "t"
+      },
+      "type": "TimeEnd"
+     },
+     {
+      "startTime": 51014.660017375,
+      "data": {},
+      "children": [],
+      "endTime": 51014.660211166665,
+      "type": "Composite"
+     },
+     {
+      "startTime": 51014.66021233333,
+      "data": {
+       "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+      },
+      "children": [],
+      "endTime": 51014.66473475,
+      "type": "Screenshot"
+     }
+    ],
+    "endTime": 51014.664760291664,
+    "type": "RenderingFrame"
+   }
+  }
+ },
+ {
+  "method": "Timeline.eventRecorded",
+  "params": {
+   "record": {
+    "startTime": 51014.66481654166,
+    "data": {},
+    "children": [
+     {
+      "startTime": 51014.665830666665,
+      "data": {},
+      "children": [],
+      "endTime": 51014.665889874996,
+      "type": "Composite"
+     },
+     {
+      "startTime": 51014.66589033333,
+      "data": {
+       "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+      },
+      "children": [],
+      "endTime": 51014.67160725,
+      "type": "Screenshot"
+     }
+    ],
+    "endTime": 51014.67162954166,
+    "type": "RenderingFrame"
+   }
+  }
+ },
+ {
+  "method": "Timeline.eventRecorded",
+  "params": {
+   "record": {
+    "startTime": 51014.67167895833,
+    "data": {},
+    "children": [
+     {
+      "startTime": 51014.68252058333,
+      "data": {},
+      "children": [],
+      "endTime": 51014.682597499996,
+      "type": "Composite"
+     },
+     {
+      "startTime": 51014.682598374995,
+      "data": {
+       "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+      },
+      "children": [],
+      "endTime": 51014.6879585,
+      "type": "Screenshot"
+     }
+    ],
+    "endTime": 51014.68797925,
+    "type": "RenderingFrame"
+   }
+  }
+ },
+ {
+  "method": "Timeline.eventRecorded",
+  "params": {
+   "record": {
+    "startTime": 51014.68802295833,
+    "data": {},
+    "children": [
+     {
+      "startTime": 51014.69925083333,
+      "data": {},
+      "children": [],
+      "endTime": 51014.699338875,
+      "type": "Composite"
+     },
+     {
+      "startTime": 51014.699339666666,
+      "data": {
+       "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+      },
+      "children": [],
+      "endTime": 51014.704920625,
+      "type": "Screenshot"
+     }
+    ],
+    "endTime": 51014.70494525,
+    "type": "RenderingFrame"
+   }
+  }
+ },
+ {
+  "method": "Timeline.eventRecorded",
+  "params": {
+   "record": {
+    "startTime": 51014.704988708334,
+    "data": {},
+    "children": [
+     {
+      "startTime": 51014.70839845833,
+      "data": {
+       "timerId": 1
+      },
+      "children": [
+       {
+        "startTime": 51014.70840945833,
+        "data": {
+         "scriptName": "",
+         "scriptLine": 1,
+         "scriptColumn": 37
+        },
+        "children": [
+         {
+          "startTime": 51014.709019875,
+          "stackTrace": {
+           "callFrames": [
+            {
+             "functionName": "",
+             "url": "",
+             "scriptId": "60",
+             "lineNumber": 1,
+             "columnNumber": 62
+            }
+           ]
+          },
+          "data": {},
+          "type": "ScheduleStyleRecalculation"
+         },
+         {
+          "startTime": 51014.70903908333,
+          "stackTrace": {
+           "callFrames": [
+            {
+             "functionName": "requestAnimationFrame",
+             "url": "[native code]",
+             "scriptId": "0",
+             "lineNumber": 0,
+             "columnNumber": 0
+            },
+            {
+             "functionName": "",
+             "url": "",
+             "scriptId": "60",
+             "lineNumber": 1,
+             "columnNumber": 123
+            }
+           ]
+          },
+          "data": {
+           "id": 1
+          },
+          "type": "RequestAnimationFrame"
+         },
+         {
+          "startTime": 51014.709042291666,
+          "stackTrace": {
+           "callFrames": [
+            {
+             "functionName": "requestAnimationFrame",
+             "url": "[native code]",
+             "scriptId": "0",
+             "lineNumber": 0,
+             "columnNumber": 0
+            },
+            {
+             "functionName": "",
+             "url": "",
+             "scriptId": "60",
+             "lineNumber": 1,
+             "columnNumber": 123
+            }
+           ]
+          },
+          "data": {
+           "id": 2
+          },
+          "type": "RequestAnimationFrame"
+         },
+         {
+          "startTime": 51014.70904341667,
+          "stackTrace": {
+           "callFrames": [
+            {
+             "functionName": "requestAnimationFrame",
+             "url": "[native code]",
+             "scriptId": "0",
+             "lineNumber": 0,
+             "columnNumber": 0
+            },
+            {
+             "functionName": "",
+             "url": "",
+             "scriptId": "60",
+             "lineNumber": 1,
+             "columnNumber": 123
+            }
+           ]
+          },
+          "data": {
+           "id": 3
+          },
+          "type": "RequestAnimationFrame"
+         }
+        ],
+        "endTime": 51014.70905891666,
+        "type": "FunctionCall"
+       }
+      ],
+      "endTime": 51014.70905970833,
+      "type": "TimerFire"
+     },
+     {
+      "startTime": 51014.70908520833,
+      "data": {},
+      "children": [
+       {
+        "startTime": 51014.70914475,
+        "data": {},
+        "type": "InvalidateLayout"
+       }
+      ],
+      "endTime": 51014.70916708333,
+      "type": "RecalculateStyles"
+     },
+     {
+      "startTime": 51014.709183,
+      "data": {
+       "root": [
+        0,
+        0,
+        430,
+        0,
+        430,
+        775,
+        0,
+        775
+       ]
+      },
+      "children": [],
+      "endTime": 51014.70929608333,
+      "type": "Layout"
+     },
+     {
+      "startTime": 51014.716627999995,
+      "data": {
+       "id": 1
+      },
+      "children": [
+       {
+        "startTime": 51014.71663133333,
+        "data": {
+         "scriptName": "",
+         "scriptLine": 1,
+         "scriptColumn": 124
+        },
+        "children": [],
+        "endTime": 51014.7166725,
+        "type": "FunctionCall"
+       }
+      ],
+      "endTime": 51014.716672874994,
+      "type": "FireAnimationFrame"
+     },
+     {
+      "startTime": 51014.716673124996,
+      "data": {
+       "id": 2
+      },
+      "children": [
+       {
+        "startTime": 51014.7166735,
+        "data": {
+         "scriptName": "",
+         "scriptLine": 1,
+         "scriptColumn": 124
+        },
+        "children": [],
+        "endTime": 51014.716674083335,
+        "type": "FunctionCall"
+       }
+      ],
+      "endTime": 51014.71667420833,
+      "type": "FireAnimationFrame"
+     },
+     {
+      "startTime": 51014.71667429167,
+      "data": {
+       "id": 3
+      },
+      "children": [
+       {
+        "startTime": 51014.71667445833,
+        "data": {
+         "scriptName": "",
+         "scriptLine": 1,
+         "scriptColumn": 124
+        },
+        "children": [],
+        "endTime": 51014.71667479166,
+        "type": "FunctionCall"
+       }
+      ],
+      "endTime": 51014.716674874995,
+      "type": "FireAnimationFrame"
+     },
+     {
+      "startTime": 51014.716785624994,
+      "data": {},
+      "children": [
+       {
+        "startTime": 51014.716808791665,
+        "data": {
+         "clip": [
+          86,
+          122.234375,
+          390,
+          122.234375,
+          390,
+          458.234375,
+          86,
+          458.234375
+         ]
+        },
+        "children": [],
+        "endTime": 51014.716860333334,
+        "type": "Paint"
+       },
+       {
+        "startTime": 51014.71686729167,
+        "data": {
+         "clip": [
+          0,
+          0,
+          430,
+          0,
+          430,
+          775,
+          0,
+          775
+         ]
+        },
+        "children": [],
+        "endTime": 51014.716874499994,
+        "type": "Paint"
+       }
+      ],
+      "endTime": 51014.722019,
+      "type": "Composite"
+     },
+     {
+      "startTime": 51014.72202004166,
+      "data": {
+       "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+      },
+      "children": [],
+      "endTime": 51014.730508374996,
+      "type": "Screenshot"
+     }
+    ],
+    "endTime": 51014.73053204166,
+    "type": "RenderingFrame"
+   }
+  }
+ },
+ {
+  "method": "Timeline.eventRecorded",
+  "params": {
+   "record": {
+    "startTime": 51014.730613458334,
+    "data": {},
+    "children": [
+     {
+      "startTime": 51014.733397791664,
+      "data": {},
+      "children": [],
+      "endTime": 51014.733446875,
+      "type": "Composite"
+     },
+     {
+      "startTime": 51014.733447875,
+      "data": {
+       "imageData": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+      },
+      "children": [],
+      "endTime": 51014.74175816667,
+      "type": "Screenshot"
+     }
+    ],
+    "endTime": 51014.741782916666,
+    "type": "RenderingFrame"
+   }
+  }
+ },
+ {
+  "method": "Timeline.recordingStopped",
+  "params": {
+   "endTime": 51016.66380033333
+  }
+ }
+]

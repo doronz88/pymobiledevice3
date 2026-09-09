@@ -6,11 +6,18 @@ import json
 import logging
 import re
 from collections.abc import Awaitable
+from dataclasses import dataclass, field
 from datetime import datetime
 from functools import partial
 from typing import Any, Callable, Optional, cast
 
 from pymobiledevice3.exceptions import ScreencastUnavailableError
+from pymobiledevice3.services.web_protocol.cdp_profiling import (
+    build_trace_events,
+    convert_heap_snapshot,
+    convert_samples_to_profile,
+    snapshot_chunks,
+)
 from pymobiledevice3.services.web_protocol.cdp_screencast import ScreenCast
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
 from pymobiledevice3.services.webinspector import WirTypes, make_target_id
@@ -88,6 +95,67 @@ WEBKIT_INTERNAL_SCRIPT_MARKERS = ("__InjectedScript", INTERNAL_SCRIPT_URL)
 # round-trip floods webinspectord and pauses the receive loop, which - on a chatty page - starves
 # event delivery until the frontend wedges. Intermediate moves are acked and dropped.
 MOUSEMOVE_MIN_INTERVAL = 0.08
+
+# Seconds to wait for the event that completes a profiling stop (ScriptProfiler.trackingComplete,
+# Heap.trackingComplete, Timeline.recordingStopped) before answering the client without it.
+PROFILING_STOP_TIMEOUT = 15.0
+# Trace events per Tracing.dataCollected message.
+TRACE_EVENTS_PER_CHUNK = 2000
+# The category the Performance panel adds when its "Screenshots" box is ticked.
+SCREENSHOT_TRACE_CATEGORY = "disabled-by-default-devtools.screenshot"
+# Categories Tracing.getCategories advertises: what the bridge can actually record.
+TRACE_CATEGORIES = (
+    "devtools.timeline",
+    "disabled-by-default-devtools.timeline",
+    "disabled-by-default-devtools.timeline.frame",
+    "disabled-by-default-devtools.timeline.stack",
+    "disabled-by-default-v8.cpu_profiler",
+    SCREENSHOT_TRACE_CATEGORY,
+    "blink.console",
+    "loading",
+    "v8.execute",
+)
+# Frames deeper than this are not attached to Timeline records (WebKit's maxCallStackDepth).
+TIMELINE_STACK_DEPTH = 20
+
+
+@dataclass
+class ProfileRecording:
+    """A ScriptProfiler recording in flight, for Profiler.start/stop or as part of a trace."""
+
+    for_trace: bool = False
+    # ScriptProfiler.trackingStart's timestamp; the profile's start when no sample precedes it.
+    start_time: Optional[float] = None
+    # The client's Profiler.stop, answered once ScriptProfiler.trackingComplete delivers the samples.
+    stop_message: Optional[dict[str, Any]] = None
+    stop_acknowledged: bool = False
+
+
+@dataclass
+class TraceRecording:
+    """A Timeline recording in flight, for Tracing.start/end."""
+
+    screenshots: bool
+    records: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+    ending: bool = False
+    timeline_stopped: bool = False
+    # ScriptProfiler.trackingComplete's payload, once the CPU samples are in.
+    samples: Optional[dict[str, Any]] = None
+    profile_start_time: Optional[float] = None
+    profile_done: bool = False
+
+
+@dataclass
+class HeapTracking:
+    """An allocation-timeline recording (HeapProfiler.startTrackingHeapObjects) in flight."""
+
+    # The client's stopTrackingHeapObjects, answered once Heap.trackingComplete's snapshot is sent.
+    stop_message: Optional[dict[str, Any]] = None
+    stop_acknowledged: bool = False
+    complete: Optional[dict[str, Any]] = None
+
 
 # CDP domains WebKit does not implement at all. Any method in these that isn't specially
 # translated is acknowledged with an empty response instead of being forwarded (and erroring).
@@ -548,7 +616,30 @@ class CdpTarget:
             "Fetch.fulfillRequest": self._fetch_fulfill_request,
             "Fetch.failRequest": self._fetch_fail_request,
             "ServiceWorker.enable": self._service_worker_enable,
-            "HeapProfiler.enable": partial(self._simple_response, value=None),
+            # Chrome's Memory panel on WebKit's Heap domain (see cdp_profiling).
+            "HeapProfiler.enable": partial(self._forward_as, method="Heap.enable"),
+            "HeapProfiler.disable": partial(self._forward_as, method="Heap.disable"),
+            "HeapProfiler.collectGarbage": partial(self._forward_as, method="Heap.gc"),
+            "HeapProfiler.takeHeapSnapshot": self._heap_profiler_take_heap_snapshot,
+            "HeapProfiler.startTrackingHeapObjects": self._heap_profiler_start_tracking_heap_objects,
+            "HeapProfiler.stopTrackingHeapObjects": self._heap_profiler_stop_tracking_heap_objects,
+            "HeapProfiler.getObjectByHeapObjectId": self._heap_profiler_get_object_by_heap_object_id,
+            "HeapProfiler.addInspectedHeapObject": partial(self._simple_response, value=None),
+            "HeapProfiler.getHeapObjectId": partial(
+                self._unsupported, reason="WebKit exposes no heap object id for a remote object"
+            ),
+            "HeapProfiler.startSampling": partial(self._unsupported, reason="WebKit has no allocation sampling"),
+            "HeapProfiler.stopSampling": partial(self._unsupported, reason="WebKit has no allocation sampling"),
+            "HeapProfiler.getSamplingProfile": partial(self._unsupported, reason="WebKit has no allocation sampling"),
+            # Chrome's CPU profiler (the Performance panel of a JSContext, console.profile) on
+            # WebKit's ScriptProfiler; the Performance panel of a page on WebKit's Timeline.
+            "Profiler.disable": partial(self._simple_response, value=None),
+            "Profiler.setSamplingInterval": partial(self._simple_response, value=None),
+            "Profiler.start": self._profiler_start,
+            "Profiler.stop": self._profiler_stop,
+            "Tracing.start": self._tracing_start,
+            "Tracing.end": self._tracing_end,
+            "Tracing.getCategories": partial(self._result_response, result={"categories": list(TRACE_CATEGORIES)}),
             # Overlay is absent in WebKit; only highlightNode is worth translating, the rest are
             # acknowledged by the NOOP_ABSENT_DOMAINS fallback in _input_loop.
             "Overlay.highlightNode": self._overlay_highlight_node,
@@ -647,6 +738,18 @@ class CdpTarget:
             "Page.frameDetached": self._page_frame_detached,
             "Page.domContentEventFired": self._page_dom_content_event_fired,
             "Page.loadEventFired": self._page_load_event_fired,
+            # Profiling: WebKit's recordings complete through events Chrome has no counterpart
+            # for; each feeds the client request that is waiting on it (see cdp_profiling).
+            "Heap.garbageCollected": self._drop_event,
+            "Heap.trackingStart": self._drop_event,
+            "Heap.trackingComplete": self._heap_tracking_complete,
+            "ScriptProfiler.trackingStart": self._script_profiler_tracking_start,
+            "ScriptProfiler.trackingUpdate": self._drop_event,
+            "ScriptProfiler.trackingComplete": self._script_profiler_tracking_complete,
+            "Timeline.recordingStarted": self._timeline_recording_started,
+            "Timeline.recordingStopped": self._timeline_recording_stopped,
+            "Timeline.eventRecorded": self._timeline_event_recorded,
+            "Timeline.autoCaptureStarted": self._drop_event,
         }
         # JavaScriptCore's JSContext inspector implements no Target domain at all: nothing is
         # announced on attach, messages are exchanged as-is instead of through
@@ -753,6 +856,11 @@ class CdpTarget:
         self._holding_task: Optional[asyncio.Task[None]] = None
         # id of the adopting frontend's Debugger.enable; the held events follow its response.
         self._replay_after_id: Optional[int] = None
+        # Profiling recordings in flight (see cdp_profiling): one ScriptProfiler recording, one
+        # Timeline recording and one allocation timeline at a time, as in Chrome.
+        self._profile: Optional[ProfileRecording] = None
+        self._trace: Optional[TraceRecording] = None
+        self._heap_tracking: Optional[HeapTracking] = None
 
     def next_internal_id(self) -> int:
         """
@@ -4074,3 +4182,287 @@ class CdpTarget:
                 "responseHeaders": [{"name": str(k), "value": str(v)} for k, v in headers.items()],
             },
         })
+
+    # --- Profiling: Memory panel, CPU profiler and Performance panel ------------------------------
+
+    async def _drop_event(self, message: dict[str, Any]) -> None:
+        """A WebKit event Chrome has no counterpart for and the bridge nothing to do with."""
+
+    async def _unsupported(self, message: dict[str, Any], reason: str) -> None:
+        """Refuse a request with a reason the frontend can show, rather than the domain-not-found
+        error a raw forward to WebKit would produce."""
+        await self._error_response(message, {"code": -32000, "message": f"{message['method']}: {reason}"})
+
+    async def _forward_as(self, message: dict[str, Any], method: str, params: Optional[dict[str, Any]] = None) -> None:
+        """Forward a client request under WebKit's name for it; the reply (an empty result, or a
+        remote object under the same key as Chrome's) needs no translation."""
+        message["method"] = method
+        message["params"] = {} if params is None else params
+        await self._send_message_to_target(message)
+
+    async def _send_internal(self, method: str, params: Optional[dict[str, Any]] = None) -> None:
+        """Send the device a request whose reply the bridge does not need (it is dropped on
+        arrival, see _receive_loop), without holding the receive loop as send_message_with_result
+        does."""
+        await self._send_message_to_target(
+            {"id": self.next_internal_id(), "method": method, "params": params or {}}, record=False
+        )
+
+    async def _emit_heap_snapshot(self, snapshot_data: str, report_progress: bool) -> None:
+        """Deliver a WebKit heap snapshot as Chrome does: progress, then the chunks of the V8
+        document. The conversion is CPU-bound and can take a while on a large page, so it runs
+        off the event loop."""
+        loop = asyncio.get_running_loop()
+        snapshot = await loop.run_in_executor(None, lambda: convert_heap_snapshot(json.loads(snapshot_data)))
+        total = snapshot["snapshot"]["node_count"]
+        if report_progress:
+            await self._send_event("HeapProfiler.reportHeapSnapshotProgress", {"done": 0, "total": total})
+            await self._send_event(
+                "HeapProfiler.reportHeapSnapshotProgress", {"done": total, "total": total, "finished": True}
+            )
+        for chunk in snapshot_chunks(snapshot):
+            await self._send_event("HeapProfiler.addHeapSnapshotChunk", {"chunk": chunk})
+
+    async def _send_event(self, method: str, params: dict[str, Any]) -> None:
+        await self.output_queue.put({"method": method, "params": params})
+
+    async def _heap_profiler_take_heap_snapshot(self, message: dict[str, Any]) -> None:
+        report_progress = bool(message.get("params", {}).get("reportProgress"))
+
+        async def translate(reply: dict[str, Any]) -> None:
+            if "error" in reply:
+                await self._error_response(message, reply["error"])
+                return
+            await self._emit_heap_snapshot(reply.get("result", {}).get("snapshotData", "{}"), report_progress)
+            await self._simple_response(message, None)
+
+        await self._forward_and_translate(message, {"method": "Heap.snapshot", "params": {}}, translate)
+
+    async def _heap_profiler_start_tracking_heap_objects(self, message: dict[str, Any]) -> None:
+        self._heap_tracking = HeapTracking()
+        await self._forward_as(message, "Heap.startTracking")
+
+    async def _heap_profiler_stop_tracking_heap_objects(self, message: dict[str, Any]) -> None:
+        """WebKit answers Heap.stopTracking and, separately, delivers the closing snapshot as
+        Heap.trackingComplete; Chrome sends the snapshot before answering. Answer when both are
+        in, whichever order they arrive."""
+        tracking = self._heap_tracking
+        if tracking is None:
+            await self._unsupported(message, "no allocation timeline is being recorded")
+            return
+        tracking.stop_message = message
+
+        async def translate(reply: dict[str, Any]) -> None:
+            if "error" in reply:
+                self._heap_tracking = None
+                await self._error_response(message, reply["error"])
+                return
+            tracking.stop_acknowledged = True
+            await self._maybe_finish_heap_tracking(tracking)
+
+        await self._forward_and_translate(message, {"method": "Heap.stopTracking", "params": {}}, translate)
+        self._spawn(self._expire(PROFILING_STOP_TIMEOUT, self._finish_heap_tracking, tracking))
+
+    async def _heap_tracking_complete(self, message: dict[str, Any]) -> None:
+        tracking = self._heap_tracking
+        if tracking is None:
+            return
+        tracking.complete = message.get("params", {})
+        await self._maybe_finish_heap_tracking(tracking)
+
+    async def _maybe_finish_heap_tracking(self, tracking: HeapTracking) -> None:
+        if tracking.stop_acknowledged and tracking.complete is not None:
+            await self._finish_heap_tracking(tracking)
+
+    async def _finish_heap_tracking(self, tracking: HeapTracking) -> None:
+        if self._heap_tracking is not tracking or tracking.stop_message is None:
+            return
+        self._heap_tracking = None
+        stop = tracking.stop_message
+        if tracking.complete is None:
+            await self._unsupported(stop, "WebKit did not deliver the allocation timeline's snapshot")
+            return
+        report_progress = bool(stop.get("params", {}).get("reportProgress"))
+        await self._emit_heap_snapshot(tracking.complete.get("snapshotData", "{}"), report_progress)
+        await self._simple_response(stop, None)
+
+    async def _heap_profiler_get_object_by_heap_object_id(self, message: dict[str, Any]) -> None:
+        params = message.get("params", {})
+        try:
+            heap_object_id = int(params["objectId"])
+        except (KeyError, ValueError, TypeError):
+            await self._error_response(message, {"code": -32602, "message": "Invalid heap object id"})
+            return
+        webkit_params: dict[str, Any] = {"heapObjectId": heap_object_id}
+        if "objectGroup" in params:
+            webkit_params["objectGroup"] = params["objectGroup"]
+        await self._forward_as(message, "Heap.getRemoteObject", webkit_params)
+
+    async def _profiler_start(self, message: dict[str, Any]) -> None:
+        if self._profile is not None and not self._profile.for_trace:
+            await self._unsupported(message, "a profile is already being recorded")
+            return
+        self._profile = ProfileRecording()
+        await self._forward_as(message, "ScriptProfiler.startTracking", {"includeSamples": True})
+
+    async def _profiler_stop(self, message: dict[str, Any]) -> None:
+        """WebKit answers ScriptProfiler.stopTracking and, separately, delivers the samples as
+        ScriptProfiler.trackingComplete, which is what Profiler.stop's reply is built from."""
+        profile = self._profile
+        if profile is None or profile.for_trace:
+            await self._unsupported(message, "no profile is being recorded")
+            return
+        profile.stop_message = message
+
+        async def translate(reply: dict[str, Any]) -> None:
+            if "error" in reply:
+                self._profile = None
+                await self._error_response(message, reply["error"])
+                return
+            profile.stop_acknowledged = True
+
+        await self._forward_and_translate(message, {"method": "ScriptProfiler.stopTracking", "params": {}}, translate)
+        self._spawn(self._expire(PROFILING_STOP_TIMEOUT, self._finish_profile, profile, None))
+
+    async def _script_profiler_tracking_start(self, message: dict[str, Any]) -> None:
+        timestamp = message.get("params", {}).get("timestamp")
+        if self._profile is not None and isinstance(timestamp, (int, float)):
+            self._profile.start_time = float(timestamp)
+        if self._trace is not None and isinstance(timestamp, (int, float)):
+            self._trace.profile_start_time = float(timestamp)
+
+    async def _script_profiler_tracking_complete(self, message: dict[str, Any]) -> None:
+        params = message.get("params", {})
+        trace = self._trace
+        profile = self._profile
+        if profile is not None and profile.for_trace and trace is not None:
+            trace.samples = params.get("samples", {"stackTraces": []})
+            trace.profile_done = True
+            self._profile = None
+            await self._maybe_finish_trace(trace)
+            return
+        if profile is not None:
+            await self._finish_profile(profile, params)
+
+    async def _finish_profile(self, profile: ProfileRecording, params: Optional[dict[str, Any]]) -> None:
+        """Answer the client's Profiler.stop with the profile built from `params`
+        (ScriptProfiler.trackingComplete), or an error when WebKit never delivered it."""
+        if self._profile is not profile or profile.stop_message is None:
+            return
+        self._profile = None
+        stop = profile.stop_message
+        if params is None:
+            await self._unsupported(stop, "WebKit did not deliver the profile's samples")
+            return
+        samples = params.get("samples", {"stackTraces": []})
+        traces = samples.get("stackTraces", [])
+        end_time = float(params.get("timestamp", traces[-1]["timestamp"] if traces else 0.0))
+        start_time = profile.start_time
+        if start_time is None:
+            start_time = float(traces[0]["timestamp"]) if traces else end_time
+        converted = convert_samples_to_profile(samples, start_time, end_time, self._internal_script_ids)
+        await self._result_response(stop, {"profile": converted})
+
+    async def _tracing_start(self, message: dict[str, Any]) -> None:
+        """Start a Timeline recording plus a ScriptProfiler one for the CPU samples. Chrome's
+        JavaScript-only frontend profiles a JSContext through Profiler.start instead, which is
+        the only option there: JavaScriptCore's inspector has no Timeline domain."""
+        if self._flat:
+            await self._unsupported(message, "a JSContext has no Timeline; it is profiled through Profiler.start")
+            return
+        if self._trace is not None:
+            await self._unsupported(message, "tracing is already started")
+            return
+        params = message.get("params", {})
+        categories: list[str] = list(params.get("traceConfig", {}).get("includedCategories", []))
+        if not categories and isinstance(params.get("categories"), str):
+            categories = [category.strip() for category in params["categories"].split(",")]
+        trace = TraceRecording(screenshots=SCREENSHOT_TRACE_CATEGORY in categories)
+        self._trace = trace
+        self._profile = ProfileRecording(for_trace=True)
+        instruments = ["Timeline"] + (["Screenshot"] if trace.screenshots else [])
+        for method, webkit_params in (
+            ("Timeline.enable", {}),
+            ("Timeline.setInstruments", {"instruments": instruments}),
+            ("Timeline.start", {"maxCallStackDepth": TIMELINE_STACK_DEPTH}),
+            ("ScriptProfiler.startTracking", {"includeSamples": True}),
+        ):
+            reply = await self.send_message_with_result(method, webkit_params)
+            if "error" in reply:
+                self._trace = None
+                self._profile = None
+                await self._error_response(message, reply["error"])
+                return
+        await self._simple_response(message, None)
+
+    async def _tracing_end(self, message: dict[str, Any]) -> None:
+        """Stop both recordings; the trace is delivered (Tracing.dataCollected, then
+        tracingComplete) once Timeline.recordingStopped and ScriptProfiler.trackingComplete are
+        in - Chrome, too, answers Tracing.end before the data."""
+        trace = self._trace
+        if trace is None or trace.ending:
+            await self._unsupported(message, "tracing is not started")
+            return
+        trace.ending = True
+        await self._simple_response(message, None)
+        await self._send_internal("Timeline.stop")
+        await self._send_internal("ScriptProfiler.stopTracking")
+        self._spawn(self._expire(PROFILING_STOP_TIMEOUT, self._finish_trace, trace))
+
+    async def _timeline_recording_started(self, message: dict[str, Any]) -> None:
+        if self._trace is not None:
+            self._trace.start_time = message.get("params", {}).get("startTime")
+
+    async def _timeline_event_recorded(self, message: dict[str, Any]) -> None:
+        if self._trace is not None and not self._trace.timeline_stopped:
+            self._trace.records.append(message.get("params", {}).get("record", {}))
+
+    async def _timeline_recording_stopped(self, message: dict[str, Any]) -> None:
+        trace = self._trace
+        if trace is None:
+            return
+        trace.end_time = message.get("params", {}).get("endTime")
+        trace.timeline_stopped = True
+        await self._maybe_finish_trace(trace)
+
+    async def _maybe_finish_trace(self, trace: TraceRecording) -> None:
+        if trace.ending and trace.timeline_stopped and trace.profile_done:
+            await self._finish_trace(trace)
+
+    async def _finish_trace(self, trace: TraceRecording) -> None:
+        if self._trace is not trace:
+            return
+        self._trace = None
+        if self._profile is not None and self._profile.for_trace:
+            self._profile = None
+        await self._send_internal("Timeline.disable")
+        records = trace.records
+        first = float(records[0]["startTime"]) if records and "startTime" in records[0] else 0.0
+        start_time = float(trace.start_time) if trace.start_time is not None else first
+        end_time = float(trace.end_time) if trace.end_time is not None else start_time
+        profile = None
+        if trace.samples is not None:
+            profile_start = trace.profile_start_time if trace.profile_start_time is not None else start_time
+            profile = convert_samples_to_profile(trace.samples, profile_start, end_time, self._internal_script_ids)
+        loop = asyncio.get_running_loop()
+        events = await loop.run_in_executor(
+            None,
+            lambda: build_trace_events(
+                records,
+                start_time=start_time,
+                end_time=end_time,
+                pid=self.protocol.app.pid,
+                frame_id=self.frame_id,
+                url=self.protocol.page.web_url,
+                profile=profile,
+                screenshots=trace.screenshots,
+            ),
+        )
+        for start in range(0, len(events), TRACE_EVENTS_PER_CHUNK):
+            await self._send_event("Tracing.dataCollected", {"value": events[start : start + TRACE_EVENTS_PER_CHUNK]})
+        await self._send_event("Tracing.tracingComplete", {"dataLossOccurred": False})
+
+    async def _expire(self, delay: float, finish: Callable[..., Awaitable[None]], *args: Any) -> None:
+        """Run `finish` after `delay` seconds; a finish that already happened is a no-op."""
+        await asyncio.sleep(delay)
+        await finish(*args)

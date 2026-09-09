@@ -1,0 +1,1324 @@
+{
+ "timestamp": 46.16957812499459,
+ "samples": {
+  "stackTraces": [
+   {
+    "timestamp": 46.15609841666446,
+    "stackFrames": [
+     {
+      "sourceID": "2",
+      "name": "PrototypelessObjectBase",
+      "line": 3,
+      "column": 33,
+      "url": ""
+     },
+     {
+      "sourceID": "2",
+      "name": "InjectedScript",
+      "line": 63,
+      "column": 12,
+      "url": "",
+      "expressionLocation": {
+       "line": 63,
+       "column": 12
+      }
+     },
+     {
+      "sourceID": "2",
+      "name": "createInspectorInjectedScript",
+      "line": 1,
+      "column": 11,
+      "url": "",
+      "expressionLocation": {
+       "line": 1,
+       "column": 11
+      }
+     }
+    ]
+   },
+   {
+    "timestamp": 46.15733670833288,
+    "stackFrames": [
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 27
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "busy",
+      "line": 8,
+      "column": 14,
+      "url": "",
+      "expressionLocation": {
+       "line": 8,
+       "column": 69
+      }
+     },
+     {
+      "sourceID": "4",
+      "name": "(program)",
+      "line": 1,
+      "column": 1,
+      "url": "",
+      "expressionLocation": {
+       "line": 1,
+       "column": 5
+      }
+     },
+     {
+      "sourceID": "4294967295",
+      "name": "evaluateWithScopeExtension",
+      "line": -1,
+      "column": -1,
+      "url": ""
+     },
+     {
+      "sourceID": "2",
+      "name": "",
+      "line": 445,
+      "column": 80,
+      "url": "",
+      "expressionLocation": {
+       "line": 445,
+       "column": 80
+      }
+     },
+     {
+      "sourceID": "2",
+      "name": "_wrapCall",
+      "line": 452,
+      "column": 10,
+      "url": "",
+      "expressionLocation": {
+       "line": 452,
+       "column": 10
+      }
+     }
+    ]
+   },
+   {
+    "timestamp": 46.15876437499537,
+    "stackFrames": [
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 27
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "busy",
+      "line": 8,
+      "column": 14,
+      "url": "",
+      "expressionLocation": {
+       "line": 8,
+       "column": 69
+      }
+     },
+     {
+      "sourceID": "4",
+      "name": "(program)",
+      "line": 1,
+      "column": 1,
+      "url": "",
+      "expressionLocation": {
+       "line": 1,
+       "column": 5
+      }
+     },
+     {
+      "sourceID": "4294967295",
+      "name": "evaluateWithScopeExtension",
+      "line": -1,
+      "column": -1,
+      "url": ""
+     },
+     {
+      "sourceID": "2",
+      "name": "",
+      "line": 445,
+      "column": 80,
+      "url": "",
+      "expressionLocation": {
+       "line": 445,
+       "column": 80
+      }
+     },
+     {
+      "sourceID": "2",
+      "name": "_wrapCall",
+      "line": 452,
+      "column": 10,
+      "url": "",
+      "expressionLocation": {
+       "line": 452,
+       "column": 10
+      }
+     }
+    ]
+   },
+   {
+    "timestamp": 46.16057545832882,
+    "stackFrames": [
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 27
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "busy",
+      "line": 8,
+      "column": 14,
+      "url": "",
+      "expressionLocation": {
+       "line": 8,
+       "column": 69
+      }
+     },
+     {
+      "sourceID": "4",
+      "name": "(program)",
+      "line": 1,
+      "column": 1,
+      "url": "",
+      "expressionLocation": {
+       "line": 1,
+       "column": 5
+      }
+     },
+     {
+      "sourceID": "4294967295",
+      "name": "evaluateWithScopeExtension",
+      "line": -1,
+      "column": -1,
+      "url": ""
+     },
+     {
+      "sourceID": "2",
+      "name": "",
+      "line": 445,
+      "column": 80,
+      "url": "",
+      "expressionLocation": {
+       "line": 445,
+       "column": 80
+      }
+     },
+     {
+      "sourceID": "2",
+      "name": "_wrapCall",
+      "line": 452,
+      "column": 10,
+      "url": "",
+      "expressionLocation": {
+       "line": 452,
+       "column": 10
+      }
+     }
+    ]
+   },
+   {
+    "timestamp": 46.161862833330815,
+    "stackFrames": [
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 27
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "busy",
+      "line": 8,
+      "column": 14,
+      "url": "",
+      "expressionLocation": {
+       "line": 8,
+       "column": 69
+      }
+     },
+     {
+      "sourceID": "4",
+      "name": "(program)",
+      "line": 1,
+      "column": 1,
+      "url": "",
+      "expressionLocation": {
+       "line": 1,
+       "column": 5
+      }
+     },
+     {
+      "sourceID": "4294967295",
+      "name": "evaluateWithScopeExtension",
+      "line": -1,
+      "column": -1,
+      "url": ""
+     },
+     {
+      "sourceID": "2",
+      "name": "",
+      "line": 445,
+      "column": 80,
+      "url": "",
+      "expressionLocation": {
+       "line": 445,
+       "column": 80
+      }
+     },
+     {
+      "sourceID": "2",
+      "name": "_wrapCall",
+      "line": 452,
+      "column": 10,
+      "url": "",
+      "expressionLocation": {
+       "line": 452,
+       "column": 10
+      }
+     }
+    ]
+   },
+   {
+    "timestamp": 46.163390249996155,
+    "stackFrames": [
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 27
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "busy",
+      "line": 8,
+      "column": 14,
+      "url": "",
+      "expressionLocation": {
+       "line": 8,
+       "column": 69
+      }
+     },
+     {
+      "sourceID": "4",
+      "name": "(program)",
+      "line": 1,
+      "column": 1,
+      "url": "",
+      "expressionLocation": {
+       "line": 1,
+       "column": 5
+      }
+     },
+     {
+      "sourceID": "4294967295",
+      "name": "evaluateWithScopeExtension",
+      "line": -1,
+      "column": -1,
+      "url": ""
+     },
+     {
+      "sourceID": "2",
+      "name": "",
+      "line": 445,
+      "column": 80,
+      "url": "",
+      "expressionLocation": {
+       "line": 445,
+       "column": 80
+      }
+     },
+     {
+      "sourceID": "2",
+      "name": "_wrapCall",
+      "line": 452,
+      "column": 10,
+      "url": "",
+      "expressionLocation": {
+       "line": 452,
+       "column": 10
+      }
+     }
+    ]
+   },
+   {
+    "timestamp": 46.16520841666352,
+    "stackFrames": [
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 27
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "busy",
+      "line": 8,
+      "column": 14,
+      "url": "",
+      "expressionLocation": {
+       "line": 8,
+       "column": 69
+      }
+     },
+     {
+      "sourceID": "4",
+      "name": "(program)",
+      "line": 1,
+      "column": 1,
+      "url": "",
+      "expressionLocation": {
+       "line": 1,
+       "column": 5
+      }
+     },
+     {
+      "sourceID": "4294967295",
+      "name": "evaluateWithScopeExtension",
+      "line": -1,
+      "column": -1,
+      "url": ""
+     },
+     {
+      "sourceID": "2",
+      "name": "",
+      "line": 445,
+      "column": 80,
+      "url": "",
+      "expressionLocation": {
+       "line": 445,
+       "column": 80
+      }
+     },
+     {
+      "sourceID": "2",
+      "name": "_wrapCall",
+      "line": 452,
+      "column": 10,
+      "url": "",
+      "expressionLocation": {
+       "line": 452,
+       "column": 10
+      }
+     }
+    ]
+   },
+   {
+    "timestamp": 46.166565416664525,
+    "stackFrames": [
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 27
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 54
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "fib",
+      "line": 7,
+      "column": 13,
+      "url": "",
+      "expressionLocation": {
+       "line": 7,
+       "column": 41
+      }
+     },
+     {
+      "sourceID": "3",
+      "name": "busy",
+      "line": 8,
+      "column": 14,
+      "url": "",
+      "expressionLocation": {
+       "line": 8,
+       "column": 69
+      }
+     },
+     {
+      "sourceID": "4",
+      "name": "(program)",
+      "line": 1,
+      "column": 1,
+      "url": "",
+      "expressionLocation": {
+       "line": 1,
+       "column": 5
+      }
+     },
+     {
+      "sourceID": "4294967295",
+      "name": "evaluateWithScopeExtension",
+      "line": -1,
+      "column": -1,
+      "url": ""
+     },
+     {
+      "sourceID": "2",
+      "name": "",
+      "line": 445,
+      "column": 80,
+      "url": "",
+      "expressionLocation": {
+       "line": 445,
+       "column": 80
+      }
+     },
+     {
+      "sourceID": "2",
+      "name": "_wrapCall",
+      "line": 452,
+      "column": 10,
+      "url": "",
+      "expressionLocation": {
+       "line": 452,
+       "column": 10
+      }
+     }
+    ]
+   }
+  ]
+ }
+}
