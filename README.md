@@ -72,6 +72,8 @@ A huge thank you to our sponsors for supporting this project! 💖
 </a>
 <!-- markdownlint-enable MD013 -->
 
+[![TestingBot](https://github.com/testingbot.png?size=48)](https://testingbot.com) [**TestingBot**](https://testingbot.com)
+
 [![SmartDust](https://github.com/smartdust-me.png?size=48)](https://smartdust.me) [**SmartDust**](https://smartdust.me)
 
 [![AnNEDoMini](https://github.com/AnNEDoMini.png?size=48)](https://github.com/AnNEDoMini) [**AnNEDoMini**](https://github.com/AnNEDoMini)
