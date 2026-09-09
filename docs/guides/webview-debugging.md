@@ -276,10 +276,11 @@ Notes worth knowing when scripting against a device:
 - Everything is a USB round-trip, so per-call latency is far higher than against a
   local browser. Prefer a few coarse `evaluate()` calls over many fine-grained ones
   in a hot loop.
-- A page whose framework replaces the global `Promise` and minifies the replacement
-  (Angular with zone.js, for example) reports objects of that class without the
-  `promise` subtype, because the bridge recognises built-ins by their class name.
-  `await` still behaves; only code that inspects the subtype is affected.
+- A page whose framework replaces the global `Promise` with a class of its own (Angular
+  with zone.js, for example) is awaited like any other: a call made with `awaitPromise`
+  follows any thenable, as Chrome's does. Objects of that class carry no `promise`
+  subtype - neither Chrome nor the bridge tags anything but a native promise - so only
+  code that inspects the subtype sees a difference.
 
 ## Attaching before a page or context runs
 

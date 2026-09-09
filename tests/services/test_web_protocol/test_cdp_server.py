@@ -716,6 +716,91 @@ async def testp_cdp_server_reports_remote_object_subtypes(lockdown: LockdownClie
             await client.close()
 
 
+async def testp_cdp_server_awaits_a_thenable_for_a_client(lockdown: LockdownClient) -> None:
+    """
+    Chrome's awaitPromise follows any thenable, the way Promise.resolve does. WebKit awaits only a
+    native promise and hands anything else back unresolved - so a page that replaced the global
+    Promise with a class of its own (zone.js does, on every Angular app) answered a client's
+    awaited call with the promise object where the value should be. That is how Playwright's
+    page.screenshot() failed with `"undefined" is not valid JSON` (#1904).
+    """
+    # A stand-in for zone.js's ZoneAwarePromise: a class of the page's own, not a native promise
+    # (nor a subclass of one, whose instances would be), installed as the global Promise under a
+    # minified name. Parked on window so the page can be handed its real Promise back afterwards.
+    install_page_promise = (
+        "(() => {"
+        "  const Native = window.__pmd3NativePromise = window.Promise;"
+        "  class R {"
+        "    constructor(executor) { this._native = new Native(executor); }"
+        "    then(onFulfilled, onRejected) {"
+        "      return new R((resolve, reject) => this._native.then(onFulfilled, onRejected).then(resolve, reject));"
+        "    }"
+        "    static resolve(value) { return new R(resolve => resolve(value)); }"
+        "    static reject(reason) { return new R((_, reject) => reject(reason)); }"
+        "    get [Symbol.toStringTag]() { return 'Promise'; }"
+        "  }"
+        "  window.Promise = R;"
+        "  return Promise.name;"
+        "})()"
+    )
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        message_ids = itertools.count(1)
+
+        async def evaluate(expression: str) -> dict[str, Any]:
+            response = await client.command(
+                next(message_ids), "Runtime.evaluate", {"expression": expression, "returnByValue": True}
+            )
+            return response["result"]["result"]
+
+        try:
+            assert (await evaluate(install_page_promise)).get("value") == "R"
+            global_object = await client.command(next(message_ids), "Runtime.evaluate", {"expression": "this"})
+            object_id = global_object["result"]["result"]["objectId"]
+
+            async def call_awaited(function_declaration: str) -> dict[str, Any]:
+                response = await client.command(
+                    next(message_ids),
+                    "Runtime.callFunctionOn",
+                    {
+                        "functionDeclaration": function_declaration,
+                        "objectId": object_id,
+                        "awaitPromise": True,
+                        "returnByValue": True,
+                    },
+                )
+                return response["result"]
+
+            awaited = await call_awaited("function() { return Promise.resolve(42); }")
+            assert awaited["result"].get("value") == 42, f"a thenable must be awaited like a promise: {awaited}"
+            rejected = await call_awaited("function() { return Promise.reject(new Error('boom')); }")
+            assert rejected.get("wasThrown") is True, f"a rejected thenable must throw: {rejected}"
+            assert "boom" in rejected["result"].get("description", ""), rejected
+            # What WebKit already awaited, and what needs no awaiting, must come back unchanged.
+            native = await call_awaited("function() { return (async () => 43)(); }")
+            assert native["result"].get("value") == 43, native
+            plain = await call_awaited("function() { return 44; }")
+            assert plain["result"].get("value") == 44, plain
+            # `this` and the arguments must still reach the function as the client passed them.
+            response = await client.command(
+                next(message_ids),
+                "Runtime.callFunctionOn",
+                {
+                    "functionDeclaration": "function(a, b) { return Promise.resolve(this === window && a + b); }",
+                    "objectId": object_id,
+                    "arguments": [{"value": 20}, {"value": 22}],
+                    "awaitPromise": True,
+                    "returnByValue": True,
+                },
+            )
+            assert response["result"]["result"].get("value") == 42, response
+        finally:
+            with suppress(Exception):
+                await evaluate("window.Promise = window.__pmd3NativePromise; Promise.name")
+            await client.close()
+
+
 async def testp_cdp_server_types_text_into_the_page(lockdown: LockdownClient) -> None:
     """
     WebKit has no Input domain, so the bridge types in-page. Two shapes have to work, because a

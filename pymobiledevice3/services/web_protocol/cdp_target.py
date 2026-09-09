@@ -2832,9 +2832,34 @@ class CdpTarget:
         if "userGesture" in params:
             params["emulateUserGesture"] = bool(params.pop("userGesture"))
 
+    @staticmethod
+    def _adopt_thenable_result(function_declaration: str) -> str:
+        """Make a function whose result is any thenable hand WebKit a native promise to await.
+
+        Chrome's `awaitPromise` resolves the result the way `Promise.resolve` does, so a thenable
+        of any kind is followed. WebKit awaits only a native promise (`@isPromise` in
+        InjectedScriptSource.js) and returns anything else as-is - and a page that replaced the
+        global `Promise`, as zone.js does for every Angular app, hands back its own class. A client
+        that relied on the await then read the promise object where the value should be: that is
+        Playwright's `page.screenshot()` failing with `"undefined" is not valid JSON`.
+
+        Adopt the result through an async function: that always produces a native promise, whatever
+        the page did to its `Promise` binding, and settling it follows the thenable's `then`.
+        """
+        return (
+            "function() {"
+            f" const result = ({function_declaration}).apply(this, arguments);"
+            " if (result !== null && (typeof result === 'object' || typeof result === 'function')"
+            " && typeof result.then === 'function') { return (async () => result)(); }"
+            " return result;"
+            "}"
+        )
+
     async def _runtime_call_function_on(self, message: dict[str, Any]):
         params = message.setdefault("params", {})
         self._translate_user_gesture(params)
+        if params.get("awaitPromise") and isinstance(params.get("functionDeclaration"), str):
+            params["functionDeclaration"] = self._adopt_thenable_result(params["functionDeclaration"])
         if "objectId" not in params:
             # Chrome lets callFunctionOn target a bare execution context (executionContextId /
             # uniqueContextId); WebKit requires an object to call the function on. Resolve the
