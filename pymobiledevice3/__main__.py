@@ -501,11 +501,26 @@ def _retarget_reconnect_udid(udid: str) -> None:
     os.environ[UDID_ENV_VAR] = udid
 
 
+def tolerate_unencodable_output() -> None:
+    """Escape, instead of crash on, characters the console encoding cannot represent.
+
+    Device-supplied text (syslog lines, process names, bundle names, ...) can carry any code point,
+    while a Windows console frequently hands Python a cp1252 stdout. With the default
+    `errors="strict"` a single emoji in a syslog line raises UnicodeEncodeError from inside print()
+    (issue #1942). `backslashreplace` keeps the character recoverable (`\\U0001f600`) rather than
+    dropping it, and matches what Python already does for stderr."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="backslashreplace")
+
+
 def main() -> ExitCode:
     """Returns the process exit code. A successful command exits earlier via the SystemExit that
     Typer's own `app(...)` call raises, from within `invoke_cli_with_error_handling()`; this loop
     only ever runs again (or returns ExitCode.ABORTED) once that call has already logged an
     error."""
+    tolerate_unencodable_output()
     while True:
         exit_code, reconnectable = invoke_cli_with_error_handling()
         # Not a reconnectable failure, or not invoked with `--reconnect`: stop here.

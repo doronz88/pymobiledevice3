@@ -1,3 +1,4 @@
+import io
 import re
 import subprocess
 import sys
@@ -481,3 +482,24 @@ def test_lockdown_on_off_state_is_a_positional_argument(command):
     output = " ".join(ANSI_ESCAPE.sub("", result.output).replace("│", " ").split())
     assert "Arguments" in output
     assert "--state" not in output
+
+
+def test_main_escapes_characters_the_console_encoding_cannot_represent(monkeypatch):
+    # Windows consoles frequently expose a cp1252 stdout; device-supplied text (syslog lines,
+    # process names) can carry code points outside it. Strict encoding turned that into a
+    # UnicodeEncodeError deep inside print() (issue #1942).
+    stdout_bytes = io.BytesIO()
+    stderr_bytes = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(stdout_bytes, encoding="cp1252", errors="strict"))
+    monkeypatch.setattr(sys, "stderr", io.TextIOWrapper(stderr_bytes, encoding="cp1252", errors="strict"))
+
+    __main__.tolerate_unencodable_output()
+
+    print("syslog \U0001f600 line")
+    print("stderr ✅ line", file=sys.stderr)
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    # Windows text streams write \r\n; the line ending is not what this test is about.
+    assert stdout_bytes.getvalue().replace(b"\r\n", b"\n") == b"syslog \\U0001f600 line\n"
+    assert stderr_bytes.getvalue().replace(b"\r\n", b"\n") == b"stderr \\u2705 line\n"
