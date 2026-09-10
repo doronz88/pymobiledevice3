@@ -105,8 +105,10 @@ INVALID_SERVICE_MESSAGE = """Failed to start service. Possible reasons are:
       > python3 -m pymobiledevice3 mounter auto-mount
 
     - If your device iOS version >= 17.0:
-        - Make sure you passed the --rsd option to the subcommand
-          https://github.com/doronz88/pymobiledevice3#working-with-developer-tools-ios--170
+        - An RSD tunnel is established automatically; no flag is needed.
+        - On Linux/Windows with iOS 17.0-17.3, a privileged tunneld must be running:
+          > sudo python3 -m pymobiledevice3 remote tunneld
+          https://doronz88.github.io/pymobiledevice3/guides/ios17-tunnels/
 
 - Apple removed this service, or your iOS version does not support it.
 
