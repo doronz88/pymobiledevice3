@@ -459,7 +459,7 @@ async def cli_syslog_live(
 ) -> None:
     """view live syslog lines"""
 
-    with out.open("wt") if out else nullcontext() as out_file:
+    with out.open("wt", encoding="utf-8") if out else nullcontext() as out_file:
         await syslog_live(
             service_provider,
             out_file,

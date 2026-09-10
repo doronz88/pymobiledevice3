@@ -628,3 +628,23 @@ async def test_syslog_live_subsystem_filter_json(monkeypatch, capsys):
     obj = json.loads(printed_lines[0])
     assert obj["message"] == "keep"
     assert obj["label"]["subsystem"] == "com.apple.WebKit.Network"
+
+
+def test_cli_syslog_live_out_file_is_utf8_regardless_of_locale(monkeypatch, tmp_path):
+    # The --out file must not depend on the host locale encoding (cp1252 on Windows before
+    # Python 3.15), otherwise the same line that crashed stdout in issue #1942 also crashes
+    # the file write.
+    out_path = tmp_path / "syslog.log"
+    seen_encoding: list[str] = []
+
+    async def fake_syslog_live(service_provider, out, *args, **kwargs):
+        seen_encoding.append(out.encoding)
+        print("syslog \U0001f600 line", file=out)
+
+    monkeypatch.setattr(syslog_module, "syslog_live", fake_syslog_live)
+
+    syslog_module.cli_syslog_live(service_provider=_FAKE_SERVICE_PROVIDER, out=out_path)
+
+    assert [encoding.lower().replace("-", "") for encoding in seen_encoding] == ["utf8"]
+    # Windows text streams write \r\n; the line ending is not what this test is about.
+    assert out_path.read_bytes().replace(b"\r\n", b"\n") == "syslog \U0001f600 line\n".encode()
