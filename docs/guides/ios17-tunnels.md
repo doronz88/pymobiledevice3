@@ -11,7 +11,7 @@ python3 -m pymobiledevice3 developer dvt ls /
 ```
 
 A privileged `tunneld` is only needed for specific cases (external tools such as `lldb`, a
-shared/persistent tunnel, or iOS 17.0-17.3.1 — see
+shared/persistent tunnel, or iOS 17.0-17.3.1 on Linux/Windows — see
 [When you still need `tunneld`](#when-you-still-need-a-privileged-tunneld)).
 
 !!! tip "Working from Python?"
@@ -47,24 +47,25 @@ Set `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` to change which 
 automatic selection prefers (see [Environment variables](environment-variables.md) for every
 variable the CLI honors).
 
-!!! warning "iOS 17.0-17.3.1 uses `tunneld` by default"
+!!! warning "iOS 17.0-17.3.1 needs `tunneld` on Linux/Windows"
     These versions predate the CoreDeviceProxy service, so the userspace tunnel can only reach them
     over the RemotePairing path — which is Wi-Fi-only and, on macOS, races `remoted` (the no-root
     path can't suspend it without root). Rather than depend on that fragile path, pymobiledevice3
-    **routes iOS 17.0-17.3.1 to `tunneld` on every platform**, so keep one running:
+    routes iOS 17.0-17.3.1 to the **native tunnel on macOS** (still no root — `remoted` already
+    reaches these devices) and to **`tunneld` on Linux/Windows**, so keep one running there:
 
     ```shell
     sudo python3 -m pymobiledevice3 remote tunneld
     ```
 
-    You can still force the no-root path with `--userspace` where it applies (a device on Wi-Fi;
+    You can still force the userspace path with `--userspace` where it applies (a device on Wi-Fi;
     unreliable on macOS).
 
 ## Support Notes
 
 | Host OS | iOS 17.0-17.3.1 | iOS 17.4+ |
 | --- | --- | --- |
-| macOS | Uses `tunneld` (root) | Supported (no-root) |
+| macOS | Supported (no-root, native tunnel) | Supported (no-root) |
 | Windows | Uses `tunneld` (root) + additional drivers | Supported (no-root) |
 | Linux | Uses `tunneld` (root) | Supported (no-root) |
 
@@ -80,7 +81,7 @@ below) when:
   to a local port and *does* work over the userspace tunnel).
 - **You want one shared/persistent tunnel** reused across many invocations instead of rebuilding it
   per command.
-- **iOS 17.0-17.3.1** (any host OS) — routed to `tunneld` automatically; see the warning above.
+- **iOS 17.0-17.3.1 on Linux/Windows** — routed to `tunneld` automatically; see the warning above.
 
 ## Running `tunneld`
 
@@ -245,8 +246,9 @@ default applies to `remote browse`: on macOS it lists devices via `remotepairing
 ## Forcing the userspace tunnel (`--userspace`)
 
 The userspace tunnel is already the default, so you rarely need the flag. Pass `--userspace`
-explicitly to **force** the no-root in-process tunnel and skip the automatic `tunneld` fallback
-(iOS 17.0-17.3.1) — any establishment failure is then surfaced as an error rather than masked:
+explicitly to **force** the no-root in-process tunnel and skip the automatic native/`tunneld`
+fallback (iOS 17.0-17.3.1) — any establishment failure is then surfaced as an error rather than
+masked:
 
 ```shell
 python3 -m pymobiledevice3 developer dvt ls / --userspace
@@ -309,8 +311,8 @@ python3 -m pymobiledevice3 syslog live --tunnel ''
 - Most developer commands need no flag — the no-root tunnel is established for you. If one fails to
   establish a tunnel, the two explicit routes are `--tunnel ''` (uses a running `tunneld`) or
   `--userspace` (forces the no-root in-process tunnel and surfaces the real error).
-- iOS 17.0-17.3.1 is routed to `tunneld` on every platform (the no-root path only reaches those
-  over the fragile Wi-Fi RemotePairing route), so start one. `--userspace` can still force that
-  no-root path over Wi-Fi if you prefer.
+- iOS 17.0-17.3.1 is routed to the native tunnel on macOS and to `tunneld` on Linux/Windows (the
+  userspace path only reaches those over the fragile Wi-Fi RemotePairing route), so start one
+  there. `--userspace` can still force the userspace path over Wi-Fi if you prefer.
 - Verify the tunnel process is running and the device is trusted/paired.
 - On Windows for iOS 17.0-17.3.1, ensure required additional drivers are installed.
