@@ -140,7 +140,7 @@ class Application:
             app_dict["WIRApplicationBundleIdentifierKey"],
             key_to_pid(app_dict["WIRApplicationIdentifierKey"]),
             app_dict["WIRApplicationNameKey"],
-            AutomationAvailability(app_dict["WIRAutomationAvailabilityKey"]),
+            AutomationAvailability(app_dict.get("WIRAutomationAvailabilityKey", AutomationAvailability.UNKNOWN.value)),
             app_dict["WIRIsApplicationActiveKey"],
             app_dict["WIRIsApplicationProxyKey"],
             app_dict["WIRIsApplicationReadyKey"],
@@ -601,7 +601,7 @@ class WebinspectorService(LockdownService):
         await self.receive_handlers[plist["__selector"]](plist["__argument"])
 
     async def _handle_report_current_state(self, arg: dict[str, Any]):
-        self.state = arg["WIRAutomationAvailabilityKey"]
+        self.state = arg.get("WIRAutomationAvailabilityKey", AutomationAvailability.UNKNOWN.value)
 
     async def _handle_report_connected_application_list(self, arg: dict[str, Any]):
         self.connected_application = {}
