@@ -14,6 +14,7 @@ from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.services.webinspector import (
     SAFARI,
     Application,
+    AutomationAvailability,
     Page,
     WebinspectorService,
     WirTypes,
@@ -88,6 +89,25 @@ def test_application_listing_keeps_its_icon() -> None:
         "WIRApplicationIconKey": b"\x89PNG\r\n\x1a\nicon",
     })
     assert application.icon == b"\x89PNG\r\n\x1a\nicon"
+
+
+async def test_missing_automation_availability_is_unknown() -> None:
+    """iOS 12 Safari sends no WIRAutomationAvailabilityKey, neither in the application dictionary nor
+    in _rpc_reportCurrentState. Indexing it directly made `webinspector cdp` exit with a KeyError
+    before serving (seen on an iPhone 5s, iOS 12.5.8)."""
+    application = Application.from_application_dictionary({
+        "WIRApplicationIdentifierKey": "PID:196",
+        "WIRApplicationBundleIdentifierKey": "com.apple.mobilesafari",
+        "WIRApplicationNameKey": "Safari",
+        "WIRIsApplicationActiveKey": 1,
+        "WIRIsApplicationProxyKey": False,
+        "WIRIsApplicationReadyKey": True,
+    })
+    assert application.availability == AutomationAvailability.UNKNOWN
+
+    inspector = WebinspectorService(lockdown=cast(Any, object()))
+    await inspector._handle_report_current_state({})
+    assert inspector.state == AutomationAvailability.UNKNOWN.value
 
 
 def test_web_page_listing_reports_the_debugger_holding_it() -> None:
