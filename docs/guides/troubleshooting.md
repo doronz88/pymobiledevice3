@@ -115,9 +115,9 @@ it yet. In order:
 
 ### "Unable to connect to Tunneld" (`TunneldConnectionError`)
 
-You passed `--tunnel` (or the automatic fallback chose tunneld — which happens on
-iOS 17.0–17.3, where the userspace tunnel has no reliable transport), but no tunneld daemon is
-running. Start one with root privileges and leave it running:
+You passed `--tunnel` (or the automatic fallback chose tunneld — which happens on Linux/Windows
+with iOS 17.0–17.3, where the userspace tunnel has no reliable transport; macOS serves those devices
+no-root via the native tunnel), but no tunneld daemon is running. Start one with root privileges and leave it running:
 
 ```shell
 sudo pymobiledevice3 remote tunneld

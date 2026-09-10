@@ -98,8 +98,8 @@ For iOS 17+ developer services, the skill routes users through the project tunne
 On iOS 17.4+ no tunnel setup is needed at all: commands that require an RSD
 tunnel establish a no-root in-process userspace tunnel automatically, so the
 skill routes agents straight to the target command. Privileged tunnels
-(`tunneld`, `start-tunnel`) remain the fallback for iOS 17.0-17.3 devices or
-when the userspace path is not viable (e.g. sustained host-to-device
+(`tunneld`, `start-tunnel`) remain the fallback for iOS 17.0-17.3 devices on
+Linux/Windows or when the userspace path is not viable (e.g. sustained host-to-device
 throughput).
 
 For agent-driven `start-tunnel` startup on those fallback paths, the skill
