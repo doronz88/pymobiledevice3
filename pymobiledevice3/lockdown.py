@@ -43,14 +43,17 @@ from pymobiledevice3.exceptions import (
     InvalidHostIDError,
     InvalidServiceError,
     LockdownError,
+    MCProtectedError,
     MissingValueError,
     MuxException,
     NoDeviceConnectedError,
     NotPairedError,
     PairingDialogResponsePendingError,
     PairingError,
+    PasscodeRequiredError,
     PasswordRequiredError,
     PyMobileDevice3Exception,
+    SessionActiveError,
     SetProhibitedError,
     StartServiceError,
     UserDeniedPairingError,
@@ -1057,6 +1060,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
                 "MissingValue": MissingValueError,
                 "InvalidService": InvalidServiceError,
                 "InvalidConnection": InvalidConnectionError,
+                "MCProtected": MCProtectedError,
+                "PasscodeRequired": PasscodeRequiredError,
+                "SessionActive": SessionActiveError,
             }
             raise exception_errors.get(error, LockdownError)(error, self.identifier, self.product_version)
 

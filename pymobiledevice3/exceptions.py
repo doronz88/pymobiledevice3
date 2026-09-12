@@ -40,6 +40,7 @@ __all__ = [
     "InvalidServiceError",
     "LaunchingApplicationError",
     "LockdownError",
+    "MCProtectedError",
     "MessageNotSupportedError",
     "MissingValueError",
     "MuxException",
@@ -64,6 +65,7 @@ __all__ = [
     "RemoteAutomationNotEnabledError",
     "RemotePairingCompletedError",
     "ScreencastUnavailableError",
+    "SessionActiveError",
     "SetProhibitedError",
     "StartServiceError",
     "SysdiagnoseTimeoutError",
@@ -383,6 +385,18 @@ class InvalidConnectionError(LockdownError):
 
 class PasscodeRequiredError(LockdownError):
     """passcode must be present for this action"""
+
+    pass
+
+
+class MCProtectedError(LockdownError):
+    """mobile configuration policy prohibits this action"""
+
+    pass
+
+
+class SessionActiveError(LockdownError):
+    """a lockdown session is already active"""
 
     pass
 
