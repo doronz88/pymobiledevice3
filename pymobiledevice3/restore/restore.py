@@ -664,16 +664,20 @@ class Restore(BaseRestore):
                     if filename in signed_file:
                         keep = True
 
-                    # check for anything but .mbn and .fls if bb_nonce is set
-                    if bb_nonce and not keep:
+                    # keep firmware payloads (.fls/.mbn/.elf/.bin) even when they were not stitched;
+                    # everything else is dropped. Independent of the nonce (Mav25 fix, idevicerestore 460bf2e8).
+                    if not keep:
                         ext = os.path.splitext(filename)[1]
                         keep |= ext in (".fls", ".mbn", ".elf", ".bin")
 
                     if keep and (filename not in signed_file):
+                        self.logger.debug(f"sign_bbfw: keeping {filename} in bbfw")
                         bbfw_patched.writestr(bbfw_zip.getinfo(filename), bbfw_zip.read(filename))
+                    elif not keep:
+                        self.logger.debug(f"sign_bbfw: removing {filename} from bbfw")
 
-                if bb_nonce:
-                    assert bbticket is not None
+                # add the BBTicket whenever TSS returned one, not only when a nonce was involved
+                if bbticket is not None:
                     if is_fls:
                         # add BBTicket to file ebl.fls
                         buffer = bbfw_zip.read("ebl.fls")
