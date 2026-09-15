@@ -37,6 +37,16 @@ from pymobiledevice3.restore.tss import PREFETCHABLE_UPDATERS, TSSRequest, TSSRe
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.utils import asyncio_print_traceback, plist_access_path
 
+GLOBAL_MANIFEST_DEFAULT_PREFIX = "apticket"
+
+
+def global_manifest_path(
+    variant: str, device_class: str, prefix: str = GLOBAL_MANIFEST_DEFAULT_PREFIX, suffix: str = ""
+) -> str:
+    """Build the hardcoded IPSW path of a global (restore) manifest."""
+    return f"Firmware/Manifests/restore/{variant}/{prefix}.{device_class}{suffix}.im4m"
+
+
 known_errors = {
     0xFFFFFFFFFFFFFFFF: "verification error",
     6: "disk failure",
@@ -239,8 +249,24 @@ class Restore(BaseRestore):
         self.logger.info("Sending BuildIdentityDict now...")
         await service.send_plist(req)
 
-    def extract_global_manifest(self) -> bytes:
-        build_info = typing.cast(Optional[dict[str, Any]], typing.cast(dict[str, Any], self.build_identity).get("Info"))
+    def global_manifest_path(
+        self,
+        build_identity: Optional[BuildIdentity] = None,
+        variant: Optional[str] = None,
+        prefix: str = GLOBAL_MANIFEST_DEFAULT_PREFIX,
+        suffix: str = "",
+    ) -> str:
+        """
+        Resolve the IPSW path of the global manifest for ``build_identity``.
+
+        There is no pointer to it in the build manifest: the path is
+        ``Firmware/Manifests/restore/<variant>/<prefix>.<DeviceClass><suffix>.im4m``.
+        restored may override ``prefix``/``suffix`` through the ``GlobalManifestPrefix`` and
+        ``GlobalManifestSuffix`` request arguments (macOS 27+).
+        """
+        if build_identity is None:
+            build_identity = self.build_identity
+        build_info = typing.cast(Optional[dict[str, Any]], typing.cast(dict[str, Any], build_identity).get("Info"))
         if build_info is None:
             raise PyMobileDevice3Exception('build identity does not contain an "Info" element')
 
@@ -248,12 +274,40 @@ class Restore(BaseRestore):
         if device_class is None:
             raise PyMobileDevice3Exception('build identity does not contain an "DeviceClass" element')
 
-        macos_variant = build_info.get("MacOSVariant")
-        if macos_variant is None:
+        if variant is None:
+            variant = build_info.get("MacOSVariant")
+        if variant is None:
             raise PyMobileDevice3Exception('build identity does not contain an "MacOSVariant" element')
 
-        # The path of the global manifest is hardcoded. There's no pointer to in the build manifest.
-        return self.ipsw.get_global_manifest(macos_variant, device_class)
+        return global_manifest_path(variant, device_class, prefix, suffix)
+
+    def extract_global_manifest(self) -> bytes:
+        return self.ipsw.read(self.global_manifest_path())
+
+    async def _read_requested_global_manifest(self, message: dict[str, Any]) -> Optional[bytes]:
+        """
+        Read the global manifest a ``SourceBootObjectV4``/``V5`` request asks for.
+
+        Returns ``None`` when the manifest is absent from the IPSW and restored allows skipping it:
+        either the identity does not advertise ``VariantSupportsGlobalSigning`` or the request carries
+        ``GlobalManifestOptional``. Mirrors idevicerestore.
+        """
+        arguments = message["Arguments"]
+        build_identity = await self.get_build_identity_from_request(message)
+        path = self.global_manifest_path(
+            build_identity,
+            variant=arguments.get("Variant"),
+            prefix=arguments.get("GlobalManifestPrefix") or GLOBAL_MANIFEST_DEFAULT_PREFIX,
+            suffix=arguments.get("GlobalManifestSuffix") or "",
+        )
+        if path in self.ipsw.archive.namelist():
+            return self.ipsw.read(path)
+        info = typing.cast(dict[str, Any], build_identity["Info"])
+        optional = not info.get("VariantSupportsGlobalSigning") or bool(arguments.get("GlobalManifestOptional"))
+        if not optional:
+            raise PyMobileDevice3Exception(f"global manifest {path} is missing from the IPSW")
+        self.logger.info(f"Skipping missing optional global manifest {path}")
+        return None
 
     async def send_personalized_boot_object_v3(self, message: dict[str, Any]) -> None:
         self.logger.debug("send_personalized_boot_object_v3")
@@ -288,8 +342,9 @@ class Restore(BaseRestore):
         component_name = image_name
         self.logger.info(f"About to send {component_name}...")
 
+        data: Optional[bytes]
         if image_name == "__GlobalManifest__":
-            data = self.extract_global_manifest()
+            data = await self._read_requested_global_manifest(message)
         elif image_name == "__RestoreVersion__":
             data = self.ipsw.restore_version
         elif image_name == "__SystemVersion__":
@@ -301,6 +356,12 @@ class Restore(BaseRestore):
                 .get_component(component_name, tss=self.recovery.tss)
                 .data
             )
+
+        if data is None:
+            # Missing optional component: restored still expects the end-of-data marker.
+            await service.send_plist({"FileDataDone": True})
+            self.logger.info(f"Done sending {component_name} (skipped)")
+            return
 
         self.logger.info(f"Sending {component_name} now...")
         chunk_size = 8192
