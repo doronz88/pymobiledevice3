@@ -88,7 +88,9 @@ SUPPORTED_MESSAGE_TYPES = {
     "CheckpointMsg": True,
     "CrashLog": True,
     "DataRequestMsg": False,
-    "FDRSubmit": True,
+    # Apple's host answers FDRSubmit only after uploading the data to Apple's FDR data store, which
+    # is not implemented here, so do not invite restored to send it (see Restore.handle_fdr_submit_msg).
+    "FDRSubmit": False,
     "MsgType": False,
     "PreviousRestoreLogMsg": False,
     "ProgressMsg": False,

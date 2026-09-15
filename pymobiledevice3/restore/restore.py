@@ -9,6 +9,7 @@ import time
 import typing
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Optional
 from zipfile import ZipFile, ZipInfo
 
@@ -187,6 +188,10 @@ class Restore(BaseRestore):
             "RestoreAttestation": self.handle_restore_attestation,
             # protocol upgrade negotiation (iOS 27+), see handle_restore_protocol_msg
             "RestoreProtocol": self.handle_restore_protocol_msg,
+            # restored hands over a crash log it captured (Apple's host stores it on disk)
+            "CrashLog": self.handle_crash_log_msg,
+            # FDR provisioning data the device wants uploaded to Apple's data store
+            "FDRSubmit": self.handle_fdr_submit_msg,
         }
 
         self._data_request_handlers: dict[str, Callable[[dict[str, Any]], typing.Awaitable[Any]]] = {
@@ -1607,7 +1612,7 @@ class Restore(BaseRestore):
             await self.send_image_data(message, "ImageList", None, "ImageData")
         elif data_type == "EANData":
             await self.send_image_data(message, "EANImageList", "IsEarlyAccessFirmware", "EANData")
-        elif data_type == "BootabilityBundle":
+        elif data_type in ("BootabilityBundle", "BootabilityBundleV2"):
             await self.send_bootability_bundle_data(message)
         elif data_type == "ReceiptManifest":
             await self.send_manifest()
@@ -1616,7 +1621,12 @@ class Restore(BaseRestore):
         elif data_type == "HostSystemTime":
             await self.handle_host_system_time(message)
         else:
-            self.logger.error(f"unknown data request: {message}")
+            # Apple's host fails the restore here ("Unrecognized data type"); restored will keep
+            # waiting for a reply we cannot produce, so make the reason visible.
+            self.logger.error(
+                f"unknown data request {data_type!r}: restored asked for data this host does not serve "
+                f"(Apple's host needs a restore-option override for it): {message}"
+            )
 
     async def handle_previous_restore_log_msg(self, message: dict[str, Any]):
         restorelog = message["PreviousRestoreLog"]
@@ -1717,6 +1727,37 @@ class Restore(BaseRestore):
     async def handle_async_wait(self, message: dict[str, Any]) -> None:
         self.logger.debug(message)
 
+    async def handle_crash_log_msg(self, message: dict[str, Any]) -> None:
+        """
+        Store a crash log restored hands over (``Filename`` + ``Data``).
+
+        Apple's host (MobileDevice ``_handleCrashLogMessage``) writes it under its log directory and copies
+        it into ``/Library/Logs/DiagnosticReports``; we drop it into a fresh temporary directory.
+        """
+        filename = message.get("Filename")
+        data = message.get("Data")
+        if not isinstance(filename, str) or not isinstance(data, bytes):
+            self.logger.warning(f"incomplete crash log message received: {message}")
+            return
+        path = Path(tempfile.mkdtemp(prefix="pymobiledevice3-restore-crash-")) / os.path.basename(filename)
+        path.write_bytes(data)
+        self.logger.warning(f"restored reported a crash log, saved to {path}")
+
+    async def handle_fdr_submit_msg(self, message: dict[str, Any]) -> None:
+        """
+        restored asks the host to upload provisioning data to Apple's FDR data store.
+
+        Apple's host (MobileDevice ``_handleFDRSubmit`` → ``AMRAuthInstallSubmitFDRData``) performs the
+        upload and only then answers ``FDRSubmitAck``. That upload is not implemented here, which is why
+        ``FDRSubmit`` is not advertised in ``SUPPORTED_MESSAGE_TYPES``; if restored sends it anyway there is
+        no honest acknowledgement to give, so say so instead of leaving the silence unexplained.
+        """
+        self.logger.error(
+            "restored asked for an FDR data submission "
+            f"(class {message.get('DataClass')!r}, instance {message.get('DataInstance')!r}); uploading to "
+            "Apple's FDR data store is not implemented, so no FDRSubmitAck will be sent"
+        )
+
     async def handle_restore_protocol_msg(self, message: dict[str, Any]) -> None:
         """
         restored announces the transport it picked from our ``SupportedHostProtocols``.
@@ -1804,7 +1845,7 @@ class Restore(BaseRestore):
             else:
                 # there might be some other message types i'm not aware of, but I think
                 # at least the "previous error logs" messages usually end up here
-                self.logger.debug(f"unhandled message type received: {message}")
+                self.logger.warning(f"unhandled message type received: {message}")
 
     async def update(self):
         self._preflight_info = await self.device.get_preflight_info()
