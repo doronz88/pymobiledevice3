@@ -776,15 +776,6 @@ class LockdownClient(ABC, LockdownServiceProvider):
         pair_record = self.pair_record if host_id is None else {"HostID": host_id}
         await self._request("Unpair", {"PairRecord": pair_record, "ProtocolVersion": "2"}, verify_request=False)
 
-    async def reset_pairing(self):
-        """Reset all pairings on the device.
-
-        Sends a ``ResetPairing`` request with ``FullReset`` set, clearing the device's pairing state.
-
-        :returns: The lockdownd response to the request.
-        """
-        return await self._request("ResetPairing", {"FullReset": True})
-
     async def get_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> Any:
         """Read a value from the device via a ``GetValue`` request.
 
