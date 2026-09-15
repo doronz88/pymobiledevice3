@@ -39,6 +39,33 @@ from pymobiledevice3.utils import asyncio_print_traceback, plist_access_path
 
 GLOBAL_MANIFEST_DEFAULT_PREFIX = "apticket"
 
+# Apple's host never streams FirmwareData in chunks larger than this, whatever restored asks for
+# (MobileDevice `_handleFirmwareUpdaterRequest`).
+FIRMWARE_DATA_MAX_CHUNK_SIZE = 0x40000
+
+
+def firmware_response_messages(fwdict: dict[str, Any], chunk_size: Optional[int]) -> list[dict[str, Any]]:
+    """
+    Split a FirmwareUpdaterData reply the way Apple's host does.
+
+    Without a ``DataChunkSize`` in the request (or without a ``FirmwareData`` blob) the whole response goes
+    in one ``FirmwareResponseData`` message. Otherwise the tickets go first with the blob's ``DataSize``, the
+    blob follows in ``FirmwareResponseData`` chunks of at most ``chunk_size`` (capped at 256 KiB), and an
+    empty chunk flagged ``DataDone`` terminates the stream.
+    """
+    firmware = fwdict.get("FirmwareData")
+    if not chunk_size or chunk_size < 1 or not isinstance(firmware, bytes):
+        return [{"FirmwareResponseData": fwdict}]
+    chunk_size = min(chunk_size, FIRMWARE_DATA_MAX_CHUNK_SIZE)
+    header = {key: value for key, value in fwdict.items() if key != "FirmwareData"}
+    messages: list[dict[str, Any]] = [{"FirmwareResponseData": header, "DataSize": len(firmware)}]
+    messages.extend(
+        {"FirmwareResponseData": firmware[offset : offset + chunk_size]}
+        for offset in range(0, len(firmware), chunk_size)
+    )
+    messages.append({"FirmwareResponseData": b"", "DataDone": True})
+    return messages
+
 
 def global_manifest_path(
     variant: str, device_class: str, prefix: str = GLOBAL_MANIFEST_DEFAULT_PREFIX, suffix: str = ""
@@ -1490,7 +1517,8 @@ class Restore(BaseRestore):
             raise PyMobileDevice3Exception(f"Got unknown updater name: {updater_name}")
 
         self.logger.info("Sending FirmwareResponse data now...")
-        await service.send_plist({"FirmwareResponseData": fwdict})
+        for reply in firmware_response_messages(fwdict, arguments.get("DataChunkSize")):
+            await service.send_plist(reply)
 
     async def send_firmware_updater_preflight(self, message: dict[str, Any]) -> None:
         self.logger.warning(f"send_firmware_updater_preflight: {message}")
