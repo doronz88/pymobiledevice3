@@ -62,6 +62,13 @@ run the command again.
 *Settings → General → Transfer or Reset iPhone → Reset → Reset Location & Privacy*, then
 reconnect the cable.
 
+If another host is still paired, it can clear every pairing on the device from the command line
+instead (this drops its own trust as well, so it needs to pair again afterwards):
+
+```shell
+pymobiledevice3 lockdown reset-pairing
+```
+
 ### "Device is password protected. Please unlock and retry" (`PasswordRequiredError`)
 
 Pairing (and some lockdown operations) require the device to be unlocked. Unlock it and retry.

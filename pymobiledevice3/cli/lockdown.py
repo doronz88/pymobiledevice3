@@ -109,6 +109,18 @@ async def lockdown_pair(service_provider: NoAutoPairLockdownClientDep) -> None:
     await service_provider.pair()
 
 
+@cli.command("reset-pairing")
+@async_command
+async def lockdown_reset_pairing(service_provider: LockdownClientDep) -> None:
+    """
+    Clear every pairing the device holds: all trusted hosts and their RemotePairing (tunnel) records.
+
+    The device-side equivalent of *Reset Location & Privacy*, without touching the other privacy
+    settings. This host loses its trust too, so run `lockdown pair` afterwards.
+    """
+    await service_provider.reset_pairing()
+
+
 @cli.command("pair-supervised")
 @async_command
 async def lockdown_pair_supervised(

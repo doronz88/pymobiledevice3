@@ -484,6 +484,15 @@ def test_lockdown_on_off_state_is_a_positional_argument(command):
     assert "--state" not in output
 
 
+def test_lockdown_reset_pairing_is_registered():
+    runner = CliRunner()
+    result = runner.invoke(__main__.app, ["lockdown", "reset-pairing", "--help"])
+
+    assert result.exit_code == 0
+    output = " ".join(ANSI_ESCAPE.sub("", result.output).replace("│", " ").split())
+    assert "Clear every pairing" in output
+
+
 def test_main_escapes_characters_the_console_encoding_cannot_represent(monkeypatch):
     # Windows consoles frequently expose a cp1252 stdout; device-supplied text (syslog lines,
     # process names) can carry code points outside it. Strict encoding turned that into a

@@ -776,10 +776,12 @@ class LockdownClient(ABC, LockdownServiceProvider):
         pair_record = self.pair_record if host_id is None else {"HostID": host_id}
         await self._request("Unpair", {"PairRecord": pair_record, "ProtocolVersion": "2"}, verify_request=False)
 
-    async def reset_pairing(self):
+    async def reset_pairing(self) -> dict[str, Any]:
         """Reset all pairings on the device.
 
-        Sends a ``ResetPairing`` request with ``FullReset`` set, clearing the device's pairing state.
+        Sends a ``ResetPairing`` request with ``FullReset`` set. lockdownd deletes every trusted host's
+        pair record, including the RemotePairing records used by iOS 17+ tunnels, so this host must
+        pair again afterwards. Requires a paired session (the request is refused before pairing).
 
         :returns: The lockdownd response to the request.
         """
