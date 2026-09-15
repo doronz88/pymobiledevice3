@@ -148,6 +148,8 @@ class Restore(BaseRestore):
             "AsyncWait": self.handle_async_wait,
             # handle attestation
             "RestoreAttestation": self.handle_restore_attestation,
+            # protocol upgrade negotiation (iOS 27+), see handle_restore_protocol_msg
+            "RestoreProtocol": self.handle_restore_protocol_msg,
         }
 
         self._data_request_handlers: dict[str, Callable[[dict[str, Any]], typing.Awaitable[Any]]] = {
@@ -156,6 +158,8 @@ class Restore(BaseRestore):
             "BuildIdentityDict": self.send_buildidentity,
             "PersonalizedBootObjectV3": self.send_personalized_boot_object_v3,
             "SourceBootObjectV4": self.send_source_boot_object_v4,
+            # Added in iOS 27 / macOS 27: same payload flow as V4
+            "SourceBootObjectV5": self.send_source_boot_object_v4,
             "RecoveryOSLocalPolicy": self.send_restore_local_policy,
             # this request is sent when restored is ready to receive the filesystem
             "RecoveryOSASRImage": self.send_filesystem,
@@ -169,6 +173,8 @@ class Restore(BaseRestore):
             "FirmwareUpdaterData": self.send_firmware_updater_data,
             # TODO: verify
             "FirmwareUpdaterPreflight": self.send_firmware_updater_preflight,
+            # Added in iOS 27 / macOS 27: answered like a firmware updater preflight
+            "DeviceRestoreInfoPreflight": self.send_firmware_updater_preflight,
             # Added on iOS 18.0 beta1
             "URLAsset": self.send_url_asset,
             "StreamedImageDecryptionKey": self.send_streamed_image_decryption_key,
@@ -1617,6 +1623,21 @@ class Restore(BaseRestore):
 
     async def handle_async_wait(self, message: dict[str, Any]) -> None:
         self.logger.debug(message)
+
+    async def handle_restore_protocol_msg(self, message: dict[str, Any]) -> None:
+        """
+        restored announces the transport it picked from our ``SupportedHostProtocols``.
+
+        Apple's host (MobileDevice ``_receive_socket_message``) keeps the current usbmuxd socket
+        for ``MuxSocket`` and fails the restore for anything else; we only offer ``MuxSocket``, so
+        no reply is needed. Mirrors idevicerestore, which logs the message and carries on.
+        """
+        arguments = typing.cast(dict[str, Any], message.get("Arguments") or {})
+        protocol = arguments.get("RestoreProtocol")
+        if protocol == "MuxSocket":
+            self.logger.info("restored selected the MuxSocket restore protocol")
+        else:
+            self.logger.warning(f"restored asked for an unsupported restore protocol: {protocol!r}")
 
     async def handle_restore_attestation(self, message: dict[str, Any]) -> None:
         self.logger.debug(message)
