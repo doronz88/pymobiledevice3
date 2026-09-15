@@ -27,6 +27,12 @@ CHUNK_SIZE = 1048576
 
 conn_port = None
 
+# The device may drop off USB and re-enumerate right when restored starts, so the reverse
+# proxy control connection can fail on the first attempt (idevicerestore 540c352c waits up
+# to 10 s for the device to reappear).
+CTRL_CONNECT_ATTEMPTS = 10
+CTRL_CONNECT_RETRY_DELAY = 1.0
+
 logger = logging.getLogger(__name__)
 
 
@@ -193,11 +199,27 @@ class FDRClient:
         await handler()
 
 
+async def _create_fdr_client(type_: fdr_type, udid: Optional[str] = None) -> FDRClient:
+    """Create the FDR client, retrying the control connection while the device re-enumerates."""
+    attempts = CTRL_CONNECT_ATTEMPTS if type_ == fdr_type.FDR_CTRL else 1
+    for attempt in range(1, attempts + 1):
+        try:
+            return await FDRClient.create(type_, udid=udid)
+        except (ConnectionFailedError, ConnectionTerminatedError, NoDeviceConnectedError, OSError):
+            if attempt >= attempts:
+                raise
+            logger.info(
+                f"FDR {type_.name} connection failed, waiting for the device to reappear ({attempt}/{attempts})"
+            )
+            await asyncio.sleep(CTRL_CONNECT_RETRY_DELAY)
+    raise AssertionError("unreachable")
+
+
 async def run_fdr_listener(type_: fdr_type, udid: Optional[str] = None) -> None:
     client: Optional[FDRClient] = None
     closing_via_generator_exit = False
     try:
-        client = await FDRClient.create(type_, udid=udid)
+        client = await _create_fdr_client(type_, udid=udid)
         logger.debug(f"FDR {client} waiting for message...")
         while True:
             await client.poll_and_handle_message()
