@@ -386,22 +386,30 @@ printf 'tap 32768 32768\nsleep 0.3\ndrag 32768 5000 32768 60000\n' | \
 
 ### Screen streaming (HEVC video)
 
+Two ways to view (and control) the device's screen live, both fed by the same
+device-initiated HEVC stream over the RSD tunnel:
+
+- **`serve-web`** — serves the screen over HTTP for any modern browser; the
+  HEVC decode happens in-browser via WebCodecs, so it works cross-platform with
+  no external tools. Touch, hardware buttons, and keyboard are wired back to the
+  device.
+- **`serve-vnc`** — serves the screen as a VNC (RFB 3.8) server for macOS
+  Screen Sharing or any VNC client. macOS-only, because the server-side HEVC
+  decode goes through VideoToolbox. Right-click in the viewer is the Home
+  button; `Ctrl+H/L/[/]/\/S` map to Home / Lock / Volume Down / Volume Up /
+  Mute / Siri. Add `--audio` to also play the device's system audio out of the
+  host Mac's speakers.
+
 ```shell
 # Query what the device's media-stream server supports
 pymobiledevice3 developer core-device display get-media-support-info
 pymobiledevice3 developer core-device display get-media-stream-server-status
 
-# Serve the device screen live to any modern browser (Safari / HEVC-enabled
-# Chrome). Decode happens in-browser via WebCodecs — no ffmpeg required.
+# Serve the device screen live to any modern browser (see notes above)
 pymobiledevice3 developer core-device display serve-web
 # then open http://127.0.0.1:8080/
 
-# Serve the device screen as a VNC (RFB 3.8) server -- view via macOS
-# Screen Sharing.app (Finder ⌘K -> vnc://) or any VNC client.
-# macOS-only (server-side HEVC decode through VideoToolbox).
-# Right-click in the viewer = Home button; Ctrl+H/L/[/]/\\/S = Home /
-# Lock / VolDown / VolUp / Mute / Siri. Add --audio to also play the
-# device's system audio out the host Mac's speakers.
+# Serve the device screen as a VNC (RFB 3.8) server, macOS-only (see notes above)
 pymobiledevice3 developer core-device display serve-vnc
 # then Finder ⌘K -> vnc://127.0.0.1:5901
 
@@ -412,6 +420,17 @@ pymobiledevice3 developer core-device display start-video-stream /tmp/cap.rtp --
 misc/rtp_dump.py /tmp/cap.rtp /tmp/cap.h265
 ffplay -framerate 60 /tmp/cap.h265
 ```
+
+!!! warning "Camera and microphone conflicts"
+    iOS will not start a screen-mirroring session while a foreground app is
+    using the camera or microphone. This is the same restriction Apple's Xcode
+    Device Hub enforces. If the **Camera**, **Voice Memos**, or a similar app is
+    in the foreground when you launch `serve-web` / `serve-vnc`, the command
+    prints a one-line explanation and exits with a non-zero code rather than
+    serving — quit that app on the device and run it again. Conversely, while a
+    mirroring session is active those apps cannot acquire the sensors and will
+    record silence or black video, so stop mirroring before capturing with
+    them.
 
 ### Location
 
