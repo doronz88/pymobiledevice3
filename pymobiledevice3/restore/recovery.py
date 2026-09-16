@@ -8,7 +8,7 @@ from ipsw_parser.build_manifest import BuildManifest
 from ipsw_parser.ipsw import IPSW
 from usb import USBError
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, TSSError
 from pymobiledevice3.irecv import IRecv, Mode
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.restore.base_restore import BaseRestore, Behavior
@@ -29,6 +29,12 @@ class Recovery(BaseRestore):
         self.tss_localpolicy = None
         self.tss_recoveryos_root_ticket = None
         self.restore_boot_args = None
+        # Extra request entries to ride along in the next AP TSS request (the --tss-batch peripheral
+        # prefetch). Consumed by the first get_tss_response() call; never override an AP entry.
+        self.tss_riders: dict[str, Any] = {}
+        # Whether the last AP request went out with its riders (False if TSS rejected them and the
+        # request was retried alone, or if there were none).
+        self.tss_riders_applied = False
 
     async def reconnect_irecv(self, is_recovery: Optional[bool] = None):
         self.logger.debug("waiting for device to reconnect...")
@@ -148,7 +154,35 @@ class Recovery(BaseRestore):
                             tss.add_vinyl_tags(parameters)
 
         # send request and grab response
-        return await tss.send_receive()
+        return await self._send_tss_request(tss)
+
+    async def _send_tss_request(self, tss: TSSRequest) -> TSSResponse:
+        """Post an AP request, carrying the pending ``tss_riders`` along exactly once.
+
+        The riders are the peripheral ticket requests of the ``--tss-batch`` prefetch. They never
+        override an entry the AP request already has. If TSS rejects the combined request, it is
+        retried without them so the restore is never worse off than without the prefetch (one extra
+        round-trip on that path only); the peripherals then go through the reactive path.
+        """
+        riders, self.tss_riders = self.tss_riders, {}
+        if not riders:
+            # e.g. the RecoveryVariant root-ticket fetch that follows the AP request: leave the
+            # verdict of the request that carried the riders alone
+            return await tss.send_receive()
+        self.tss_riders_applied = False
+        added = tss.setdefault_tags(riders)
+        try:
+            response = await tss.send_receive()
+        except TSSError as e:
+            self.logger.warning(
+                f"TSS rejected the AP request with the --tss-batch peripheral riders ({e}); "
+                "retrying the AP request alone, peripherals will be signed reactively"
+            )
+            for key in added:
+                tss.remove_key(key)
+            return await tss.send_receive()
+        self.tss_riders_applied = True
+        return response
 
     async def get_local_policy_tss_response(self):
         # populate parameters

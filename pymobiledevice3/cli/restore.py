@@ -15,16 +15,23 @@ from typer_injector import Depends, InjectingTyper
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.cli.cli_common import (
+    RSDServiceProviderDep,
     async_command,
     cli_loop,
     is_invoked_for_completion,
     print_json,
     prompt_selection,
 )
-from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionFailedToUsbmuxdError, IncorrectModeError
+from pymobiledevice3.exceptions import (
+    ConnectionFailedError,
+    ConnectionFailedToUsbmuxdError,
+    IncorrectModeError,
+    MissingValueError,
+)
 from pymobiledevice3.irecv import IRecv
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.restore.device import Device
+from pymobiledevice3.restore.preflight import UPDATER_FIRMWARE_PREFIXES, collect_device_side_preflight
 from pymobiledevice3.restore.recovery import Behavior, Recovery
 from pymobiledevice3.restore.restore import Restore
 from pymobiledevice3.services.diagnostics import DiagnosticsService
@@ -77,7 +84,11 @@ async def _device_dependency_async(
                 continue
             if (ecid_value is None) or (lockdown.ecid == ecid_value):
                 logger.debug("found device")
-                return Device(lockdown=lockdown)
+                found = Device(lockdown=lockdown)
+                # Over lockdown this is a GetValue round-trip; resolve it now so the "connected device"
+                # log line can report it instead of "unknown".
+                await found.get_is_image4_supported()
+                return found
             else:
                 continue
     except ConnectionFailedToUsbmuxdError:
@@ -272,6 +283,49 @@ async def restore_tss(
         await restore_tss_task(device, ipsw_ctx, out_file, behavior=behavior)
 
 
+@cli.command("preflight")
+@async_command
+async def restore_preflight(device: DeviceDep) -> None:
+    """
+    Show the preflight data lockdown reports before a restore: PreflightInfo (each peripheral
+    updater's identity fields and current nonce), FirmwarePreflightInfo (baseband) and ApParameters
+    (AP and SEP nonces). Requires normal mode.
+    """
+    if device.lockdown is None:
+        raise typer.BadParameter("preflight data is only available from a device in normal mode")
+    result: dict[str, Any] = {}
+    for key in ("PreflightInfo", "FirmwarePreflightInfo", "ApParameters"):
+        try:
+            result[key] = await device.lockdown.get_value("", key)
+        except MissingValueError:
+            result[key] = None
+    print_json(result)
+
+
+@cli.command("preflight-requests")
+@async_command
+async def restore_preflight_requests(
+    device: DeviceDep,
+    ipsw_ctx: IPSWCtxDep,
+    rsd: RSDServiceProviderDep,
+    updater: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            help=f"Updater to query (repeatable); default: all of {', '.join(UPDATER_FIRMWARE_PREFIXES)} except Baseband.",
+        ),
+    ] = None,
+) -> None:
+    """
+    Ask the device to build the TSS request of each peripheral updater for the given IPSW, the way
+    restored does during a restore (restoreserviced getdevicesidepreflightinfo; needs a tunnel and
+    uploads each updater's firmware to the device). Prints the requests, their ticket and manifest
+    tags, and the updaters that failed.
+    """
+    with ipsw_ctx as ipsw:
+        build_identity = cast(dict[str, Any], Recovery(ipsw, device).build_identity)
+        print_json(await collect_device_side_preflight(rsd, ipsw, build_identity, updater))
+
+
 @cli.command("ramdisk")
 @async_command
 async def restore_ramdisk(device: DeviceDep, ipsw_ctx: IPSWCtxDep) -> None:
@@ -301,11 +355,10 @@ async def restore_update(
         typer.Option(
             "--tss-batch",
             help=(
-                "Opt-in: enable the batched TSS prefetch POST (iOS 18+). Sends a single "
-                "HTTP request to gs.apple.com that signs every prefetchable peripheral "
-                "ticket (SE/SE2, Rose, Savage, T200, Centauri, eUICC, Baseband) at once; "
-                "the reactive POSTs during restore are then served from cache. Off by "
-                "default — pass this flag to reduce gs.apple.com round-trips during restore."
+                "Opt-in: request the prefetchable peripheral tickets (SE/SE2, Rose, Savage, T200, "
+                "Centauri, eUICC, Baseband) together with the AP ticket, in the same TSS request, and "
+                "serve them during the restore whenever the device asks with the identical request "
+                "(iOS 18+). Adds no request; chips whose nonce changed are signed live as usual."
             ),
         ),
     ] = False,

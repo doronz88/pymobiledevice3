@@ -46,7 +46,7 @@ All 7 `PreflightInfo.DeviceInfo` peripherals are now prefetched. Ace3/PS190/TCON
 
 ### Code changes
 1. the `Savage` `PrefetchableUpdater` uses a `variants` list + the loop resolves `preflight_subkey` (nested-dict navigation) so the Yonkers shape isn't dropped.
-2. `_prefetch_combined_batch` falls back to `_prefetch_per_chip` on combined-POST failure, so one rejected chip never denies the others their tickets.
+2. (superseded) the peripherals were signed in their own POST with a per-chip retry; they now ride in the AP TSS request and a rejection retries the AP request alone — see "Verified on iPhone 18,4 / 24A435" below.
 3. New `add_se2_tags` (@SE2,Ticket) — SE entry retargeted to `SE2,Ticket`. Legacy `add_se_tags` retained for the reactive pre-SE2 path.
 4. New `add_centauri_tags` (@Wireless1,Ticket) incl. the `Wireless1,UID_MODE` + `Wireless1,FdrRootCaDigest` fields restored synthesizes.
 5. New `add_vinyl_prefetch_tags` (@eUICC,Ticket) + **composite-nonce** support (`nonce_path` / `devgen_nonce_path`, resolved by `_resolve_nonce`/`_dig`) for the Gold+Main nonce pair.
@@ -117,9 +117,21 @@ Back-to-back PreflightInfo queries 10 minutes apart returned **identical** nonce
 **On iPhone 18,5 / 27.0 (24A5355q): the service WORKS** (verified live via `RestoreService` in `services/restore_service.py`, over a tunneld RSD):
 - `getnonces` → `{'result': 'nonces', 'apNonce': ..., 'sepNonce': ...}` (sepNonce came back all-`0xff`).
 - `recovery` → `success`, and it actually drove the device into recovery for a full restore (see below).
-- `getpreflightinfo` → connection dropped (`IncompleteReadError`); not usable as-is.
+- `getpreflightinfo` → connection dropped (`IncompleteReadError`); see below for why.
 
-So restoreserviced is reachable from pymobiledevice3 on at least this unit. It still does **not** unlock peripheral prefetch: `getnonces` exposes only Ap/SEP (not the Rose/Savage/etc. coprocessor nonces), and `getpreflightinfo` — which might carry the peripheral DeviceInfo — drops the connection. Cryptex1's own per-boot nonce remains unreachable through the working commands. Worth re-probing per new device/build rather than assuming closed.
+**On iPhone 18,4 / 27.0 (24A435), 2026-09-16 — the dropped connection explained:** restoreserviced aborts
+("Attempted to send non-reply msg on the reply channel", crash log) when it answers the *second* request
+on one RemoteXPC connection. One connection per command works: `getpreflightinfo` returns the same
+`DeviceInfo` as lockdown's `PreflightInfo`, and `getdevicesidepreflightinfo` with a `payload` of
+`{"BuildIdentity": <identity incl. Manifest>, "<Updater>": {<file BuildIdentityTag>: firmware bytes}}`
+returns `DeviceInfoTags` + `DeviceInfoRequests` — restored's own request, built on the device in normal
+mode (`ramrod_update_copy_deviceinfo_with_options`, "Host asked for preflight personalization for this
+updater"). Apple's host (`AMRemoteServiceDeviceProxy::Restore`) only sends that payload for
+`DeviceClass == AppleDisplay` (Ace3, Banyan). Two client-side gotchas: `RemoteXPCConnection.send_request`
+writes one DATA frame (a multi-MB payload gets `GoAway: too large frame size`; chunk it), and a ~30 MB
+Centauri payload was reset (`RST_STREAM 5`). The nonces it returns are the normal-mode ones, identical
+to `PreflightInfo`, so it does not add hits over the `add_*_tags` helpers. Cryptex1 has no normal-mode
+nonce anywhere.
 
 ## What this means for adding new chips
 
@@ -146,3 +158,68 @@ Cryptex1,Nonce              : different every restore (rotates per boot)
 ```
 
 SE and T200 are the only stable chips on this device. The ~2 cache hits per restore in the live testing reflect this.
+
+## Verified on iPhone 18,4 / D23AP / A19 / iOS 27.0 / build 24A435 (2026-09-16)
+
+Design change measured here: the peripheral requests ride in the **AP** TSS request (no request of
+their own) and a prefetched ticket is served only when restored's `DeviceGeneratedRequest` is
+**entry for entry** what was signed.
+
+TSS accepted the AP request with all of SE2, Rose, Savage, T200, Vinyl and Centauri riding along,
+and every leave-one-out combination (`gs.apple.com` returned all eight tickets in one response).
+The earlier "TSS rejects mixing @ApImg4Ticket with peripheral tickets" note was wrong for this
+device; the earlier SE2 rejection was a request missing `SE,RapRTKitOS` / `SE,RapSwBinDsp` /
+`SE,UpdatePayload.ProductionUpdatePayloadHash` (which `add_se2_tags` carries).
+
+Three instrumented reactive restores plus a lockdown `PreflightInfo` dump before the last one:
+
+| Chip | lockdown nonce == next ramdisk nonce? | across restores | hit possible? |
+|---|---|---|---|
+| T200 (`BMU,Nonce`) | yes | identical | yes |
+| SE (`SE,Nonce`, SE2 ticket) | yes | changes after each restore (consumed) | yes, if prefetched in the same boot |
+| Vinyl (`eUICC,Gold/Main` nonces) | yes | identical | yes |
+| Rose (`Rap,Nonce`) | no | rolls; re-rolled with `MessageForceRepersonalization` after FDR sealing | no |
+| Centauri (`Wireless1,Nonce`, `RestoreBootNonce`) | no | rolls | no |
+| Baseband (`Cellular1,Nonce`) | no | rolls | no |
+| Savage (`JasmineIR1,Nonce` loop 0, `Yonkers,Nonce` loop 1) | no | rolls; two loops vs one normal-mode entry | no |
+| Cryptex1, Cryptex1LocalPolicy | not in `PreflightInfo` | fresh every time, force flag set | no |
+
+Why `restore preflight-requests` returns no request for three of them (device syslog, `-m restoreserviced`,
+plus the updater dylibs' strings):
+
+- **Centauri**: RemoteXPC's own message-size cap. The daemon logs `Invalid message size received,
+  disconnecting` / `Connection Disconnected (error [40: Message too long])` for the ~30 MB firmware
+  payload (13 MB SE and 20 MB Vinyl payloads go through). Chunking cannot help; the message itself is
+  too large.
+- **Baseband**: the normal-mode preflight cannot take the radio over from CommCenter
+  (`_CTServerConnectionCopyFirmwarePreflightInfo: CommCenter error: 2:5`, a 16 s `Set Baseband State`
+  failure), then `fp_ExecCmd failed on Baseband, continuing to next updater` and
+  `DeviceInfoFailures: {Baseband: update_baseband}`. Every query pays that timeout.
+- **Vinyl**: silent in syslog (the skip goes to the ramrod log). libVinylUpdater's `VinylUpdaterIsDone`
+  answers "Vinyl update through generic updater is not supported, skip Vinyl update" when asked to
+  personalize (`PreflightRequired`), so the updater is skipped and not even its `DeviceInfo` is
+  returned; the plain query goes through `gatherPreflightParameters` instead, which is why lockdown's
+  `DeviceInfo[Vinyl]` exists and already looks like a request.
+
+restoreserviced's updater table (15 entries, `off_10002E390`): Canary, Rose, Baseband, Centauri, SE,
+Savage, T200, AppleTCON, AppleTypeCRetimer, AppleTypeCRetimerUARP, Ace3, MantaMCU, Vinyl,
+AppleTconUARP, Banyan.
+
+Alignment of the hand-built rider requests against restored's own (`align` = `_request_mismatches`
+on a run capture): T200 and Vinyl 0 mismatches; SE, Rose, Centauri, Baseband nonce only, after adding
+`BMU,BoardID`, `Rap,FdrRootCaDigest` (empty), `UniqueBuildID` for Centauri and the
+`Cellular1,Bb*ManifestKeyHash` identity entries; Savage differs by design (see above).
+
+Live `restore update --tss-batch` (device accepted the prefetched tickets, restore exit 0):
+
+```
+prefetched up-front : 7 ['SE', 'Rose', 'Centauri', 'Savage', 'T200', 'Vinyl', 'Baseband']
+hits                : 3 ['T200', 'SE', 'Vinyl']
+request mismatches  : 5 ['Rose', 'Centauri', 'Baseband', 'Savage', 'Rose']   → live requests
+>> TSS requests saved during the restore: 3        (13 → 10 per restore)
+```
+
+Savage's Yonkers loop also differs in `Yonkers,SepObject`: restored sends `{Digest, EPRO: False,
+FabRevision: 65535}` where the manifest entry has only `Digest`. Not worth aligning while its nonce
+rolls; if a device ever keeps the Yonkers nonce, add the EPRO/FabRevision resolution to
+`add_yonkers_tags` first.

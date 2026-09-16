@@ -74,6 +74,12 @@ SUPPORTED_DATA_TYPES = {
     "MessageUseStreamedImageFile": True,
     "UpdateVolumeOverlayRootDataCount": True,
     "URLAsset": True,
+    # Added for macOS 27 / iOS 27. Values taken from Apple's own host
+    # (MobileDevice.framework `restored_get_supported_data_types`, macOS 27.0), which
+    # advertises the two new request types as supported; idevicerestore lists them as 0.
+    "BootabilityBundleV2": False,
+    "DeviceRestoreInfoPreflight": True,
+    "SourceBootObjectV5": True,
 }
 
 # extracted from ac2
@@ -82,7 +88,9 @@ SUPPORTED_MESSAGE_TYPES = {
     "CheckpointMsg": True,
     "CrashLog": True,
     "DataRequestMsg": False,
-    "FDRSubmit": True,
+    # Apple's host answers FDRSubmit only after uploading the data to Apple's FDR data store, which
+    # is not implemented here, so do not invite restored to send it (see Restore.handle_fdr_submit_msg).
+    "FDRSubmit": False,
     "MsgType": False,
     "PreviousRestoreLogMsg": False,
     "ProgressMsg": False,
@@ -96,7 +104,13 @@ SUPPORTED_MESSAGE_TYPES = {
     "AsyncDataRequestMsg": True,
     "AsyncWait": True,
     "RestoreAttestation": True,
+    # Added for macOS 27 / iOS 27 (MobileDevice.framework `restored_get_supported_message_types`)
+    "RestoreProtocol": True,
 }
+
+# MobileDevice.framework `restored_get_supported_protocols`: the transports the host can serve
+# data requests over. Only the usbmuxd socket is implemented here.
+SUPPORTED_HOST_PROTOCOLS = ["MuxSocket"]
 
 
 class RestoreOptions:
@@ -128,6 +142,7 @@ class RestoreOptions:
 
         self.SupportedDataTypes = SUPPORTED_DATA_TYPES
         self.SupportedMessageTypes = SUPPORTED_MESSAGE_TYPES
+        self.SupportedHostProtocols = SUPPORTED_HOST_PROTOCOLS
 
         # FIXME: Should be adjusted for update behaviors
         if macos_variant:

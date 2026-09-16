@@ -1,10 +1,11 @@
 """Dry-run validation harness for the batched TSS prefetch.
 
-Calls Restore._prefetch_combined_batch() ONLY. Does NOT boot the ramdisk, does
-NOT enter restore mode, does NOT touch any device state. Safe to run repeatedly.
+Calls Restore._prepare_tss_riders() and then posts the AP TSS request with the riders
+(Recovery.get_tss_response()). Does NOT boot the ramdisk, does NOT enter restore mode,
+does NOT touch any device state. Safe to run repeatedly.
 
-Use when adding a new entry to PREFETCHABLE_UPDATERS to confirm TSS accepts the
-combined POST shape before any live restore.
+Use when adding a new entry to PREFETCHABLE_UPDATERS to confirm TSS accepts the AP
+request with the riders before any live restore.
 
 Usage:
     1. Copy this file to /tmp/dryrun_batched.py
@@ -43,13 +44,16 @@ async def main() -> int:
     r._preflight_info = await device.get_preflight_info()
     r._firmware_preflight_info = await device.get_firmware_preflight_info()
 
-    ok = await r._prefetch_combined_batch()
+    tracked = await r._prepare_tss_riders()
+    response = await r.recovery.get_tss_response()  # the AP request, with the riders
     print()
-    print(f"batched POST result: {'SUCCESS' if ok else 'FAILED'}")
-    print(f"prefetched: {sorted(r._prefetched_updater_tss.keys())}")
-    for name, entry in r._prefetched_updater_tss.items():
-        ticket = entry["response"][entry["ticket_name"]]
-        print(f"  {name}: {entry['ticket_name']}  ({len(ticket)} bytes)  nonce={entry['nonce'].hex()[:16]}...")
+    print(f"riders signed with the AP ticket: {r.recovery.tss_riders_applied}")
+    ok = r.recovery.tss_riders_applied
+    for entry in tracked:
+        ticket = response.get(entry.ticket_name)
+        status = f"{len(ticket)} bytes" if ticket is not None else "MISSING"
+        print(f"  {entry.updater_name}: {entry.ticket_name}  ({status})  nonce={entry.nonce.hex()[:16]}...")
+        ok = ok and ticket is not None
     return 0 if ok else 1
 
 
