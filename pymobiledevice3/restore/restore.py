@@ -213,7 +213,7 @@ class Restore(BaseRestore):
             "BasebandData": self.send_baseband_data,
             "FDRTrustData": self.send_fdr_trust_data,
             "FirmwareUpdaterData": self.send_firmware_updater_data,
-            # TODO: verify
+            # answered empty (= Apple's host on a cache miss), see send_firmware_updater_preflight
             "FirmwareUpdaterPreflight": self.send_firmware_updater_preflight,
             # Added in iOS 27 / macOS 27: answered like a firmware updater preflight
             "DeviceRestoreInfoPreflight": self.send_firmware_updater_preflight,
@@ -1526,7 +1526,16 @@ class Restore(BaseRestore):
             await service.send_plist(reply)
 
     async def send_firmware_updater_preflight(self, message: dict[str, Any]) -> None:
-        self.logger.warning(f"send_firmware_updater_preflight: {message}")
+        """
+        restored asks (because we set ``PersonalizedDuringPreflight``) whether the host already holds
+        personalized tickets for this updater, before it starts the updater's personalization loop.
+
+        Apple's host (MobileDevice ``_handleFirmwareUpdaterPreflight``) answers from tickets it stashed in the
+        restore bundle during an earlier ``FirmwareUpdaterData`` round of the same bundle; on a cache miss it
+        sends an empty dictionary, which is what we always send. The device then goes through the regular
+        ``FirmwareUpdaterData`` request, so nothing is lost.
+        """
+        self.logger.debug(f"send_firmware_updater_preflight: {message}")
         service = await self._get_service_for_data_request(message)
         await service.send_plist({})
 
