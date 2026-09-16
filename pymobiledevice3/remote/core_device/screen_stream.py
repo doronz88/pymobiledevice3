@@ -38,9 +38,14 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 import pymobiledevice3.resources
+from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
-from pymobiledevice3.remote.core_device.display_service import DisplayService
+from pymobiledevice3.remote.core_device.display_service import (
+    MEDIA_IN_USE_MESSAGE,
+    DisplayService,
+    is_media_in_use_error,
+)
 from pymobiledevice3.remote.core_device.hid_service import (
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     HID_BUTTON_STATE_DOWN,
@@ -2862,19 +2867,41 @@ class ScreenStreamServer:
            liveness signal, not just a feature for the user.
 
         Sequence matches Xcode verbatim: audio first, then video.
-        Failures in either branch are logged but don't block the HTTP
-        server -- /codec and /stream.bin retry on their own."""
+        Transient failures are logged but don't block the HTTP server --
+        /codec and /stream.bin retry on their own. The camera/microphone-in-use
+        rejection (code 9022) is different: it is a hard, user-actionable state,
+        so it is re-raised for the caller to turn into a clean exit rather than
+        serving a viewer that could only ever error."""
         try:
             await self._ensure_audio_stream()
-        except Exception:
+        except Exception as e:
+            if is_media_in_use_error(e):
+                raise
             logger.warning("eager audio start failed (will retry on /audio.bin connect)", exc_info=True)
         try:
             await self._ensure_fresh_stream(force=False)
-        except Exception:
+        except Exception as e:
+            if is_media_in_use_error(e):
+                raise
             logger.warning("eager video start failed (will retry on first /codec)", exc_info=True)
 
     async def serve(self) -> None:
         """Run the HTTP server until cancelled / Ctrl-C."""
+        # Preflight the device-side stream before binding the HTTP server. If
+        # the camera or microphone is in use there is nothing to serve, so fail
+        # fast with a clean, actionable error (a non-zero exit, no traceback)
+        # instead of standing up a server that could only ever return errors.
+        # Any other start failure is non-fatal: serve anyway and bring the
+        # stream up lazily; a wedged device just delays the warm start.
+        try:
+            await asyncio.wait_for(self._eager_stream_start(), timeout=25.0)
+        except asyncio.TimeoutError:
+            logger.warning("initial stream start timed out; serving anyway (will retry lazily)")
+        except CoreDeviceError as e:
+            # _eager_stream_start only re-raises the camera/microphone-in-use
+            # case; everything else it logs and swallows so we still serve.
+            raise CoreDeviceError(MEDIA_IN_USE_MESSAGE, code=e.code) from None
+
         ssl_ctx = _build_self_signed_ssl_context(self._bind) if self._https else None
         http_server = await asyncio.start_server(
             self._handle_http,
@@ -2888,13 +2915,9 @@ class ScreenStreamServer:
         self._reconnect_task = asyncio.create_task(self._reconnect_loop())
         self._keep_awake_task = asyncio.create_task(self._keep_awake_loop())
         # Eagerly start the HID worker so queued /touch requests are
-        # processed even before the device-stream is fully up.
+        # processed even before the device-stream is fully up. The video/audio
+        # streams were already brought up by the preflight above.
         self._hid_worker_task = asyncio.create_task(self._hid_worker())
-        # Kick off the video stream in the background. We don't await it
-        # here -- the HTTP server should accept connections immediately
-        # so the user sees a working /index.html even if the device-side
-        # handshake is slow.
-        eager_start = asyncio.create_task(self._eager_stream_start())
 
         # Install signal handlers so Ctrl-C / SIGTERM trigger an
         # orderly, fast shutdown instead of waiting for blocked RPCs.
@@ -2955,10 +2978,6 @@ class ScreenStreamServer:
             self._keep_awake_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._keep_awake_task
-            logger.debug("shutdown: cancelling eager_start")
-            eager_start.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await eager_start
             # Close the HTTP listener first so no new connections come in
             # while we tear the device-side streams down.
             logger.debug("shutdown: closing HTTP server")

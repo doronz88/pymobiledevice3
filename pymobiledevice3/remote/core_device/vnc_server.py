@@ -33,9 +33,14 @@ import uuid
 from collections import deque
 from typing import Optional
 
+from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device.aac_eld import AACELDDecoder
 from pymobiledevice3.remote.core_device.audio_player import AudioQueuePlayer
-from pymobiledevice3.remote.core_device.display_service import DisplayService
+from pymobiledevice3.remote.core_device.display_service import (
+    MEDIA_IN_USE_MESSAGE,
+    DisplayService,
+    is_media_in_use_error,
+)
 from pymobiledevice3.remote.core_device.hevc_rps import HevcRpsTracker, is_slice_nal
 from pymobiledevice3.remote.core_device.hid_service import (
     ASCII_TO_HID,
@@ -1372,15 +1377,27 @@ class VncStreamServer:
         svc = DisplayService(self._rsd)
         await svc.connect()
         transport, receiver_ip = open_media_receiver(svc, (8 * 1024 * 1024, 4 * 1024 * 1024))
-        answer = await svc.start_video_stream(
-            receiver_ip=receiver_ip,
-            receiver_port=transport.port,
-            sender_ip=self._sender_ip,
-            display_id=self._display_id,
-            client_session_id=shared_session_id,
-            allow_rtcp_fb=self._allow_rtcp_fb,
-            ltrp_enabled=self._ltrp_enabled,
-        )
+        try:
+            answer = await svc.start_video_stream(
+                receiver_ip=receiver_ip,
+                receiver_port=transport.port,
+                sender_ip=self._sender_ip,
+                display_id=self._display_id,
+                client_session_id=shared_session_id,
+                allow_rtcp_fb=self._allow_rtcp_fb,
+                ltrp_enabled=self._ltrp_enabled,
+            )
+        except CoreDeviceError as e:
+            with contextlib.suppress(Exception):
+                await svc.close()
+            with contextlib.suppress(Exception):
+                transport.close()
+            # Camera/microphone in use: there is nothing to serve. Fail fast
+            # with a clean, actionable error (no traceback). No stream started,
+            # so there is nothing to tear down on the device.
+            if is_media_in_use_error(e):
+                raise CoreDeviceError(MEDIA_IN_USE_MESSAGE, code=e.code) from None
+            raise
         cfg = answer["connection"].get("streamConfig", {})
         logger.info(
             "video stream up: %dx%d HEVC, sender_port=%s",

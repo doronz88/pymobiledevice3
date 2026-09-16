@@ -2,6 +2,7 @@ import random
 import uuid
 from typing import Any, Optional
 
+from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.core_device.media_stream_offer import (
     build_negotiator_offer_audio,
@@ -10,6 +11,31 @@ from pymobiledevice3.remote.core_device.media_stream_offer import (
 )
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
+
+# CoreDevice error code ``dtremotedisplayd`` returns when a foreground app
+# (Camera, Voice Memos, ...) already holds the camera or microphone. iOS refuses
+# to start a mirroring session while those sensors are in use; this is expected
+# and matches Xcode's Device Hub, which raises the same conflict.
+MEDIA_IN_USE_ERROR_CODE = 9022
+
+# Apple documents the identical conflict for Device Hub.
+CAMERA_MIC_CONFLICT_DOC_URL = (
+    "https://developer.apple.com/documentation/xcode/interacting-with-your-app-in-device-hub"
+    "#Handle-camera-and-microphone-access-conflicts-on-physical-devices"
+)
+
+# Actionable, single-line message for the camera/microphone-in-use case.
+MEDIA_IN_USE_MESSAGE = (
+    "The device's camera or microphone is in use by another app (e.g. Camera or Voice Memos). "
+    "Quit that app on the device, then retry — screen mirroring cannot start while a "
+    f"foreground app holds those sensors. See {CAMERA_MIC_CONFLICT_DOC_URL}"
+)
+
+
+def is_media_in_use_error(exc: BaseException) -> bool:
+    """True if *exc* is CoreDevice's "camera or microphone is in use" rejection (code 9022)."""
+    return isinstance(exc, CoreDeviceError) and exc.code == MEDIA_IN_USE_ERROR_CODE
+
 
 # Bit mask captured from devicectl. Bits identify host-side feature support.
 _CLIENT_SUPPORTED_FEATURES = 140

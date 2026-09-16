@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.remote_service import RemoteService
@@ -17,6 +17,31 @@ def _generate_core_device_version_dict(version: str) -> dict[str, Any]:
 
 
 CORE_DEVICE_VERSION = _generate_core_device_version_dict("629.3")
+
+
+def _core_device_error(feature_identifier: Optional[str], response: dict[str, Any]) -> CoreDeviceError:
+    """Build a :class:`CoreDeviceError` from a failed invocation response.
+
+    When the device attached a structured ``CoreDevice.error`` (``code`` +
+    ``userInfo.NSLocalizedDescription``), surface a readable message and carry
+    the code so callers can branch on it. Otherwise fall back to dumping the
+    raw response.
+    """
+    error = response.get("CoreDevice.error")
+    if isinstance(error, dict):
+        error_dict = cast("dict[str, Any]", error)
+        code = error_dict.get("code")
+        user_info_raw = error_dict.get("userInfo")
+        user_info = cast("dict[str, Any]", user_info_raw) if isinstance(user_info_raw, dict) else None
+        detail = user_info.get("NSLocalizedDescription") if user_info is not None else None
+        if detail is not None:
+            return CoreDeviceError(
+                f"Failed to invoke {feature_identifier}: {detail} (code {code})",
+                code=code if isinstance(code, int) else None,
+                user_info=user_info,
+            )
+    return CoreDeviceError(f"Failed to invoke: {feature_identifier}. Got error: {response}")
+
 
 # Wire keys for the streaming feature protocol (streamapplist/streamprocesslist), verified
 # against iOS 26 (CoreDeviceUtilities StreamingAction.swift: _StreamingActionInputContainer /
@@ -64,7 +89,7 @@ class CoreDeviceService(RemoteService):
         response = await self.service.send_receive_request(request)
         output = response.get("CoreDevice.output")
         if output is None:
-            raise CoreDeviceError(f"Failed to invoke: {feature_identifier}. Got error: {response}")
+            raise _core_device_error(feature_identifier, response)
         return output
 
     async def stream_invoke(

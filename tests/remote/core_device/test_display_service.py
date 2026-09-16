@@ -2,7 +2,12 @@ from typing import Any, cast
 
 import pytest
 
-from pymobiledevice3.remote.core_device.display_service import DisplayService
+from pymobiledevice3.exceptions import CoreDeviceError
+from pymobiledevice3.remote.core_device.display_service import (
+    MEDIA_IN_USE_ERROR_CODE,
+    DisplayService,
+    is_media_in_use_error,
+)
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
 from pymobiledevice3.remote.xpc_message import XpcUInt64Type
@@ -82,3 +87,10 @@ async def test_stop_all_streams_uses_a_fresh_connection(monkeypatch: pytest.Monk
     assert len(connection.sent) == 1
     assert connection.sent[0]["CoreDevice.input"] == {"stopAll": True}
     assert connection.closed is True
+
+
+def test_is_media_in_use_error_matches_code_9022() -> None:
+    assert is_media_in_use_error(CoreDeviceError("in use", code=MEDIA_IN_USE_ERROR_CODE))
+    assert not is_media_in_use_error(CoreDeviceError("other", code=1))
+    assert not is_media_in_use_error(CoreDeviceError("no code"))
+    assert not is_media_in_use_error(ValueError("unrelated"))
