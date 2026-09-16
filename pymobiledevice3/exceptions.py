@@ -80,7 +80,7 @@ __all__ = [
     "WirError",
 ]
 
-from typing import Optional
+from typing import Any, Optional
 
 
 class PyMobileDevice3Exception(Exception):
@@ -482,7 +482,35 @@ class AppNotInstalledError(PyMobileDevice3Exception):
 
 
 class CoreDeviceError(PyMobileDevice3Exception):
-    pass
+    """A ``com.apple.dt.CoreDeviceError`` (or other CoreDevice domain) failure.
+
+    When the daemon returns a structured ``CoreDevice.error`` the ``code``,
+    ``domain`` and ``user_info`` are populated so callers can react to a
+    specific reason (e.g. code 9022 = the device microphone/camera is in use)
+    without re-parsing the raw XPC payload.
+    """
+
+    #: ``com.apple.dt.CoreDeviceError`` code raised by ``startmediastream`` when
+    #: the microphone or camera is in use / a call or the assistant is active.
+    MEDIA_STREAM_SENSOR_IN_USE = 9022
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: Optional[int] = None,
+        domain: Optional[str] = None,
+        user_info: Optional[dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.domain = domain
+        self.user_info = user_info or {}
+
+    @property
+    def localized_description(self) -> Optional[str]:
+        description = self.user_info.get("NSLocalizedDescription")
+        return description if isinstance(description, str) else None
 
 
 class CryptexdError(PyMobileDevice3Exception):

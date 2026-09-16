@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.remote_service import RemoteService
@@ -38,6 +38,52 @@ STREAM_FINISH_KEY = "finishStreaming"
 STREAM_RECEIVED_ERROR_KEY = "receivedError"
 
 
+def _core_device_error(feature_identifier: Optional[str], response: dict[str, Any]) -> CoreDeviceError:
+    """Build a :class:`CoreDeviceError` from a failed ``invoke`` response.
+
+    The daemon returns the failure under ``CoreDevice.error`` as a dict carrying
+    ``code``, ``domain`` and a ready-to-read ``userInfo`` (the
+    ``userInfoWithNSSecureCoding`` bplist is the same info, kept as a fallback).
+    Surfacing the localized reason turns an opaque bplist dump into, e.g.,
+    ``The device microphone or camera is currently in use.``.
+    """
+    raw_error = response.get("CoreDevice.error")
+    if not isinstance(raw_error, dict):
+        return CoreDeviceError(f"Failed to invoke: {feature_identifier}. Got error: {response}")
+
+    error = cast(dict[str, Any], raw_error)
+    code = error.get("code")
+    domain = error.get("domain")
+    raw_user_info = error.get("userInfo")
+    user_info: dict[str, Any] = cast(dict[str, Any], raw_user_info) if isinstance(raw_user_info, dict) else {}
+    description = user_info.get("NSLocalizedDescription")
+    if not isinstance(description, str):
+        description = _localized_description_from_archive(error.get("userInfoWithNSSecureCoding"))
+    detail = description or "unknown error"
+    return CoreDeviceError(
+        f"Failed to invoke {feature_identifier}: {detail} (domain={domain}, code={code})",
+        code=code if isinstance(code, int) else None,
+        domain=domain if isinstance(domain, str) else None,
+        user_info={**user_info, **({"NSLocalizedDescription": description} if description else {})},
+    )
+
+
+def _localized_description_from_archive(archive: Any) -> Optional[str]:
+    """Best-effort ``NSLocalizedDescription`` from a ``userInfoWithNSSecureCoding`` bplist."""
+    if not isinstance(archive, (bytes, bytearray)):
+        return None
+    try:
+        import bpylist2.archiver
+
+        decoded = bpylist2.archiver.unarchive(bytes(archive))
+    except Exception:
+        return None
+    if not isinstance(decoded, dict):
+        return None
+    description = cast(dict[str, Any], decoded).get("NSLocalizedDescription")
+    return description if isinstance(description, str) else None
+
+
 class CoreDeviceService(RemoteService):
     async def invoke(
         self,
@@ -64,7 +110,7 @@ class CoreDeviceService(RemoteService):
         response = await self.service.send_receive_request(request)
         output = response.get("CoreDevice.output")
         if output is None:
-            raise CoreDeviceError(f"Failed to invoke: {feature_identifier}. Got error: {response}")
+            raise _core_device_error(feature_identifier, response)
         return output
 
     async def stream_invoke(

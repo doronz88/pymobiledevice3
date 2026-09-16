@@ -38,6 +38,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 import pymobiledevice3.resources
+from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
 from pymobiledevice3.remote.core_device.display_service import DisplayService
@@ -2378,6 +2379,24 @@ class ScreenStreamServer:
                 return
             try:
                 await self._ensure_audio_stream()
+            except CoreDeviceError as exc:
+                # The device refused the stream (e.g. code 9022: the microphone
+                # or camera is in use, a call or the assistant is active). This
+                # is expected, transient device state -- surface the device's
+                # own reason to the viewer and let it retry, rather than dumping
+                # a traceback and a bare 500. Video mirroring is unaffected.
+                reason = exc.localized_description or str(exc)
+                logger.warning("audio stream refused by device: %s", reason)
+                body = reason.encode()
+                writer.write(
+                    b"HTTP/1.1 503 Audio Unavailable\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + body
+                )
+                await writer.drain()
+                writer.close()
+                return
             except Exception:
                 logger.exception("failed to start audio stream")
                 writer.write(b"HTTP/1.1 500 Internal\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
