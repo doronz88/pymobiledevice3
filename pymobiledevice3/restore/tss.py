@@ -160,6 +160,20 @@ class TSSRequest:
                 value = int(value, 16)
             self._request[key] = value
 
+    def setdefault_tags(self, parameters: dict[str, typing.Any]) -> list[str]:
+        """Add the entries whose key is not in the request yet; returns the keys that were added."""
+        added: list[str] = []
+        for key, value in parameters.items():
+            if key in self._request:
+                continue
+            self._request[key] = value
+            added.append(key)
+        return added
+
+    def tags(self) -> dict[str, typing.Any]:
+        """A copy of the request as it would be posted."""
+        return dict(self._request)
+
     def add_common_tags(
         self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None
     ):

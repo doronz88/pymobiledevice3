@@ -89,14 +89,14 @@ known_errors = {
 
 @dataclass
 class TrackedPrefetch:
-    """A peripheral selected for the batched POST, with its resolved per-chip request state."""
+    """A peripheral whose ticket request rides along in the AP TSS request (``--tss-batch``)."""
 
     updater_name: str
     ticket_name: str
     nonce: bytes
-    add_tags: Callable[..., Any]
-    chip_params: dict[str, Any]
-    # how to find this chip's nonce in the restore-time DeviceGeneratedRequest
+    # the request entries built for this chip, exactly as posted
+    request: dict[str, Any]
+    # how to find this chip's nonce in a legacy (host-built) restore-time request
     # (one of these is set, mirroring PrefetchVariant).
     devgen_nonce: Optional[str] = None
     devgen_nonce_path: Optional[list[Any]] = None
@@ -104,11 +104,16 @@ class TrackedPrefetch:
 
 @dataclass
 class PrefetchedTicket:
-    """A cached peripheral TSS ticket, served on a runtime nonce-match."""
+    """A prefetched peripheral TSS ticket.
+
+    Served on the device-generated path only when restored's own request is entry-for-entry
+    identical to ``request`` (nonces included); the legacy host-built path matches on the nonce.
+    """
 
     nonce: bytes
     response: TSSResponse
     ticket_name: str
+    request: dict[str, Any]
     devgen_nonce: Optional[str] = None
     devgen_nonce_path: Optional[list[Any]] = None
 
@@ -138,17 +143,18 @@ class Restore(BaseRestore):
         self._preflight_info = None
         self._firmware_preflight_info = None
 
-        # Tethered-preflight (iOS 18+): if enabled, pull per-peripheral state from
-        # PreflightInfo.DeviceInfo BEFORE entering recovery and prefetch all firmware
-        # updater TSS tickets in one network burst. The reactive DataRequestMsg path
-        # then serves from cache (after nonce-match verification).
+        # --tss-batch: build every prefetchable peripheral's ticket request from
+        # PreflightInfo.DeviceInfo BEFORE entering recovery and let them ride along in the
+        # AP TSS request (no extra round-trip). During the restore the reactive
+        # FirmwareUpdaterData path serves a prefetched ticket only when restored's own request
+        # is identical to what was signed; anything else falls through to a live request.
         self._enable_tss_batch = enable_tss_batch
-        # Maps updater name (e.g. "SE", "Rose", "T200") -> {"nonce": bytes, "response": TSSResponse}.
+        # Maps updater name (e.g. "SE", "Rose", "T200") -> PrefetchedTicket.
         self._prefetched_updater_tss: dict[str, PrefetchedTicket] = {}
         # Per-updater outcomes during the restore phase:
-        #   "hit"           -> served from prefetch cache (saved a TSS POST)
-        #   "miss-nodrift"  -> not prefetched, fell back to reactive POST
-        #   "miss-drift"    -> prefetched but runtime nonce differed; reactive POST
+        #   "hit"           -> served from the prefetch (saved a TSS round-trip)
+        #   "miss-nodrift"  -> not prefetched, live request as usual
+        #   "miss-drift"    -> prefetched but the device asked with a different request; live request
         self._tss_prefetch_outcomes: list[tuple[str, str]] = []
 
         # prepare progress bar for OS component verify
@@ -1286,25 +1292,73 @@ class Restore(BaseRestore):
     def _lookup_prefetched_tss_by_ticket(
         self, response_ticket: str, arguments: dict[str, Any]
     ) -> Optional[TSSResponse]:
-        """Cache lookup for the iOS 18+ DeviceGeneratedTags path.
+        """Prefetch lookup for the device-generated (iOS 18+) path.
 
-        On modern iOS, restored builds the TSS request itself and the host just forwards.
-        Look up by the ticket key (e.g. "SE,Ticket") and verify the runtime nonce
-        against the prefetched one.
+        restored builds the TSS request itself and the host only forwards it, so the prefetched
+        ticket is valid exactly when that request is entry-for-entry what we signed: same nonces,
+        same digests, same flags. Compare the whole ``DeviceGeneratedRequest`` rather than the
+        nonce alone; a chip that rolled its nonce, a firmware digest we resolved differently or
+        a field restored added are all misses, never a stale ticket.
         """
-        # Find which updater this ticket belongs to.
-        updater_name = None
-        for name, entry in self._prefetched_updater_tss.items():
-            if entry.ticket_name == response_ticket:
-                updater_name = name
-                break
+        updater_name = next(
+            (name for name, entry in self._prefetched_updater_tss.items() if entry.ticket_name == response_ticket),
+            None,
+        )
         if updater_name is None:
             return None  # this ticket type wasn't prefetched
 
         entry = self._prefetched_updater_tss[updater_name]
+        # restored says so explicitly when a stashed ticket must not be used: after FDR sealing
+        # (MessageForceRepersonalization) and on any loop but the first (Apple's host,
+        # AMRestoreUpdaterPersonalize, skips its stash on either).
+        loop_count = arguments.get("MessageArgUpdaterLoopCount", 0)
+        if arguments.get("MessageForceRepersonalization") or loop_count:
+            self.logger.info(
+                f"TSS prefetch skipped for {updater_name}: the device asked for a fresh personalization "
+                f"(loop {loop_count}, force={bool(arguments.get('MessageForceRepersonalization'))})"
+            )
+            self._tss_prefetch_outcomes.append((updater_name, "miss-drift"))
+            return None
         devgen: dict[str, Any] = arguments.get("DeviceGeneratedRequest") or {}
-        runtime_nonce = self._resolve_nonce(devgen, entry.devgen_nonce, entry.devgen_nonce_path)
-        return self._lookup_prefetched_tss(updater_name, runtime_nonce)
+        mismatches = self._request_mismatches(devgen, entry.request)
+        if mismatches:
+            self.logger.warning(
+                f"TSS prefetch MISS on {updater_name}: the device's request differs in "
+                f"{', '.join(mismatches)}; falling back to a live TSS request"
+            )
+            self._tss_prefetch_outcomes.append((updater_name, "miss-drift"))
+            return None
+        self.logger.info(f"TSS prefetch HIT for {updater_name}: serving the prefetched {response_ticket}")
+        self._tss_prefetch_outcomes.append((updater_name, "hit"))
+        return entry.response
+
+    @classmethod
+    def _request_mismatches(cls, device_request: dict[str, Any], our_request: dict[str, Any]) -> list[str]:
+        """The keys of ``device_request`` whose value is absent or different in ``our_request``.
+
+        Bytes and bytearrays compare by content; nested dictionaries are compared the same way.
+        Extra entries in ``our_request`` do not count: TSS signed a superset of what the device
+        asks for, which is exactly the point of prefetching.
+        """
+        return sorted(
+            key for key, value in device_request.items() if not cls._tss_values_equal(value, our_request.get(key))
+        )
+
+    @classmethod
+    def _tss_values_equal(cls, device_value: Any, our_value: Any) -> bool:
+        if isinstance(device_value, (bytes, bytearray)) or isinstance(our_value, (bytes, bytearray)):
+            return (
+                isinstance(device_value, (bytes, bytearray))
+                and isinstance(our_value, (bytes, bytearray))
+                and bytes(device_value) == bytes(our_value)
+            )
+        if isinstance(device_value, dict):
+            if not isinstance(our_value, dict):
+                return False
+            ours = typing.cast(dict[str, Any], our_value)
+            theirs = typing.cast(dict[str, Any], device_value)
+            return set(ours) == set(theirs) and all(cls._tss_values_equal(v, ours[k]) for k, v in theirs.items())
+        return bool(device_value == our_value)
 
     def _lookup_prefetched_tss(self, updater_name: str, runtime_nonce: Optional[bytes]) -> Optional[TSSResponse]:
         """Return the prefetched TSS response if the runtime nonce matches what we prefetched with."""
@@ -1330,23 +1384,19 @@ class Restore(BaseRestore):
         self._tss_prefetch_outcomes.append((updater_name, "hit"))
         return entry.response
 
-    async def _prefetch_combined_batch(self) -> bool:
-        """Build ONE TSS POST that asks for every peripheral ticket simultaneously,
-        using TSS's multi-component response support.
+    async def _prepare_tss_riders(self) -> list[TrackedPrefetch]:
+        """Build the peripheral ticket requests of ``--tss-batch`` and hand them to ``Recovery`` as
+        riders of the AP TSS request.
 
-        We don't combine this with the AP signing context — TSS rejects requests that
-        mix @ApImg4Ticket with peripheral @*,Ticket flags (returns "This device isn't
-        eligible for the requested build"). The AP bundle stays in Recovery.get_tss_response
-        as its own POST. This batched call covers ONLY the per-peripheral tickets that
-        would otherwise be N separate POSTs during restore.
+        One request signs the AP ticket and every prefetchable peripheral ticket at once (TSS
+        answers all of them in one response; verified on iPhone18,4 / iOS 27.0 with every
+        combination of these chips). Each chip's reactive ``add_*_tags`` helper is reused so the
+        prefetched request stays identical to the reactive one, which is what the exact-match
+        lookup during the restore relies on.
 
-        On success, populates self._prefetched_updater_tss; the reactive
-        get_device_generated_firmware_data path then serves from cache on a nonce match.
-
-        Returns True on success, False on failure (caller's restore proceeds normally).
+        :returns: the chips whose requests ride along (empty if there is nothing to prefetch).
         """
-        # Common AP context — required by every peripheral signing request even though
-        # we're NOT asking TSS to sign the AP ticket itself.
+        # Common AP context — required by every peripheral signing request.
         parameters: dict[str, Any] = {"ApECID": await self.device.get_ecid()}
         parameters["ApProductionMode"] = True
         if await self.device.get_is_image4_supported():
@@ -1356,15 +1406,9 @@ class Restore(BaseRestore):
             parameters["ApSupportsImg4"] = False
         self.populate_tss_request_from_manifest(parameters)
 
-        tss = TSSRequest()
-        tss.add_common_tags(parameters)
-
-        # Peripheral riders: one per entry in tss.PREFETCHABLE_UPDATERS.
-        # Each chip's reactive add_*_tags helper is reused unchanged so the per-chip quirks
-        # (byte→int normalization, T200's "Nonce"→"BMU,Nonce" remapping, Rose's
-        # ApProductionMode flag, etc.) stay exactly identical to the reactive path.
         device_info = await self.device.get_preflight_device_info() or {}
         tracked: list[TrackedPrefetch] = []
+        riders: dict[str, Any] = {}
         for updater in PREFETCHABLE_UPDATERS:
             top_info = device_info.get(updater.preflight_key)
             if not top_info:
@@ -1391,92 +1435,67 @@ class Restore(BaseRestore):
                 continue
             cand, info, nonce = resolved
 
-            # Build chip-specific params on top of the AP base params; merge the
-            # PreflightInfo state into them WITHOUT clobbering manifest-derived ints
-            # (see _merge_device_info docstring re: Savage,ChipID), then call the
-            # matching add_*_tags helper.
+            # Build the chip's entries on a scratch request so only what the helper adds is kept
+            # (the AP request supplies the common tags). Merge the PreflightInfo state WITHOUT
+            # clobbering manifest-derived ints (see _merge_device_info re: Savage,ChipID).
             chip_params = self._merge_device_info(parameters, info)
+            scratch = TSSRequest()
+            common = set(scratch.tags())
             try:
-                cand.add_tags(tss, chip_params, None)
+                cand.add_tags(scratch, chip_params, None)
             except Exception as e:
                 self.logger.warning(
-                    f"TSS batch: failed to add {updater.name} tags: {type(e).__name__}: {e}; "
-                    "skipping this chip in the batch"
+                    f"TSS batch: failed to build the {updater.name} request: {type(e).__name__}: {e}; "
+                    "leaving this chip to the reactive path"
                 )
                 continue
+            request = {key: value for key, value in scratch.tags().items() if key not in common}
+            for key, value in request.items():
+                riders.setdefault(key, value)
             tracked.append(
                 TrackedPrefetch(
                     updater_name=updater.name,
                     ticket_name=cand.ticket_name,
                     nonce=nonce,
-                    add_tags=cand.add_tags,
-                    chip_params=chip_params,
+                    request=request,
                     devgen_nonce=cand.devgen_nonce,
                     devgen_nonce_path=cand.devgen_nonce_path,
                 )
             )
 
         if not tracked:
-            self.logger.info("TSS batch: no peripherals to bundle; returning early")
-            return False
+            self.logger.info("TSS batch: no peripherals to prefetch")
+            return []
 
         self.logger.info(
-            f"TSS batch: requesting {len(tracked)} peripheral tickets ({[t.ticket_name for t in tracked]}) in ONE POST"
+            f"TSS batch: {len(tracked)} peripheral ticket(s) ({[t.ticket_name for t in tracked]}) "
+            "ride along in the AP TSS request"
         )
-        try:
-            response = await tss.send_receive()
-        except Exception as e:
-            # One bad chip (e.g. an SE request shape TSS rejects on a given SoC) fails the
-            # WHOLE combined POST with an opaque "internal error". Rather than drop every
-            # ticket to the reactive path, retry each peripheral as its own POST so the good
-            # chips still get prefetched; only the offending chip falls back to reactive.
-            self.logger.warning(
-                f"TSS batch FAILED: {type(e).__name__}: {e}. Retrying {len(tracked)} peripheral(s) as individual POSTs."
-            )
-            return await self._prefetch_per_chip(parameters, tracked)
+        self.recovery.tss_riders = riders
+        return tracked
 
-        # Pull each peripheral ticket out of the combined response
+    def _store_tss_riders(self, tracked: list[TrackedPrefetch]) -> None:
+        """Keep the peripheral tickets the AP TSS response came back with."""
+        if not self.recovery.tss_riders_applied:
+            self.logger.info("TSS batch: the riders were not signed; every peripheral goes through the reactive path")
+            return
+        response = self.recovery.require_tss()
         for entry in tracked:
-            self._store_prefetched_ticket(entry, response)
-        return True
-
-    def _store_prefetched_ticket(self, entry: TrackedPrefetch, response: dict[str, Any]) -> bool:
-        """Cache a single peripheral's ticket from a TSS response if present. Returns True
-        if the expected ticket was found and stored."""
-        ticket_name = entry.ticket_name
-        updater_name = entry.updater_name
-        if ticket_name in response:
-            self._prefetched_updater_tss[updater_name] = PrefetchedTicket(
+            ticket = response.get(entry.ticket_name)
+            if ticket is None:
+                self.logger.info(
+                    f"TSS batch: TSS did not return {entry.ticket_name}; the reactive path will handle {entry.updater_name}"
+                )
+                continue
+            self._prefetched_updater_tss[entry.updater_name] = PrefetchedTicket(
                 nonce=entry.nonce,
-                response=TSSResponse({ticket_name: response[ticket_name]}),
-                ticket_name=ticket_name,
+                response=TSSResponse({entry.ticket_name: ticket, "@ServerVersion": response.get("@ServerVersion")}),
+                ticket_name=entry.ticket_name,
+                request=entry.request,
                 devgen_nonce=entry.devgen_nonce,
                 devgen_nonce_path=entry.devgen_nonce_path,
             )
-            self.logger.info(f"TSS batch: got {ticket_name} for {updater_name}")
-            return True
-        self.logger.info(f"TSS batch: TSS did NOT return {ticket_name}; reactive path will handle this peripheral")
-        return False
-
-    async def _prefetch_per_chip(self, parameters: dict[str, Any], tracked: list[TrackedPrefetch]) -> bool:
-        """Fallback when the combined POST is rejected: sign each peripheral in its own POST
-        so a single rejected chip doesn't deny the others their prefetched tickets. Returns
-        True if at least one ticket was cached."""
-        any_ok = False
-        for entry in tracked:
-            tss = TSSRequest()
-            tss.add_common_tags(parameters)
-            entry.add_tags(tss, entry.chip_params, None)
-            try:
-                response = await tss.send_receive()
-            except Exception as e:
-                self.logger.warning(
-                    f"TSS per-chip prefetch for {entry.updater_name} ({entry.ticket_name}) "
-                    f"FAILED: {type(e).__name__}: {e}; reactive path will handle it"
-                )
-                continue
-            any_ok = self._store_prefetched_ticket(entry, response) or any_ok
-        return any_ok
+            self.logger.info(f"TSS batch: got {entry.ticket_name} for {entry.updater_name}")
 
     # ---------------------------------------------------
 
@@ -1860,17 +1879,20 @@ class Restore(BaseRestore):
         self._preflight_info = await self.device.get_preflight_info()
         self._firmware_preflight_info = await self.device.get_firmware_preflight_info()
 
-        # Batched prefetch is OPT-IN via --tss-batch. When on, a single TSS POST signs
-        # every prefetchable peripheral ticket in tss.PREFETCHABLE_UPDATERS up front; the reactive
-        # POSTs during restore are then served from cache on nonce-match. When off
-        # (default), every per-component request becomes a live gs.apple.com POST
-        # during restore — the legacy pre-feature behavior.
+        # Batched prefetch is OPT-IN via --tss-batch. When on, every prefetchable peripheral
+        # ticket in tss.PREFETCHABLE_UPDATERS is requested together with the AP ticket (one
+        # request, no extra round-trip); during the restore a prefetched ticket is served
+        # only when the device asks with the identical request. When off (default), every
+        # per-component request is a live TSS request during the restore.
+        tracked: list[TrackedPrefetch] = []
         if self._enable_tss_batch:
-            await self._prefetch_combined_batch()
+            tracked = await self._prepare_tss_riders()
         else:
-            self.logger.info("TSS batched prefetch disabled (default); reactive POSTs only")
+            self.logger.info("TSS batched prefetch disabled (default); reactive requests only")
 
         await self.recovery.boot_ramdisk()
+        if tracked:
+            self._store_tss_riders(tracked)
 
         try:
             # device is finally in restore mode, let's do this
@@ -1886,18 +1908,16 @@ class Restore(BaseRestore):
         drifts = [u for u, o in self._tss_prefetch_outcomes if o == "miss-drift"]
         plain_misses = [u for u, o in self._tss_prefetch_outcomes if o == "miss-nodrift"]
 
-        # Saved POST accounting: each cache hit saves one reactive POST. If the AP+peripheral
-        # batched POST succeeded, that also saved one POST relative to the per-peripheral path
-        # (one big POST replaces N individual ones), but the AP POST always happens anyway,
-        # so the net savings stay at len(hits).
+        # The riders cost no request of their own (they travel in the AP request), so each hit
+        # is one live TSS request saved during the restore.
         self.logger.info("=" * 64)
         self.logger.info("TSS PREFETCH SUMMARY")
         self.logger.info("=" * 64)
         self.logger.info(f"  prefetched up-front : {len(prefetched)} {prefetched}")
-        self.logger.info(f"  cache hits          : {len(hits)} {hits}")
-        self.logger.info(f"  nonce-drift misses  : {len(drifts)} {drifts}")
-        self.logger.info(f"  not-prefetched      : {len(plain_misses)} {plain_misses}")
-        self.logger.info(f"  >> gs.apple.com POSTs saved during restore: {len(hits)}")
+        self.logger.info(f"  hits                : {len(hits)} {hits}")
+        self.logger.info(f"  request mismatches  : {len(drifts)} {drifts}")
+        self.logger.info(f"  not prefetched      : {len(plain_misses)} {plain_misses}")
+        self.logger.info(f"  >> TSS requests saved during the restore: {len(hits)}")
         self.logger.info("=" * 64)
 
     async def _get_service_for_data_request(self, message: dict[str, Any]) -> ServiceConnection:

@@ -305,11 +305,10 @@ async def restore_update(
         typer.Option(
             "--tss-batch",
             help=(
-                "Opt-in: enable the batched TSS prefetch POST (iOS 18+). Sends a single "
-                "HTTP request to gs.apple.com that signs every prefetchable peripheral "
-                "ticket (SE/SE2, Rose, Savage, T200, Centauri, eUICC, Baseband) at once; "
-                "the reactive POSTs during restore are then served from cache. Off by "
-                "default — pass this flag to reduce gs.apple.com round-trips during restore."
+                "Opt-in: request the prefetchable peripheral tickets (SE/SE2, Rose, Savage, T200, "
+                "Centauri, eUICC, Baseband) together with the AP ticket, in the same TSS request, and "
+                "serve them during the restore whenever the device asks with the identical request "
+                "(iOS 18+). Adds no request; chips whose nonce changed are signed live as usual."
             ),
         ),
     ] = False,
