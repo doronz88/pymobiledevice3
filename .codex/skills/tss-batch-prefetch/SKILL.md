@@ -79,6 +79,8 @@ Run these against a fresh device in normal mode:
 uvx --from . pymobiledevice3 lockdown info | head -20
 
 # 2. Enumerate what PreflightInfo.DeviceInfo exposes on THIS device
+#    (`pymobiledevice3 restore preflight` prints the same three dictionaries as JSON; the snippet
+#    below shows the types/lengths that matter for add_*_tags)
 uvx --from . python3 -c "
 import asyncio
 from pymobiledevice3.lockdown import create_using_usbmux
@@ -149,7 +151,7 @@ If the chip lacks an `add_<chip>_tags` helper in `tss.py`, add one mirroring the
 A wrong entry will silently fail the batched POST and TSS returns useless error messages (`"not eligible"`, `"internal error"`). Validate non-destructively before any restore:
 
 1. **Dry-run only.** Construct a `Restore` object with `enable_tss_batch=True`, call `_prepare_tss_riders()` and then `recovery.get_tss_response()`; do not call `boot_ramdisk` or `restore_device`. See `references/dryrun-batched.py.template`. Confirm `recovery.tss_riders_applied` is True and every expected `<X>,Ticket` key comes back in the response.
-2. **Diff against ramrod** — always, not only on failure, because the prefetch is served on an exact match: run a real restore once *without* `--tss-batch` and take the `get_device_generated_firmware_data (X): {...}` log entry for each chip (restored's own `DeviceGeneratedRequest`). Compare it entry for entry against the tracked `request` your rider built — `Restore._request_mismatches(device_request, ours)` is the same check the restore uses. Anything but the nonce must match, or the chip will never hit. See `references/diff-against-ramrod.py.template`. Typical gaps: entries restored synthesizes that `PreflightInfo` lacks (`Rap,FdrRootCaDigest`, `Wireless1,UID_MODE`, `UniqueBuildID`), typing (bytes vs int) on `ChipID` / `PatchEpoch` / `SecurityDomain`.
+2. **Diff against ramrod** — always, not only on failure, because the prefetch is served on an exact match: run a real restore once *without* `--tss-batch` and take the `get_device_generated_firmware_data (X): {...}` log entry for each chip (restored's own `DeviceGeneratedRequest`). Without a restore, `pymobiledevice3 restore preflight-requests -i <ipsw> --updater <X>` returns the request the device builds in normal mode; it is the ramdisk's for T200 and Rose, but two entries short for SE and merged for Savage, so prefer the restore log when you have one. Compare it entry for entry against the tracked `request` your rider built — `Restore._request_mismatches(device_request, ours)` is the same check the restore uses. Anything but the nonce must match, or the chip will never hit. See `references/diff-against-ramrod.py.template`. Typical gaps: entries restored synthesizes that `PreflightInfo` lacks (`Rap,FdrRootCaDigest`, `Wireless1,UID_MODE`, `UniqueBuildID`), typing (bytes vs int) on `ChipID` / `PatchEpoch` / `SecurityDomain`.
 3. **Live restore with `--tss-batch`** only after that. Watch for `TSS prefetch HIT for <chip>` lines and the summary at the end.
 
 ## Chips you should not add (the empirical findings)
