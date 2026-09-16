@@ -195,9 +195,17 @@ class RemoteXPCConnection:
         xpc_wrapper = create_xpc_wrapper(
             data, message_id=self.next_message_id[ROOT_CHANNEL], wanting_reply=wanting_reply
         )
-        writer = self.writer
-        writer.write(DataFrame(stream_id=ROOT_CHANNEL, data=xpc_wrapper).serialize())
-        await writer.drain()
+        if len(xpc_wrapper) <= MAX_OUTBOUND_FRAME_SIZE:
+            writer = self.writer
+            writer.write(DataFrame(stream_id=ROOT_CHANNEL, data=xpc_wrapper).serialize())
+            await writer.drain()
+        else:
+            # A message larger than the peer's frame size (e.g. a restoreserviced preflight payload
+            # carrying firmware) has to be split into window-sized DATA frames, otherwise the device
+            # answers with GOAWAY "too large frame size".
+            offset = 0
+            while offset < len(xpc_wrapper):
+                offset += await self._send_flow_controlled(ROOT_CHANNEL, xpc_wrapper, offset, len(xpc_wrapper))
         self.next_message_id[ROOT_CHANNEL] += 1
 
     async def iter_file_chunks(self, total_size: int, file_idx: int = 0) -> AsyncIterable[bytes]:

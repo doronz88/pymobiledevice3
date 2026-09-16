@@ -278,3 +278,32 @@ async def test_reset_of_an_unrelated_stream_still_raises():
 
     with pytest.raises(StreamClosedError):
         await connection._pump_one_frame()
+
+
+@pytest.mark.asyncio
+async def test_send_request_splits_a_large_message_into_max_sized_frames():
+    connection = RemoteXPCConnection(("localhost", 0))
+    writer = FakeWriter()
+    connection._writer = cast(asyncio.StreamWriter, writer)
+    connection._outbound_connection_window = 10 * MAX_OUTBOUND_FRAME_SIZE
+    connection._outbound_stream_windows[1] = 10 * MAX_OUTBOUND_FRAME_SIZE
+
+    await connection.send_request({"command": "x", "payload": {"blob": b"\x00" * (3 * MAX_OUTBOUND_FRAME_SIZE)}})
+
+    frames = [Frame.parse_frame_header(w[:FRAME_HEADER_SIZE])[0] for w in writer.writes]
+    assert all(isinstance(f, DataFrame) and f.stream_id == 1 for f in frames)
+    assert len(frames) > 1 and all(len(w) - FRAME_HEADER_SIZE <= MAX_OUTBOUND_FRAME_SIZE for w in writer.writes)
+    reassembled = b"".join(w[FRAME_HEADER_SIZE:] for w in writer.writes)
+    assert XpcWrapper.parse(reassembled).message.message_id == 0
+    assert connection.next_message_id[1] == 1
+
+
+@pytest.mark.asyncio
+async def test_send_request_keeps_small_messages_in_one_frame():
+    connection = RemoteXPCConnection(("localhost", 0))
+    writer = FakeWriter()
+    connection._writer = cast(asyncio.StreamWriter, writer)
+
+    await connection.send_request({"command": "getpreflightinfo"})
+
+    assert len(writer.writes) == 1 and writer.drain_calls == 1
