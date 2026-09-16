@@ -400,7 +400,7 @@ async def capture_rtp_to_file(
         )
         logger.info(f"Listening for RTP on [{receiver_ip}]:{transport.port}")
         try:
-            answer = await service.start_video_stream(
+            await service.start_video_stream(
                 receiver_ip=receiver_ip,
                 receiver_port=transport.port,
                 sender_ip=sender_ip,
@@ -419,11 +419,10 @@ async def capture_rtp_to_file(
                     fp.write(len(data).to_bytes(4, "big") + data)
                     captured += 1
             logger.info(f"Captured {captured} packets to {output_path}")
-            client_session_id = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
-            if not isinstance(client_session_id, uuid.UUID):
-                client_session_id = uuid.UUID(client_session_id)
+            # Stop on a fresh connection: the stop must be the sole reply-bearing
+            # request on its RemoteXPC channel (see DisplayService.stop_all_streams).
             with contextlib.suppress(Exception):
-                await service.stop_media_stream(client_session_id)
+                await DisplayService.stop_all_streams(rsd)
         finally:
             transport.close()
     return captured
@@ -475,11 +474,10 @@ async def capture_audio_rtp_to_file(
                     fp.write(len(data).to_bytes(4, "big") + data)
                     captured += 1
             logger.info(f"Captured {captured} audio packets to {output_path}")
-            client_session_id = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
-            if not isinstance(client_session_id, uuid.UUID):
-                client_session_id = uuid.UUID(client_session_id)
+            # Stop on a fresh connection: the stop must be the sole reply-bearing
+            # request on its RemoteXPC channel (see DisplayService.stop_all_streams).
             with contextlib.suppress(Exception):
-                await service.stop_media_stream(client_session_id)
+                await DisplayService.stop_all_streams(rsd)
         finally:
             transport.close()
     return captured
@@ -1453,7 +1451,6 @@ class ScreenStreamServer:
 
     async def _stop_audio_stream(self) -> None:
         svc = self._audio_service
-        sid = self._audio_session_id
         sock = self._audio_sock
         task = self._audio_recv_task
         rtcp_task = self._audio_rtcp_task
@@ -1475,12 +1472,13 @@ class ScreenStreamServer:
             with contextlib.suppress(Exception):
                 sock.close()
         if svc is not None:
-            # Bound the device-side RPCs. A wedged CoreDevice daemon
-            # can hang the XPC response wait indefinitely, holding
-            # _audio_lock and preventing recovery.
-            if sid is not None:
-                with contextlib.suppress(asyncio.TimeoutError, Exception):
-                    await asyncio.wait_for(svc.stop_media_stream(sid), timeout=2.0)
+            # Only local cleanup here: closing the RemoteXPC connection that
+            # started the stream. The device-side session is reclaimed either by
+            # the daemon's duplicate-stream detection when the next audio
+            # ``start`` arrives, or by the ``stop_all_streams`` at shutdown. We
+            # must NOT issue a stop on this connection — it already carried the
+            # ``start`` request, and a second reply-bearing request would crash
+            # the device daemon (see DisplayService.stop_all_streams).
             with contextlib.suppress(asyncio.TimeoutError, Exception):
                 await asyncio.wait_for(svc.close(), timeout=2.0)
 
@@ -1546,7 +1544,6 @@ class ScreenStreamServer:
     # ----- device-stream lifecycle ------------------------------------------
     async def _stop_active_stream(self) -> None:
         svc = self._active_service
-        sid = self._active_session_id
         sock_to_close = self._active_sock
         task_to_cancel = self._active_recv_task
         rtcp_task = self._active_rtcp_task
@@ -1567,16 +1564,15 @@ class ScreenStreamServer:
             with contextlib.suppress(Exception):
                 sock_to_close.close()
         if svc is not None:
-            # Bound the device-side RPCs. The stall watchdog calls us
-            # precisely when the CoreDevice daemon has stopped feeding
-            # AUs -- i.e. the state in which stop_media_stream / close
-            # are most likely to hang on their XPC response wait. An
-            # unbounded await here holds _stream_lock forever and
-            # leaves /codec and /stream.bin replying 503 with no path
-            # to recovery short of restarting the server.
-            if sid is not None:
-                with contextlib.suppress(asyncio.TimeoutError, Exception):
-                    await asyncio.wait_for(svc.stop_media_stream(sid), timeout=2.0)
+            # Only local cleanup here: closing the RemoteXPC connection that
+            # started the stream. The device-side session is reclaimed either by
+            # the daemon's duplicate-stream detection when the next video
+            # ``start`` arrives (the stall watchdog / motion restart path), or by
+            # the ``stop_all_streams`` at shutdown. We must NOT issue a stop on
+            # this connection — it already carried the ``start`` request, and a
+            # second reply-bearing request would crash the device daemon before
+            # it releases the session (see DisplayService.stop_all_streams). The
+            # bounded close still protects _stream_lock from a wedged daemon.
             with contextlib.suppress(asyncio.TimeoutError, Exception):
                 await asyncio.wait_for(svc.close(), timeout=2.0)
 
@@ -2977,9 +2973,10 @@ class ScreenStreamServer:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
 
-            # _stop_active_stream / _stop_audio_stream issue
-            # stop_media_stream RPCs to the device daemon -- if the
-            # daemon is hung, these would block forever without a bound.
+            # _stop_active_stream / _stop_audio_stream only cancel our local
+            # tasks and close the RemoteXPC connections that started the
+            # streams; they issue no device RPC. The bound still protects
+            # against a close() hanging on a wedged daemon.
             async def _stop_video():
                 async with self._stream_lock:
                     await self._stop_active_stream()
@@ -2992,6 +2989,14 @@ class ScreenStreamServer:
             await _bounded(_stop_video(), "_stop_active_stream")
             logger.debug("shutdown: stopping audio stream")
             await _bounded(_stop_audio(), "_stop_audio_stream")
+            # Release the device-side session on a FRESH connection. This is the
+            # one place we tell the daemon to stop: it runs stopRemoteObservation,
+            # releases the audit assertion, and clears the screen-sharing
+            # indicator, so the device is no longer "observed remotely" and its
+            # camera/microphone are freed. Doing it on a fresh connection is
+            # mandatory — see DisplayService.stop_all_streams.
+            logger.debug("shutdown: releasing device media session")
+            await _bounded(DisplayService.stop_all_streams(self._rsd), "stop_all_streams", timeout=6.0)
             # Close the accessibility audit BEFORE cancelling stragglers --
             # otherwise its DTX reader task is one of the stragglers and
             # its cancellation logs a 'Channel reader loop cancelled'

@@ -1381,9 +1381,6 @@ class VncStreamServer:
             allow_rtcp_fb=self._allow_rtcp_fb,
             ltrp_enabled=self._ltrp_enabled,
         )
-        sid = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
-        if not isinstance(sid, uuid.UUID):
-            sid = uuid.UUID(sid)
         cfg = answer["connection"].get("streamConfig", {})
         logger.info(
             "video stream up: %dx%d HEVC, sender_port=%s",
@@ -1554,20 +1551,25 @@ class VncStreamServer:
                 with contextlib.suppress(Exception):
                     self._audio_player.close()
                 self._audio_player = None
-            if self._audio_svc is not None and self._audio_session_id is not None:
-                logger.debug("shutdown: stopping audio stream")
-                with contextlib.suppress(Exception):
-                    await asyncio.wait_for(self._audio_svc.stop_media_stream(self._audio_session_id), timeout=3.0)
+            if self._audio_svc is not None:
+                logger.debug("shutdown: closing audio stream connection")
                 with contextlib.suppress(Exception):
                     await self._audio_svc.close()
             if self._audio_transport is not None:
                 with contextlib.suppress(Exception):
                     self._audio_transport.close()
-            logger.debug("shutdown: stopping device stream")
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(svc.stop_media_stream(sid), timeout=3.0)
+            logger.debug("shutdown: closing device stream connection")
             with contextlib.suppress(Exception):
                 await svc.close()
+            # Release the device-side session on a FRESH connection: the stop
+            # must be the sole reply-bearing request on its RemoteXPC channel, or
+            # the device daemon crashes before it clears remote-observation state
+            # and frees the camera/microphone (see DisplayService.stop_all_streams).
+            # Reusing the start connections above (svc / self._audio_svc) is
+            # exactly the fatal second request.
+            logger.debug("shutdown: releasing device media session")
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(DisplayService.stop_all_streams(self._rsd), timeout=6.0)
             current = asyncio.current_task()
             stragglers = [t for t in asyncio.all_tasks(loop) if t is not current and not t.done()]
             for t in stragglers:
