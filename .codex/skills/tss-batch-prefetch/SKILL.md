@@ -46,6 +46,30 @@ therefore costs no request of its own; each hit is one live request saved during
 
 Key invariant in `_merge_device_info`: **a manifest-derived int never gets clobbered by a DeviceInfo-derived bytes value for the same key.** Without this, `Savage,ChipID` (which the manifest gives as int `1` but PreflightInfo gives as raw bytes `b'\x00\x00\x00\x01'`) gets sent as bytes and TSS rejects the whole batch with a misleading `"not eligible"` error.
 
+## What Apple built the preflight mechanism for (and why iPhones only see the empty message)
+
+Reverse-engineered from MobileDevice (macOS 27.0) and restored_external / restoreserviced (iOS 27.0):
+
+- The host-side stash lives in `AMRAuthInstallCopyAllPreflightOptions`: updaters set up from a
+  per-chip `DeviceInfo`/`DeviceInfoTags`/`DeviceInfoRequests` dictionary, personalized in normal
+  mode, tickets written under `<PersonalizedRestoreBundlePath>/amai/<Updater>/<tag>`, and served
+  by `_handleFirmwareUpdaterPreflight` (`{"FirmwareResponsePreflight": {tag: ticket}}`) plus
+  `AMRestoreUpdaterPersonalize` (skips TSS on a stash hit unless `MessageArgUpdaterLoopCount != 0`
+  or `MessageForceRepersonalization`).
+- Every iPhone updater in the host table is flagged "device restore info" and needs
+  `DeviceInfoTags` + `DeviceInfoRequests`. The lockdown path never supplies them, and the RemoteXPC
+  path (`AMRemoteServiceDeviceProxy::Restore` → restoreserviced `getdevicesidepreflightinfo`)
+  builds the payload only for `DeviceClass == "AppleDisplay"`: Ace3 (USB-C port controllers) and
+  Banyan (`Baobab,TCON`). The device-side consumers of `PreflightTickets` are Ace3, PS190,
+  AppleTypeCRetimer, T200 and AppleConvergedFirmwareUpdater-based updaters, with contexts named
+  `OTA Preflight`, `NeRD Preflight`, `Tethered Preflight`: displays, Macs and OTA updates.
+- iPhones send `FirmwareUpdaterPreflight` only because the host option
+  `PersonalizedDuringPreflight` is set (Apple sets it whenever the AP/baseband were personalized in
+  normal mode; we set it unconditionally). Apple's host answers `{}` for every iPhone chip and
+  signs reactively; pymobiledevice3 does the same. `--tss-batch` is therefore a pymobiledevice3-only
+  use of the mechanism, and it deliberately serves on the later `FirmwareUpdaterData` request
+  (where the device's own request can be compared) rather than through `FirmwareResponsePreflight`.
+
 ## Onboarding a new device — diagnose in 4 commands
 
 Run these against a fresh device in normal mode:
