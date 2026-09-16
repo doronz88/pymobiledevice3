@@ -116,7 +116,11 @@ wall-clock instant is clean.
 
 ## Update (2026-09-16): the browser smear was encoder frame-dropping, keyed by `VRAE:0`
 
-The negotiated codec feature-list string turned out to matter. Apple's captured
+The negotiated codec feature-list string turned out to matter. Credit to
+[@jkcoxson](https://github.com/jkcoxson): his `idevice` screen-stream offer
+(`SCREEN_HEVC_FLS` in `display_stream/negotiation.rs`) was the first known
+configuration without the smear, and diffing it against ours is what exposed
+the token. Apple's captured
 Xcode offer declares `FLS;VRAE:0;SW:1;` in the PT=100 bank, and that is what
 pymobiledevice3 replayed. `VRAE` is AVConference's *video resolution
 adaptation enabled* switch (`isVRAEnabled`, "Aligning VRA encoder resolution");
@@ -127,13 +131,13 @@ Measured on iPhone18,4 / iOS 27.0 with the device's own `VCPEnc` telemetry
 (`pymobiledevice3 syslog live -m VCPEnc`) over identical 20 s home-screen
 page-swipe sequences driven in-process over HID:
 
-| offered PT=100 features | negotiated | drop_fps sum | Tx_fps | Avg QP |
-|-------------------------|-----------|--------------|--------|--------|
-| `FLS;VRAE:0;SW:1;` (old default) | `VRAE:0;SW:1;FLS` | 207-219 frames | ~42 | ~30 |
-| `FLS;VRAE:0;`           | `FLS;VRAE:0` | 207 frames  | 41     | 30     |
-| `FLS;SW:1;` (new default) | `FLS;SW:1` | 0           | 53     | 33     |
-| `FLS;`                  | `FLS`      | 0            | 52-55  | 33     |
-| jkcoxson/idevice string (`FLS;MS:-1;LF:-1;LTR;CABAC;...`) | `FLS` | 0 | 55 | 33 |
+| offered PT=100 features                          | negotiated        | drop_fps sum   | Tx_fps | Avg QP |
+|--------------------------------------------------|-------------------|----------------|--------|--------|
+| `FLS;VRAE:0;SW:1;` (old default)                 | `VRAE:0;SW:1;FLS` | 207-219 frames | ~42    | ~30    |
+| `FLS;VRAE:0;`                                    | `FLS;VRAE:0`      | 207 frames     | 41     | 30     |
+| `FLS;SW:1;` (new default)                        | `FLS;SW:1`        | 0              | 53     | 33     |
+| `FLS;`                                           | `FLS`             | 0              | 52-55  | 33     |
+| idevice string (`FLS;MS:-1;LF:-1;LTR;CABAC;...`) | `FLS`             | 0              | 55     | 33     |
 
 The device intersects the offered token list with what it knows (`VRAE`,
 `SW`); everything else is dropped silently, which is why the richer
