@@ -1,55 +1,11 @@
 import ctypes
 import platform
-import socket
-import struct
 from typing import Any, Optional, cast
 
 import pytest
 
 from pymobiledevice3.exceptions import DeviceNotFoundError, UserspaceTunnelUnavailableError
 from pymobiledevice3.remote import native_tunnel
-
-
-def _pcblist_with_one_connection(pid: int, addr: bytes, port: int) -> bytes:
-    """Build a synthetic ``net.inet.tcp.pcblist_n`` buffer with a single IPv6 TCP connection."""
-    buf = bytearray()
-    buf += struct.pack("<I", 24) + b"\x00" * 20  # leading xinpgen: first uint32 is its own length
-
-    sock = bytearray(72)  # XSO_SOCKET record; effective_pid is an int32 at offset 68
-    struct.pack_into("<II", sock, 0, 72, native_tunnel._XSO_SOCKET)
-    struct.pack_into("<i", sock, 68, pid)
-    buf += sock
-
-    inpcb = bytearray(88)  # XSO_INPCB record: foreign_port@16 (BE), inp_vflag@44, foreign_addr@48
-    struct.pack_into("<II", inpcb, 0, 88, native_tunnel._XSO_INPCB)
-    struct.pack_into(">H", inpcb, 16, port)
-    inpcb[44] = native_tunnel._INP_IPV6
-    inpcb[48:64] = addr
-    buf += inpcb
-
-    buf += struct.pack("<II", 24, 0)  # trailing xinpgen (length 24) ends the walk
-    return bytes(buf)
-
-
-def test_parse_tcp_pcbs_pairs_socket_and_inpcb() -> None:
-    addr = socket.inet_pton(socket.AF_INET6, "fd7b:7934:1752::1")
-    connections = native_tunnel.parse_tcp_pcbs(_pcblist_with_one_connection(4321, addr, 50881))
-    assert connections == [(4321, native_tunnel._INP_IPV6, addr, 50881)]
-
-
-def test_parse_tcp_pcbs_ignores_malformed_or_empty() -> None:
-    assert native_tunnel.parse_tcp_pcbs(b"") == []
-    assert native_tunnel.parse_tcp_pcbs(struct.pack("<I", 9999)) == []  # header points past the end
-    assert native_tunnel.parse_tcp_pcbs(struct.pack("<III", 8, 0, 0)) == []  # header==8, then length 0 -> stop
-
-
-def test_parse_tcp_pcbs_stops_on_truncated_record() -> None:
-    addr = socket.inet_pton(socket.AF_INET6, "fd7b:7934:1752::1")
-    full = _pcblist_with_one_connection(4321, addr, 50881)
-    # Replace the trailing xinpgen with a record claiming a huge length but no body: the parser must
-    # keep the already-parsed connection and stop rather than read out of bounds.
-    truncated = full[:-8] + struct.pack("<II", 4096, native_tunnel._XSO_INPCB)
-    assert native_tunnel.parse_tcp_pcbs(truncated) == [(4321, native_tunnel._INP_IPV6, addr, 50881)]
 
 
 @pytest.mark.skipif(platform.system() != "Darwin", reason="libxpc is macOS-only")
@@ -495,3 +451,45 @@ def test_create_connection_survives_missing_spi(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(native_tunnel.os, "geteuid", lambda: 0, raising=False)
     xpc = _FakeXpcForTargeting(has_spi=False)
     assert native_tunnel._create_remotepairing_connection(cast(Any, xpc), 0, 501) == 0xC0FFEE
+
+
+_NETTOP_CSV = """,interface,state,
+remoted.342,,,
+tcp6 fe80::bc5a:3eff:fec4:9b16%anri0.60719<->fe80::bc5a:3eff:fec4:9be9%anri0.58783,anri0,Established,
+tcp6 fe80::bc5a:3eff:fec4:9b16%anri0.60720<->*.*,anri0,Listen,
+tcp6 fd9c:4d71:ddf0::2.60722<->*.*,utun4,Listen,
+tcp6 fd9c:4d71:ddf0::2.61604<->fd9c:4d71:ddf0::1.57726,utun4,Established,
+tcp4 192.168.0.5:52000<->17.253.144.10:443,en0,Established,
+usbmuxd.120,,,
+tcp6 fd9c:4d71:ddf0::2.50000<->fd9c:4d71:ddf0::1.49999,utun4,Established,
+"""
+
+
+def test_parse_nettop_tcp_csv_yields_established_foreign_endpoints_per_pid() -> None:
+    rows = native_tunnel.parse_nettop_tcp_csv(_NETTOP_CSV)
+    assert rows == [
+        (342, "fe80::bc5a:3eff:fec4:9be9", 58783),
+        (342, "fd9c:4d71:ddf0::1", 57726),
+        (342, "17.253.144.10", 443),
+        (120, "fd9c:4d71:ddf0::1", 49999),
+    ]
+
+
+def test_parse_nettop_tcp_csv_ignores_garbage() -> None:
+    assert native_tunnel.parse_nettop_tcp_csv("") == []
+    assert native_tunnel.parse_nettop_tcp_csv("nettop: unable to open\n") == []
+    # A socket row before any process row has no owner and is dropped.
+    assert native_tunnel.parse_nettop_tcp_csv("tcp6 ::1.1<->::1.2,lo0,Established,\n") == []
+
+
+def test_find_rsd_port_matches_remoted_connections_to_the_tunnel_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native_tunnel, "_run_nettop_tcp", lambda: _NETTOP_CSV)
+    monkeypatch.setattr(
+        native_tunnel, "_proc_path", lambda xpc, pid: native_tunnel.REMOTED_PATH if pid == 342 else "/usr/bin/other"
+    )
+    assert native_tunnel.find_rsd_port(cast(Any, object()), "fd9c:4d71:ddf0::1") == [57726]
+
+
+def test_find_rsd_port_is_empty_when_nettop_is_unusable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native_tunnel, "_run_nettop_tcp", lambda: "")
+    assert native_tunnel.find_rsd_port(cast(Any, object()), "fd9c:4d71:ddf0::1") == []
