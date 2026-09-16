@@ -55,6 +55,13 @@ class ConnectWebsocket:
                 return self._pending.popleft()
             if self._closed:
                 return None
+            # Events the protocol parsed but nobody consumed yet: `connect()` returns on the
+            # handshake accept, and a close frame the peer sent right behind it (a tunneld
+            # refusing the /connect with 4404/4502) is already queued. Read them before waiting
+            # for more bytes, or an EOF would report the close without its code.
+            await self._handle_events()
+            if self._pending or self._closed:
+                continue
             data = await self._reader.read(CHUNK_SIZE)
             if not data:
                 self._closed = True
@@ -65,18 +72,21 @@ class ConnectWebsocket:
                 logger.debug("%s sent an invalid websocket frame: %s", self.description, e)
                 self._closed = True
                 continue
-            for event in self._ws.events():
-                if isinstance(event, BytesMessage):
-                    self._pending.append(bytes(event.data))
-                elif isinstance(event, Ping):
+            await self._handle_events()
+
+    async def _handle_events(self) -> None:
+        for event in self._ws.events():
+            if isinstance(event, BytesMessage):
+                self._pending.append(bytes(event.data))
+            elif isinstance(event, Ping):
+                self._writer.write(self._ws.send(event.response()))
+                await self._writer.drain()
+            elif isinstance(event, CloseConnection):
+                self.close_code, self.close_reason = event.code, event.reason
+                self._closed = True
+                with suppress(Exception):
                     self._writer.write(self._ws.send(event.response()))
                     await self._writer.drain()
-                elif isinstance(event, CloseConnection):
-                    self.close_code, self.close_reason = event.code, event.reason
-                    self._closed = True
-                    with suppress(Exception):
-                        self._writer.write(self._ws.send(event.response()))
-                        await self._writer.drain()
 
     def close(self, code: int = 1000) -> None:
         """Close the websocket. Deliberately synchronous: an abandoned bridge (e.g. Ctrl+C on a
