@@ -80,7 +80,7 @@ __all__ = [
     "WirError",
 ]
 
-from typing import Optional
+from typing import Any, Optional
 
 
 class PyMobileDevice3Exception(Exception):
@@ -482,7 +482,23 @@ class AppNotInstalledError(PyMobileDevice3Exception):
 
 
 class CoreDeviceError(PyMobileDevice3Exception):
-    pass
+    """A CoreDevice action/feature invocation failed.
+
+    ``code`` and ``user_info`` carry the device's structured ``CoreDevice.error``
+    when it was present, so callers can branch on a specific failure (e.g. the
+    camera/microphone-in-use rejection) instead of matching on the message text.
+    """
+
+    def __init__(
+        self,
+        message: object = "",
+        *,
+        code: Optional[int] = None,
+        user_info: Optional[dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.user_info = user_info or {}
 
 
 class CryptexdError(PyMobileDevice3Exception):

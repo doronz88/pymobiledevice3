@@ -48,6 +48,7 @@ from pymobiledevice3.exceptions import (
     ConnectionFailedError,
     ConnectionFailedToUsbmuxdError,
     ConnectionTerminatedError,
+    CoreDeviceError,
     CryptexdError,
     DeprecationError,
     DeveloperModeError,
@@ -451,6 +452,10 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
         )
     except DeprecationError:
         logger.error("failed to query MobileGestalt, MobileGestalt deprecated (iOS >= 17.4).")
+    except CoreDeviceError as e:
+        # A CoreDevice invocation failed for a reason we can state plainly (e.g.
+        # the camera/microphone is in use): print the message, no traceback.
+        logger.error(str(e))
     except CryptexdError as e:
         logger.error(f"cryptexd rejected the request: {e}")
     except InstallCoordinationError as e:

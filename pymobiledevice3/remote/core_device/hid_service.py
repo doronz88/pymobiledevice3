@@ -24,7 +24,6 @@ import asyncio
 import contextlib
 import struct
 import time
-import uuid
 from collections.abc import AsyncGenerator, Iterable
 from typing import Any, Optional
 
@@ -592,7 +591,7 @@ async def touch_session(
         # the timeout the call hangs indefinitely on a half-open RemoteXPC
         # channel. The user's standing advice is "reboot proactively".
         try:
-            answer = await asyncio.wait_for(
+            await asyncio.wait_for(
                 display.start_video_stream(
                     receiver_ip=receiver_ip,
                     receiver_port=transport.port,
@@ -620,14 +619,13 @@ async def touch_session(
             drain_task.cancel()
             with contextlib.suppress(BaseException):
                 await drain_task
-            # Best-effort stop. The device routinely yanks the channel mid-stop
-            # (see :meth:`DisplayService.stop_media_stream`); swallow any noise
-            # from the half-dead writer — we've already dispatched the gestures.
-            client_session_id = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
-            if not isinstance(client_session_id, uuid.UUID):
-                client_session_id = uuid.UUID(client_session_id)
+            # Best-effort teardown on a FRESH connection: the stop must be the
+            # sole reply-bearing request on its RemoteXPC channel, or the device
+            # daemon crashes before releasing the session (see
+            # DisplayService.stop_all_streams). Reusing ``display`` — which
+            # issued the stream start — is exactly that fatal second request.
             with contextlib.suppress(Exception):
-                await display.stop_media_stream(client_session_id)
+                await DisplayService.stop_all_streams(rsd)
             transport.close()
     finally:
         with contextlib.suppress(BaseException):

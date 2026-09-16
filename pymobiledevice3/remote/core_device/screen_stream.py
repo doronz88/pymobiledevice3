@@ -38,9 +38,14 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 import pymobiledevice3.resources
+from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
-from pymobiledevice3.remote.core_device.display_service import DisplayService
+from pymobiledevice3.remote.core_device.display_service import (
+    MEDIA_IN_USE_MESSAGE,
+    DisplayService,
+    is_media_in_use_error,
+)
 from pymobiledevice3.remote.core_device.hid_service import (
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     HID_BUTTON_STATE_DOWN,
@@ -400,7 +405,7 @@ async def capture_rtp_to_file(
         )
         logger.info(f"Listening for RTP on [{receiver_ip}]:{transport.port}")
         try:
-            answer = await service.start_video_stream(
+            await service.start_video_stream(
                 receiver_ip=receiver_ip,
                 receiver_port=transport.port,
                 sender_ip=sender_ip,
@@ -419,11 +424,10 @@ async def capture_rtp_to_file(
                     fp.write(len(data).to_bytes(4, "big") + data)
                     captured += 1
             logger.info(f"Captured {captured} packets to {output_path}")
-            client_session_id = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
-            if not isinstance(client_session_id, uuid.UUID):
-                client_session_id = uuid.UUID(client_session_id)
+            # Stop on a fresh connection: the stop must be the sole reply-bearing
+            # request on its RemoteXPC channel (see DisplayService.stop_all_streams).
             with contextlib.suppress(Exception):
-                await service.stop_media_stream(client_session_id)
+                await DisplayService.stop_all_streams(rsd)
         finally:
             transport.close()
     return captured
@@ -475,11 +479,10 @@ async def capture_audio_rtp_to_file(
                     fp.write(len(data).to_bytes(4, "big") + data)
                     captured += 1
             logger.info(f"Captured {captured} audio packets to {output_path}")
-            client_session_id = answer["connection"]["options"]["avcMediaStreamOptionClientSessionID"]["uuid"]
-            if not isinstance(client_session_id, uuid.UUID):
-                client_session_id = uuid.UUID(client_session_id)
+            # Stop on a fresh connection: the stop must be the sole reply-bearing
+            # request on its RemoteXPC channel (see DisplayService.stop_all_streams).
             with contextlib.suppress(Exception):
-                await service.stop_media_stream(client_session_id)
+                await DisplayService.stop_all_streams(rsd)
         finally:
             transport.close()
     return captured
@@ -1453,7 +1456,6 @@ class ScreenStreamServer:
 
     async def _stop_audio_stream(self) -> None:
         svc = self._audio_service
-        sid = self._audio_session_id
         sock = self._audio_sock
         task = self._audio_recv_task
         rtcp_task = self._audio_rtcp_task
@@ -1475,12 +1477,13 @@ class ScreenStreamServer:
             with contextlib.suppress(Exception):
                 sock.close()
         if svc is not None:
-            # Bound the device-side RPCs. A wedged CoreDevice daemon
-            # can hang the XPC response wait indefinitely, holding
-            # _audio_lock and preventing recovery.
-            if sid is not None:
-                with contextlib.suppress(asyncio.TimeoutError, Exception):
-                    await asyncio.wait_for(svc.stop_media_stream(sid), timeout=2.0)
+            # Only local cleanup here: closing the RemoteXPC connection that
+            # started the stream. The device-side session is reclaimed either by
+            # the daemon's duplicate-stream detection when the next audio
+            # ``start`` arrives, or by the ``stop_all_streams`` at shutdown. We
+            # must NOT issue a stop on this connection — it already carried the
+            # ``start`` request, and a second reply-bearing request would crash
+            # the device daemon (see DisplayService.stop_all_streams).
             with contextlib.suppress(asyncio.TimeoutError, Exception):
                 await asyncio.wait_for(svc.close(), timeout=2.0)
 
@@ -1546,7 +1549,6 @@ class ScreenStreamServer:
     # ----- device-stream lifecycle ------------------------------------------
     async def _stop_active_stream(self) -> None:
         svc = self._active_service
-        sid = self._active_session_id
         sock_to_close = self._active_sock
         task_to_cancel = self._active_recv_task
         rtcp_task = self._active_rtcp_task
@@ -1567,16 +1569,15 @@ class ScreenStreamServer:
             with contextlib.suppress(Exception):
                 sock_to_close.close()
         if svc is not None:
-            # Bound the device-side RPCs. The stall watchdog calls us
-            # precisely when the CoreDevice daemon has stopped feeding
-            # AUs -- i.e. the state in which stop_media_stream / close
-            # are most likely to hang on their XPC response wait. An
-            # unbounded await here holds _stream_lock forever and
-            # leaves /codec and /stream.bin replying 503 with no path
-            # to recovery short of restarting the server.
-            if sid is not None:
-                with contextlib.suppress(asyncio.TimeoutError, Exception):
-                    await asyncio.wait_for(svc.stop_media_stream(sid), timeout=2.0)
+            # Only local cleanup here: closing the RemoteXPC connection that
+            # started the stream. The device-side session is reclaimed either by
+            # the daemon's duplicate-stream detection when the next video
+            # ``start`` arrives (the stall watchdog / motion restart path), or by
+            # the ``stop_all_streams`` at shutdown. We must NOT issue a stop on
+            # this connection — it already carried the ``start`` request, and a
+            # second reply-bearing request would crash the device daemon before
+            # it releases the session (see DisplayService.stop_all_streams). The
+            # bounded close still protects _stream_lock from a wedged daemon.
             with contextlib.suppress(asyncio.TimeoutError, Exception):
                 await asyncio.wait_for(svc.close(), timeout=2.0)
 
@@ -2866,19 +2867,41 @@ class ScreenStreamServer:
            liveness signal, not just a feature for the user.
 
         Sequence matches Xcode verbatim: audio first, then video.
-        Failures in either branch are logged but don't block the HTTP
-        server -- /codec and /stream.bin retry on their own."""
+        Transient failures are logged but don't block the HTTP server --
+        /codec and /stream.bin retry on their own. The camera/microphone-in-use
+        rejection (code 9022) is different: it is a hard, user-actionable state,
+        so it is re-raised for the caller to turn into a clean exit rather than
+        serving a viewer that could only ever error."""
         try:
             await self._ensure_audio_stream()
-        except Exception:
+        except Exception as e:
+            if is_media_in_use_error(e):
+                raise
             logger.warning("eager audio start failed (will retry on /audio.bin connect)", exc_info=True)
         try:
             await self._ensure_fresh_stream(force=False)
-        except Exception:
+        except Exception as e:
+            if is_media_in_use_error(e):
+                raise
             logger.warning("eager video start failed (will retry on first /codec)", exc_info=True)
 
     async def serve(self) -> None:
         """Run the HTTP server until cancelled / Ctrl-C."""
+        # Preflight the device-side stream before binding the HTTP server. If
+        # the camera or microphone is in use there is nothing to serve, so fail
+        # fast with a clean, actionable error (a non-zero exit, no traceback)
+        # instead of standing up a server that could only ever return errors.
+        # Any other start failure is non-fatal: serve anyway and bring the
+        # stream up lazily; a wedged device just delays the warm start.
+        try:
+            await asyncio.wait_for(self._eager_stream_start(), timeout=25.0)
+        except asyncio.TimeoutError:
+            logger.warning("initial stream start timed out; serving anyway (will retry lazily)")
+        except CoreDeviceError as e:
+            # _eager_stream_start only re-raises the camera/microphone-in-use
+            # case; everything else it logs and swallows so we still serve.
+            raise CoreDeviceError(MEDIA_IN_USE_MESSAGE, code=e.code) from None
+
         ssl_ctx = _build_self_signed_ssl_context(self._bind) if self._https else None
         http_server = await asyncio.start_server(
             self._handle_http,
@@ -2892,13 +2915,9 @@ class ScreenStreamServer:
         self._reconnect_task = asyncio.create_task(self._reconnect_loop())
         self._keep_awake_task = asyncio.create_task(self._keep_awake_loop())
         # Eagerly start the HID worker so queued /touch requests are
-        # processed even before the device-stream is fully up.
+        # processed even before the device-stream is fully up. The video/audio
+        # streams were already brought up by the preflight above.
         self._hid_worker_task = asyncio.create_task(self._hid_worker())
-        # Kick off the video stream in the background. We don't await it
-        # here -- the HTTP server should accept connections immediately
-        # so the user sees a working /index.html even if the device-side
-        # handshake is slow.
-        eager_start = asyncio.create_task(self._eager_stream_start())
 
         # Install signal handlers so Ctrl-C / SIGTERM trigger an
         # orderly, fast shutdown instead of waiting for blocked RPCs.
@@ -2959,10 +2978,6 @@ class ScreenStreamServer:
             self._keep_awake_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._keep_awake_task
-            logger.debug("shutdown: cancelling eager_start")
-            eager_start.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await eager_start
             # Close the HTTP listener first so no new connections come in
             # while we tear the device-side streams down.
             logger.debug("shutdown: closing HTTP server")
@@ -2977,9 +2992,10 @@ class ScreenStreamServer:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
 
-            # _stop_active_stream / _stop_audio_stream issue
-            # stop_media_stream RPCs to the device daemon -- if the
-            # daemon is hung, these would block forever without a bound.
+            # _stop_active_stream / _stop_audio_stream only cancel our local
+            # tasks and close the RemoteXPC connections that started the
+            # streams; they issue no device RPC. The bound still protects
+            # against a close() hanging on a wedged daemon.
             async def _stop_video():
                 async with self._stream_lock:
                     await self._stop_active_stream()
@@ -2992,6 +3008,14 @@ class ScreenStreamServer:
             await _bounded(_stop_video(), "_stop_active_stream")
             logger.debug("shutdown: stopping audio stream")
             await _bounded(_stop_audio(), "_stop_audio_stream")
+            # Release the device-side session on a FRESH connection. This is the
+            # one place we tell the daemon to stop: it runs stopRemoteObservation,
+            # releases the audit assertion, and clears the screen-sharing
+            # indicator, so the device is no longer "observed remotely" and its
+            # camera/microphone are freed. Doing it on a fresh connection is
+            # mandatory — see DisplayService.stop_all_streams.
+            logger.debug("shutdown: releasing device media session")
+            await _bounded(DisplayService.stop_all_streams(self._rsd), "stop_all_streams", timeout=6.0)
             # Close the accessibility audit BEFORE cancelling stragglers --
             # otherwise its DTX reader task is one of the stragglers and
             # its cancellation logs a 'Channel reader loop cancelled'

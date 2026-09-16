@@ -2,7 +2,7 @@ from typing import Any, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import DeviceFeatureNotSupportedError
+from pymobiledevice3.exceptions import CoreDeviceError, DeviceFeatureNotSupportedError
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
@@ -67,3 +67,42 @@ async def test_stream_invoke_unadvertised_feature_raises_without_sending() -> No
     with pytest.raises(DeviceFeatureNotSupportedError):
         await stream.__anext__()
     assert connection.sent == []
+
+
+class FailingConnection:
+    def __init__(self, response: dict[str, Any]) -> None:
+        self._response = response
+
+    async def send_receive_request(self, request: dict[str, Any]) -> dict[str, Any]:
+        return self._response
+
+
+@pytest.mark.asyncio
+async def test_invoke_surfaces_structured_core_device_error() -> None:
+    # A failed invocation with a structured CoreDevice.error yields a readable message
+    # and carries the numeric code, instead of dumping the raw bplist blob.
+    service, _ = make_app_service(["com.apple.coredevice.feature.listapps"])
+    service._service = cast(
+        RemoteXPCConnection,
+        FailingConnection({
+            "CoreDevice.error": {
+                "code": 9022,
+                "domain": "com.apple.dt.CoreDeviceError",
+                "userInfo": {"NSLocalizedDescription": "The device microphone or camera is currently in use."},
+            }
+        }),
+    )
+    with pytest.raises(CoreDeviceError) as exc_info:
+        await service.invoke("com.apple.coredevice.feature.listapps")
+    assert exc_info.value.code == 9022
+    assert "currently in use" in str(exc_info.value)
+    assert "bplist" not in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_invoke_error_without_structured_payload_falls_back() -> None:
+    service, _ = make_app_service(["com.apple.coredevice.feature.listapps"])
+    service._service = cast(RemoteXPCConnection, FailingConnection({"unexpected": "shape"}))
+    with pytest.raises(CoreDeviceError) as exc_info:
+        await service.invoke("com.apple.coredevice.feature.listapps")
+    assert exc_info.value.code is None
