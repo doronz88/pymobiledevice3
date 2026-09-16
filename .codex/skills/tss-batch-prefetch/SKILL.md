@@ -19,22 +19,30 @@ Use this skill when:
 
 ```
 Restore.update()
-  └─ Restore._prefetch_combined_batch()              ← if --tss-batch (opt-in, default off)
-       ├─ build ONE TSSRequest:
-       │    common AP tags (ECID, ChipID, BoardID, SecurityDomain)
-       │    per-peripheral: _merge_device_info(params, info) + add_<chip>_tags
-       │    @<chip>,Ticket: True for each
-       ├─ POST to gs.apple.com/TSS — get back all tickets in one response
-       └─ cache per-peripheral: {nonce, response, ticket_name, devgen_nonce_field}
+  └─ Restore._prepare_tss_riders()                   ← if --tss-batch (opt-in, default off)
+       ├─ per peripheral: _merge_device_info(params, DeviceInfo entry) + add_<chip>_tags on a
+       │    scratch TSSRequest → that chip's request entries (@<chip>,Ticket: True + fields)
+       └─ Recovery.tss_riders = all of them (one dict)
+  └─ Recovery.boot_ramdisk() → fetch_tss_record() → get_tss_response()
+       └─ Recovery._send_tss_request(): the AP request + the riders, ONE POST to gs.apple.com/TSS
+            (riders never override an AP entry; consumed once — the RecoveryVariant re-fetch goes without)
+            → rejected? retry the AP request alone; peripherals go reactive (only extra request there is)
+  └─ Restore._store_tss_riders(): keep each <chip>,Ticket the AP response came back with,
+       together with the request entries that were signed
 
 at restore time (from restored's DataRequestMsg):
   Restore.send_firmware_updater_data()
     └─ Restore.get_device_generated_firmware_data()   ← iOS 18+ path
          └─ _lookup_prefetched_tss_by_ticket(response_ticket, arguments)
-              compares cached nonce vs arguments.DeviceGeneratedRequest[<devgen_nonce_field>]
-              → cache HIT: serve cached, skip the POST
-              → drift   : log + fall back to live POST
+              compares the WHOLE arguments.DeviceGeneratedRequest against the signed entries
+              (bytes by content, dicts entry for entry; extra signed entries are fine)
+              → identical : serve the prefetched ticket, skip the live request
+              → any diff  : log the keys, fall back to a live request (never a stale ticket)
 ```
+
+TSS signs the AP ticket and every peripheral ticket in that one request (verified on iPhone18,4 /
+iOS 27.0 24A435 for every combination of SE2, Rose, Savage, T200, Vinyl, Centauri). The prefetch
+therefore costs no request of its own; each hit is one live request saved during the restore.
 
 Key invariant in `_merge_device_info`: **a manifest-derived int never gets clobbered by a DeviceInfo-derived bytes value for the same key.** Without this, `Savage,ChipID` (which the manifest gives as int `1` but PreflightInfo gives as raw bytes `b'\x00\x00\x00\x01'`) gets sent as bytes and TSS rejects the whole batch with a misleading `"not eligible"` error.
 
@@ -116,18 +124,18 @@ If the chip lacks an `add_<chip>_tags` helper in `tss.py`, add one mirroring the
 
 A wrong entry will silently fail the batched POST and TSS returns useless error messages (`"not eligible"`, `"internal error"`). Validate non-destructively before any restore:
 
-1. **Dry-run only.** Construct a `Restore` object with `enable_tss_batch=True`, call `_prefetch_combined_batch()`, do not call `boot_ramdisk` or `restore_device`. See `references/dryrun-batched.py.template`. Confirm all expected `<X>,Ticket` keys come back in the response.
-2. **Diff against ramrod** (only when something fails). Run a real restore once *without* `--tss-batch` and look at the `get_device_generated_firmware_data (X): {...}` log entry for that chip — that dict contains restored's own `DeviceGeneratedRequest`. Field-by-field compare it against what your batched POST sends. The mismatching field is the bug — see `references/diff-against-ramrod.py.template`. Most failures are typing mismatches (bytes vs int) on `ChipID` / `PatchEpoch` / `SecurityDomain`.
-3. **Live restore with `--tss-batch`** only after the dry-run succeeds. Watch for `TSS prefetch CACHE HIT for <chip>` lines.
+1. **Dry-run only.** Construct a `Restore` object with `enable_tss_batch=True`, call `_prepare_tss_riders()` and then `recovery.get_tss_response()`; do not call `boot_ramdisk` or `restore_device`. See `references/dryrun-batched.py.template`. Confirm `recovery.tss_riders_applied` is True and every expected `<X>,Ticket` key comes back in the response.
+2. **Diff against ramrod** — always, not only on failure, because the prefetch is served on an exact match: run a real restore once *without* `--tss-batch` and take the `get_device_generated_firmware_data (X): {...}` log entry for each chip (restored's own `DeviceGeneratedRequest`). Compare it entry for entry against the tracked `request` your rider built — `Restore._request_mismatches(device_request, ours)` is the same check the restore uses. Anything but the nonce must match, or the chip will never hit. See `references/diff-against-ramrod.py.template`. Typical gaps: entries restored synthesizes that `PreflightInfo` lacks (`Rap,FdrRootCaDigest`, `Wireless1,UID_MODE`, `UniqueBuildID`), typing (bytes vs int) on `ChipID` / `PatchEpoch` / `SecurityDomain`.
+3. **Live restore with `--tss-batch`** only after that. Watch for `TSS prefetch HIT for <chip>` lines and the summary at the end.
 
 ## Chips you should not add (the empirical findings)
 
 Read `references/chip-stability-matrix.md` for the full per-chip table. Short version:
 
 - **Cryptex1** — fires a DataRequestMsg during restore but its nonce isn't exposed in any non-entitled lockdown / MobileGestalt / PreflightInfo surface. Can't be prefetched without `com.apple.private.RestoreRemoteServices.restoreservice.remote`, which pymobiledevice3 doesn't carry.
-- **Baseband** — already part of `Recovery.get_tss_response`'s AP batch when `firmware_preflight_info` provides BB state. Don't add to `PREFETCHABLE_UPDATERS` separately; it's a different code path with chip-specific nonce-rotation semantics in `send_baseband_data`.
+- **Savage on A19** — its normal-mode `DeviceInfo` merges the JasmineIR1 and Yonkers parts, but restored asks for them as two separate loops (JasmineIR1 first, Yonkers second) with a nonce each; neither ever matches. Left in the table for the older flat-`Savage,*` SoCs.
 
-You **can** add peripherals whose nonce rotates on the normal→restore mode transition (Rose, Savage). The drift is detected in `_lookup_prefetched_tss` and gracefully falls back to a reactive POST — no harm, slight win from sharing the batched POST.
+You **can** keep peripherals whose nonce rotates on the normal→restore mode transition (Rose, Centauri, Baseband, Savage): the mismatch is detected entry for entry in `_lookup_prefetched_tss_by_ticket` and falls back to a live request. They cost nothing (they ride in the AP request) but they also save nothing on such a device; see the matrix for which chips are stable where.
 
 ## Quick scripts
 
@@ -143,6 +151,6 @@ Per `AGENTS.md`:
 
 ## Out-of-scope (do NOT attempt from this skill)
 
-- Probing `com.apple.RestoreRemoteServices.restoreserviced` over RemoteXPC to fetch chip state. 480-request shape probe was exhausted; every request returns `{'result': 'error'}` without the private entitlement. Recorded in `references/chip-stability-matrix.md`.
+- Fetching device-built requests from `com.apple.RestoreRemoteServices.restoreserviced` (`getdevicesidepreflightinfo`) to replace the `add_*_tags` helpers. It works (see the matrix), but it needs the chip's firmware files pushed to the device, one RemoteXPC connection per command, and it returns the same normal-mode nonces `PreflightInfo` already reports — no extra hits.
 - Modifying `send_baseband_data` to bypass live POSTs. The AP-batch BBTicket reuse path is already coded; live POSTs there are dictated by per-chip baseband nonce rotation and are not safe to skip.
 - Disabling `--tss-batch` as default. The default is opt-in by design — the batched POST changes wire-traffic shape and the user should consent.
