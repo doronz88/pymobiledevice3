@@ -184,6 +184,27 @@ Three instrumented reactive restores plus a lockdown `PreflightInfo` dump before
 | Savage (`JasmineIR1,Nonce` loop 0, `Yonkers,Nonce` loop 1) | no | rolls; two loops vs one normal-mode entry | no |
 | Cryptex1, Cryptex1LocalPolicy | not in `PreflightInfo` | fresh every time, force flag set | no |
 
+Why `restore preflight-requests` returns no request for three of them (device syslog, `-m restoreserviced`,
+plus the updater dylibs' strings):
+
+- **Centauri**: RemoteXPC's own message-size cap. The daemon logs `Invalid message size received,
+  disconnecting` / `Connection Disconnected (error [40: Message too long])` for the ~30 MB firmware
+  payload (13 MB SE and 20 MB Vinyl payloads go through). Chunking cannot help; the message itself is
+  too large.
+- **Baseband**: the normal-mode preflight cannot take the radio over from CommCenter
+  (`_CTServerConnectionCopyFirmwarePreflightInfo: CommCenter error: 2:5`, a 16 s `Set Baseband State`
+  failure), then `fp_ExecCmd failed on Baseband, continuing to next updater` and
+  `DeviceInfoFailures: {Baseband: update_baseband}`. Every query pays that timeout.
+- **Vinyl**: silent in syslog (the skip goes to the ramrod log). libVinylUpdater's `VinylUpdaterIsDone`
+  answers "Vinyl update through generic updater is not supported, skip Vinyl update" when asked to
+  personalize (`PreflightRequired`), so the updater is skipped and not even its `DeviceInfo` is
+  returned; the plain query goes through `gatherPreflightParameters` instead, which is why lockdown's
+  `DeviceInfo[Vinyl]` exists and already looks like a request.
+
+restoreserviced's updater table (15 entries, `off_10002E390`): Canary, Rose, Baseband, Centauri, SE,
+Savage, T200, AppleTCON, AppleTypeCRetimer, AppleTypeCRetimerUARP, Ace3, MantaMCU, Vinyl,
+AppleTconUARP, Banyan.
+
 Alignment of the hand-built rider requests against restored's own (`align` = `_request_mismatches`
 on a run capture): T200 and Vinyl 0 mismatches; SE, Rose, Centauri, Baseband nonce only, after adding
 `BMU,BoardID`, `Rap,FdrRootCaDigest` (empty), `UniqueBuildID` for Centauri and the
