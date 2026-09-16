@@ -860,9 +860,9 @@ class TSSRequest:
         if nonce is not None:
             self._request["Rap,Nonce"] = nonce
 
-        digest = get_with_or_without_comma(parameters, "Rap,FdrRootCaDigest")
-        if digest is not None:
-            self._request["Rap,FdrRootCaDigest"] = digest
+        # restored always sends this one, empty when the device has no FDR root CA digest
+        # (ramrod capture, iPhone18,4 / iOS 27.0); PreflightInfo does not expose it.
+        self._request["Rap,FdrRootCaDigest"] = get_with_or_without_comma(parameters, "Rap,FdrRootCaDigest") or b""
 
         for comp_name, node in manifest.items():
             if not comp_name.startswith("Rap,"):
@@ -938,6 +938,10 @@ class TSSRequest:
             get_with_or_without_comma(parameters, "Wireless1,FdrRootCaDigest") or b""
         )
         self._request["Wireless1,UID_MODE"] = bool(get_with_or_without_comma(parameters, "Wireless1,UID_MODE") or False)
+        # ... and the build's UniqueBuildID (same capture).
+        unique_build_id = parameters.get("UniqueBuildID")
+        if unique_build_id is not None:
+            self._request["UniqueBuildID"] = unique_build_id
 
         for comp_name, node in manifest.items():
             if not comp_name.startswith("Wireless1,"):
@@ -995,14 +999,14 @@ class TSSRequest:
         if nonce is not None:
             self._request["Cellular1,Nonce"] = nonce
 
-        for key in (
-            "Cellular1,BbActivationManifestKeyHash",
-            "Cellular1,BbProvisioningManifestKeyHash",
-            "Cellular1,BbFDRSecurityKeyHash",
-        ):
-            value = get_with_or_without_comma(parameters, key)
+        # The key hashes are the build identity's bare Bb* entries; restored sends them under the
+        # Cellular1 prefix, with an empty FDR security key hash when there is none (ramrod capture).
+        for key in ("BbActivationManifestKeyHash", "BbProvisioningManifestKeyHash", "BbFDRSecurityKeyHash"):
+            value = parameters.get(f"Cellular1,{key}", parameters.get(key))
+            if value is None and key == "BbFDRSecurityKeyHash":
+                value = b""
             if value is not None:
-                self._request[key] = value
+                self._request[f"Cellular1,{key}"] = value
 
         for comp_name, node in manifest.items():
             if not comp_name.startswith("Cellular1,"):
@@ -1029,6 +1033,11 @@ class TSSRequest:
         self._request["@BMU,Ticket"] = True
 
         self._request["BMU,ChipID"] = parameters["ChipID"]
+        # restored's own request carries the board id from the build identity (ramrod capture,
+        # iPhone18,4 / iOS 27.0); without it the prefetched request never matches exactly.
+        board_id = parameters.get("BMU,BoardID")
+        if board_id is not None:
+            self._request["BMU,BoardID"] = board_id
         self._request["BMU,UniqueID"] = parameters["UniqueID"]
         self._request["BMU,ProductionMode"] = parameters["ProductionMode"]
 

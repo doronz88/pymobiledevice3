@@ -125,6 +125,9 @@ class BaseRestore:
                 "Ap,ProductMarketingVersion",
                 "BbFactoryActivationManifestKeyHash",
                 "BbFDRSecurityKeyHash",
+                # the device-generated baseband request carries these under the Cellular1 prefix
+                "Cellular1,BbActivationManifestKeyHash",
+                "Cellular1,BbProvisioningManifestKeyHash",
                 "BbSkeyId",
                 "SE,ChipID",
                 "Savage,ChipID",
