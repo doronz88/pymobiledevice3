@@ -62,6 +62,28 @@ does not proxy its traffic.
 - `restore shell` opens an IPython shell with the iBoot (`irecv`) client of a
   recovery/DFU device.
 
+## Inspecting the preflight data
+
+Two commands expose what the device reports before a restore, in JSON:
+
+```bash
+# what lockdown reports in normal mode: PreflightInfo (each peripheral updater's
+# identity fields and current nonce), FirmwarePreflightInfo, ApParameters
+pymobiledevice3 restore preflight
+
+# the TSS request each updater would send, built by the device itself for this
+# IPSW (restoreserviced over a tunnel; uploads each updater's firmware first)
+pymobiledevice3 restore preflight-requests -i iPhone.ipsw --updater T200 --updater Rose
+```
+
+`preflight-requests` returns, per updater, the request (`DeviceInfoRequests`),
+its ticket and manifest tags (`DeviceInfoTags`) and the updaters whose preflight
+failed (`DeviceInfoFailures`; the baseband always does in normal mode). Without
+`--updater` it queries every known updater except the baseband. It is what
+`--tss-batch` is validated against: a chip can only be served from the prefetch
+if the request pymobiledevice3 builds from `PreflightInfo` equals the one the
+device builds, nonce aside.
+
 ## TSS requests during a restore
 
 Every restore signs firmware against `gs.apple.com`. Without any flag:
