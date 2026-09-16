@@ -113,3 +113,39 @@ There is no reference-management or error-concealment knob anywhere in it.
 Decode a captured Annex-B stream offline (any VideoToolbox or ffmpeg harness)
 and inspect a late frame — it smears, while the DeviceHub window at the same
 wall-clock instant is clean.
+
+## Update (2026-09-16): the browser smear was encoder frame-dropping, keyed by `VRAE:0`
+
+The negotiated codec feature-list string turned out to matter. Apple's captured
+Xcode offer declares `FLS;VRAE:0;SW:1;` in the PT=100 bank, and that is what
+pymobiledevice3 replayed. `VRAE` is AVConference's *video resolution
+adaptation enabled* switch (`isVRAEnabled`, "Aligning VRA encoder resolution");
+`VRAE:0` forbids the encoder from adapting resolution, so under the fixed
+6 Mbps cap its remaining rate-control lever is dropping input frames.
+
+Measured on iPhone18,4 / iOS 27.0 with the device's own `VCPEnc` telemetry
+(`pymobiledevice3 syslog live -m VCPEnc`) over identical 20 s home-screen
+page-swipe sequences driven in-process over HID:
+
+| offered PT=100 features | negotiated | drop_fps sum | Tx_fps | Avg QP |
+|-------------------------|-----------|--------------|--------|--------|
+| `FLS;VRAE:0;SW:1;` (old default) | `VRAE:0;SW:1;FLS` | 207-219 frames | ~42 | ~30 |
+| `FLS;VRAE:0;`           | `FLS;VRAE:0` | 207 frames  | 41     | 30     |
+| `FLS;SW:1;` (new default) | `FLS;SW:1` | 0           | 53     | 33     |
+| `FLS;`                  | `FLS`      | 0            | 52-55  | 33     |
+| jkcoxson/idevice string (`FLS;MS:-1;LF:-1;LTR;CABAC;...`) | `FLS` | 0 | 55 | 33 |
+
+The device intersects the offered token list with what it knows (`VRAE`,
+`SW`); everything else is dropped silently, which is why the richer
+third-party string "works" -- it simply no longer says `VRAE:0`. LTRP and FEC
+do not change the drop count.
+
+End to end, in Chrome via `serve-web` with the same swipe sequence and a 90 ms
+canvas capture: the old string shows multi-frame mosaic episodes (one ~7-frame
+episode in a 9 s run, ten separate episodes in a 14 s run at ~31 viewer fps);
+`FLS;SW:1;` shows none across two runs (~91 and ~137 frames, 53-57 viewer
+fps). The encoder keeps every frame at a slightly higher QP instead of dropping
+some and then encoding a huge residual into the next one.
+
+This supersedes the "decode-only fix is not achievable" conclusion above for
+the motion smear: it was never a decoder problem, it was the offer.

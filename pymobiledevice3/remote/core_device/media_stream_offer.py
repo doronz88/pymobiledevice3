@@ -125,11 +125,34 @@ _DEFAULT_AUDIO_BITRATE_TIERS: tuple[tuple[int, int, Optional[int]], ...] = (
 
 # Feature strings declared inside each codec bank. ``FLS;`` is the
 # AVConference framing marker; what follows is a semicolon-list of capability
-# flags (LTR = long-term reference, CABAC, AR/XR = aspect-ratio constraints,
-# etc.). Apple's capture only declared ``SW:1;`` for HEVC and ``VRAE:0;SW:1;``
-# for AVC, but iShareScreen demonstrates the device accepts a richer set.
+# tokens. The device intersects the offered list with the tokens it knows and
+# echoes the result as ``TxCodecFeatureListString`` in the answer's
+# ``streamConfig`` (unknown tokens such as ``LTR``/``CABAC`` are dropped
+# silently). The only tokens iOS 27's AVConference recognises on the screen
+# path are ``VRAE`` and ``SW``.
+#
+# ``VRAE:0`` (video-resolution-adaptation enabled = 0) is what Apple's captured
+# Xcode offer declared for the PT=100 bank -- and it is what makes the mirror
+# tear under motion: with resolution adaptation forbidden, the encoder's only
+# rate-control lever at the 6 Mbps cap is dropping frames. Measured on
+# iPhone18,4 / iOS 27.0 via ``VCPEnc`` telemetry over identical 20 s
+# home-screen swipe sequences:
+#
+#     VRAE:0;SW:1;FLS  drop_fps ~11 (200+ frames / run), Tx_fps ~42
+#     FLS;SW:1         drop_fps 0,                       Tx_fps ~53-55
+#
+# Every dropped frame turns the next P-frame into a large residual, which the
+# capped rate controller then encodes as the blocky "smear" seen in browsers.
+# Omitting ``VRAE:0`` (the device's default has adaptation enabled) removes the
+# drops outright; the encoder keeps every frame at a slightly higher QP
+# instead, and the resolution has not been observed to change mid-stream.
+# ``SW:1`` has no measurable effect on drops and is kept to stay close to
+# Apple's own ``FLS;SW:1;`` literal.
 _DEFAULT_HEVC_FEATURES = "FLS;SW:1;"
-_DEFAULT_AVC_FEATURES = "FLS;VRAE:0;SW:1;"
+_DEFAULT_AVC_FEATURES = "FLS;SW:1;"
+# The PT=100 feature string from the captured Xcode offer, kept for the
+# byte-equivalence regression check below.
+_XCODE_CAPTURE_AVC_FEATURES = "FLS;VRAE:0;SW:1;"
 
 # Fixed AVConference codec-capability ID baked into every ResEntry inside the
 # HEVC/AVC banks. Doesn't appear to encode resolution -- iShareScreen uses the
@@ -485,13 +508,17 @@ _CAPTURED_AUDIO_SESSION_ID = 2934526132
 def _self_check() -> None:
     """Assert the builders can still reproduce the captured Xcode templates.
 
-    The captured template had ``ltrp_enabled=True``; the default flipped to
-    ``False`` after on-device probing showed the device honours the
-    protobuf-level switch and LTRP-off eliminates mid-stream tearing under
-    UDP loss. Pass ``ltrp_enabled=True`` here to keep the byte-equivalence
-    regression check meaningful.
+    The captured template had ``ltrp_enabled=True`` and declared ``VRAE:0``
+    in the PT=100 bank; both defaults have since flipped after on-device
+    probing (see ``_DEFAULT_AVC_FEATURES``). Pass the captured values here
+    to keep the byte-equivalence regression check meaningful.
     """
-    vid = build_media_blob_video(_CAPTURED_VIDEO_SESSION_ID, ltrp_enabled=True, fec_enabled=False)
+    vid = build_media_blob_video(
+        _CAPTURED_VIDEO_SESSION_ID,
+        ltrp_enabled=True,
+        fec_enabled=False,
+        avc_features=_XCODE_CAPTURE_AVC_FEATURES,
+    )
     assert vid == _CAPTURED_VIDEO_TEMPLATE, (
         f"video builder drifted from Xcode capture: "
         f"len(built)={len(vid)} vs len(captured)={len(_CAPTURED_VIDEO_TEMPLATE)}"

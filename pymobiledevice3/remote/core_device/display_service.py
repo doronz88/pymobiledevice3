@@ -58,6 +58,8 @@ class DisplayService(CoreDeviceService):
         ltrp_enabled: bool = False,
         fec_enabled: bool = True,
         tiles_per_frame: int = 1,
+        hevc_features: Optional[str] = None,
+        avc_features: Optional[str] = None,
     ) -> dict[str, Any]:
         """Start an RTP video stream of one of the device's displays.
 
@@ -82,6 +84,13 @@ class DisplayService(CoreDeviceService):
                              streamConfig), and LTRP-off eliminates mid-stream
                              tearing under UDP loss. Apple's captured Xcode offer
                              used ``True``; opt back in if you suspect a regression.
+        :param hevc_features: Override the feature-list string declared in the
+                              PT=123 codec bank (``None`` keeps the module default).
+        :param avc_features: Override the feature-list string declared in the
+                             PT=100 codec bank, the one the device actually
+                             negotiates (``None`` keeps the module default; see
+                             ``media_stream_offer._DEFAULT_AVC_FEATURES`` for
+                             why ``VRAE:0`` must stay out of it).
         :return: Response dict with ``connection`` (carries ``sender`` port + full
                  ``streamConfig``) and ``negotiatorAnswer``.
         """
@@ -89,6 +98,11 @@ class DisplayService(CoreDeviceService):
             client_session_id = uuid.uuid4()
         call_id = new_call_id()
         session_id = random.randint(0, 0xFFFFFFFF)
+        offer_kwargs: dict[str, Any] = {}
+        if hevc_features is not None:
+            offer_kwargs["hevc_features"] = hevc_features
+        if avc_features is not None:
+            offer_kwargs["avc_features"] = avc_features
         negotiator_offer = build_negotiator_offer_video(
             call_id=call_id,
             session_id=session_id,
@@ -96,6 +110,7 @@ class DisplayService(CoreDeviceService):
             ltrp_enabled=ltrp_enabled,
             fec_enabled=fec_enabled,
             tiles_per_frame=tiles_per_frame,
+            **offer_kwargs,
         )
         request: dict[str, Any] = {
             "clientSupportedFeatures": XpcUInt64Type(_CLIENT_SUPPORTED_FEATURES),
