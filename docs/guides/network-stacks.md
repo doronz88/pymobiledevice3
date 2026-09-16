@@ -225,7 +225,7 @@ flowchart LR
     dev["iOS device<br/>RSD + services at fdxx::1"]
 
     cli -->|"XPC: browse / CreateAssertion"| rp
-    cli -->|"read net.inet.tcp.pcblist_n<br/>(find remoted's RSD port)"| rd
+    cli -->|"nettop sample<br/>(find remoted's RSD port)"| rd
     rp -.->|"keeps the tunnel alive"| rd
     rd -->|"encrypted CoreDevice tunnel"| dev
     cli -->|"TCP6 to [fdxx::1]:rsd_port<br/>(kernel-routable)"| dev
@@ -238,8 +238,13 @@ How it works (all via `ctypes` + libxpc, no pyobjc):
    to browse for the device and open its per-device XPC endpoint.
 2. `RemotePairing.CreateAssertionCommand` returns the device's in-tunnel `tunnelIPAddress` and an
    assertion identifier that keeps Apple's tunnel up for as long as the handle is held.
-3. Find the in-tunnel RSD port by reading the `net.inet.tcp.pcblist_n` sysctl (no root) and matching
-   `remoted`'s own connection to that tunnel address.
+3. Find the in-tunnel RSD port by matching `remoted`'s own TCP connection to that tunnel address
+   in one `nettop -L 1 -m tcp` sample (no root). nettop rather than the `net.inet.tcp.pcblist*`
+   sysctls because, starting with macOS 27, the kernel returns only the caller's own sockets from
+   those to non-root processes, which hides root-owned `remoted`. nettop still sees every
+   process's sockets only because it is Apple-signed with `com.apple.private.network.statistics`;
+   the NetworkStatistics feed behind it gives an unentitled process the same own-uid view, so it
+   has to be the entitled binary, not a direct framework call.
 4. Connect a normal TCP socket to `[tunnelIPAddress]:rsd_port` — the tunnel address is
    kernel-routable — and run the standard RSD handshake.
 
