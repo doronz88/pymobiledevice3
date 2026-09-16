@@ -77,7 +77,11 @@ async def _device_dependency_async(
                 continue
             if (ecid_value is None) or (lockdown.ecid == ecid_value):
                 logger.debug("found device")
-                return Device(lockdown=lockdown)
+                found = Device(lockdown=lockdown)
+                # Over lockdown this is a GetValue round-trip; resolve it now so the "connected device"
+                # log line can report it instead of "unknown".
+                await found.get_is_image4_supported()
+                return found
             else:
                 continue
     except ConnectionFailedToUsbmuxdError:

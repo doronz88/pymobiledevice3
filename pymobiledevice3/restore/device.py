@@ -33,7 +33,18 @@ class Device:
         self._product_type: Optional[str] = None
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} ecid: async hardware_model: async image4-support: async>"
+        # ECID and hardware model are readable synchronously on both transports. Image4 support is only
+        # synchronous on irecv; over lockdown it is a GetValue round-trip, so report it once someone awaited
+        # get_is_image4_supported() and say "unknown" until then rather than blocking or lying.
+        image4 = self._is_image4_supported
+        if image4 is None and self.irecv is not None:
+            image4 = bool(self.irecv.is_image4_supported)
+        return (
+            f"<{self.__class__.__name__} "
+            f"ecid: {self.get_ecid_value()} "
+            f"hardware_model: {self.get_hardware_model_value()} "
+            f"image4-support: {'unknown' if image4 is None else image4}>"
+        )
 
     def set_lockdown(self, value: Optional[LockdownClient]) -> None:
         self.lockdown = value
