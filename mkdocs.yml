@@ -79,6 +79,7 @@ plugins:
           - guides/python-api.md
           - guides/writing-commands-with-service-provider.md
           - guides/troubleshooting.md
+          - guides/restore.md
         API reference:
           - api/index.md
           - api/connection.md
@@ -131,6 +132,7 @@ nav:
       - Writing CLI commands: guides/writing-commands-with-service-provider.md
       - Device operator skill: guides/codex-device-operator-skill.md
       - Troubleshooting: guides/troubleshooting.md
+      - Restoring and updating devices: guides/restore.md
   - CLI Reference:
       - Overview: cli/index.md
       - activation: cli/activation.md
