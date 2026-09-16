@@ -195,7 +195,12 @@ window.addEventListener('blur', releaseActive);
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') releaseActive();
 });
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+// Right-click on the canvas = Home button, matching serve-vnc. We still
+// preventDefault to suppress the browser context menu either way.
+canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    postJson('/button', {name: 'home', state: 'press'}).then(() => log('button: home (right-click)'));
+});
 
 document.querySelectorAll('button[data-btn]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -578,7 +583,13 @@ async function startAudio() {
         audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
         await audioCtx.resume();
     } catch (e) { log('audioCtx err: ' + e.message); stopAudio(); return; }
-    let nextStart = audioCtx.currentTime + 0.1; // 100 ms initial buffer
+    // Playout scheduling. AAC-ELD arrives in 10 ms AUs; we schedule each buffer
+    // back-to-back from `nextStart`. Keep the baseline latency low but leave
+    // enough cushion to ride out normal network/UI jitter.
+    const AUDIO_PRIME_SECS = 0.06;   // initial buffer before the first AU plays
+    const AUDIO_UNDERRUN_SECS = 0.04; // re-prime after we fall behind
+    const AUDIO_MAX_LATENCY_SECS = 0.18; // trim back once drift pushes us past this
+    let nextStart = audioCtx.currentTime + AUDIO_PRIME_SECS;
     let totalSamples = 0;
 
     const playPcm = (pcmBytes) => {
@@ -598,9 +609,15 @@ async function startAudio() {
         const src = audioCtx.createBufferSource();
         src.buffer = buf;
         src.connect(audioCtx.destination);
-        if (nextStart < audioCtx.currentTime) {
-            // Schedule fell behind (UI stall) -- jump forward to keep latency bounded.
-            nextStart = audioCtx.currentTime + 0.05;
+        const now = audioCtx.currentTime;
+        if (nextStart < now) {
+            // Schedule fell behind (UI stall) -- jump forward to keep going.
+            nextStart = now + AUDIO_UNDERRUN_SECS;
+        } else if (nextStart - now > AUDIO_MAX_LATENCY_SECS) {
+            // Latency crept up (clock drift between the device's audio rate and
+            // the AudioContext clock). Trim back toward the prime target so the
+            // sound stays in sync instead of only ever growing more delayed.
+            nextStart = now + AUDIO_PRIME_SECS;
         }
         src.start(nextStart);
         nextStart += buf.duration;
