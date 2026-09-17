@@ -1,6 +1,7 @@
 import base64
 import logging
 import plistlib
+import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
@@ -104,6 +105,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         name: Optional[str] = None,
         open_connection: Optional[Callable[..., Any]] = None,
         auxiliary_metadata: Optional[dict[str, dict[str, Any]]] = None,
+        handshake_uuid: Optional[uuid.UUID] = None,
     ) -> None:
         """
         :param address: ``(host, port)`` of the RSD endpoint to connect to.
@@ -116,9 +118,13 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             the transport that built this RSD had it. The pairing handshake carries it, but the RSD
             handshake does not, so paths without a pairing handshake leave it empty. See
             `parse_device_kvs_data` and `auxiliary_metadata`.
+        :param handshake_uuid: peer UUID to send in the RSD handshake; ``None`` sends a random one.
+            Only a transport sharing its RSD endpoint with another peer needs this (the native
+            tunnel, which must identify as the host's ``remoted``).
         """
         super().__init__()
         self.name = name
+        self.handshake_uuid = handshake_uuid
         # Device-advertised auxiliary metadata keyed by preference domain, e.g.
         # ``{"com.apple.WebInspector": {"EnableRemoteInspection": False}}``. Only the pairing
         # handshake (native ``remotepairingd`` / userspace / tunneld) supplies this; the plain RSD
@@ -306,7 +312,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         """
         await self.service.connect()
         try:
-            await self.service.send_device_handshake()
+            await self.service.send_device_handshake(self.handshake_uuid)
             self.peer_info = await self.service.receive_response()
             self.udid = self.peer_info["Properties"]["UniqueDeviceID"]
             self.product_type = self.peer_info["Properties"]["ProductType"]
