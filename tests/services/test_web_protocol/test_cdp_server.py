@@ -1635,7 +1635,11 @@ async def testp_cdp_server_keeps_an_armed_pause_for_user_code(lockdown: Lockdown
                 await call(method, {})
             # A fresh document: an armed pause takes the very next statement to run, so a timer
             # left behind by an earlier test on this page would take it instead of the user's code.
-            await call("Page.navigate", {"url": "https://example.com/"})
+            # And a blank one: into a real page Safari injects scripts of its own for a while after
+            # the load (LinkPresentation's metadata extractor 2, 4, 8 and 14 s in, Reader's article
+            # finder 5 s in - measured on iOS 27.2), and one of those took the pause instead. It
+            # runs none in about:blank, and navigating there again still replaces the document.
+            await call("Page.navigate", {"url": "about:blank"})
             await asyncio.sleep(3)
             big = await call(
                 "Runtime.evaluate",
