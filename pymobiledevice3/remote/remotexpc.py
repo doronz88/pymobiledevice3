@@ -174,16 +174,20 @@ class RemoteXPCConnection:
         self._writer = None
         self._reader = None
 
-    async def send_device_handshake(self) -> None:
+    async def send_device_handshake(self, peer_uuid: Optional[uuid.UUID] = None) -> None:
         """Announce the client as a modern (non-legacy) RemoteXPC peer.
 
         Send only on the RSD/remoted control connection, after the HTTP/2
         handshake and before reading ``peer_info``.
+
+        :param peer_uuid: UUID to identify this peer with; ``None`` sends a random one. A connection
+            that shares its RSD endpoint with another peer (the native tunnel rides ``remoted``'s)
+            must pass that peer's UUID -- see ``native_tunnel.host_remoted_uuid``.
         """
         await self.send_request({
             "MessageType": "Handshake",
             "MessagingProtocolVersion": XpcUInt64Type(MESSAGING_PROTOCOL_VERSION),
-            "UUID": uuid.uuid4(),
+            "UUID": peer_uuid if peer_uuid is not None else uuid.uuid4(),
             "Properties": {
                 "RemoteXPCVersionFlags": XpcUInt64Type(REMOTE_XPC_VERSION_FLAGS),
                 "SensitivePropertiesVisible": True,

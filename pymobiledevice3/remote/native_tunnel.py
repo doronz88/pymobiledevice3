@@ -66,6 +66,11 @@ _NETTOP_TIMEOUT = 10.0
 # ``tcp6 <local>.<port><-><foreign>.<port>`` / ``tcp4 <local>:<port><-><foreign>:<port>`` socket rows.
 _NETTOP_SOCKET_RE = re.compile(r"^tcp[46] (?P<local>\S+?)<->(?P<foreign>\S+)$")
 
+# ``remotectl dumpstate`` prints the host ``remoted``'s own identity first (see host_remoted_uuid).
+_REMOTECTL_PATH = "/usr/libexec/remotectl"
+_REMOTECTL_TIMEOUT = 10.0
+_REMOTECTL_LOCAL_UUID_RE = re.compile(r"^Local device\n\s+UUID: (?P<uuid>[0-9A-Fa-f-]{36})$", re.MULTILINE)
+
 # Objective-C block flags.
 _BLOCK_IS_GLOBAL = 1 << 28
 
@@ -741,6 +746,40 @@ def find_rsd_port(xpc: _LibXpc, tunnel_ip: str) -> list[int]:
     return ports
 
 
+def host_remoted_uuid() -> Optional[uuid.UUID]:
+    """The UUID the host's ``remoted`` identifies itself with in its RSD handshake; ``None`` if unknown.
+
+    The device keeps ONE RSD connection per tunnel and replaces it whenever a new one arrives. Since
+    iOS 27.2 it also compares the newcomer's handshake UUID with the peer it replaced and, when they
+    differ ("Peer UUID changed across reconnect; reattaching so clients re-discover it" in the
+    device's remoted log), re-attaches the whole device -- closing every service listener it just
+    advertised, so each port in the ``peer_info`` handed to the newcomer refuses connections. The
+    native tunnel's RSD connection rides ``remoted``'s tunnel as exactly such a newcomer, so it has
+    to introduce itself as ``remoted``. ``remotectl dumpstate`` reports that UUID without root.
+    """
+    try:
+        result = subprocess.run(
+            [_REMOTECTL_PATH, "dumpstate"],
+            capture_output=True,
+            text=True,
+            timeout=_REMOTECTL_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.debug("remotectl unavailable: %r", e)
+        return None
+    return parse_remotectl_local_uuid(result.stdout)
+
+
+def parse_remotectl_local_uuid(text: str) -> Optional[uuid.UUID]:
+    """Extract the ``Local device`` UUID from ``remotectl dumpstate`` output; ``None`` if absent."""
+    match = _REMOTECTL_LOCAL_UUID_RE.search(text)
+    if match is None:
+        logger.debug("remotectl dumpstate reported no local device UUID")
+        return None
+    return uuid.UUID(match.group("uuid"))
+
+
 def _run_nettop_tcp() -> str:
     """One CSV sample of every TCP socket ``nettop`` can see; ``""`` when nettop is unusable."""
     try:
@@ -849,11 +888,16 @@ class NativeRemotedTunnel:
         # re-scan the socket table on every attempt: a cached candidate list goes stale the moment
         # remoted redials (the scan may also simply run before remoted has connected at all).
         last_error: Optional[Exception] = None
+        # Identify as remoted, whose connection this one replaces: a different peer UUID makes the
+        # device (iOS 27.2+) tear down the services it has just advertised (see host_remoted_uuid).
+        handshake_uuid = await asyncio.to_thread(host_remoted_uuid)
         for attempt in range(_RSD_CONNECT_ATTEMPTS):
             if attempt:
                 await asyncio.sleep(_RSD_CONNECT_RETRY_DELAY)
             for port in await asyncio.to_thread(find_rsd_port, xpc, tunnel_ip):
-                rsd = RemoteServiceDiscoveryService((tunnel_ip, port), auxiliary_metadata=auxiliary_metadata)
+                rsd = RemoteServiceDiscoveryService(
+                    (tunnel_ip, port), auxiliary_metadata=auxiliary_metadata, handshake_uuid=handshake_uuid
+                )
                 try:
                     await rsd.connect()
                 except Exception as e:  # try the next candidate port

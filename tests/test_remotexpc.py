@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from types import MethodType
 from typing import Any, cast
 
@@ -15,7 +16,7 @@ from pymobiledevice3.remote.remotexpc import (
     WINDOW_UPDATE_THRESHOLD,
     RemoteXPCConnection,
 )
-from pymobiledevice3.remote.xpc_message import XpcWrapper
+from pymobiledevice3.remote.xpc_message import XpcWrapper, decode_xpc_object
 
 
 class FakeWriter:
@@ -307,3 +308,20 @@ async def test_send_request_keeps_small_messages_in_one_frame():
     await connection.send_request({"command": "getpreflightinfo"})
 
     assert len(writer.writes) == 1 and writer.drain_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_device_handshake_identifies_as_the_given_peer():
+    # A connection replacing another peer's on a shared RSD endpoint has to present that peer's
+    # UUID (see native_tunnel.host_remoted_uuid); the default stays a fresh random one.
+    connection, writer = _sending_connection()
+    peer_uuid = uuid.UUID("c9a6e86b-beea-45ea-9332-86f295536960")
+
+    await connection.send_device_handshake(peer_uuid)
+    await connection.send_device_handshake()
+
+    given, random_ = (
+        decode_xpc_object(XpcWrapper.parse(frame.data).message.payload.obj) for frame in _parse_written_frames(writer)
+    )
+    assert given["UUID"] == peer_uuid
+    assert isinstance(random_["UUID"], uuid.UUID) and random_["UUID"] != peer_uuid

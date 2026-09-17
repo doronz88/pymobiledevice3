@@ -1,5 +1,6 @@
 import ctypes
 import platform
+import uuid
 from typing import Any, Optional, cast
 
 import pytest
@@ -90,9 +91,12 @@ async def test_aopen_retries_handshake_with_fresh_port_scan(
             pass
 
     class FakeRsd:
-        def __init__(self, address: tuple[str, int], auxiliary_metadata: object = None) -> None:
+        def __init__(
+            self, address: tuple[str, int], auxiliary_metadata: object = None, handshake_uuid: object = None
+        ) -> None:
             self.address = address
             self.auxiliary_metadata = auxiliary_metadata
+            self.handshake_uuid = handshake_uuid
 
         async def connect(self) -> None:
             if self.address[1] == 51011:
@@ -109,6 +113,7 @@ async def test_aopen_retries_handshake_with_fresh_port_scan(
     monkeypatch.setattr(native_tunnel, "_libxpc", lambda: object())
     monkeypatch.setattr(native_tunnel, "_RemotePairingSession", FakeSession)
     monkeypatch.setattr(native_tunnel, "find_rsd_port", fake_find_rsd_port)
+    monkeypatch.setattr(native_tunnel, "host_remoted_uuid", lambda: _HOST_REMOTED_UUID)
     monkeypatch.setattr(native_tunnel, "RemoteServiceDiscoveryService", FakeRsd)
     monkeypatch.setattr(native_tunnel, "_RSD_CONNECT_RETRY_DELAY", 0, raising=False)
 
@@ -116,6 +121,8 @@ async def test_aopen_retries_handshake_with_fresh_port_scan(
     rsd = cast(Any, await tunnel.aopen())
     assert rsd.address == ("fdcd:5fb2:b94b::1", 51013)
     assert scan_count == 2
+    # iOS 27.2+ tears down the advertised services unless the handshake carries remoted's UUID.
+    assert rsd.handshake_uuid == _HOST_REMOTED_UUID
     await tunnel.aclose()
 
 
@@ -493,3 +500,39 @@ def test_find_rsd_port_matches_remoted_connections_to_the_tunnel_address(monkeyp
 def test_find_rsd_port_is_empty_when_nettop_is_unusable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(native_tunnel, "_run_nettop_tcp", lambda: "")
     assert native_tunnel.find_rsd_port(cast(Any, object()), "fd9c:4d71:ddf0::1") == []
+
+
+_HOST_REMOTED_UUID = uuid.UUID("c9a6e86b-beea-45ea-9332-86f295536960")
+
+# Head of a real ``remotectl dumpstate``: the host's own identity, then each attached device.
+_REMOTECTL_DUMPSTATE = """Local device
+\tUUID: C9A6E86B-BEEA-45EA-9332-86F295536960
+\tMessaging Protocol Version: 7
+\tProduct Type: Mac16,11
+\tServices:
+\t\tcom.apple.osanalytics.logRelay
+Found ncm-1 (ncm-device)
+\tState: connected (connectable)
+\tUUID: 687A4CFC-3E83-4CCD-B7E2-C9223A3782DD
+\tProduct Type: iPhone18,4
+"""
+
+
+def test_parse_remotectl_local_uuid_takes_the_host_not_an_attached_device() -> None:
+    assert native_tunnel.parse_remotectl_local_uuid(_REMOTECTL_DUMPSTATE) == _HOST_REMOTED_UUID
+
+
+@pytest.mark.parametrize("text", ["", "Found ncm-1 (ncm-device)\n\tUUID: 687A4CFC-3E83-4CCD-B7E2-C9223A3782DD\n"])
+def test_parse_remotectl_local_uuid_is_none_without_a_local_device(text: str) -> None:
+    assert native_tunnel.parse_remotectl_local_uuid(text) is None
+
+
+def test_host_remoted_uuid_is_none_when_remotectl_is_unusable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native_tunnel, "_REMOTECTL_PATH", "/nonexistent/remotectl")
+    assert native_tunnel.host_remoted_uuid() is None
+
+
+def test_host_remoted_uuid_reads_this_hosts_remoted() -> None:
+    if platform.system() != "Darwin":
+        pytest.skip("remotectl is macOS-only")
+    assert isinstance(native_tunnel.host_remoted_uuid(), uuid.UUID)
