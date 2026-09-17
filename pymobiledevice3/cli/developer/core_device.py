@@ -1065,6 +1065,17 @@ async def core_device_display_serve_vnc(
             help="Opt back into LTRP (off by default; see serve-web for context).",
         ),
     ] = False,
+    share_clipboard: Annotated[
+        bool,
+        typer.Option(
+            "--share-clipboard",
+            help=(
+                "Share the clipboard with VNC clients: text copied on the device reaches the client's "
+                "clipboard and vice versa. UTF-8 with clients that support the Extended Clipboard "
+                "pseudo-encoding (e.g. TigerVNC, noVNC), Latin-1 otherwise."
+            ),
+        ),
+    ] = False,
     rtcp_fb: Annotated[
         bool,
         typer.Option(
@@ -1100,6 +1111,7 @@ async def core_device_display_serve_vnc(
         decoder=decoder,
         allow_rtcp_fb=rtcp_fb,
         ltrp_enabled=ltrp,
+        share_clipboard=share_clipboard,
     )
     await server.serve()
 

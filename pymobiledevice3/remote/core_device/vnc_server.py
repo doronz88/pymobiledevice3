@@ -30,10 +30,12 @@ import socket
 import struct
 import sys
 import uuid
+import zlib
 from collections import deque
 from typing import Optional
 
 from pymobiledevice3.exceptions import CoreDeviceError
+from pymobiledevice3.remote.core_device import rfb_clipboard
 from pymobiledevice3.remote.core_device.aac_eld import AACELDDecoder
 from pymobiledevice3.remote.core_device.audio_player import AudioQueuePlayer
 from pymobiledevice3.remote.core_device.display_service import (
@@ -70,6 +72,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
     IndigoHIDService,
     UniversalHIDServiceService,
 )
+from pymobiledevice3.remote.core_device.pasteboard_service import PasteboardMonitor
 from pymobiledevice3.remote.core_device.screen_stream import UdpMediaTransport, depacketize_hevc, open_media_receiver
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
@@ -253,6 +256,11 @@ class _VncClient:
         # interpretation of the keysym (e.g. shifted vs unshifted) has
         # drifted between the down and the up.
         self.active_typing: dict[int, tuple[int, ...]] = {}
+        # Small server->client messages (clipboard) waiting for the send loop,
+        # which owns the send direction of the socket.
+        self.outbox: list[bytes] = []
+        # The client advertised the Extended Clipboard pseudo-encoding (UTF-8).
+        self.extended_clipboard = False
 
 
 class VncStreamServer:
@@ -270,8 +278,15 @@ class VncStreamServer:
         decoder: str = "auto",
         allow_rtcp_fb: bool = False,
         ltrp_enabled: bool = False,
+        share_clipboard: bool = False,
     ) -> None:
         self._rsd = rsd
+        # --share-clipboard: device copies go out as ServerCutText, ClientCutText
+        # lands on the device pasteboard.
+        self._clipboard_monitor: Optional[PasteboardMonitor] = (
+            PasteboardMonitor(rsd, self._on_device_clipboard) if share_clipboard else None
+        )
+        self._clipboard_text: Optional[str] = None
         self._bind = bind
         self._port = port
         self._display_id = display_id
@@ -1259,6 +1274,12 @@ class VncStreamServer:
                 n = struct.unpack(">H", await r.readexactly(2))[0]
                 raw = await r.readexactly(4 * n)
                 client.encodings = list(struct.unpack(f">{n}i", raw))
+                client.extended_clipboard = (
+                    self._clipboard_monitor is not None and rfb_clipboard.ENC_EXTENDED_CLIPBOARD in client.encodings
+                )
+                if client.extended_clipboard:
+                    # The spec wants a caps message for every SetEncodings that lists the encoding.
+                    self._queue_message(client, rfb_clipboard.extended_caps())
                 logger.debug(
                     "VNC client encodings: %s",
                     [
@@ -1296,14 +1317,67 @@ class VncStreamServer:
                 button_mask, px, py = struct.unpack(">BHH", data)
                 await self._handle_pointer(client, button_mask, px, py)
             elif msg_type == 6:
-                # ClientCutText: padding(3) + length(4) + text. Ignored.
+                # ClientCutText: padding(3) + length(4) + text. A negative
+                # length marks an Extended Clipboard message, which a client
+                # only sends after we advertised the pseudo-encoding's caps.
                 await r.readexactly(3)
-                ln = struct.unpack(">I", await r.readexactly(4))[0]
-                if ln:
-                    await r.readexactly(ln)
+                ln = struct.unpack(">i", await r.readexactly(4))[0]
+                if ln < 0 and not client.extended_clipboard:
+                    logger.warning("VNC client sent an unsolicited extended clipboard message, terminating")
+                    return
+                body = await r.readexactly(abs(ln))
+                if self._clipboard_monitor is not None:
+                    await self._handle_cut_text(client, body, extended=ln < 0)
             else:
                 logger.warning("VNC client sent unknown msg-type %d, terminating", msg_type)
                 return
+
+    # ----- shared clipboard ---------------------------------------------------
+    @staticmethod
+    def _queue_message(client: _VncClient, message: bytes) -> None:
+        client.outbox.append(message)
+        client.wants_update.set()  # wakes the send loop, which flushes the outbox first
+
+    def _on_device_clipboard(self, text: str) -> None:
+        self._clipboard_text = text
+        for client in self._clients:
+            if client.extended_clipboard:
+                # Announce; the client asks for the text when it wants it.
+                self._queue_message(client, rfb_clipboard.extended_notify())
+            else:
+                self._queue_message(client, rfb_clipboard.classic_server_cut_text(text))
+
+    async def _handle_cut_text(self, client: _VncClient, body: bytes, *, extended: bool) -> None:
+        assert self._clipboard_monitor is not None
+        text: Optional[str] = None
+        if not extended:
+            text = rfb_clipboard.decode_classic_text(body)
+        else:
+            try:
+                message = rfb_clipboard.parse_extended(body)
+            except (ValueError, zlib.error) as e:
+                logger.warning("dropping malformed extended clipboard message: %s", e)
+                return
+            if message.action == rfb_clipboard.ACTION_NOTIFY:
+                if message.flags & rfb_clipboard.FORMAT_TEXT:
+                    self._queue_message(client, rfb_clipboard.extended_request())
+            elif message.action == rfb_clipboard.ACTION_PEEK:
+                self._queue_message(client, rfb_clipboard.extended_notify(self._clipboard_text is not None))
+            elif message.action == rfb_clipboard.ACTION_REQUEST:
+                if message.flags & rfb_clipboard.FORMAT_TEXT and self._clipboard_text is not None:
+                    self._queue_message(client, rfb_clipboard.extended_provide(self._clipboard_text))
+            elif message.action == rfb_clipboard.ACTION_PROVIDE:
+                text = message.text
+        if not text:
+            return
+        try:
+            await self._clipboard_monitor.set_text(text)
+        except Exception as e:
+            logger.warning("failed to copy the VNC client's clipboard to the device: %s", e)
+            return
+        # The device now holds the client's own text; don't offer it back as a device copy.
+        self._clipboard_text = None
+        logger.debug("clipboard: VNC client -> device (%d chars)", len(text))
 
     async def _client_send_loop(self, client: _VncClient) -> None:
         loop = asyncio.get_running_loop()
@@ -1325,8 +1399,8 @@ class VncStreamServer:
             return
         send_sock = socket.socket(fileno=os.dup(base_sock.fileno()))
 
-        def _blocking_send(hdr: bytes, frm: bytes) -> None:
-            for chunk in (hdr, frm):
+        def _blocking_send(*chunks: bytes) -> None:
+            for chunk in chunks:
                 mv = memoryview(chunk)
                 total = 0
                 n = len(chunk)
@@ -1342,6 +1416,12 @@ class VncStreamServer:
             while True:
                 await client.wants_update.wait()
                 client.wants_update.clear()
+                if client.outbox:
+                    messages, client.outbox = client.outbox, []
+                    try:
+                        await loop.run_in_executor(None, _blocking_send, *messages)
+                    except (ConnectionResetError, BrokenPipeError, OSError):
+                        return
                 frame = self._latest_frame
                 if frame is None or frame is client.last_sent_frame:
                     continue
@@ -1514,6 +1594,8 @@ class VncStreamServer:
             with contextlib.suppress(NotImplementedError, AttributeError):
                 loop.add_signal_handler(getattr(_signal, signame), _request_stop)
 
+        if self._clipboard_monitor is not None:
+            await self._clipboard_monitor.start()
         serve_task = asyncio.create_task(server.serve_forever())
         try:
             logger.info(
@@ -1533,6 +1615,10 @@ class VncStreamServer:
                 await asyncio.wait_for(server.wait_closed(), timeout=2.0)
             logger.debug("shutdown: stopping HID")
             await self._stop_hid()
+            if self._clipboard_monitor is not None:
+                logger.debug("shutdown: stopping clipboard monitor")
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(self._clipboard_monitor.stop(), timeout=3.0)
             logger.debug("shutdown: stopping refresh loop")
             refresh_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
