@@ -426,9 +426,11 @@ Both can share the clipboard with the device, in both directions:
 
 - `serve-web`: turn on **Sync** in the viewer's Clipboard panel. Text and
   images copied on the device land in the browser machine's clipboard, and
-  whatever was copied there is on the device by the time you paste. Some apps
-  publish rich content slowly (a picture copied out of Notes takes about a
-  minute to show up; plain text and plain images are immediate). The browser only grants
+  whatever was copied there is on the device by the time you paste. A picture
+  copied out of a rich-text app such as Notes is not shared: it only exists
+  inside the app's rich representations, and reading those blocks the device's
+  pasteboard service for about a minute (copy the picture from Photos, or take
+  a screenshot, instead). The browser only grants
   clipboard access on a secure context (`localhost`, or `--https`) and asks for
   permission once; it also refuses clipboard writes from a background tab, so a
   device copy made meanwhile lands when you return to the page.
