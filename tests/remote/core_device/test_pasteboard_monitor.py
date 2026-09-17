@@ -35,6 +35,9 @@ class FakeDevice:
         self.notifications: asyncio.Queue[Optional[str]] = asyncio.Queue()
         self.name_set_replies = True
         self.full_pull_hangs = False
+        # Cleared while the daemon is busy resolving a rich copy: requests wait their turn.
+        self.idle = asyncio.Event()
+        self.idle.set()
 
     def copy(self, *items: dict[str, Any]) -> None:
         """Something was copied on the device."""
@@ -73,11 +76,12 @@ class FakeConnection:
         pass
 
     async def send_request(self, data: dict[str, Any], wanting_reply: bool = False) -> None:
+        assert not (wanting_reply and self.sent), "a second reply-wanting request aborts dtpasteboardd"
         self.sent.append(data)
 
-    async def send_receive_request(self, data: dict[str, Any]) -> dict[str, Any]:
-        assert not self.sent, "a second reply-wanting request on one connection aborts dtpasteboardd"
-        self.sent.append(data)
+    async def receive_response(self) -> dict[str, Any]:
+        data = self.sent[-1]
+        await self.device.idle.wait()
         if data["command"] == SET_COMMAND:
             self.device.copy(*data["items"])
             return {"command": "SET_REPLY", **self.device.snapshot(POLICY_ALL_PROMISED, self.device.name_set_replies)}
@@ -85,6 +89,10 @@ class FakeConnection:
         if self.device.full_pull_hangs and data["dataPolicy"] == POLICY_ALL_RESOLVED:
             await asyncio.sleep(3600)
         return {"command": "PULL_REPLY", **self.device.snapshot(data["dataPolicy"])}
+
+    async def send_receive_request(self, data: dict[str, Any]) -> dict[str, Any]:
+        await self.send_request(data, wanting_reply=True)
+        return await self.receive_response()
 
     async def close(self) -> None:
         self.closed = True
@@ -235,8 +243,8 @@ async def test_own_set_is_not_echoed_back(monkeypatch: pytest.MonkeyPatch) -> No
     await harness.started()
     try:
         await harness.monitor.set_text("from host")
-        assert harness.device.items == [text_item("from host")]
         await harness.wait_for_pulls(2)
+        assert harness.device.items == [text_item("from host")]
         # Past the echo window only the change id of the SET_REPLY tells it apart.
         harness.monitor._recent_host_content.clear()  # pyright: ignore[reportPrivateUsage]
         harness.device.notifications.put_nowait(PASTEBOARD_CHANGED_NOTIFICATION)
@@ -257,11 +265,32 @@ async def test_own_set_is_recognised_by_content_when_its_reply_names_no_change(
     try:
         await harness.monitor.set_text("first")
         await harness.monitor.set_text("second")
+        await harness.wait_for_pulls(3)  # both landed and were looked at
         harness.device.copy(text_item("from device"))
         await harness.wait_for_change()
         assert harness.received == ["from device"]
     finally:
         await harness.monitor.stop()
+
+
+@pytest.mark.asyncio
+async def test_set_does_not_wait_for_a_busy_daemon(monkeypatch: pytest.MonkeyPatch) -> None:
+    harness = Harness(monkeypatch)
+    await harness.started()
+    try:
+        harness.device.idle.clear()  # a minute-long resolve of a rich copy is in progress
+        await asyncio.wait_for(harness.monitor.set_text("from host"), 1)
+        assert harness.device.items == []
+        harness.monitor._recent_host_content.clear()  # pyright: ignore[reportPrivateUsage]  # ...a minute later
+        harness.device.idle.set()
+        await harness.wait_for_pulls(2)
+        assert harness.device.items == [text_item("from host")]
+        harness.device.copy(text_item("from device"))
+        await harness.wait_for_change()
+        assert harness.received == ["from device"]
+    finally:
+        await harness.monitor.stop()
+    assert all(c.closed for c in harness.connections)
 
 
 @pytest.mark.asyncio
@@ -283,6 +312,7 @@ async def test_own_image_is_not_echoed_back(monkeypatch: pytest.MonkeyPatch) -> 
     await harness.started()
     try:
         await harness.monitor.set_image(b"\x89PNGhost")
+        await harness.wait_for_pulls(2)
         assert harness.device.items == [data_item("public.png", b"\x89PNGhost")]
         harness.device.copy(data_item("public.png", b"\x89PNGdevice"))
         await harness.wait_for_change()

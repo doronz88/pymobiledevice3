@@ -367,6 +367,8 @@ class PasteboardMonitor:
         # notification of a SET can be handled before its SET_REPLY named the change, and a burst
         # of SETs is coalesced by the device, so the pasteboard may show any of them.
         self._recent_host_content: dict[str, float] = {}
+        # set_text() / set_image() calls still waiting for their SET_REPLY.
+        self._set_tasks: set[asyncio.Task[None]] = set()
 
     @property
     def running(self) -> bool:
@@ -377,6 +379,10 @@ class PasteboardMonitor:
             self._task = asyncio.create_task(self._run(), name="pasteboard-monitor")
 
     async def stop(self) -> None:
+        for set_task in list(self._set_tasks):
+            set_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await set_task
         task, self._task = self._task, None
         if task is None:
             return
@@ -394,14 +400,43 @@ class PasteboardMonitor:
 
     async def _set(self, items: list[dict[str, Any]], fingerprint: str, timeout: float) -> None:
         self._recent_host_content[fingerprint] = time.monotonic()
+        service = PasteboardService(self._rsd)
+        await asyncio.wait_for(service.connect(), timeout)
+        try:
+            await service.service.send_request(
+                {
+                    "command": SET_COMMAND,
+                    "pasteboardName": self._pasteboard_name,
+                    "items": items,
+                    "sourceMetadata": None,
+                },
+                wanting_reply=True,
+            )
+        except BaseException:
+            await service.close()
+            raise
+        # The copy is on its way; the SET_REPLY is only needed to recognise the change it causes.
+        # The daemon answers when it gets to it, which is a minute away while it resolves a rich
+        # copy, so the wait must not hold up (or fail) the caller.
+        task = asyncio.create_task(self._finish_set(service, fingerprint), name="pasteboard-set-reply")
+        self._set_tasks.add(task)
+        task.add_done_callback(self._set_tasks.discard)
 
-        async def _send() -> dict[str, Any]:
-            async with PasteboardService(self._rsd) as service:
-                return await service.set(items, self._pasteboard_name)
-
-        change = _change_id(await asyncio.wait_for(_send(), timeout))
+    async def _finish_set(self, service: PasteboardService, fingerprint: str) -> None:
+        try:
+            reply = await asyncio.wait_for(service.service.receive_response(), _FULL_PULL_TIMEOUT_SECONDS)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.debug("no SET_REPLY from the device pasteboard (%s: %s)", type(e).__name__, e)
+            return
+        finally:
+            await service.close()
+        change = _change_id(reply)
         if change is not None:
             self._own_changes = [*self._own_changes, change][-_OWN_CHANGES_KEPT:]
+        # The pasteboard changed now, not when the SET was sent.
+        self._recent_host_content[fingerprint] = time.monotonic()
 
     async def _run(self) -> None:
         while True:
@@ -433,6 +468,10 @@ class PasteboardMonitor:
             # Not recorded as seen, so the next notification looks again.
             logger.warning("device pasteboard did not answer; skipping this change")
             return
+        if self._set_tasks:
+            # The daemon answers in order, so the SET_REPLY of a copy this snapshot shows has
+            # arrived by now; let it be read before judging whose copy this is.
+            await asyncio.wait(list(self._set_tasks), timeout=1.0)
         change = _change_id(snapshot)
         if change is not None and change == self._last_change:
             return
