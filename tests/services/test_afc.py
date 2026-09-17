@@ -1,7 +1,7 @@
 import asyncio
 import pathlib
 from datetime import datetime
-from typing import cast
+from typing import Any, ClassVar, cast
 
 import pytest
 import pytest_asyncio
@@ -376,6 +376,58 @@ async def test_dirlist(afc: AfcService):
         assert "test_a/test_b/test_c/test_d" not in dirlist
     finally:
         await afc.rm("test_a")
+
+
+class _FakeTreeAfc(AfcService):
+    """An `AfcService` over an in-memory tree, where only the ``readable`` directories may be listed."""
+
+    TREE: ClassVar[dict[str, list[str]]] = {
+        "/": ["a", "f"],
+        "/a": ["b", "g"],
+        "/a/b": ["c"],
+        "/a/b/c": ["d"],
+        "/a/b/c/d": [],
+        "a": ["b", "g"],
+        "a/b": ["c"],
+        "a/b/c": ["d"],
+        "a/b/c/d": [],
+    }
+
+    def __init__(self, readable: list[str]) -> None:
+        super().__init__(cast(LockdownServiceProvider, object()), service_name="com.apple.afc")
+        self.readable = readable
+        self.listed: list[str] = []
+
+    async def listdir(self, filename: str) -> list[str]:
+        if filename not in self.readable:
+            # what iOS 27.2 answers for e.g. /PhotoData/UBF
+            raise AfcException(f"READ_DIR failed for file: {filename}", AfcError.PERM_DENIED, filename)
+        self.listed.append(filename)
+        return self.TREE[filename]
+
+    async def stat(self, filename: str) -> dict[str, Any]:
+        return {"st_ifmt": "S_IFDIR" if filename in self.TREE else "S_IFREG"}
+
+
+@pytest.mark.parametrize(
+    ("root", "depth", "expected", "listed"),
+    [
+        ("/", 0, ["/"], ["/"]),
+        ("/", 1, ["/", "/a", "/f"], ["/"]),
+        ("/", 2, ["/", "/a", "/f", "/a/b", "/a/g"], ["/", "/a"]),
+        ("a", 0, ["a"], ["a"]),
+        ("a", 1, ["a", "a/b", "a/g"], ["a"]),
+        ("a", 2, ["a", "a/b", "a/g", "a/b/c"], ["a", "a/b"]),
+        ("a", -1, ["a", "a/b", "a/g", "a/b/c", "a/b/c/d"], ["a", "a/b", "a/b/c", "a/b/c/d"]),
+    ],
+)
+async def test_dirlist_does_not_read_beyond_depth(
+    root: str, depth: int, expected: list[str], listed: list[str]
+) -> None:
+    """``dirlist`` must not list directories beyond ``depth``: they may be unreadable, failing the whole listing."""
+    afc = _FakeTreeAfc(readable=listed)
+    assert [x async for x in afc.dirlist(root, depth)] == expected
+    assert afc.listed == listed
 
 
 async def test_push_pull_bigger_than_max_chunk(afc: AfcService) -> None:
