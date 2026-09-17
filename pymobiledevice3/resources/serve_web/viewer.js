@@ -848,6 +848,10 @@ function drawFrame(f) {
     if (window.LOCKCANVAS) {
         // Grow-only: keep the canvas at the largest footprint seen so the
         // encoder's 2752<->2736 oscillation never resizes it (no shrink).
+        // The lock is per orientation: a portrait<->landscape flip (Rotate, or
+        // iOS re-rendering the buffer) must start over, or the max of both
+        // footprints is a square that the frame gets stretched into.
+        if ((targetW > targetH) !== (_lockW > _lockH)) _lockW = _lockH = 0;
         if (targetW > _lockW || targetH > _lockH) {
             _lockW = Math.max(_lockW, targetW);
             _lockH = Math.max(_lockH, targetH);
