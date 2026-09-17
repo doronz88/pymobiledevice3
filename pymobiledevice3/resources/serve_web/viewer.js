@@ -1280,7 +1280,11 @@ async function pushHostClipboard() {
         mark = await fingerprint(content);
     } catch (e) { return; }
     if (!mark || mark === lastShared) return;
+    // Claimed up front so a focus and a paste shortcut racing each other send
+    // it once; given back when it didn't get through, or the next focus would
+    // take it for already shared and never retry.
     lastShared = mark;
+    const unclaim = () => { if (lastShared === mark) lastShared = null; };
     try {
         const r = content.image
             ? await fetch('/clipboard/image', {method: 'POST', headers: {'Content-Type': 'image/png'}, body: content.image})
@@ -1289,10 +1293,10 @@ async function pushHostClipboard() {
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({text: content.text}),
             });
-        if (!r.ok) { log('clipboard sync: HTTP ' + r.status); return; }
+        if (!r.ok) { unclaim(); log('clipboard sync: HTTP ' + r.status); return; }
         showInPanel(content);
         log('clipboard sync to device (' + describe(content) + ')');
-    } catch (e) { log('clipboard sync err: ' + (e.message || e)); }
+    } catch (e) { unclaim(); log('clipboard sync err: ' + (e.message || e)); }
 }
 
 async function clipboardSyncLoop(signal) {
@@ -1307,7 +1311,10 @@ async function clipboardSyncLoop(signal) {
             if (j.text == null && !j.image) continue;
             const content = await fetchDeviceContent(j);
             const mark = await fingerprint(content);
-            if (!mark || mark === lastShared) continue;
+            if (!mark) continue;
+            // Not compared with lastShared: the server already drops the echo
+            // of what the host sent, and the host clipboard may have changed
+            // since without this page seeing it, so a repeat is a real copy.
             lastShared = mark;
             const written = await writeHostClipboard(content);
             pendingHostWrite = written ? null : content;
