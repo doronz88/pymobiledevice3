@@ -10,9 +10,8 @@ frameworks on macOS:
   dispatch).
 * Eight command verbs exist: ``PULL`` / ``PULL_REPLY`` / ``SET`` / ``SET_REPLY``
   / ``DATA`` / ``PUSH`` / ``AUTONOTIFY`` / ``RESOLVE``. This module implements
-  PULL (paste-from-device), SET with immediate data (copy-to-device, text or
-  image) and change monitoring (AUTONOTIFY/PUSH, see :class:`PasteboardMonitor`). Promise
-  resolution (DATA/RESOLVE) is scaffolded but not yet exposed.
+  PULL (paste-from-device) and SET with immediate data (copy-to-device, text or
+  image). Promise resolution (DATA/RESOLVE) is scaffolded but not yet exposed.
 * ``AUTONOTIFY`` is ``{command, pasteboardName, enable: Bool}`` and gets no
   reply. While enabled the device sends a ``PUSH`` (``{command, pasteboard:
   PasteboardSnapshot}``, data inline) for every pasteboard change -- on-device
@@ -21,8 +20,8 @@ frameworks on macOS:
 * ``dtpasteboardd`` aborts ("Attempted to send non-reply msg on the reply
   channel") on the second reply-wanting request of one connection. PULL needs
   the reply flag to be answered at all, so :meth:`PasteboardService.get` /
-  :meth:`PasteboardService.set` are good for one call per connection; the
-  monitor only ever sends flag-less messages, which can repeat freely.
+  :meth:`PasteboardService.set` are good for one call per connection; only
+  flag-less messages can repeat freely.
 * A ``PasteboardSnapshot`` carries ``items: [{types: [String], data: {UTI:
   PasteboardItemData}}]`` plus optional ``metadata`` / ``sourceMetadata``.
   ``PasteboardItemData`` on the wire is ``{data: Data}`` for immediate
@@ -30,8 +29,20 @@ frameworks on macOS:
   promised items (Swift property ``immediateData`` is keyed as ``data`` on
   the wire). ``Data`` is a native XPC DATA field (raw bytes), not base64.
 * ``PasteboardDataInclusionPolicy`` is a Codable enum encoded as
-  ``{"allResolved": {}}`` etc. We default to ``allResolved`` so the reply
-  carries data inline and we don't need to chase promises.
+  ``{"allResolved": {}}`` etc. ``allResolved`` carries every representation
+  inline; ``promiseSecondary`` only the first (primary) type of each item.
+* Resolving representations is where the daemon can stall: it loads them one by
+  one on a serial queue, and an app may advertise a type it cannot produce. Notes
+  does (``public.rtf``: the NSAttributedString conversion fails after a ~64 s
+  timeout), so any ``allResolved`` / ``matchSource`` PULL of a Notes copy takes
+  ~64 s, and everything else sent to the daemon meanwhile queues behind it.
+  ``allPromised`` / ``promiseSecondary`` PULLs answer at once.
+* An ``AUTONOTIFY`` subscription makes the daemon do that full resolve on *every*
+  pasteboard change before it sends the PUSH (whatever ``dataPolicy`` the
+  subscription names), so a subscriber both hears about a Notes copy a minute
+  late and blocks all other requests for that minute. :class:`PasteboardMonitor`
+  therefore does not subscribe: it watches the ``com.apple.pasteboard.notify.changed``
+  Darwin notification and answers it with a ``promiseSecondary`` PULL.
 """
 
 import asyncio
@@ -46,6 +57,7 @@ from typing import Any, Callable, Optional, cast
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import XpcInt64Type
+from pymobiledevice3.services.notification_proxy import NotificationProxyService
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +72,15 @@ PUSH_COMMAND = "PUSH"
 AUTONOTIFY_COMMAND = "AUTONOTIFY"
 RESOLVE_COMMAND = "RESOLVE"
 
+# Darwin notification posted by the device's pasteboard daemon on every change.
+PASTEBOARD_CHANGED_NOTIFICATION = "com.apple.pasteboard.notify.changed"
+
 # How long content sent by PasteboardMonitor.set_text() / set_image() is still treated as its own echo.
 _ECHO_WINDOW_SECONDS = 3.0
+# A full (allResolved) PULL can sit behind the daemon's ~64 s give-up on a representation.
+_FULL_PULL_TIMEOUT_SECONDS = 90.0
+# Own changes remembered (by change id) to tell their notifications from device copies.
+_OWN_CHANGES_KEPT = 16
 
 UTI_UTF8_PLAIN_TEXT = "public.utf8-plain-text"
 UTI_PLAIN_TEXT = "public.plain-text"
@@ -269,13 +288,63 @@ class PasteboardService(RemoteService):
         return await self.set([text_item(text)], pasteboard_name)
 
 
+def _change_id(snapshot: dict[str, Any]) -> Optional[tuple[Any, Any]]:
+    """``(nonce, changeCount)`` of a snapshot: identifies one state of the device pasteboard."""
+    pasteboard = snapshot.get("pasteboard")
+    metadata = cast(dict[str, Any], pasteboard).get("metadata") if isinstance(pasteboard, dict) else None
+    if not isinstance(metadata, dict):
+        return None
+    metadata = cast(dict[str, Any], metadata)
+    return metadata.get("nonce"), metadata.get("changeCount")
+
+
+def _promises_an_image(snapshot: dict[str, Any]) -> bool:
+    """Whether a snapshot advertises, without carrying it, a representation :func:`snapshot_image` could use."""
+    pasteboard = snapshot.get("pasteboard")
+    if isinstance(pasteboard, dict):
+        snapshot = cast(dict[str, Any], pasteboard)
+    for item in cast(list[dict[str, Any]], snapshot.get("items", []) or []):
+        data_map = cast(dict[str, Any], item.get("data") or {})
+        for uti in cast(list[str], item.get("types", []) or []):
+            if (uti in IMAGE_UTIS or uti == UTI_WEB_ARCHIVE) and _inline_data(data_map, uti) is None:
+                return True
+    return False
+
+
+async def read_pasteboard(
+    rsd: RemoteServiceDiscoveryService, pasteboard_name: str = GENERAL_PASTEBOARD
+) -> tuple[dict[str, Any], PasteboardContent]:
+    """Pull the device pasteboard without tripping over representations the daemon stalls on.
+
+    Asks for the primary type of each item only, which the daemon answers at once and which is
+    the text or the picture of an ordinary copy. Only when that yields nothing to share while a
+    picture hides in a secondary type (Notes keeps it inside its web archive) is everything
+    pulled, which may take the daemon a minute. Returns ``(snapshot, content)``.
+    """
+    async with PasteboardService(rsd) as service:
+        snapshot = await service.get(pasteboard_name, POLICY_PROMISE_SECONDARY)
+    content = PasteboardContent.from_snapshot(snapshot)
+    if content.image is None and not (content.text or "").strip("\ufffc \t\r\n") and _promises_an_image(snapshot):
+        logger.debug("pasteboard: nothing shareable in the primary types; pulling every representation")
+        async with PasteboardService(rsd) as service:
+            snapshot = await asyncio.wait_for(service.get(pasteboard_name), _FULL_PULL_TIMEOUT_SECONDS)
+        content = PasteboardContent.from_snapshot(snapshot)
+    return snapshot, content
+
+
 class PasteboardMonitor:
-    """Two-way bridge to the device pasteboard (text and images) over a single long-lived connection.
+    """Two-way bridge to the device pasteboard (text and images).
 
     ``on_change`` is called with the new content whenever the device pasteboard changes (the user
     copied something on the device). :meth:`set_text` / :meth:`set_image` copy host content onto the
-    device; the change notification they trigger is recognised and not reported back. The connection
-    is re-established (and the subscription renewed) whenever it drops.
+    device; the change they cause is recognised and not reported back.
+
+    Changes are noticed through the ``com.apple.pasteboard.notify.changed`` Darwin notification and
+    read with :func:`read_pasteboard`, not through the service's own ``AUTONOTIFY`` subscription:
+    that one makes the daemon resolve every representation before it says anything, which takes a
+    minute for a copy made in Notes (see the module docstring). Every pasteboard request uses a
+    connection of its own, as the daemon allows one reply per connection. The notification
+    connection is re-established whenever it drops.
     """
 
     def __init__(
@@ -289,12 +358,14 @@ class PasteboardMonitor:
         self._on_change = on_change
         self._pasteboard_name = pasteboard_name
         self._reconnect_delay = reconnect_delay
-        self._service: Optional[PasteboardService] = None
         self._task: Optional[asyncio.Task[None]] = None
-        self._subscribed = asyncio.Event()
-        # Fingerprints of what set_text() / set_image() recently sent, by monotonic send time. A
-        # burst of SETs is coalesced by the device and may be announced by a PUSH carrying any of
-        # them, so remembering only the latest one lets an older echo through.
+        # State of the pasteboard (see _change_id) that was last looked at; None until the first look.
+        self._last_change: Optional[tuple[Any, Any]] = None
+        # Change ids of the latest set_text() / set_image() calls, from their SET_REPLY.
+        self._own_changes: list[tuple[Any, Any]] = []
+        # Fingerprints of what set_text() / set_image() recently sent, by monotonic send time: the
+        # notification of a SET can be handled before its SET_REPLY named the change, and a burst
+        # of SETs is coalesced by the device, so the pasteboard may show any of them.
         self._recent_host_content: dict[str, float] = {}
 
     @property
@@ -322,47 +393,55 @@ class PasteboardMonitor:
         await self._set([data_item(uti, data)], _fingerprint(data), timeout)
 
     async def _set(self, items: list[dict[str, Any]], fingerprint: str, timeout: float) -> None:
-        await asyncio.wait_for(self._subscribed.wait(), timeout)
-        assert self._service is not None
         self._recent_host_content[fingerprint] = time.monotonic()
-        await self._service.service.send_request({
-            "command": SET_COMMAND,
-            "pasteboardName": self._pasteboard_name,
-            "items": items,
-            "sourceMetadata": None,
-        })
+
+        async def _send() -> dict[str, Any]:
+            async with PasteboardService(self._rsd) as service:
+                return await service.set(items, self._pasteboard_name)
+
+        change = _change_id(await asyncio.wait_for(_send(), timeout))
+        if change is not None:
+            self._own_changes = [*self._own_changes, change][-_OWN_CHANGES_KEPT:]
 
     async def _run(self) -> None:
         while True:
             try:
-                async with PasteboardService(self._rsd) as service:
-                    await service.service.send_request({
-                        "command": AUTONOTIFY_COMMAND,
-                        "pasteboardName": self._pasteboard_name,
-                        "enable": True,
-                    })
-                    self._service = service
-                    self._subscribed.set()
-                    while True:
-                        self._handle_message(await service.service.receive_response())
+                async with NotificationProxyService(self._rsd) as notifications:
+                    await notifications.notify_register_dispatch(PASTEBOARD_CHANGED_NOTIFICATION)
+                    if self._last_change is None:
+                        # What the device holds when monitoring starts is not a change.
+                        async with PasteboardService(self._rsd) as service:
+                            self._last_change = _change_id(
+                                await service.get(self._pasteboard_name, POLICY_ALL_PROMISED)
+                            )
+                    else:
+                        await self._check()  # a copy made while the connection was down
+                    async for notification in notifications.receive_notification():
+                        if notification.get("Name") == PASTEBOARD_CHANGED_NOTIFICATION:
+                            await self._check()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 logger.debug("pasteboard monitor connection lost (%s: %s); reconnecting", type(e).__name__, e)
-            finally:
-                self._subscribed.clear()
-                self._service = None
             await asyncio.sleep(self._reconnect_delay)
 
-    def _handle_message(self, message: dict[str, Any]) -> None:
-        if message.get("command") != PUSH_COMMAND:
+    async def _check(self) -> None:
+        """Look at the pasteboard and report it when it is a copy made on the device."""
+        try:
+            snapshot, content = await read_pasteboard(self._rsd, self._pasteboard_name)
+        except asyncio.TimeoutError:
+            # Not recorded as seen, so the next notification looks again.
+            logger.warning("device pasteboard did not answer; skipping this change")
             return
-        content = PasteboardContent.from_snapshot(message)
+        change = _change_id(snapshot)
+        if change is not None and change == self._last_change:
+            return
+        self._last_change = change
         now = time.monotonic()
         self._recent_host_content = {
             sent: at for sent, at in self._recent_host_content.items() if now - at < _ECHO_WINDOW_SECONDS
         }
-        if not content:
+        if not content or change in self._own_changes:
             return
         payload = content.image if content.image is not None else cast(str, content.text).encode("utf-8")
         if _fingerprint(payload) in self._recent_host_content:

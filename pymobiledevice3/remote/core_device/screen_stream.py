@@ -62,6 +62,7 @@ from pymobiledevice3.remote.core_device.pasteboard_service import (
     PasteboardMonitor,
     PasteboardService,
     data_item,
+    read_pasteboard,
 )
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.power_assertion import PowerAssertionService
@@ -2035,8 +2036,8 @@ class ScreenStreamServer:
         """Copy host text, or a host PNG, onto the device pasteboard."""
         monitor = self._clipboard_monitor
         if monitor is not None:
-            # Same connection as the change subscription, so the monitor can
-            # tell this copy's echo from a device copy.
+            # Through the monitor, so it can tell the change this causes from
+            # a copy made on the device.
             if image is not None:
                 await monitor.set_image(image)
             else:
@@ -2397,8 +2398,7 @@ class ScreenStreamServer:
             try:
                 content_type = b"application/json"
                 if path == "/clipboard" and method == "GET":
-                    async with PasteboardService(self._rsd) as pb:
-                        content = PasteboardContent.from_snapshot(await pb.get())
+                    _, content = await read_pasteboard(self._rsd)
                     # Kept for GET /clipboard/image; the sync sequence is not
                     # bumped, so this never reaches a polling viewer by itself.
                     self._clipboard_content = content
