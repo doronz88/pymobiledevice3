@@ -29,20 +29,28 @@ frameworks on macOS:
   promised items (Swift property ``immediateData`` is keyed as ``data`` on
   the wire). ``Data`` is a native XPC DATA field (raw bytes), not base64.
 * ``PasteboardDataInclusionPolicy`` is a Codable enum encoded as
-  ``{"allResolved": {}}`` etc. ``allResolved`` carries every representation
-  inline; ``promiseSecondary`` only the first (primary) type of each item.
-* Resolving representations is where the daemon can stall: it loads them one by
-  one on a serial queue, and an app may advertise a type it cannot produce. Notes
-  does (``public.rtf``: the NSAttributedString conversion fails after a ~64 s
-  timeout), so any ``allResolved`` / ``matchSource`` PULL of a Notes copy takes
-  ~64 s, and everything else sent to the daemon meanwhile queues behind it.
-  ``allPromised`` / ``promiseSecondary`` PULLs answer at once.
-* An ``AUTONOTIFY`` subscription makes the daemon do that full resolve on *every*
-  pasteboard change before it sends the PUSH (whatever ``dataPolicy`` the
-  subscription names), so a subscriber both hears about a Notes copy a minute
-  late and blocks all other requests for that minute. :class:`PasteboardMonitor`
-  therefore does not subscribe: it watches the ``com.apple.pasteboard.notify.changed``
-  Darwin notification and answers it with a ``promiseSecondary`` PULL.
+  ``{"allResolved": {}}`` etc.; ``thresholdData`` carries its limit as
+  ``{"thresholdData": {"bytes": Int64}}``. ``allResolved`` carries every
+  representation inline, ``promiseSecondary`` only the first (primary) type of
+  each item, ``allPromised`` none. ``matchSource`` behaves as ``allResolved`` on
+  the device, and ``thresholdData`` loads every representation as well, to learn
+  its size (promised entries come back as ``{size: Int64}``).
+* Loading representations is where the daemon can stall: it loads them one by
+  one on its main actor, and an app may advertise a type it cannot produce. Notes
+  does (``public.rtf``: the NSAttributedString conversion fails after ~64 s), so
+  any PULL of a Notes copy other than ``allPromised`` / ``promiseSecondary``
+  takes ~64 s, and everything else sent to the daemon meanwhile queues behind
+  it. There is no request for a single type: a host ``RESOLVE`` (``{command,
+  pasteboardName, itemIndex: Int64, type}``, answered by ``{command: "DATA",
+  data}``) loads every representation of every item before the one it names.
+* An ``AUTONOTIFY`` subscription makes the daemon read every change with
+  ``matchSource`` before it sends the PUSH; the subscription's ``dataPolicy`` only
+  shapes a second read. So a subscriber hears about a Notes copy a minute late
+  and blocks all other requests for that minute -- Apple's own ``devicectl
+  device pasteboard monitor`` reports such a copy after 64 s too.
+  :class:`PasteboardMonitor` therefore does not subscribe: it watches the
+  ``com.apple.pasteboard.notify.changed`` Darwin notification and answers it
+  with a ``promiseSecondary`` PULL.
 """
 
 import asyncio
@@ -105,8 +113,12 @@ POLICY_PROMISE_SECONDARY: dict[str, Any] = {"promiseSecondary": {}}
 
 
 def policy_threshold(threshold_bytes: int) -> dict[str, Any]:
-    """Inclusion policy: include item data inline if smaller than ``threshold_bytes``, otherwise promise it."""
-    return {"thresholdData": {"_0": XpcInt64Type(threshold_bytes)}}
+    """Inclusion policy: include item data inline if smaller than ``threshold_bytes``, otherwise promise it.
+
+    The daemon has to load every representation to learn its size, so this is as slow as
+    ``allResolved`` (see the module docstring).
+    """
+    return {"thresholdData": {"bytes": XpcInt64Type(threshold_bytes)}}
 
 
 def text_item(text: str, utis: Optional[list[str]] = None) -> dict[str, Any]:
@@ -312,19 +324,28 @@ def _promises_an_image(snapshot: dict[str, Any]) -> bool:
 
 
 async def read_pasteboard(
-    rsd: RemoteServiceDiscoveryService, pasteboard_name: str = GENERAL_PASTEBOARD
+    rsd: RemoteServiceDiscoveryService,
+    pasteboard_name: str = GENERAL_PASTEBOARD,
+    allow_full_pull: bool = False,
 ) -> tuple[dict[str, Any], PasteboardContent]:
-    """Pull the device pasteboard without tripping over representations the daemon stalls on.
+    """Pull the device pasteboard without making the daemon stall.
 
     Asks for the primary type of each item only, which the daemon answers at once and which is
-    the text or the picture of an ordinary copy. Only when that yields nothing to share while a
-    picture hides in a secondary type (Notes keeps it inside its web archive) is everything
-    pulled, which may take the daemon a minute. Returns ``(snapshot, content)``.
+    the text or the picture of an ordinary copy. A picture that only exists inside a secondary
+    type (Notes keeps it in its web archive) is out of reach that way: the daemon has no request
+    for a single type, and loading all of them can block it -- for every client -- for a minute.
+    Such a copy yields no content unless ``allow_full_pull`` accepts that. Returns
+    ``(snapshot, content)``.
     """
     async with PasteboardService(rsd) as service:
         snapshot = await service.get(pasteboard_name, POLICY_PROMISE_SECONDARY)
     content = PasteboardContent.from_snapshot(snapshot)
     if content.image is None and not (content.text or "").strip("\ufffc \t\r\n") and _promises_an_image(snapshot):
+        if not allow_full_pull:
+            logger.info(
+                "device copy holds a picture only inside a rich representation; not read (it stalls the device)"
+            )
+            return snapshot, PasteboardContent()
         logger.debug("pasteboard: nothing shareable in the primary types; pulling every representation")
         async with PasteboardService(rsd) as service:
             snapshot = await asyncio.wait_for(service.get(pasteboard_name), _FULL_PULL_TIMEOUT_SECONDS)
@@ -344,7 +365,8 @@ class PasteboardMonitor:
     that one makes the daemon resolve every representation before it says anything, which takes a
     minute for a copy made in Notes (see the module docstring). Every pasteboard request uses a
     connection of its own, as the daemon allows one reply per connection. The notification
-    connection is re-established whenever it drops.
+    connection is re-established whenever it drops. ``allow_full_pull`` is passed on to
+    :func:`read_pasteboard`.
     """
 
     def __init__(
@@ -353,11 +375,13 @@ class PasteboardMonitor:
         on_change: Callable[[PasteboardContent], None],
         pasteboard_name: str = GENERAL_PASTEBOARD,
         reconnect_delay: float = 2.0,
+        allow_full_pull: bool = False,
     ) -> None:
         self._rsd = rsd
         self._on_change = on_change
         self._pasteboard_name = pasteboard_name
         self._reconnect_delay = reconnect_delay
+        self._allow_full_pull = allow_full_pull  # see read_pasteboard()
         self._task: Optional[asyncio.Task[None]] = None
         # State of the pasteboard (see _change_id) that was last looked at; None until the first look.
         self._last_change: Optional[tuple[Any, Any]] = None
@@ -463,7 +487,7 @@ class PasteboardMonitor:
     async def _check(self) -> None:
         """Look at the pasteboard and report it when it is a copy made on the device."""
         try:
-            snapshot, content = await read_pasteboard(self._rsd, self._pasteboard_name)
+            snapshot, content = await read_pasteboard(self._rsd, self._pasteboard_name, self._allow_full_pull)
         except asyncio.TimeoutError:
             # Not recorded as seen, so the next notification looks again.
             logger.warning("device pasteboard did not answer; skipping this change")

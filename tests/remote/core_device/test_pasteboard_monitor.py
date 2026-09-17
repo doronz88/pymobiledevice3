@@ -108,7 +108,7 @@ def _make_rsd() -> RemoteServiceDiscoveryService:
 
 
 class Harness:
-    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, allow_full_pull: bool = False) -> None:
         self.device = FakeDevice()
         self.connections: list[FakeConnection] = []
         self.observed: list[list[str]] = []  # names observed, per notification connection
@@ -145,7 +145,9 @@ class Harness:
 
         monkeypatch.setattr(RemoteServiceDiscoveryService, "start_remote_service", _start_remote_service)
         monkeypatch.setattr(pasteboard_service, "NotificationProxyService", FakeNotificationProxy)
-        self.monitor = PasteboardMonitor(_make_rsd(), self._on_change, reconnect_delay=0.01)
+        self.monitor = PasteboardMonitor(
+            _make_rsd(), self._on_change, reconnect_delay=0.01, allow_full_pull=allow_full_pull
+        )
 
     def _on_change(self, content: PasteboardContent) -> None:
         if content.text is not None:
@@ -180,6 +182,17 @@ class Harness:
 def _notes_text_copy(text: str) -> dict[str, Any]:
     types = ["public.utf8-plain-text", "com.apple.notes.richtext", "com.apple.webarchive", "public.html", "public.rtf"]
     return {"types": types, "data": {uti: {"data": text.encode()} for uti in types}}
+
+
+# A picture copied in Notes: a newline as plain text, the image inside the web archive.
+def _notes_picture_copy() -> dict[str, Any]:
+    return {
+        "types": ["public.utf8-plain-text", "com.apple.webarchive"],
+        "data": {
+            "public.utf8-plain-text": {"data": b"\n"},
+            "com.apple.webarchive": {"data": _web_archive(("image/png", b"\x89PNGnotes"))},
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -367,18 +380,29 @@ async def test_copy_made_while_the_connection_was_down_is_reported(monkeypatch: 
 
 
 @pytest.mark.asyncio
-async def test_picture_in_a_secondary_type_is_fetched_with_a_full_pull(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_picture_in_a_secondary_type_is_left_alone(monkeypatch: pytest.MonkeyPatch) -> None:
     harness = Harness(monkeypatch)
+    harness.device.full_pull_hangs = True
     await harness.started()
     try:
-        # A picture copied in Notes: a newline as plain text, the image inside the web archive.
-        harness.device.copy({
-            "types": ["public.utf8-plain-text", "com.apple.webarchive"],
-            "data": {
-                "public.utf8-plain-text": {"data": b"\n"},
-                "com.apple.webarchive": {"data": _web_archive(("image/png", b"\x89PNGnotes"))},
-            },
-        })
+        harness.device.copy(_notes_picture_copy())
+        harness.device.copy(text_item("text after the picture"))
+        await harness.wait_for_change()
+        assert harness.received == ["text after the picture"]
+        assert harness.images == []
+        assert POLICY_ALL_RESOLVED not in harness.pulls
+    finally:
+        await harness.monitor.stop()
+
+
+@pytest.mark.asyncio
+async def test_picture_in_a_secondary_type_is_fetched_when_a_full_pull_is_allowed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = Harness(monkeypatch, allow_full_pull=True)
+    await harness.started()
+    try:
+        harness.device.copy(_notes_picture_copy())
         await harness.wait_for_change()
         assert harness.images == [("public.png", b"\x89PNGnotes")]
         assert harness.pulls[1:] == [POLICY_PROMISE_SECONDARY, POLICY_ALL_RESOLVED]
@@ -389,14 +413,11 @@ async def test_picture_in_a_secondary_type_is_fetched_with_a_full_pull(monkeypat
 @pytest.mark.asyncio
 async def test_unanswered_full_pull_does_not_stop_the_monitor(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pasteboard_service, "_FULL_PULL_TIMEOUT_SECONDS", 0.05)
-    harness = Harness(monkeypatch)
+    harness = Harness(monkeypatch, allow_full_pull=True)
     harness.device.full_pull_hangs = True
     await harness.started()
     try:
-        harness.device.copy({
-            "types": ["public.utf8-plain-text", "com.apple.webarchive"],
-            "data": {"public.utf8-plain-text": {"data": b"\n"}, "com.apple.webarchive": {"data": b"x"}},
-        })
+        harness.device.copy(_notes_picture_copy())
         harness.device.copy(text_item("still alive"))
         await harness.wait_for_change()
         assert harness.received == ["still alive"]
