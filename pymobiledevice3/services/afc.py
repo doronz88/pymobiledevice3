@@ -1089,6 +1089,9 @@ class AfcService(LockdownService):
         at ``dirname``. ``dirnames`` lists subdirectory names and ``filenames`` lists all other
         entries. Symbolic links to directories are classified as files (not descended into).
 
+        As with `os.walk`, the caller may modify ``dirnames`` in place to prune the descent:
+        only the names still listed when the generator resumes are walked.
+
         :param dirname: Root directory to walk.
         :yields: ``(dirpath, dirnames, filenames)`` tuples.
         """
@@ -1128,10 +1131,11 @@ class AfcService(LockdownService):
                 yield folder
                 if depth == 0:
                     break
-            if folder != root and depth != -1 and folder.count(posixpath.sep) >= depth:
-                continue
             for entry in dirs + files:
                 yield posixpath.join(folder, entry)
+            if depth != -1:
+                # Prune in place so `walk` never reads directories beyond the requested depth
+                dirs[:] = [d for d in dirs if posixpath.join(folder, d).count(posixpath.sep) < depth]
 
     async def lock(self, handle: int, operation: int):
         """
