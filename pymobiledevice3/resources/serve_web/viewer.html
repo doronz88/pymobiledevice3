@@ -1,9 +1,12 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>iPhone screen</title>
+<html lang="en"><head><meta charset="utf-8"><title>pymobiledevice3 screen</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="/logo.png">
 <link rel="stylesheet" href="/viewer.css"></head>
 <body class="frame-on">
 <header id="topbar">
- <span id="brand">pymobiledevice3 <span class="muted">· screen</span></span>
+ <img id="brand-logo" src="/logo.png" alt="" width="22" height="26">
+ <span id="brand">pymobiledevice3</span>
  <span class="spacer"></span>
  <div id="kb-indicator" class="chip hidden" aria-hidden="true" title="Keystrokes are being forwarded to the device">
   <svg viewBox="0 0 48 28" width="24" height="14" aria-hidden="true">
@@ -113,7 +116,7 @@
    <tr><td>?</td><td>Show this help</td></tr>
    <tr><td>Esc</td><td>Close this help</td></tr>
   </table>
-  <p>Click + drag on the canvas to interact with the touchscreen. Letter / arrow / modifier keys are forwarded to the device whenever the canvas has focus — a green keyboard badge in the top bar lights up while that's the case. The buttons on the edges of the phone frame are the real hardware buttons (hover for their names) and stay pressed for as long as you hold them, so a long press on Power or a volume button does what it does on the phone. Click outside the canvas (a tray button, the clipboard textarea, anywhere on the page chrome) to drop capture so Ctrl-L, Cmd-W and other browser shortcuts work normally; clicking back onto the canvas resumes capture. Clipboard <b>Sync</b> shares the clipboard both ways, text and images: what you copy on the device lands in this computer's clipboard (while this page is focused; otherwise as soon as you return to it), and whatever you copied here is on the device by the time you paste there. It needs a secure context (localhost or <code>--https</code>) and the browser's clipboard permission. Rotate ↺ / ↻ flip the device 90° (both the device and the canvas). The right-side panel toggles iOS appearance + accessibility knobs (light/dark, dynamic text size, reduce motion, reduce transparency, increase contrast, button borders, color filter, liquid-glass opacity) via the CoreDevice <code>ConfigurationService</code>.</p>
+  <p>Click + drag on the canvas to interact with the touchscreen. Letter / arrow / modifier keys are forwarded to the device whenever the canvas has focus — the keyboard badge in the top bar lights up while that's the case. The buttons on the edges of the phone frame are the real hardware buttons (hover for their names) and stay pressed for as long as you hold them, so a long press on Power or a volume button does what it does on the phone. Click outside the canvas (a tray button, the clipboard textarea, anywhere on the page chrome) to drop capture so Ctrl-L, Cmd-W and other browser shortcuts work normally; clicking back onto the canvas resumes capture. Clipboard <b>Sync</b> shares the clipboard both ways, text and images: what you copy on the device lands in this computer's clipboard (while this page is focused; otherwise as soon as you return to it), and whatever you copied here is on the device by the time you paste there. It needs a secure context (localhost or <code>--https</code>) and the browser's clipboard permission. Rotate ↺ / ↻ flip the device 90° (both the device and the canvas). The right-side panel toggles iOS appearance + accessibility knobs (light/dark, dynamic text size, reduce motion, reduce transparency, increase contrast, button borders, color filter, liquid-glass opacity) via the CoreDevice <code>ConfigurationService</code>.</p>
  </div>
 </div>
 <script src="/viewer.js"></script>

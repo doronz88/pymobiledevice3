@@ -1,13 +1,18 @@
+ /* Palette taken from the project logo: a phone in front of the two Python
+    snakes. Blue is the interactive colour, gold is reserved for "live"
+    signals (keyboard capture, clipboard sync), everything else stays quiet
+    so the device is the only lit thing on the page. */
  :root{color-scheme:dark;
-       --bg:#0b0c0f;--panel:#14161b;--panel-border:#23262e;
-       --btn:#1c1f26;--btn-hover:#272b35;--btn-active:#343946;--btn-border:#2e323c;
-       --text:#d9dce3;--muted:#858b97;--accent:#6cb6ff;
-       --ok:#3d7a55;--ok-bg:#1a3325;--ok-text:#c8f0d6;
+       --bg:#0f141a;--panel:#18202b;--panel-border:#27313f;
+       --btn:#1f2935;--btn-hover:#293544;--btn-active:#344255;--btn-border:#313d4d;
+       --text:#eceff3;--muted:#8c99aa;
+       --blue:#5e9bd6;--blue-deep:#3772a2;--gold:#fad247;
+       --accent:var(--blue);
        /* Set by viewer.js from the displayed screen size, so the bezel keeps
           its proportions at any zoom level. */
        --screen-r:32px;--bezel:12px;--hw-t:5px}
- body{margin:0;color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
-      background:radial-gradient(1200px 700px at 50% 0%,#171a21 0%,var(--bg) 60%) fixed var(--bg);
+ body{margin:0;color:var(--text);background:var(--bg);
+      font-family:"Avenir Next","Segoe UI Variable Text","Segoe UI",Cantarell,"Noto Sans",sans-serif;
       display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;
       min-height:100vh;gap:8px;padding:8px;box-sizing:border-box}
  .muted{color:var(--muted)}
@@ -15,14 +20,15 @@
  /* Top bar: title on the left, live indicators on the right. Part of the
     page flow so nothing floats over the trays or the device. */
  #topbar{display:flex;align-items:center;gap:8px;height:28px;padding:0 4px;
-         font-size:13px;font-weight:600;letter-spacing:.2px;user-select:none}
+         font-size:14px;font-weight:600;user-select:none}
+ #brand-logo{height:26px;width:auto;display:block}
  #topbar .spacer{flex:1}
  .chip{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;
        background:var(--panel);border:1px solid var(--panel-border);color:var(--muted);
        padding:3px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
  /* Keyboard-capture indicator: lit while the canvas owns keyboard focus,
     so the user can tell at a glance that keystrokes flow to the device. */
- #kb-indicator{background:var(--ok-bg);border-color:var(--ok);color:var(--ok-text)}
+ #kb-indicator{border-color:var(--gold);color:var(--gold)}
  /* Workspace: trays on the page edges flanking the canvas + bottom row.
     Trays are part of the document flow (not position:fixed) so a wide
     or rotated canvas can't slide underneath them. */
@@ -39,7 +45,14 @@
  #stage-wrap.zoomed{overflow:auto;align-items:safe center;
                     max-height:calc(100vh - 52px)}
  #stage-wrap.zoomed #stage{max-width:none;justify-content:safe center}
- #stage{display:flex;align-items:stretch;justify-content:center;max-width:100%}
+ #stage{display:flex;align-items:stretch;justify-content:center;max-width:100%;
+        position:relative;isolation:isolate}
+ /* The one decorative move on the page: the phone sits in front of the
+    logo's blue and gold, like it does in the logo itself. */
+ #stage::before{content:"";position:absolute;z-index:-1;inset:-6% -28%;pointer-events:none;
+                background:radial-gradient(closest-side at 22% 30%,rgba(55,114,162,.42),transparent),
+                           radial-gradient(closest-side at 80% 72%,rgba(250,210,71,.16),transparent);
+                filter:blur(24px)}
  canvas{touch-action:none;cursor:crosshair;background:#000;
         image-rendering:-webkit-optimize-contrast;
         image-rendering:high-quality;display:block;outline:none}
@@ -101,7 +114,10 @@
  button.btn:hover{background:var(--btn-hover)}
  button.btn:active{background:var(--btn-active)}
  button.btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
- button.btn.active{background:var(--ok-bg);border-color:var(--ok);color:var(--ok-text)}
+ button.btn.active{background:#1d3145;border-color:var(--blue-deep);color:#d6e8fa}
+ /* Sync is a live link to the device, so it lights up gold like the other
+    live signals. */
+ #clipboard-sync.active{background:transparent;border-color:var(--gold);color:var(--gold)}
  .btn-row{display:flex;gap:4px}
  .btn-row .btn{flex:1;padding-left:0;padding-right:0}
  #zoom-reset{flex:1.6;font-variant-numeric:tabular-nums}
@@ -116,12 +132,10 @@
  .tray.collapsed .tray-content{display:none}
  .tray .tray-content{display:flex;flex-direction:column;gap:6px;
                      overflow-y:auto;max-height:calc(100vh - 110px)}
- .tray h3{margin:8px 0 2px;font-size:11px;color:var(--muted);font-weight:600;
-          text-transform:uppercase;letter-spacing:.7px;
+ .tray h3{margin:10px 0 2px;font-size:12px;color:var(--muted);font-weight:600;
           display:flex;align-items:center;gap:6px}
  .tray h3:first-child{margin-top:0}
- .tray h3 .btn{font-size:10px;padding:1px 7px;text-transform:none;
-               letter-spacing:0;font-weight:normal;border-radius:999px}
+ .tray h3 .btn{font-size:11px;padding:1px 8px;font-weight:normal;border-radius:999px}
  .tray .tray-toggle{padding:2px 9px;font-size:14px;color:var(--muted);
                     background:transparent;border-color:transparent}
  #left-tray .tray-toggle{align-self:flex-end}

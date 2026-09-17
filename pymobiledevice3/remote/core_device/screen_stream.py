@@ -304,13 +304,15 @@ _VIEWER_DIR = importlib.resources.files(pymobiledevice3.resources) / "serve_web"
 VIEWER_HTML = (_VIEWER_DIR / "viewer.html").read_bytes()
 VIEWER_CSS = (_VIEWER_DIR / "viewer.css").read_bytes()
 VIEWER_JS_TEMPLATE = (_VIEWER_DIR / "viewer.js").read_bytes()
+# Project logo (favicon + top bar); the same file the WebInspector CDP bridge serves.
+VIEWER_LOGO_PNG = (importlib.resources.files(pymobiledevice3.resources) / "webinspector" / "logo.png").read_bytes()
 
 # /clipboard/events long-poll: how long one request waits for a device-side copy, how long the
 # pasteboard monitor outlives its last poller (a viewer re-polls immediately, so a gap this long
-# means every syncing viewer is gone), and the largest host clipboard accepted by POST /clipboard.
+# means every syncing viewer is gone), and the largest host clipboard (text or PNG) accepted by POST.
 _CLIPBOARD_POLL_SECONDS = 25.0
 _CLIPBOARD_IDLE_SECONDS = 10.0
-_CLIPBOARD_MAX_BODY = 4 * 1024 * 1024
+_CLIPBOARD_MAX_BODY = 32 * 1024 * 1024
 
 
 # ---------------------------------------------------------------------------
@@ -2134,6 +2136,11 @@ class ScreenStreamServer:
             return
         if path == "/viewer.css":
             self._send_static(writer, VIEWER_CSS, b"text/css; charset=utf-8")
+            await writer.drain()
+            writer.close()
+            return
+        if path in ("/logo.png", "/favicon.ico"):
+            self._send_static(writer, VIEWER_LOGO_PNG, b"image/png")
             await writer.drain()
             writer.close()
             return
