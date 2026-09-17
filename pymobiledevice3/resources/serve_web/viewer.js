@@ -32,29 +32,66 @@ const ctx = canvas.getContext('2d');
 // proportional shrink (still anchored to integer-ish device pixels
 // where possible); image-rendering:high-quality keeps that fallback
 // path from going visibly blocky.
+const BEZEL_RATIO = 0.035;   // bezel width / screen short side
 function fitCanvasToViewport() {
     if (!canvas.width || !canvas.height) return;
     const dpr = window.devicePixelRatio || 1;
     const naturalW = canvas.width / dpr;
     const naturalH = canvas.height / dpr;
-    // Reserve room for the flanking trays + side buttons + bottom row.
-    // We MEASURE the actual edge widths so collapse/uncollapse of either
-    // tray immediately reclaims space for the canvas. ~30 px extra when
-    // the cosmetic bezel is on (14 px padding either side).
+    // Reserve room for the flanking trays, the stage padding (which also
+    // holds the bezel's hardware buttons), the top bar and the dock. We
+    // MEASURE the actual tray widths so collapse/uncollapse of either tray
+    // immediately reclaims space for the canvas.
     const trayW = (id) => {
         const el = document.getElementById(id);
         return el ? el.getBoundingClientRect().width : 0;
     };
-    const sideButtonsW = 80 + 80;  // side-left + side-right rough widths
-    const frameSlack = document.body.classList.contains('frame-on') ? 32 : 0;
-    const reservedW = trayW('left-tray') + trayW('right-tray') + sideButtonsW + frameSlack + 40;
-    const availW = Math.max(100, window.innerWidth - reservedW);
-    const availH = Math.max(100, window.innerHeight - 120 - frameSlack);
-    const scale = Math.min(1, availW / naturalW, availH / naturalH);
+    const frameOn = document.body.classList.contains('frame-on');
+    // The bezel is proportional to the displayed screen (see below), so it
+    // takes a fixed share of the available box rather than a pixel count.
+    const bezelShare = frameOn ? 1 + 2 * BEZEL_RATIO : 1;
+    // Below the stacked-layout breakpoint (viewer.css) the trays sit under
+    // the device and cost no width.
+    const stacked = window.matchMedia('(max-width: 900px)').matches;
+    const reservedW = (stacked ? 0 : trayW('left-tray') + trayW('right-tray')) + 48 + 40;
+    const availW = Math.max(100, window.innerWidth - reservedW) / bezelShare;
+    const availH = Math.max(100, window.innerHeight - 150) / bezelShare;
+    const scale = Math.min(1, availW / naturalW, availH / naturalH) * zoom;
     canvas.style.width  = (naturalW * scale) + 'px';
     canvas.style.height = (naturalH * scale) + 'px';
+    // Bezel geometry follows the displayed size so the frame looks the same
+    // at every zoom level: screen corner radius, bezel width, button depth.
+    const shortSide = Math.min(naturalW, naturalH) * scale;
+    const frameStyle = document.getElementById('device-frame').style;
+    frameStyle.setProperty('--screen-r', (shortSide * 0.125) + 'px');
+    frameStyle.setProperty('--bezel', Math.max(5, shortSide * BEZEL_RATIO) + 'px');
+    frameStyle.setProperty('--hw-t', Math.max(3, shortSide * 0.014) + 'px');
+    zoomResetBtn.textContent = Math.round(zoom * 100) + '%';
+    stageWrap.classList.toggle('zoomed', zoom > 1);
 }
 window.addEventListener('resize', fitCanvasToViewport);
+
+// ----- Zoom: a multiplier on top of the fit-to-window scale, so 1 always
+// means "as large as fits" and survives window resizes / tray toggles.
+// Persisted like the other view preferences.
+const ZOOM_STEP = 1.2, ZOOM_MIN = 0.25, ZOOM_MAX = 4;
+const zoomResetBtn = document.getElementById('zoom-reset');
+const stageWrap = document.getElementById('stage-wrap');
+let zoom = 1;
+try {
+    const saved = parseFloat(localStorage.getItem('zoom'));
+    if (saved >= ZOOM_MIN && saved <= ZOOM_MAX) zoom = saved;
+} catch (e) {}
+function setZoom(value) {
+    zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, value));
+    // Snap back onto exactly 1 so repeated in/out steps don't drift off "fit".
+    if (Math.abs(zoom - 1) < 0.01) zoom = 1;
+    try { localStorage.setItem('zoom', String(zoom)); } catch (e) {}
+    fitCanvasToViewport();
+}
+document.getElementById('zoom-in').addEventListener('click', () => setZoom(zoom * ZOOM_STEP));
+document.getElementById('zoom-out').addEventListener('click', () => setZoom(zoom / ZOOM_STEP));
+zoomResetBtn.addEventListener('click', () => setZoom(1));
 const statusEl = document.getElementById('status');
 const fpsEl = document.getElementById('fps');
 let frameCount = 0;
@@ -202,11 +239,66 @@ canvas.addEventListener('contextmenu', (e) => {
     postJson('/button', {name: 'home', state: 'press'}).then(() => log('button: home (right-click)'));
 });
 
-document.querySelectorAll('button[data-btn]').forEach(btn => {
+document.querySelectorAll('button[data-btn]:not(.hw)').forEach(btn => {
     btn.addEventListener('click', () => {
         const name = btn.dataset.btn;
         postJson('/button', {name, state: 'press'}).then(() => log('button: ' + name));
     });
+});
+
+// Bezel buttons behave like the physical ones: down while the pointer holds
+// them, up on release. A tap on Power sleeps/wakes, a long press does whatever
+// iOS does with a held button (Siri, volume repeat, ...).
+const HW_MIN_HOLD_MS = 100;   // iOS ignores a down/up pair much shorter than a real tap
+document.querySelectorAll('.hw[data-btn]').forEach(btn => {
+    const name = btn.dataset.btn;
+    const shown = (btn.getAttribute('aria-label') || name).toLowerCase();
+    let downAt = 0;
+    let chain = Promise.resolve();   // keeps down/up in order on the wire
+    const release = () => {
+        if (!downAt) return;
+        const wait = Math.max(0, HW_MIN_HOLD_MS - (performance.now() - downAt));
+        downAt = 0;
+        chain = chain
+            .then(() => new Promise(r => setTimeout(r, wait)))
+            .then(() => postJson('/button', {name, state: 'up'}));
+    };
+    btn.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+        downAt = performance.now();
+        chain = chain.then(() => postJson('/button', {name, state: 'down'})).then(() => log('button: ' + shown));
+    });
+    btn.addEventListener('pointerup', release);
+    btn.addEventListener('pointercancel', release);
+    btn.addEventListener('lostpointercapture', release);
+    // Keyboard activation (Enter / Space on a focused button) has no hold.
+    btn.addEventListener('click', (e) => {
+        if (e.detail === 0) postJson('/button', {name, state: 'press'}).then(() => log('button: ' + shown));
+    });
+});
+window.addEventListener('blur', () => {
+    // We won't see the pointerup once the window loses focus mid-press.
+    document.querySelectorAll('.hw[data-btn]').forEach(btn => btn.dispatchEvent(new Event('pointercancel')));
+});
+
+// The bezel buttons are too thin to carry a caption, so their name shows in
+// a tooltip next to the pointer as soon as it is over one (the native
+// title tooltip takes a second to appear).
+const hwTooltip = document.getElementById('hw-tooltip');
+document.querySelectorAll('.hw').forEach(btn => {
+    const place = (e) => {
+        hwTooltip.style.left = (e.clientX + 14) + 'px';
+        hwTooltip.style.top = (e.clientY + 14) + 'px';
+    };
+    btn.addEventListener('pointerenter', (e) => {
+        hwTooltip.textContent = btn.dataset.label;
+        hwTooltip.classList.remove('hidden');
+        place(e);
+    });
+    btn.addEventListener('pointermove', place);
+    btn.addEventListener('pointerleave', () => hwTooltip.classList.add('hidden'));
 });
 
 // Swipe synthesis: contact at the start edge, 10 intermediate
@@ -276,6 +368,7 @@ const CODE_TO_HID = (() => {
     return m;
 })();
 
+const HID_KEY_V = 0x19;
 const pressedUsages = new Set();
 let lastKeyPost = Promise.resolve();
 function postKeys() {
@@ -350,6 +443,9 @@ window.addEventListener('keydown', (e) => {
     if (e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
         const k = e.key.toLowerCase();
         if (k === 'p') { e.preventDefault(); takeScreenshot(); return; }
+        if (k === '=' || k === '+') { e.preventDefault(); setZoom(zoom * ZOOM_STEP); return; }
+        if (k === '-') { e.preventDefault(); setZoom(zoom / ZOOM_STEP); return; }
+        if (k === '0') { e.preventDefault(); setZoom(1); return; }
     }
     if (!keyboardCaptureOn()) return;
     // Ctrl-hotkey path consumes the event; don't also type it.
@@ -366,6 +462,11 @@ window.addEventListener('keydown', (e) => {
     if (usage === undefined) return;
     e.preventDefault();
     if (e.repeat) return;            // host autorepeat -- the device does its own
+    // Paste shortcut with the shared clipboard on: get the host clipboard onto
+    // the device BEFORE the device sees the V, so it pastes what was copied here.
+    if (usage === HID_KEY_V && (e.metaKey || e.ctrlKey)) {
+        lastKeyPost = lastKeyPost.then(pushHostClipboard);
+    }
     if (!pressedUsages.has(usage)) {
         pressedUsages.add(usage);
         postKeys();
@@ -402,6 +503,7 @@ function setVisualRotation(deg) {
     if (delta > 180) delta -= 360;
     if (delta < -180) delta += 360;
     visualRotation = deg;
+    deviceFrameEl.dataset.rot = String(deg);   // moves the bezel's hardware buttons
     // Canvas-internal rotation snaps immediately (so dim swap + layout
     // reflow happen now), then the device-frame's CSS transform is
     // set to -delta degrees so the *visual* position matches where
@@ -549,7 +651,9 @@ refreshStyle();
 // Persisted in localStorage so a reload keeps the user's choice.
 const frameBtn = document.getElementById('frame-toggle');
 function setFrameLabel() {
-    frameBtn.textContent = 'Frame: ' + (document.body.classList.contains('frame-on') ? 'on' : 'off');
+    const on = document.body.classList.contains('frame-on');
+    frameBtn.textContent = 'Frame: ' + (on ? 'on' : 'off');
+    frameBtn.classList.toggle('active', on);
 }
 try {
     if (localStorage.getItem('frameOn') === 'false') document.body.classList.remove('frame-on');
@@ -815,6 +919,10 @@ function drawFrame(f) {
     if (window.LOCKCANVAS) {
         // Grow-only: keep the canvas at the largest footprint seen so the
         // encoder's 2752<->2736 oscillation never resizes it (no shrink).
+        // The lock is per orientation: a portrait<->landscape flip (Rotate, or
+        // iOS re-rendering the buffer) must start over, or the max of both
+        // footprints is a square that the frame gets stretched into.
+        if ((targetW > targetH) !== (_lockW > _lockH)) _lockW = _lockH = 0;
         if (targetW > _lockW || targetH > _lockH) {
             _lockW = Math.max(_lockW, targetW);
             _lockH = Math.max(_lockH, targetH);
@@ -854,6 +962,7 @@ function drawPending() {
         // iOS rerendered the buffer in the new orientation — content is
         // now natively upright, so drop our in-canvas rotation.
         visualRotation = 0;
+        deviceFrameEl.dataset.rot = '0';
     }
     lastFrameLandscape = landscape;
     // Detect the collapse-crop rectangle from THIS raw frame, every frame:
@@ -1014,25 +1123,110 @@ document.getElementById('accessibility-reset').addEventListener('click', async (
 });
 reloadAccessibility();
 
-// ----- Clipboard panel: bidirectional text bridge to the device pasteboard.
-// "→ Send to device" pushes the textarea contents via POST /clipboard.
-// "← Get from device" pulls via GET /clipboard, fills the textarea, and (on a
-// secure context) also pushes to navigator.clipboard so the user can paste
-// directly into a host app. The header toggle ("on"/"off") gates the whole
-// panel -- when off the panel dims and the buttons are inert, matching the
-// pattern the user asked for ("toggle-able").
+// ----- Clipboard panel: bridge to the device pasteboard (text and images).
+// "Send to device" pushes the textarea contents via POST /clipboard.
+// "Get from device" pulls via GET /clipboard (+ /clipboard/image), shows
+// it in the panel, and (on a secure context) also puts it on the browser
+// clipboard so the user can paste directly into a host app. The header
+// toggle ("on"/"off") gates the whole panel.
 const clipboardTextEl = document.getElementById('clipboard-text');
+const clipboardImageEl = document.getElementById('clipboard-image');
 const clipboardPanel = document.getElementById('clipboard-panel');
 const clipboardSendBtn = document.getElementById('clipboard-send');
 const clipboardGetBtn = document.getElementById('clipboard-get');
 const clipboardToggleBtn = document.getElementById('clipboard-toggle');
 let clipboardEnabled = true;
+clipboardToggleBtn.classList.add('active');
 function setClipboardEnabled(on) {
     clipboardEnabled = on;
     clipboardToggleBtn.textContent = on ? 'on' : 'off';
+    clipboardToggleBtn.classList.toggle('active', on);
     clipboardPanel.classList.toggle('disabled', !on);
 }
 clipboardToggleBtn.addEventListener('click', () => setClipboardEnabled(!clipboardEnabled));
+
+// Clipboard content travels as {text: string|null, image: Blob|null}.
+// fingerprint() identifies it so content that just crossed the bridge isn't
+// bounced straight back to where it came from.
+async function fingerprint(content) {
+    if (content.image) {
+        const digest = await crypto.subtle.digest('SHA-1', await content.image.arrayBuffer());
+        return 'image:' + [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    return content.text ? 'text:' + content.text : null;
+}
+function describe(content) {
+    return content.image ? 'image, ' + Math.round(content.image.size / 1024) + ' KB' : content.text.length + ' chars';
+}
+
+// The browser clipboard only takes PNG. The device hands out whatever the
+// copying app put there (JPEG from Photos, ...), so re-encode through a canvas.
+async function toPng(blob) {
+    if (blob.type === 'image/png') return blob;
+    const bitmap = await createImageBitmap(blob);
+    const c = document.createElement('canvas');
+    c.width = bitmap.width; c.height = bitmap.height;
+    c.getContext('2d').drawImage(bitmap, 0, 0);
+    bitmap.close();
+    return new Promise((resolve, reject) => c.toBlob(b => b ? resolve(b) : reject(new Error('PNG encode failed')), 'image/png'));
+}
+
+function showInPanel(content) {
+    clipboardTextEl.value = content.text || '';
+    if (clipboardImageEl.src) URL.revokeObjectURL(clipboardImageEl.src);
+    clipboardImageEl.classList.toggle('hidden', !content.image);
+    if (content.image) clipboardImageEl.src = URL.createObjectURL(content.image);
+    else clipboardImageEl.removeAttribute('src');
+}
+
+async function readHostClipboard() {
+    const content = {text: null, image: null};
+    if (navigator.clipboard.read) {
+        for (const item of await navigator.clipboard.read()) {
+            if (!content.image && item.types.includes('image/png')) content.image = await item.getType('image/png');
+            if (content.text === null && item.types.includes('text/plain')) {
+                content.text = await (await item.getType('text/plain')).text();
+            }
+        }
+    } else {
+        content.text = await navigator.clipboard.readText();
+    }
+    return content;
+}
+
+// Returns true when the content reached the browser clipboard. Browsers
+// refuse clipboard writes from a background document; the caller keeps
+// the content and retries on focus.
+async function writeHostClipboard(content) {
+    showInPanel(content);
+    if (!navigator.clipboard) return false;
+    try {
+        if (content.image) {
+            const parts = {'image/png': await toPng(content.image)};
+            if (content.text) parts['text/plain'] = new Blob([content.text], {type: 'text/plain'});
+            await navigator.clipboard.write([new ClipboardItem(parts)]);
+            // The browser re-encodes images it puts on the clipboard, so what
+            // readHostClipboard() returns later differs from what we wrote.
+            // Learn its fingerprint now, or the next focus sends it back.
+            lastShared = await fingerprint(await readHostClipboard());
+        } else {
+            await navigator.clipboard.writeText(content.text);
+        }
+        return true;
+    } catch (e) {
+        if (e.name !== 'NotAllowedError') log('clipboard write err: ' + (e.message || e));
+        return false;
+    }
+}
+
+async function fetchDeviceContent(j) {
+    const content = {text: j.text == null ? null : String(j.text), image: null};
+    if (j.image) {
+        const r = await fetch('/clipboard/image?seq=' + (j.seq || Date.now()), {cache: 'no-store'});
+        if (r.ok) content.image = await r.blob();
+    }
+    return content;
+}
 
 clipboardSendBtn.addEventListener('click', async () => {
     if (!clipboardEnabled) return;
@@ -1044,7 +1238,7 @@ clipboardSendBtn.addEventListener('click', async () => {
             body: JSON.stringify({text}),
         });
         if (!r.ok) { log('clipboard send: HTTP ' + r.status); return; }
-        log('clipboard → device (' + text.length + ' chars)');
+        log('clipboard to device (' + text.length + ' chars)');
     } catch (e) { log('clipboard send err: ' + (e.message || e)); }
 });
 
@@ -1053,23 +1247,101 @@ clipboardGetBtn.addEventListener('click', async () => {
     try {
         const r = await fetch('/clipboard', {cache: 'no-store'});
         if (!r.ok) { log('clipboard get: HTTP ' + r.status); return; }
-        const j = await r.json();
-        const text = j.text == null ? '' : String(j.text);
-        clipboardTextEl.value = text;
-        // Best-effort push to the browser clipboard. navigator.clipboard
-        // requires a secure context (https:// or localhost) AND a user
-        // gesture, which the button click satisfies. Failure is non-fatal
-        // since the user can still copy from the textarea by hand.
-        if (text && navigator.clipboard && navigator.clipboard.writeText) {
-            try {
-                await navigator.clipboard.writeText(text);
-                log('clipboard ← device (' + text.length + ' chars, also in browser clipboard)');
-                return;
-            } catch (e) { /* fall through to plain log */ }
-        }
-        log('clipboard ← device (' + text.length + ' chars)');
+        const content = await fetchDeviceContent(await r.json());
+        if (!content.text && !content.image) { showInPanel(content); log('device clipboard is empty'); return; }
+        lastShared = await fingerprint(content);
+        // Best-effort push to the browser clipboard: needs a secure context
+        // (https:// or localhost) and a user gesture, which the click is.
+        // The content is in the panel either way.
+        const written = await writeHostClipboard(content);
+        log('clipboard from device (' + describe(content) + (written ? ', also in browser clipboard)' : ')'));
     } catch (e) { log('clipboard get err: ' + (e.message || e)); }
 });
+
+// ----- Shared clipboard ("Sync" toggle). Device -> host: long-poll
+// /clipboard/events (the server holds the request until something is copied
+// on the device) and write it into the browser clipboard. Host -> device:
+// read the browser clipboard whenever this page regains focus and right
+// before a paste shortcut is forwarded, and POST it when it changed. Both
+// directions need navigator.clipboard, i.e. a secure context (localhost or
+// --https); without it device copies still show up in the panel.
+const clipboardSyncBtn = document.getElementById('clipboard-sync');
+let clipboardSync = false;
+let clipboardSyncAbort = null;
+let lastShared = null;        // fingerprint() of the last content that crossed the bridge
+// Device copy that couldn't be written because the page wasn't focused.
+let pendingHostWrite = null;
+
+async function pushHostClipboard() {
+    if (!clipboardSync || !navigator.clipboard) return;
+    let content, mark;
+    try {
+        content = await readHostClipboard();
+        mark = await fingerprint(content);
+    } catch (e) { return; }
+    if (!mark || mark === lastShared) return;
+    lastShared = mark;
+    try {
+        const r = content.image
+            ? await fetch('/clipboard/image', {method: 'POST', headers: {'Content-Type': 'image/png'}, body: content.image})
+            : await fetch('/clipboard', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: content.text}),
+            });
+        if (!r.ok) { log('clipboard sync: HTTP ' + r.status); return; }
+        showInPanel(content);
+        log('clipboard sync to device (' + describe(content) + ')');
+    } catch (e) { log('clipboard sync err: ' + (e.message || e)); }
+}
+
+async function clipboardSyncLoop(signal) {
+    let since = null;
+    while (!signal.aborted) {
+        try {
+            const url = '/clipboard/events' + (since === null ? '' : '?since=' + since);
+            const r = await fetch(url, {cache: 'no-store', signal});
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const j = await r.json();
+            since = j.seq;
+            if (j.text == null && !j.image) continue;
+            const content = await fetchDeviceContent(j);
+            const mark = await fingerprint(content);
+            if (!mark || mark === lastShared) continue;
+            lastShared = mark;
+            const written = await writeHostClipboard(content);
+            pendingHostWrite = written ? null : content;
+            log('clipboard sync from device (' + describe(content) +
+                (written ? ')' : ', lands in the clipboard when this page is focused)'));
+        } catch (e) {
+            if (signal.aborted) return;
+            log('clipboard sync err: ' + (e.message || e));
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+}
+
+function setClipboardSync(on) {
+    clipboardSync = on;
+    clipboardSyncBtn.textContent = 'Sync: ' + (on ? 'on' : 'off');
+    clipboardSyncBtn.classList.toggle('active', on);
+    try { localStorage.setItem('clipboardSync', on ? 'true' : 'false'); } catch (e) {}
+    if (clipboardSyncAbort) { clipboardSyncAbort.abort(); clipboardSyncAbort = null; }
+    if (!on) { pendingHostWrite = null; return; }
+    if (!navigator.clipboard) {
+        log('clipboard sync: no browser clipboard access (needs localhost or --https); device copies only show in the panel');
+    }
+    clipboardSyncAbort = new AbortController();
+    clipboardSyncLoop(clipboardSyncAbort.signal);
+    pushHostClipboard();
+}
+clipboardSyncBtn.addEventListener('click', () => setClipboardSync(!clipboardSync));
+window.addEventListener('focus', async () => {
+    if (!clipboardSync) return;
+    if (pendingHostWrite === null) { pushHostClipboard(); return; }
+    if (await writeHostClipboard(pendingHostWrite)) pendingHostWrite = null;
+});
+try { if (localStorage.getItem('clipboardSync') === 'true') setClipboardSync(true); } catch (e) {}
 
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));

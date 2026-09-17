@@ -1,133 +1,197 @@
- body{margin:0;background:#111;color:#ccc;font-family:system-ui;
+ /* Palette taken from the project logo: a phone in front of the two Python
+    snakes. Blue is the interactive colour, gold is reserved for "live"
+    signals (keyboard capture, clipboard sync), everything else stays quiet
+    so the device is the only lit thing on the page. */
+ :root{color-scheme:dark;
+       --bg:#0f141a;--panel:#18202b;--panel-border:#27313f;
+       --btn:#1f2935;--btn-hover:#293544;--btn-active:#344255;--btn-border:#313d4d;
+       --text:#eceff3;--muted:#8c99aa;
+       --blue:#5e9bd6;--blue-deep:#3772a2;--gold:#fad247;
+       --accent:var(--blue);
+       /* Set by viewer.js from the displayed screen size, so the bezel keeps
+          its proportions at any zoom level. */
+       --screen-r:32px;--bezel:12px;--hw-t:5px}
+ body{margin:0;color:var(--text);background:var(--bg);
+      font-family:"Avenir Next","Segoe UI Variable Text","Segoe UI",Cantarell,"Noto Sans",sans-serif;
       display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;
       min-height:100vh;gap:8px;padding:8px;box-sizing:border-box}
+ .muted{color:var(--muted)}
+ .hidden{display:none !important}
+ /* Top bar: title on the left, live indicators on the right. Part of the
+    page flow so nothing floats over the trays or the device. */
+ #topbar{display:flex;align-items:center;gap:8px;height:28px;padding:0 4px;
+         font-size:14px;font-weight:600;user-select:none}
+ #brand-logo{height:26px;width:auto;display:block}
+ #topbar .spacer{flex:1}
+ .chip{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;
+       background:var(--panel);border:1px solid var(--panel-border);color:var(--muted);
+       padding:3px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
+ /* Keyboard-capture indicator: lit while the canvas owns keyboard focus,
+    so the user can tell at a glance that keystrokes flow to the device. */
+ #kb-indicator{border-color:var(--gold);color:var(--gold)}
  /* Workspace: trays on the page edges flanking the canvas + bottom row.
     Trays are part of the document flow (not position:fixed) so a wide
     or rotated canvas can't slide underneath them. */
  #workspace{display:flex;flex-direction:row;align-items:flex-start;gap:8px;
             justify-content:center;flex:1;min-width:0}
- #stage-wrap{display:flex;flex-direction:column;align-items:center;gap:8px;
-             min-width:0;flex:0 1 auto}
- /* Stage: device-side-mounted buttons flanking the canvas, matching
-    where they live on an iPhone. Vol/Mute on the left side, Power/
-    Siri on the right side. */
- #stage{display:flex;align-items:stretch;justify-content:center;gap:8px;
-        max-width:100%}
- .side{display:flex;flex-direction:column;gap:6px;padding-top:18%}
- #side-left{align-items:flex-end}
- #side-right{align-items:flex-start}
+ /* The stage takes whatever the trays leave, which keeps them on the page
+    edges. */
+ #stage-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;
+             min-width:0;flex:1 1 0;padding:8px 24px;box-sizing:border-box}
+ /* Zoomed past the fit size the device no longer fits between the trays:
+    the stage area scrolls instead of pushing the trays off-screen. "safe"
+    keeps the overflowing device reachable instead of centering it out of
+    the scrollable range. */
+ #stage-wrap.zoomed{overflow:auto;align-items:safe center;
+                    max-height:calc(100vh - 52px)}
+ #stage-wrap.zoomed #stage{max-width:none;justify-content:safe center}
+ #stage{display:flex;align-items:stretch;justify-content:center;max-width:100%;
+        position:relative;isolation:isolate}
+ /* The one decorative move on the page: the phone sits in front of the
+    logo's blue and gold, like it does in the logo itself. */
+ #stage::before{content:"";position:absolute;z-index:-1;inset:-6% -28%;pointer-events:none;
+                background:radial-gradient(closest-side at 22% 30%,rgba(55,114,162,.42),transparent),
+                           radial-gradient(closest-side at 80% 72%,rgba(250,210,71,.16),transparent);
+                filter:blur(24px)}
  canvas{touch-action:none;cursor:crosshair;background:#000;
         image-rendering:-webkit-optimize-contrast;
         image-rendering:high-quality;display:block;outline:none}
  #device-frame{display:inline-block;position:relative;line-height:0;font-size:0;
               transform-origin:center center;will-change:transform}
+ /* Bezel: a black glass border inside a brushed-metal band. */
  body.frame-on #device-frame{
-   padding:14px;border-radius:46px;
-   background:linear-gradient(145deg,#2a2a2c,#101012);
-   box-shadow:0 0 0 1px #3a3a3c inset, 0 10px 36px rgba(0,0,0,.55)}
- body.frame-on canvas{border-radius:32px}
- #bottom-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
-             max-width:100%}
- button.btn{background:#222;color:#ddd;border:1px solid #444;border-radius:6px;
-            padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap}
- button.btn:hover{background:#333}
- button.btn:active{background:#4a4a4a}
+   padding:var(--bezel);border-radius:calc(var(--screen-r) + var(--bezel));
+   background:#000;
+   box-shadow:0 0 0 2px #55585f, 0 0 0 3px #1b1c1f,
+              0 18px 50px rgba(0,0,0,.6), 0 2px 0 3px rgba(255,255,255,.04)}
+ body.frame-on canvas{border-radius:var(--screen-r)}
+ body.frame-on #offline-overlay{border-radius:var(--screen-r);inset:var(--bezel)}
+
+ /* Hardware buttons, drawn as part of the frame. --pos / --len place a
+    button along the device's long edge, measured from the device's top;
+    data-rot on the frame (the in-canvas rotation: 0 / 90 / -90 / 180) picks
+    the page edge that device edge currently faces. */
+ .hw{position:absolute;padding:0;margin:0;border:0;cursor:pointer;
+     --o:calc(-1 * var(--hw-t) - 3px);
+     background:linear-gradient(90deg,#6a6d75,#3a3c42);
+     box-shadow:0 0 0 1px #15161a}
+ body:not(.frame-on) .hw{--o:calc(-1 * var(--hw-t))}
+ .hw::before{content:"";position:absolute;inset:-7px}   /* comfortable hit area */
+ .hw:hover{filter:brightness(1.5)}
+ .hw:active{filter:brightness(.75)}
+ [data-rot="0"] .hw,[data-rot="180"] .hw{width:var(--hw-t);height:var(--len)}
+ [data-rot="90"] .hw,[data-rot="-90"] .hw{height:var(--hw-t);width:var(--len);
+     background:linear-gradient(180deg,#6a6d75,#3a3c42)}
+ [data-rot="0"] .hw{top:var(--pos)}
+ [data-rot="0"] .hw-l{left:var(--o);border-radius:3px 0 0 3px}
+ [data-rot="0"] .hw-r{right:var(--o);border-radius:0 3px 3px 0}
+ [data-rot="180"] .hw{bottom:var(--pos)}
+ [data-rot="180"] .hw-l{right:var(--o);border-radius:0 3px 3px 0}
+ [data-rot="180"] .hw-r{left:var(--o);border-radius:3px 0 0 3px}
+ /* Rotated clockwise: the device's top faces right, its left edge faces up. */
+ [data-rot="90"] .hw{right:var(--pos)}
+ [data-rot="90"] .hw-l{top:var(--o);border-radius:3px 3px 0 0}
+ [data-rot="90"] .hw-r{bottom:var(--o);border-radius:0 0 3px 3px}
+ /* Rotated counter-clockwise: top faces left, left edge faces down. */
+ [data-rot="-90"] .hw{left:var(--pos)}
+ [data-rot="-90"] .hw-l{bottom:var(--o);border-radius:0 0 3px 3px}
+ [data-rot="-90"] .hw-r{top:var(--o);border-radius:3px 3px 0 0}
+ #hw-tooltip{position:fixed;z-index:50;pointer-events:none;white-space:nowrap;
+             background:#000d;color:#fff;border:1px solid var(--btn-border);
+             font-size:12px;padding:4px 8px;border-radius:6px}
+
+ /* Dock under the device: the on-screen gestures that have no hardware
+    button on a modern iPhone. */
+ #bottom-row{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;max-width:100%;
+             background:var(--panel);border:1px solid var(--panel-border);
+             border-radius:12px;padding:4px}
+ #bottom-row .btn{border-color:transparent;background:transparent}
+ #bottom-row .btn:hover{background:var(--btn-hover)}
+ button.btn{background:var(--btn);color:var(--text);border:1px solid var(--btn-border);
+            border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;
+            white-space:nowrap;font-family:inherit;
+            transition:background .12s ease,border-color .12s ease}
+ button.btn:hover{background:var(--btn-hover)}
+ button.btn:active{background:var(--btn-active)}
+ button.btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+ button.btn.active{background:#1d3145;border-color:var(--blue-deep);color:#d6e8fa}
+ /* Sync is a live link to the device, so it lights up gold like the other
+    live signals. */
+ #clipboard-sync.active{background:transparent;border-color:var(--gold);color:var(--gold)}
+ .btn-row{display:flex;gap:4px}
+ .btn-row .btn{flex:1;padding-left:0;padding-right:0}
+ #zoom-reset{flex:1.6;font-variant-numeric:tabular-nums}
  /* Side trays: vertical button column flanking the stage. Collapsible
     to a thin strip with just the toggle when the user wants more
     canvas room. */
  .tray{display:flex;flex-direction:column;gap:6px;
-       background:#181818;border:1px solid #2a2a2a;border-radius:8px;
-       padding:6px;min-width:140px;align-self:stretch;
-       transition:min-width .2s ease}
- .tray.collapsed{min-width:0}
+       background:var(--panel);border:1px solid var(--panel-border);border-radius:12px;
+       padding:8px;width:188px;box-sizing:border-box;align-self:stretch;flex:none}
+ #right-tray{width:280px}
+ .tray.collapsed,#right-tray.collapsed{width:auto}
  .tray.collapsed .tray-content{display:none}
  .tray .tray-content{display:flex;flex-direction:column;gap:6px;
-                     overflow-y:auto;max-height:calc(100vh - 60px)}
- .tray .tray-toggle{padding:4px 10px;font-size:14px;align-self:flex-end}
+                     overflow-y:auto;max-height:calc(100vh - 110px)}
+ .tray h3{margin:10px 0 2px;font-size:12px;color:var(--muted);font-weight:600;
+          display:flex;align-items:center;gap:6px}
+ .tray h3:first-child{margin-top:0}
+ .tray h3 .btn{font-size:11px;padding:1px 8px;font-weight:normal;border-radius:999px}
+ .tray .tray-toggle{padding:2px 9px;font-size:14px;color:var(--muted);
+                    background:transparent;border-color:transparent}
  #left-tray .tray-toggle{align-self:flex-end}
  #right-tray .tray-toggle{align-self:flex-start}
+ /* The chevron points at where the tray will go. */
+ #left-tray .tray-toggle::before{content:"‹"}
  #left-tray.collapsed .tray-toggle::before{content:"›"}
- #left-tray.collapsed .tray-toggle{font-size:14px}
- #left-tray.collapsed .tray-toggle{padding-left:8px;padding-right:8px}
+ #right-tray .tray-toggle::before{content:"›"}
  #right-tray.collapsed .tray-toggle::before{content:"‹"}
- .tray-toggle{color:#aaa}
- #left-tray .tray-toggle,#right-tray .tray-toggle{
-   /* The toggle button's label is overridden via ::before when
-      collapsed; hide the original character so we don't show a
-      stale chevron. */
- }
- /* Use a CSS data-attr trick: when collapsed, swap visible char. */
- #left-tray:not(.collapsed) .tray-toggle{}
  /* On narrow viewports stack everything vertically and force trays
     open underneath the canvas so they don't compete for width. */
  @media (max-width: 900px){
   #workspace{flex-direction:column;align-items:center}
-  .tray{min-width:0;width:100%;max-width:520px}
-  .tray .tray-content{flex-direction:row;flex-wrap:wrap;max-height:none}
+  .tray,#right-tray{width:100%;max-width:520px;align-self:center}
+  #stage-wrap{flex:none;width:100%;order:-1}   /* device first, panels below */
+  .tray .tray-content{max-height:none}
  }
- /* Accessibility list rows: label + control side-by-side. */
- #right-tray h3{margin:4px 0 6px;font-size:13px;color:#bbb;font-weight:600;
-                text-transform:uppercase;letter-spacing:.5px;
-                display:flex;align-items:center;gap:6px}
- #right-tray h3 .btn{font-size:10px;padding:1px 6px;text-transform:none;
-                     letter-spacing:0;font-weight:normal}
- #clipboard-panel{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+ #clipboard-panel{display:flex;flex-direction:column;gap:6px;margin-bottom:4px}
  #clipboard-panel.disabled{opacity:.45;pointer-events:none}
  #clipboard-text{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;
-                 background:#181818;color:#ddd;border:1px solid #2a2a2a;
-                 border-radius:4px;padding:6px;resize:vertical;min-height:48px}
- .clipboard-row{display:flex;gap:6px}
- .clipboard-row .btn{flex:1;font-size:11px;padding:4px 8px}
- #accessibility-list{display:flex;flex-direction:column;gap:4px;font-size:12px;
+                 background:var(--bg);color:var(--text);border:1px solid var(--btn-border);
+                 border-radius:8px;padding:6px;resize:vertical;min-height:48px}
+ #clipboard-text:focus{outline:none;border-color:var(--accent)}
+ #clipboard-image{max-width:100%;max-height:160px;object-fit:contain;align-self:flex-start;
+                  border:1px solid var(--btn-border);border-radius:8px;background:var(--bg)}
+ .clipboard-row{display:flex;gap:4px}
+ .clipboard-row .btn{flex:1;font-size:11px;padding:5px 4px}
+ /* Accessibility list rows: label + control side-by-side. */
+ #accessibility-list{display:flex;flex-direction:column;gap:2px;font-size:12px;
                      line-height:1.4}
- .axrow{display:flex;align-items:center;gap:8px;padding:4px 2px;
-        border-bottom:1px dashed #2a2a2a}
- .axrow label{flex:1;color:#ddd;cursor:pointer;
+ .axrow{display:flex;align-items:center;gap:8px;padding:5px 2px;
+        border-bottom:1px solid var(--panel-border)}
+ .axrow label{flex:1;color:var(--text);cursor:pointer;
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
- .axrow input[type=checkbox]{accent-color:#a7d8ff}
- .axrow input[type=range]{width:90px;accent-color:#a7d8ff}
- .axrow .axvalue{color:#888;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+ .axrow select{background:var(--btn);color:var(--text);border:1px solid var(--btn-border);
+               border-radius:6px;padding:2px 4px;font:inherit;max-width:130px}
+ .axrow input[type=checkbox]{accent-color:var(--accent)}
+ .axrow input[type=range]{width:90px;accent-color:var(--accent)}
+ .axrow .axvalue{color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
                  font-size:11px;min-width:34px;text-align:right}
- /* Status / log overlay: pinned to bottom-left so it doesn't intercept
-    clicks on the left-tray toggle. Capped width so a long log line
-    doesn't push it across the canvas. */
- /* Live FPS readout, useful for spotting decoder stalls — the underlying
-    counter is the same frameCount the offline-overlay watches, sampled
-    once a second. */
- #fps{position:fixed;top:8px;left:8px;font-size:12px;opacity:.75;
-      background:#0008;color:#fff;padding:2px 8px;border-radius:4px;
-      font-variant-numeric:tabular-nums;user-select:none;pointer-events:none;
-      z-index:10}
- #status{position:fixed;bottom:8px;left:8px;font-size:11px;opacity:.7;
-         background:#0008;padding:4px 8px;border-radius:4px;white-space:pre;
-         width:240px;max-width:30vw;max-height:120px;overflow:hidden;
-         user-select:text;-webkit-user-select:text;cursor:text;
-         pointer-events:auto;z-index:10}
+ /* Log: the last few viewer events, selectable for bug reports. Lives in
+    the left tray so it never covers the device or a tray toggle. */
+ #status{font:10.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);
+         background:var(--bg);border:1px solid var(--panel-border);border-radius:8px;
+         padding:6px;white-space:pre-wrap;overflow-wrap:anywhere;
+         max-height:150px;overflow:hidden;
+         display:flex;flex-direction:column;justify-content:flex-end;  /* keep the newest lines in view */
+         user-select:text;-webkit-user-select:text;cursor:text}
  /* Offline overlay: shown when the stream has stopped progressing for
     a few seconds. Sits over the canvas via position:absolute on the
     device-frame, so it follows the rotated/scaled canvas footprint. */
  #offline-overlay{position:absolute;inset:0;display:flex;align-items:center;
                   justify-content:center;background:rgba(0,0,0,.55);
-                  color:#fff;font-size:18px;font-weight:600;letter-spacing:.4px;
-                  border-radius:32px;pointer-events:none;
+                  color:#fff;font-size:clamp(11px,1.6vw,18px);font-weight:600;letter-spacing:.4px;
+                  pointer-events:none;line-height:1.3;
                   text-shadow:0 1px 2px rgba(0,0,0,.6)}
- #offline-overlay.hidden{display:none}
- /* Keyboard-capture indicator: a small keyboard-graphic badge shown
-    when the canvas owns keyboard focus, so the user can tell at a
-    glance that keystrokes are flowing to the device. Pinned to the
-    top-right of the viewport (mirror of #fps in the top-left) so it
-    never sits on top of the device screen, regardless of canvas
-    size or rotation. */
- #kb-indicator{position:fixed;top:8px;right:8px;z-index:10;
-               display:flex;align-items:center;
-               background:rgba(40,140,80,.92);color:#fff;
-               padding:4px 6px;border-radius:8px;
-               box-shadow:0 0 0 1px rgba(255,255,255,.18) inset,
-                          0 1px 6px rgba(0,0,0,.55),
-                          0 0 12px rgba(80,220,140,.35);
-               pointer-events:none;user-select:none}
- #kb-indicator svg{display:block}
- #kb-indicator.hidden{display:none}
  /* white-space:nowrap so the label stays on one line; in portrait the
     canvas footprint is narrow enough to wrap "Stream offline — waiting for
     frames…" into squashed lines otherwise. */
@@ -138,20 +202,20 @@
     card. */
  #help-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);
                display:flex;align-items:center;justify-content:center;
-               z-index:100}
- #help-overlay.hidden{display:none}
- #help-modal{background:#1c1c1e;color:#eee;border:1px solid #3a3a3c;
-             border-radius:12px;padding:20px 24px;max-width:560px;width:90%;
+               z-index:100;backdrop-filter:blur(3px)}
+ #help-modal{background:var(--panel);color:var(--text);border:1px solid var(--btn-border);
+             border-radius:14px;padding:20px 24px;max-width:560px;width:90%;
+             max-height:85vh;overflow-y:auto;
              box-shadow:0 12px 48px rgba(0,0,0,.6);position:relative;
              font-size:14px;line-height:1.5}
  #help-modal h2{margin:0 0 12px;font-size:16px;font-weight:600}
  #help-modal table{border-collapse:collapse;width:100%;margin-bottom:12px}
- #help-modal th,#help-modal td{padding:4px 8px;text-align:left;border-bottom:1px solid #2c2c2e}
- #help-modal th{color:#999;font-weight:600;font-size:12px}
+ #help-modal th,#help-modal td{padding:4px 8px;text-align:left;border-bottom:1px solid var(--panel-border)}
+ #help-modal th{color:var(--muted);font-weight:600;font-size:12px}
  #help-modal td:first-child{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-                            color:#a7d8ff;white-space:nowrap;width:140px}
- #help-modal p{margin:8px 0 0;color:#ccc}
+                            color:var(--accent);white-space:nowrap;width:140px}
+ #help-modal p{margin:8px 0 0;color:var(--text)}
  #help-close{position:absolute;top:8px;right:8px;padding:2px 10px;
              font-size:18px;line-height:1;background:transparent;border:0;
-             color:#888;cursor:pointer}
+             color:var(--muted);cursor:pointer}
  #help-close:hover{color:#fff}

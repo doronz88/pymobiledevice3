@@ -391,8 +391,9 @@ device-initiated HEVC stream over the RSD tunnel:
 
 - **`serve-web`** — serves the screen over HTTP for any modern browser; the
   HEVC decode happens in-browser via WebCodecs, so it works cross-platform with
-  no external tools. Touch, hardware buttons, and keyboard are wired back to the
-  device.
+  no external tools. Touch, hardware buttons (drawn on the edges of the phone
+  frame), and keyboard are wired back to the device. The **View** panel zooms
+  (`Ctrl+=` / `Ctrl+-` / `Ctrl+0`) and rotates the displayed device.
 - **`serve-vnc`** — serves the screen as a VNC (RFB 3.8) server for macOS
   Screen Sharing or any VNC client. macOS-only, because the server-side HEVC
   decode goes through VideoToolbox. Right-click in the viewer is the Home
@@ -419,6 +420,26 @@ pymobiledevice3 developer core-device display start-video-stream /tmp/cap.rtp --
 # Convert that capture to an Annex-B .h265 bitstream playable by ffplay/VLC
 misc/rtp_dump.py /tmp/cap.rtp /tmp/cap.h265
 ffplay -framerate 60 /tmp/cap.h265
+```
+
+Both can share the clipboard with the device, in both directions:
+
+- `serve-web`: turn on **Sync** in the viewer's Clipboard panel. Text and
+  images copied on the device land in the browser machine's clipboard, and
+  whatever was copied there is on the device by the time you paste. Some apps
+  publish rich content slowly (a picture copied out of Notes takes about a
+  minute to show up; plain text and plain images are immediate). The browser only grants
+  clipboard access on a secure context (`localhost`, or `--https`) and asks for
+  permission once; it also refuses clipboard writes from a background tab, so a
+  device copy made meanwhile lands when you return to the page.
+- `serve-vnc --share-clipboard`: text only (RFB has no image clipboard). Uses
+  the RFB clipboard messages, so it follows
+  the VNC client's own clipboard setting. UTF-8 with clients that implement the
+  Extended Clipboard pseudo-encoding (TigerVNC, noVNC, …); other clients get
+  the classic Latin-1 message.
+
+```shell
+pymobiledevice3 developer core-device display serve-vnc --share-clipboard
 ```
 
 !!! warning "Camera and microphone conflicts"
