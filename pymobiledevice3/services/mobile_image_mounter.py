@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 #: Build id of the DDI this release expects, matching what the DeveloperDiskImage repository
 #: publishes. Both the personalized image and the Cryptex1 bundle are checked against it.
-LATEST_DDI_BUILD_ID = "27A5228h"
+LATEST_DDI_BUILD_ID = "27A266a"
 
 
 class MobileImageMounterService(LockdownService):
