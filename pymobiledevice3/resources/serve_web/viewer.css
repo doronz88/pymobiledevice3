@@ -1,3 +1,4 @@
+ :root{color-scheme:dark}
  body{margin:0;background:#111;color:#ccc;font-family:system-ui;
       display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;
       min-height:100vh;gap:8px;padding:8px;box-sizing:border-box}
@@ -8,6 +9,16 @@
             justify-content:center;flex:1;min-width:0}
  #stage-wrap{display:flex;flex-direction:column;align-items:center;gap:8px;
              min-width:0;flex:0 1 auto}
+ /* Zoomed past the fit size the device no longer fits between the trays:
+    the stage area scrolls instead of pushing the trays off-screen. "safe"
+    keeps the overflowing device reachable instead of centering it out of
+    the scrollable range. */
+ #stage-wrap.zoomed{flex:1 1 0;overflow:auto;align-items:safe center;
+                    max-height:calc(100vh - 16px)}
+ #stage-wrap.zoomed #stage{max-width:none;justify-content:safe center}
+ .zoom-row{display:flex;gap:4px}
+ .zoom-row .btn{flex:1;padding:8px 0}
+ .zoom-row #zoom-reset{flex:2;font-variant-numeric:tabular-nums}
  /* Stage: device-side-mounted buttons flanking the canvas, matching
     where they live on an iPhone. Vol/Mute on the left side, Power/
     Siri on the right side. */

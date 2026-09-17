@@ -13,6 +13,11 @@
    <button class="btn" id="screenshot" type="button" title="Save current frame as PNG (Ctrl+P)">Screenshot</button>
    <button class="btn" id="rotate-left" type="button" title="Rotate device 90° CCW">Rotate ↺</button>
    <button class="btn" id="rotate-right" type="button" title="Rotate device 90° CW">Rotate ↻</button>
+   <div class="zoom-row" role="group" aria-label="Zoom">
+    <button class="btn" id="zoom-out" type="button" title="Shrink the displayed device (Ctrl+-)" aria-label="Zoom out">−</button>
+    <button class="btn" id="zoom-reset" type="button" title="Back to fit-to-window (Ctrl+0)">100%</button>
+    <button class="btn" id="zoom-in" type="button" title="Enlarge the displayed device (Ctrl+=)" aria-label="Zoom in">+</button>
+   </div>
    <button class="btn" id="sound-toggle" type="button">Enable Sound</button>
    <button class="btn" id="style-toggle" type="button" title="toggle dark/light user-interface style">Style: ?</button>
    <button class="btn" id="frame-toggle" type="button" title="toggle cosmetic iPhone bezel around the canvas">Frame: ?</button>
@@ -108,6 +113,8 @@
    <tr><td>Ctrl + \</td><td>Mute</td></tr>
    <tr><td>Ctrl + S</td><td>Siri</td></tr>
    <tr><td>Ctrl + P</td><td>Screenshot</td></tr>
+   <tr><td>Ctrl + = / -</td><td>Zoom in / out</td></tr>
+   <tr><td>Ctrl + 0</td><td>Zoom back to fit</td></tr>
    <tr><td>?</td><td>Show this help</td></tr>
    <tr><td>Esc</td><td>Close this help</td></tr>
   </table>

@@ -50,11 +50,35 @@ function fitCanvasToViewport() {
     const reservedW = trayW('left-tray') + trayW('right-tray') + sideButtonsW + frameSlack + 40;
     const availW = Math.max(100, window.innerWidth - reservedW);
     const availH = Math.max(100, window.innerHeight - 120 - frameSlack);
-    const scale = Math.min(1, availW / naturalW, availH / naturalH);
+    const scale = Math.min(1, availW / naturalW, availH / naturalH) * zoom;
     canvas.style.width  = (naturalW * scale) + 'px';
     canvas.style.height = (naturalH * scale) + 'px';
+    zoomResetBtn.textContent = Math.round(zoom * 100) + '%';
+    stageWrap.classList.toggle('zoomed', zoom > 1);
 }
 window.addEventListener('resize', fitCanvasToViewport);
+
+// ----- Zoom: a multiplier on top of the fit-to-window scale, so 1 always
+// means "as large as fits" and survives window resizes / tray toggles.
+// Persisted like the other view preferences.
+const ZOOM_STEP = 1.2, ZOOM_MIN = 0.25, ZOOM_MAX = 4;
+const zoomResetBtn = document.getElementById('zoom-reset');
+const stageWrap = document.getElementById('stage-wrap');
+let zoom = 1;
+try {
+    const saved = parseFloat(localStorage.getItem('zoom'));
+    if (saved >= ZOOM_MIN && saved <= ZOOM_MAX) zoom = saved;
+} catch (e) {}
+function setZoom(value) {
+    zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, value));
+    // Snap back onto exactly 1 so repeated in/out steps don't drift off "fit".
+    if (Math.abs(zoom - 1) < 0.01) zoom = 1;
+    try { localStorage.setItem('zoom', String(zoom)); } catch (e) {}
+    fitCanvasToViewport();
+}
+document.getElementById('zoom-in').addEventListener('click', () => setZoom(zoom * ZOOM_STEP));
+document.getElementById('zoom-out').addEventListener('click', () => setZoom(zoom / ZOOM_STEP));
+zoomResetBtn.addEventListener('click', () => setZoom(1));
 const statusEl = document.getElementById('status');
 const fpsEl = document.getElementById('fps');
 let frameCount = 0;
@@ -351,6 +375,9 @@ window.addEventListener('keydown', (e) => {
     if (e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
         const k = e.key.toLowerCase();
         if (k === 'p') { e.preventDefault(); takeScreenshot(); return; }
+        if (k === '=' || k === '+') { e.preventDefault(); setZoom(zoom * ZOOM_STEP); return; }
+        if (k === '-') { e.preventDefault(); setZoom(zoom / ZOOM_STEP); return; }
+        if (k === '0') { e.preventDefault(); setZoom(1); return; }
     }
     if (!keyboardCaptureOn()) return;
     // Ctrl-hotkey path consumes the event; don't also type it.
