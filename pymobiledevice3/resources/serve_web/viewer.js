@@ -32,27 +32,40 @@ const ctx = canvas.getContext('2d');
 // proportional shrink (still anchored to integer-ish device pixels
 // where possible); image-rendering:high-quality keeps that fallback
 // path from going visibly blocky.
+const BEZEL_RATIO = 0.035;   // bezel width / screen short side
 function fitCanvasToViewport() {
     if (!canvas.width || !canvas.height) return;
     const dpr = window.devicePixelRatio || 1;
     const naturalW = canvas.width / dpr;
     const naturalH = canvas.height / dpr;
-    // Reserve room for the flanking trays + side buttons + bottom row.
-    // We MEASURE the actual edge widths so collapse/uncollapse of either
-    // tray immediately reclaims space for the canvas. ~30 px extra when
-    // the cosmetic bezel is on (14 px padding either side).
+    // Reserve room for the flanking trays, the stage padding (which also
+    // holds the bezel's hardware buttons), the top bar and the dock. We
+    // MEASURE the actual tray widths so collapse/uncollapse of either tray
+    // immediately reclaims space for the canvas.
     const trayW = (id) => {
         const el = document.getElementById(id);
         return el ? el.getBoundingClientRect().width : 0;
     };
-    const sideButtonsW = 80 + 80;  // side-left + side-right rough widths
-    const frameSlack = document.body.classList.contains('frame-on') ? 32 : 0;
-    const reservedW = trayW('left-tray') + trayW('right-tray') + sideButtonsW + frameSlack + 40;
-    const availW = Math.max(100, window.innerWidth - reservedW);
-    const availH = Math.max(100, window.innerHeight - 120 - frameSlack);
+    const frameOn = document.body.classList.contains('frame-on');
+    // The bezel is proportional to the displayed screen (see below), so it
+    // takes a fixed share of the available box rather than a pixel count.
+    const bezelShare = frameOn ? 1 + 2 * BEZEL_RATIO : 1;
+    // Below the stacked-layout breakpoint (viewer.css) the trays sit under
+    // the device and cost no width.
+    const stacked = window.matchMedia('(max-width: 900px)').matches;
+    const reservedW = (stacked ? 0 : trayW('left-tray') + trayW('right-tray')) + 48 + 40;
+    const availW = Math.max(100, window.innerWidth - reservedW) / bezelShare;
+    const availH = Math.max(100, window.innerHeight - 150) / bezelShare;
     const scale = Math.min(1, availW / naturalW, availH / naturalH) * zoom;
     canvas.style.width  = (naturalW * scale) + 'px';
     canvas.style.height = (naturalH * scale) + 'px';
+    // Bezel geometry follows the displayed size so the frame looks the same
+    // at every zoom level: screen corner radius, bezel width, button depth.
+    const shortSide = Math.min(naturalW, naturalH) * scale;
+    const frameStyle = document.getElementById('device-frame').style;
+    frameStyle.setProperty('--screen-r', (shortSide * 0.125) + 'px');
+    frameStyle.setProperty('--bezel', Math.max(5, shortSide * BEZEL_RATIO) + 'px');
+    frameStyle.setProperty('--hw-t', Math.max(3, shortSide * 0.014) + 'px');
     zoomResetBtn.textContent = Math.round(zoom * 100) + '%';
     stageWrap.classList.toggle('zoomed', zoom > 1);
 }
@@ -226,11 +239,66 @@ canvas.addEventListener('contextmenu', (e) => {
     postJson('/button', {name: 'home', state: 'press'}).then(() => log('button: home (right-click)'));
 });
 
-document.querySelectorAll('button[data-btn]').forEach(btn => {
+document.querySelectorAll('button[data-btn]:not(.hw)').forEach(btn => {
     btn.addEventListener('click', () => {
         const name = btn.dataset.btn;
         postJson('/button', {name, state: 'press'}).then(() => log('button: ' + name));
     });
+});
+
+// Bezel buttons behave like the physical ones: down while the pointer holds
+// them, up on release. A tap on Power sleeps/wakes, a long press does whatever
+// iOS does with a held button (Siri, volume repeat, ...).
+const HW_MIN_HOLD_MS = 100;   // iOS ignores a down/up pair much shorter than a real tap
+document.querySelectorAll('.hw[data-btn]').forEach(btn => {
+    const name = btn.dataset.btn;
+    const shown = (btn.getAttribute('aria-label') || name).toLowerCase();
+    let downAt = 0;
+    let chain = Promise.resolve();   // keeps down/up in order on the wire
+    const release = () => {
+        if (!downAt) return;
+        const wait = Math.max(0, HW_MIN_HOLD_MS - (performance.now() - downAt));
+        downAt = 0;
+        chain = chain
+            .then(() => new Promise(r => setTimeout(r, wait)))
+            .then(() => postJson('/button', {name, state: 'up'}));
+    };
+    btn.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+        downAt = performance.now();
+        chain = chain.then(() => postJson('/button', {name, state: 'down'})).then(() => log('button: ' + shown));
+    });
+    btn.addEventListener('pointerup', release);
+    btn.addEventListener('pointercancel', release);
+    btn.addEventListener('lostpointercapture', release);
+    // Keyboard activation (Enter / Space on a focused button) has no hold.
+    btn.addEventListener('click', (e) => {
+        if (e.detail === 0) postJson('/button', {name, state: 'press'}).then(() => log('button: ' + shown));
+    });
+});
+window.addEventListener('blur', () => {
+    // We won't see the pointerup once the window loses focus mid-press.
+    document.querySelectorAll('.hw[data-btn]').forEach(btn => btn.dispatchEvent(new Event('pointercancel')));
+});
+
+// The bezel buttons are too thin to carry a caption, so their name shows in
+// a tooltip next to the pointer as soon as it is over one (the native
+// title tooltip takes a second to appear).
+const hwTooltip = document.getElementById('hw-tooltip');
+document.querySelectorAll('.hw').forEach(btn => {
+    const place = (e) => {
+        hwTooltip.style.left = (e.clientX + 14) + 'px';
+        hwTooltip.style.top = (e.clientY + 14) + 'px';
+    };
+    btn.addEventListener('pointerenter', (e) => {
+        hwTooltip.textContent = btn.dataset.label;
+        hwTooltip.classList.remove('hidden');
+        place(e);
+    });
+    btn.addEventListener('pointermove', place);
+    btn.addEventListener('pointerleave', () => hwTooltip.classList.add('hidden'));
 });
 
 // Swipe synthesis: contact at the start edge, 10 intermediate
@@ -435,6 +503,7 @@ function setVisualRotation(deg) {
     if (delta > 180) delta -= 360;
     if (delta < -180) delta += 360;
     visualRotation = deg;
+    deviceFrameEl.dataset.rot = String(deg);   // moves the bezel's hardware buttons
     // Canvas-internal rotation snaps immediately (so dim swap + layout
     // reflow happen now), then the device-frame's CSS transform is
     // set to -delta degrees so the *visual* position matches where
@@ -582,7 +651,9 @@ refreshStyle();
 // Persisted in localStorage so a reload keeps the user's choice.
 const frameBtn = document.getElementById('frame-toggle');
 function setFrameLabel() {
-    frameBtn.textContent = 'Frame: ' + (document.body.classList.contains('frame-on') ? 'on' : 'off');
+    const on = document.body.classList.contains('frame-on');
+    frameBtn.textContent = 'Frame: ' + (on ? 'on' : 'off');
+    frameBtn.classList.toggle('active', on);
 }
 try {
     if (localStorage.getItem('frameOn') === 'false') document.body.classList.remove('frame-on');
@@ -891,6 +962,7 @@ function drawPending() {
         // iOS rerendered the buffer in the new orientation — content is
         // now natively upright, so drop our in-canvas rotation.
         visualRotation = 0;
+        deviceFrameEl.dataset.rot = '0';
     }
     lastFrameLandscape = landscape;
     // Detect the collapse-crop rectangle from THIS raw frame, every frame:
@@ -1064,9 +1136,11 @@ const clipboardSendBtn = document.getElementById('clipboard-send');
 const clipboardGetBtn = document.getElementById('clipboard-get');
 const clipboardToggleBtn = document.getElementById('clipboard-toggle');
 let clipboardEnabled = true;
+clipboardToggleBtn.classList.add('active');
 function setClipboardEnabled(on) {
     clipboardEnabled = on;
     clipboardToggleBtn.textContent = on ? 'on' : 'off';
+    clipboardToggleBtn.classList.toggle('active', on);
     clipboardPanel.classList.toggle('disabled', !on);
 }
 clipboardToggleBtn.addEventListener('click', () => setClipboardEnabled(!clipboardEnabled));
