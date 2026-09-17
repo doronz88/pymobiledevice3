@@ -1159,7 +1159,7 @@ class ScreenStreamServer:
             return
         try:
             await transport.sendto(self._build_rtcp_pli(), *self._rtcp_dest)
-            logger.info("sent RTCP PLI (requested fresh keyframe)")
+            logger.debug("sent RTCP PLI (requested fresh keyframe)")
         except OSError as exc:
             logger.debug("PLI send failed (%s)", exc)
 
@@ -2737,7 +2737,7 @@ class ScreenStreamServer:
         pli_task.add_done_callback(self._pli_tasks.discard)
         self._last_refresh_t = now
         window_bps = sum(s for _, s in self._au_byte_window)
-        logger.info(
+        logger.debug(
             "decoder-refresh (%s): %d subscriber(s), %d B/s window",
             reason,
             len(self._subscribers),
