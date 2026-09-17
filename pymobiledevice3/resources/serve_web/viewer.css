@@ -145,6 +145,8 @@
                  background:var(--bg);color:var(--text);border:1px solid var(--btn-border);
                  border-radius:8px;padding:6px;resize:vertical;min-height:48px}
  #clipboard-text:focus{outline:none;border-color:var(--accent)}
+ #clipboard-image{max-width:100%;max-height:160px;object-fit:contain;align-self:flex-start;
+                  border:1px solid var(--btn-border);border-radius:8px;background:var(--bg)}
  .clipboard-row{display:flex;gap:4px}
  .clipboard-row .btn{flex:1;font-size:11px;padding:5px 4px}
  /* Accessibility list rows: label + control side-by-side. */

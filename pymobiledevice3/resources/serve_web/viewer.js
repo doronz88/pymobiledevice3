@@ -1123,14 +1123,14 @@ document.getElementById('accessibility-reset').addEventListener('click', async (
 });
 reloadAccessibility();
 
-// ----- Clipboard panel: bidirectional text bridge to the device pasteboard.
-// "→ Send to device" pushes the textarea contents via POST /clipboard.
-// "← Get from device" pulls via GET /clipboard, fills the textarea, and (on a
-// secure context) also pushes to navigator.clipboard so the user can paste
-// directly into a host app. The header toggle ("on"/"off") gates the whole
-// panel -- when off the panel dims and the buttons are inert, matching the
-// pattern the user asked for ("toggle-able").
+// ----- Clipboard panel: bridge to the device pasteboard (text and images).
+// "Send to device" pushes the textarea contents via POST /clipboard.
+// "Get from device" pulls via GET /clipboard (+ /clipboard/image), shows
+// it in the panel, and (on a secure context) also puts it on the browser
+// clipboard so the user can paste directly into a host app. The header
+// toggle ("on"/"off") gates the whole panel.
 const clipboardTextEl = document.getElementById('clipboard-text');
+const clipboardImageEl = document.getElementById('clipboard-image');
 const clipboardPanel = document.getElementById('clipboard-panel');
 const clipboardSendBtn = document.getElementById('clipboard-send');
 const clipboardGetBtn = document.getElementById('clipboard-get');
@@ -1145,6 +1145,89 @@ function setClipboardEnabled(on) {
 }
 clipboardToggleBtn.addEventListener('click', () => setClipboardEnabled(!clipboardEnabled));
 
+// Clipboard content travels as {text: string|null, image: Blob|null}.
+// fingerprint() identifies it so content that just crossed the bridge isn't
+// bounced straight back to where it came from.
+async function fingerprint(content) {
+    if (content.image) {
+        const digest = await crypto.subtle.digest('SHA-1', await content.image.arrayBuffer());
+        return 'image:' + [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    return content.text ? 'text:' + content.text : null;
+}
+function describe(content) {
+    return content.image ? 'image, ' + Math.round(content.image.size / 1024) + ' KB' : content.text.length + ' chars';
+}
+
+// The browser clipboard only takes PNG. The device hands out whatever the
+// copying app put there (JPEG from Photos, ...), so re-encode through a canvas.
+async function toPng(blob) {
+    if (blob.type === 'image/png') return blob;
+    const bitmap = await createImageBitmap(blob);
+    const c = document.createElement('canvas');
+    c.width = bitmap.width; c.height = bitmap.height;
+    c.getContext('2d').drawImage(bitmap, 0, 0);
+    bitmap.close();
+    return new Promise((resolve, reject) => c.toBlob(b => b ? resolve(b) : reject(new Error('PNG encode failed')), 'image/png'));
+}
+
+function showInPanel(content) {
+    clipboardTextEl.value = content.text || '';
+    if (clipboardImageEl.src) URL.revokeObjectURL(clipboardImageEl.src);
+    clipboardImageEl.classList.toggle('hidden', !content.image);
+    if (content.image) clipboardImageEl.src = URL.createObjectURL(content.image);
+    else clipboardImageEl.removeAttribute('src');
+}
+
+async function readHostClipboard() {
+    const content = {text: null, image: null};
+    if (navigator.clipboard.read) {
+        for (const item of await navigator.clipboard.read()) {
+            if (!content.image && item.types.includes('image/png')) content.image = await item.getType('image/png');
+            if (content.text === null && item.types.includes('text/plain')) {
+                content.text = await (await item.getType('text/plain')).text();
+            }
+        }
+    } else {
+        content.text = await navigator.clipboard.readText();
+    }
+    return content;
+}
+
+// Returns true when the content reached the browser clipboard. Browsers
+// refuse clipboard writes from a background document; the caller keeps
+// the content and retries on focus.
+async function writeHostClipboard(content) {
+    showInPanel(content);
+    if (!navigator.clipboard) return false;
+    try {
+        if (content.image) {
+            const parts = {'image/png': await toPng(content.image)};
+            if (content.text) parts['text/plain'] = new Blob([content.text], {type: 'text/plain'});
+            await navigator.clipboard.write([new ClipboardItem(parts)]);
+            // The browser re-encodes images it puts on the clipboard, so what
+            // readHostClipboard() returns later differs from what we wrote.
+            // Learn its fingerprint now, or the next focus sends it back.
+            lastShared = await fingerprint(await readHostClipboard());
+        } else {
+            await navigator.clipboard.writeText(content.text);
+        }
+        return true;
+    } catch (e) {
+        if (e.name !== 'NotAllowedError') log('clipboard write err: ' + (e.message || e));
+        return false;
+    }
+}
+
+async function fetchDeviceContent(j) {
+    const content = {text: j.text == null ? null : String(j.text), image: null};
+    if (j.image) {
+        const r = await fetch('/clipboard/image?seq=' + (j.seq || Date.now()), {cache: 'no-store'});
+        if (r.ok) content.image = await r.blob();
+    }
+    return content;
+}
+
 clipboardSendBtn.addEventListener('click', async () => {
     if (!clipboardEnabled) return;
     const text = clipboardTextEl.value;
@@ -1155,7 +1238,7 @@ clipboardSendBtn.addEventListener('click', async () => {
             body: JSON.stringify({text}),
         });
         if (!r.ok) { log('clipboard send: HTTP ' + r.status); return; }
-        log('clipboard → device (' + text.length + ' chars)');
+        log('clipboard to device (' + text.length + ' chars)');
     } catch (e) { log('clipboard send err: ' + (e.message || e)); }
 });
 
@@ -1164,68 +1247,51 @@ clipboardGetBtn.addEventListener('click', async () => {
     try {
         const r = await fetch('/clipboard', {cache: 'no-store'});
         if (!r.ok) { log('clipboard get: HTTP ' + r.status); return; }
-        const j = await r.json();
-        const text = j.text == null ? '' : String(j.text);
-        clipboardTextEl.value = text;
-        // Best-effort push to the browser clipboard. navigator.clipboard
-        // requires a secure context (https:// or localhost) AND a user
-        // gesture, which the button click satisfies. Failure is non-fatal
-        // since the user can still copy from the textarea by hand.
-        if (text && navigator.clipboard && navigator.clipboard.writeText) {
-            try {
-                await navigator.clipboard.writeText(text);
-                log('clipboard ← device (' + text.length + ' chars, also in browser clipboard)');
-                return;
-            } catch (e) { /* fall through to plain log */ }
-        }
-        log('clipboard ← device (' + text.length + ' chars)');
+        const content = await fetchDeviceContent(await r.json());
+        if (!content.text && !content.image) { showInPanel(content); log('device clipboard is empty'); return; }
+        lastShared = await fingerprint(content);
+        // Best-effort push to the browser clipboard: needs a secure context
+        // (https:// or localhost) and a user gesture, which the click is.
+        // The content is in the panel either way.
+        const written = await writeHostClipboard(content);
+        log('clipboard from device (' + describe(content) + (written ? ', also in browser clipboard)' : ')'));
     } catch (e) { log('clipboard get err: ' + (e.message || e)); }
 });
 
 // ----- Shared clipboard ("Sync" toggle). Device -> host: long-poll
 // /clipboard/events (the server holds the request until something is copied
-// on the device) and write the text into the browser clipboard. Host ->
-// device: read the browser clipboard whenever this page regains focus and
-// right before a paste shortcut is forwarded, and POST it when it changed.
-// Both directions need navigator.clipboard, i.e. a secure context (localhost
-// or --https); without it device copies still land in the textarea.
+// on the device) and write it into the browser clipboard. Host -> device:
+// read the browser clipboard whenever this page regains focus and right
+// before a paste shortcut is forwarded, and POST it when it changed. Both
+// directions need navigator.clipboard, i.e. a secure context (localhost or
+// --https); without it device copies still show up in the panel.
 const clipboardSyncBtn = document.getElementById('clipboard-sync');
 let clipboardSync = false;
 let clipboardSyncAbort = null;
-// Last text that crossed the bridge in either direction, so it isn't bounced
-// straight back to where it came from.
-let lastSharedText = null;
-// Device copy that couldn't be written because the page wasn't focused
-// (browsers refuse clipboard writes from a background document).
+let lastShared = null;        // fingerprint() of the last content that crossed the bridge
+// Device copy that couldn't be written because the page wasn't focused.
 let pendingHostWrite = null;
 
-async function writeHostClipboard(text) {
-    clipboardTextEl.value = text;
-    if (!(navigator.clipboard && navigator.clipboard.writeText)) return false;
-    try {
-        await navigator.clipboard.writeText(text);
-        pendingHostWrite = null;
-        return true;
-    } catch (e) {
-        pendingHostWrite = text;
-        return false;
-    }
-}
-
 async function pushHostClipboard() {
-    if (!clipboardSync || !(navigator.clipboard && navigator.clipboard.readText)) return;
-    let text;
-    try { text = await navigator.clipboard.readText(); } catch (e) { return; }
-    if (!text || text === lastSharedText) return;
-    lastSharedText = text;
+    if (!clipboardSync || !navigator.clipboard) return;
+    let content, mark;
     try {
-        const r = await fetch('/clipboard', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({text}),
-        });
+        content = await readHostClipboard();
+        mark = await fingerprint(content);
+    } catch (e) { return; }
+    if (!mark || mark === lastShared) return;
+    lastShared = mark;
+    try {
+        const r = content.image
+            ? await fetch('/clipboard/image', {method: 'POST', headers: {'Content-Type': 'image/png'}, body: content.image})
+            : await fetch('/clipboard', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: content.text}),
+            });
         if (!r.ok) { log('clipboard sync: HTTP ' + r.status); return; }
-        log('clipboard sync → device (' + text.length + ' chars)');
+        showInPanel(content);
+        log('clipboard sync to device (' + describe(content) + ')');
     } catch (e) { log('clipboard sync err: ' + (e.message || e)); }
 }
 
@@ -1238,10 +1304,14 @@ async function clipboardSyncLoop(signal) {
             if (!r.ok) throw new Error('HTTP ' + r.status);
             const j = await r.json();
             since = j.seq;
-            if (j.text == null || j.text === lastSharedText) continue;
-            lastSharedText = j.text;
-            const written = await writeHostClipboard(j.text);
-            log('clipboard sync ← device (' + j.text.length + ' chars' +
+            if (j.text == null && !j.image) continue;
+            const content = await fetchDeviceContent(j);
+            const mark = await fingerprint(content);
+            if (!mark || mark === lastShared) continue;
+            lastShared = mark;
+            const written = await writeHostClipboard(content);
+            pendingHostWrite = written ? null : content;
+            log('clipboard sync from device (' + describe(content) +
                 (written ? ')' : ', lands in the clipboard when this page is focused)'));
         } catch (e) {
             if (signal.aborted) return;
@@ -1259,17 +1329,17 @@ function setClipboardSync(on) {
     if (clipboardSyncAbort) { clipboardSyncAbort.abort(); clipboardSyncAbort = null; }
     if (!on) { pendingHostWrite = null; return; }
     if (!navigator.clipboard) {
-        log('clipboard sync: no browser clipboard access (needs localhost or --https); device copies only fill the text box');
+        log('clipboard sync: no browser clipboard access (needs localhost or --https); device copies only show in the panel');
     }
     clipboardSyncAbort = new AbortController();
     clipboardSyncLoop(clipboardSyncAbort.signal);
     pushHostClipboard();
 }
 clipboardSyncBtn.addEventListener('click', () => setClipboardSync(!clipboardSync));
-window.addEventListener('focus', () => {
+window.addEventListener('focus', async () => {
     if (!clipboardSync) return;
-    if (pendingHostWrite !== null) writeHostClipboard(pendingHostWrite);
-    else pushHostClipboard();
+    if (pendingHostWrite === null) { pushHostClipboard(); return; }
+    if (await writeHostClipboard(pendingHostWrite)) pendingHostWrite = null;
 });
 try { if (localStorage.getItem('clipboardSync') === 'true') setClipboardSync(true); } catch (e) {}
 

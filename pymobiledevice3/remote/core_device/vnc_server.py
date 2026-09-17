@@ -72,7 +72,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
     IndigoHIDService,
     UniversalHIDServiceService,
 )
-from pymobiledevice3.remote.core_device.pasteboard_service import PasteboardMonitor
+from pymobiledevice3.remote.core_device.pasteboard_service import PasteboardContent, PasteboardMonitor
 from pymobiledevice3.remote.core_device.screen_stream import UdpMediaTransport, depacketize_hevc, open_media_receiver
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
@@ -1338,7 +1338,11 @@ class VncStreamServer:
         client.outbox.append(message)
         client.wants_update.set()  # wakes the send loop, which flushes the outbox first
 
-    def _on_device_clipboard(self, text: str) -> None:
+    def _on_device_clipboard(self, content: PasteboardContent) -> None:
+        # RFB only carries text; an image-only copy has nothing to offer.
+        text = content.text
+        if text is None:
+            return
         self._clipboard_text = text
         for client in self._clients:
             if client.extended_clipboard:

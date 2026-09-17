@@ -58,9 +58,10 @@ from pymobiledevice3.remote.core_device.hid_service import (
 )
 from pymobiledevice3.remote.core_device.orientation_service import OrientationService
 from pymobiledevice3.remote.core_device.pasteboard_service import (
+    PasteboardContent,
     PasteboardMonitor,
     PasteboardService,
-    snapshot_text,
+    data_item,
 )
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.power_assertion import PowerAssertionService
@@ -835,7 +836,7 @@ class ScreenStreamServer:
         # the device-side copies so a poller can tell what it has already seen.
         self._clipboard_monitor: Optional[PasteboardMonitor] = None
         self._clipboard_seq = 0
-        self._clipboard_text: Optional[str] = None
+        self._clipboard_content = PasteboardContent()
         self._clipboard_changed = asyncio.Event()
         self._clipboard_pollers = 0
         self._clipboard_idle_handle: Optional[asyncio.TimerHandle] = None
@@ -1997,9 +1998,9 @@ class ScreenStreamServer:
         return await reader.readexactly(min(length, limit))
 
     # ----- shared clipboard --------------------------------------------------
-    def _on_device_clipboard(self, text: str) -> None:
+    def _on_device_clipboard(self, content: PasteboardContent) -> None:
         self._clipboard_seq += 1
-        self._clipboard_text = text
+        self._clipboard_content = content
         changed, self._clipboard_changed = self._clipboard_changed, asyncio.Event()
         changed.set()
 
@@ -2019,12 +2020,40 @@ class ScreenStreamServer:
             self._pli_tasks.add(task)  # piggy-back on the existing keep-alive set
             task.add_done_callback(self._pli_tasks.discard)
 
+    @staticmethod
+    def _clipboard_json(content: Optional[PasteboardContent]) -> dict[str, Any]:
+        if content is None or not content:
+            return {"text": None, "image": None}
+        image: Optional[dict[str, Any]] = None
+        if content.image is not None:
+            image = {"type": content.image_mime, "size": len(content.image)}
+        return {"text": content.text, "image": image}
+
+    async def _clipboard_set(self, *, text: Optional[str] = None, image: Optional[bytes] = None) -> None:
+        """Copy host text, or a host PNG, onto the device pasteboard."""
+        monitor = self._clipboard_monitor
+        if monitor is not None:
+            # Same connection as the change subscription, so the monitor can
+            # tell this copy's echo from a device copy.
+            if image is not None:
+                await monitor.set_image(image)
+            else:
+                await monitor.set_text(text or "")
+            return
+        async with PasteboardService(self._rsd) as pb:
+            if image is not None:
+                await pb.set([data_item("public.png", image)])
+            else:
+                await pb.set_text(text or "")
+
     async def _clipboard_wait(self, since: Optional[int]) -> dict[str, Any]:
         """Long-poll body for ``GET /clipboard/events``.
 
-        Returns ``{"seq": n, "text": ...}``; ``text`` is ``None`` when nothing was copied on the
-        device since ``since`` (first poll, or the wait timed out). What the device held before the
-        viewer turned sync on is deliberately never reported.
+        Returns ``{"seq": n, "text": ..., "image": ...}``; ``text`` and ``image`` are ``None`` when
+        nothing was copied on the device since ``since`` (first poll, or the wait timed out).
+        ``image`` is ``{"type": <mime>, "size": n}`` and the bytes are served by ``GET
+        /clipboard/image``. What the device held before the viewer turned sync on is deliberately
+        never reported.
         """
         if self._clipboard_idle_handle is not None:
             self._clipboard_idle_handle.cancel()
@@ -2038,7 +2067,7 @@ class ScreenStreamServer:
                 with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(self._clipboard_changed.wait(), _CLIPBOARD_POLL_SECONDS)
             fresh = since is not None and since != self._clipboard_seq
-            return {"seq": self._clipboard_seq, "text": self._clipboard_text if fresh else None}
+            return {"seq": self._clipboard_seq, **self._clipboard_json(self._clipboard_content if fresh else None)}
         finally:
             self._clipboard_pollers -= 1
             if self._clipboard_pollers == 0:
@@ -2351,18 +2380,23 @@ class ScreenStreamServer:
             await writer.drain()
             writer.close()
             return
-        if path == "/clipboard":
-            # GET pulls the device pasteboard ({"text": "..."|null}); POST sets
-            # it from JSON body {"text": "..."}. Bytes-only text path -- non-text
-            # UTIs (images, files) aren't exposed here. The service is opened
-            # per-request: connection is cheap and pasteboard ops are sporadic,
-            # not worth holding a long-lived RemoteXPC channel for.
+        if path in ("/clipboard", "/clipboard/image"):
+            # /clipboard: GET pulls the device pasteboard ({"text": ..., "image":
+            # {"type", "size"}|null}); POST sets it from JSON {"text": "..."}.
+            # /clipboard/image: GET serves the bytes of the last image seen (by
+            # that GET or by a sync event); POST sets the pasteboard to the PNG in
+            # the body. Without a running sync monitor the service is opened
+            # per-request: connection is cheap and pasteboard ops are sporadic.
             try:
-                if method == "GET":
+                content_type = b"application/json"
+                if path == "/clipboard" and method == "GET":
                     async with PasteboardService(self._rsd) as pb:
-                        snapshot = await pb.get()
-                    resp_body = json.dumps({"text": snapshot_text(snapshot)}).encode()
-                elif method == "POST":
+                        content = PasteboardContent.from_snapshot(await pb.get())
+                    # Kept for GET /clipboard/image; the sync sequence is not
+                    # bumped, so this never reaches a polling viewer by itself.
+                    self._clipboard_content = content
+                    resp_body = json.dumps(self._clipboard_json(content)).encode()
+                elif path == "/clipboard" and method == "POST":
                     body = await self._read_body(reader, headers, limit=_CLIPBOARD_MAX_BODY)
                     try:
                         text = str(json.loads(body)["text"])
@@ -2370,15 +2404,28 @@ class ScreenStreamServer:
                         writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
                         await writer.drain()
                         writer.close()
-                        logger.debug("clipboard POST: bad body %r (%s)", body, exc)
+                        logger.debug("clipboard POST: bad body %r (%s)", body[:80], exc)
                         return
-                    if self._clipboard_monitor is not None:
-                        # Same connection as the change subscription, so the
-                        # monitor can tell this copy's echo from a device copy.
-                        await self._clipboard_monitor.set_text(text)
-                    else:
-                        async with PasteboardService(self._rsd) as pb:
-                            await pb.set_text(text)
+                    await self._clipboard_set(text=text)
+                    resp_body = b'{"ok":true}'
+                elif path == "/clipboard/image" and method == "GET":
+                    content = self._clipboard_content
+                    if content.image is None:
+                        writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        await writer.drain()
+                        writer.close()
+                        return
+                    resp_body = content.image
+                    content_type = (content.image_mime or "application/octet-stream").encode()
+                elif path == "/clipboard/image" and method == "POST":
+                    body = await self._read_body(reader, headers, limit=_CLIPBOARD_MAX_BODY)
+                    if not body.startswith(b"\x89PNG\r\n\x1a\n"):
+                        writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        await writer.drain()
+                        writer.close()
+                        logger.debug("clipboard image POST: not a (complete) PNG, %d bytes", len(body))
+                        return
+                    await self._clipboard_set(image=body)
                     resp_body = b'{"ok":true}'
                 else:
                     writer.write(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -2387,7 +2434,7 @@ class ScreenStreamServer:
                     return
                 writer.write(
                     b"HTTP/1.1 200 OK\r\n"
-                    b"Content-Type: application/json\r\n"
+                    b"Content-Type: " + content_type + b"\r\n"
                     b"Cache-Control: no-store\r\n"
                     b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
                     b"Connection: close\r\n\r\n" + resp_body
