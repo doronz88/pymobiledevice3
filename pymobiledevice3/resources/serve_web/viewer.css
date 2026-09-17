@@ -32,6 +32,7 @@
             padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap}
  button.btn:hover{background:#333}
  button.btn:active{background:#4a4a4a}
+ button.btn.active{background:#1f3a2a;border-color:#3d7a55;color:#c8f0d6}
  /* Side trays: vertical button column flanking the stage. Collapsible
     to a thin strip with just the toggle when the user wants more
     canvas room. */

@@ -26,6 +26,7 @@ import socket
 import ssl
 import tempfile
 import time
+import urllib.parse
 import uuid
 from collections import deque
 from collections.abc import Awaitable
@@ -56,7 +57,11 @@ from pymobiledevice3.remote.core_device.hid_service import (
     UniversalHIDServiceService,
 )
 from pymobiledevice3.remote.core_device.orientation_service import OrientationService
-from pymobiledevice3.remote.core_device.pasteboard_service import PasteboardService, snapshot_text
+from pymobiledevice3.remote.core_device.pasteboard_service import (
+    PasteboardMonitor,
+    PasteboardService,
+    snapshot_text,
+)
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.power_assertion import PowerAssertionService
 from pymobiledevice3.tunneld.api import get_tunneld_device_by_udid
@@ -298,6 +303,13 @@ _VIEWER_DIR = importlib.resources.files(pymobiledevice3.resources) / "serve_web"
 VIEWER_HTML = (_VIEWER_DIR / "viewer.html").read_bytes()
 VIEWER_CSS = (_VIEWER_DIR / "viewer.css").read_bytes()
 VIEWER_JS_TEMPLATE = (_VIEWER_DIR / "viewer.js").read_bytes()
+
+# /clipboard/events long-poll: how long one request waits for a device-side copy, how long the
+# pasteboard monitor outlives its last poller (a viewer re-polls immediately, so a gap this long
+# means every syncing viewer is gone), and the largest host clipboard accepted by POST /clipboard.
+_CLIPBOARD_POLL_SECONDS = 25.0
+_CLIPBOARD_IDLE_SECONDS = 10.0
+_CLIPBOARD_MAX_BODY = 4 * 1024 * 1024
 
 
 # ---------------------------------------------------------------------------
@@ -817,6 +829,16 @@ class ScreenStreamServer:
         # connections don't trample each other when the panel refreshes
         # mid-write.
         self._accessibility_lock = asyncio.Lock()
+
+        # Shared clipboard (the viewer's "Sync" toggle). The monitor runs only
+        # while a viewer long-polls /clipboard/events; ``_clipboard_seq`` numbers
+        # the device-side copies so a poller can tell what it has already seen.
+        self._clipboard_monitor: Optional[PasteboardMonitor] = None
+        self._clipboard_seq = 0
+        self._clipboard_text: Optional[str] = None
+        self._clipboard_changed = asyncio.Event()
+        self._clipboard_pollers = 0
+        self._clipboard_idle_handle: Optional[asyncio.TimerHandle] = None
 
         # Background task that holds an IOPMAssertion on the device so
         # iOS auto-lock doesn't kick in mid-session. Without this the
@@ -1964,7 +1986,7 @@ class ScreenStreamServer:
         )
 
     @staticmethod
-    async def _read_body(reader: asyncio.StreamReader, headers: dict[str, str]) -> bytes:
+    async def _read_body(reader: asyncio.StreamReader, headers: dict[str, str], limit: int = 65536) -> bytes:
         try:
             length = int(headers.get("content-length", "0"))
         except ValueError:
@@ -1972,7 +1994,57 @@ class ScreenStreamServer:
         if length <= 0:
             return b""
         # Cap the body to a sane size — touch/button/key POSTs are tens of bytes.
-        return await reader.readexactly(min(length, 65536))
+        return await reader.readexactly(min(length, limit))
+
+    # ----- shared clipboard --------------------------------------------------
+    def _on_device_clipboard(self, text: str) -> None:
+        self._clipboard_seq += 1
+        self._clipboard_text = text
+        changed, self._clipboard_changed = self._clipboard_changed, asyncio.Event()
+        changed.set()
+
+    async def _stop_clipboard_monitor(self) -> None:
+        if self._clipboard_idle_handle is not None:
+            self._clipboard_idle_handle.cancel()
+            self._clipboard_idle_handle = None
+        monitor, self._clipboard_monitor = self._clipboard_monitor, None
+        if monitor is not None:
+            await monitor.stop()
+
+    def _clipboard_idle_check(self) -> None:
+        self._clipboard_idle_handle = None
+        if self._clipboard_pollers == 0 and self._clipboard_monitor is not None:
+            logger.debug("no clipboard-sync viewer left; stopping the pasteboard monitor")
+            task = asyncio.create_task(self._stop_clipboard_monitor())
+            self._pli_tasks.add(task)  # piggy-back on the existing keep-alive set
+            task.add_done_callback(self._pli_tasks.discard)
+
+    async def _clipboard_wait(self, since: Optional[int]) -> dict[str, Any]:
+        """Long-poll body for ``GET /clipboard/events``.
+
+        Returns ``{"seq": n, "text": ...}``; ``text`` is ``None`` when nothing was copied on the
+        device since ``since`` (first poll, or the wait timed out). What the device held before the
+        viewer turned sync on is deliberately never reported.
+        """
+        if self._clipboard_idle_handle is not None:
+            self._clipboard_idle_handle.cancel()
+            self._clipboard_idle_handle = None
+        if self._clipboard_monitor is None:
+            self._clipboard_monitor = PasteboardMonitor(self._rsd, self._on_device_clipboard)
+            await self._clipboard_monitor.start()
+        self._clipboard_pollers += 1
+        try:
+            if since is not None and since == self._clipboard_seq:
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(self._clipboard_changed.wait(), _CLIPBOARD_POLL_SECONDS)
+            fresh = since is not None and since != self._clipboard_seq
+            return {"seq": self._clipboard_seq, "text": self._clipboard_text if fresh else None}
+        finally:
+            self._clipboard_pollers -= 1
+            if self._clipboard_pollers == 0:
+                self._clipboard_idle_handle = asyncio.get_running_loop().call_later(
+                    _CLIPBOARD_IDLE_SECONDS, self._clipboard_idle_check
+                )
 
     # ----- HTTP request handler ---------------------------------------------
     async def _handle_http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -2251,6 +2323,34 @@ class ScreenStreamServer:
             await writer.drain()
             writer.close()
             return
+        if path == "/clipboard/events" and method == "GET":
+            query = urllib.parse.parse_qs(target.partition("?")[2])
+            try:
+                since: Optional[int] = int(query["since"][0])
+            except (KeyError, ValueError):
+                since = None
+            try:
+                resp_body = json.dumps(await self._clipboard_wait(since)).encode()
+            except Exception as exc:
+                logger.exception("clipboard events endpoint failed")
+                err = f"clipboard error: {exc}".encode()
+                writer.write(
+                    b"HTTP/1.1 500 Internal\r\n"
+                    b"Content-Type: text/plain\r\n"
+                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + err
+                )
+            else:
+                writer.write(
+                    b"HTTP/1.1 200 OK\r\n"
+                    b"Content-Type: application/json\r\n"
+                    b"Cache-Control: no-store\r\n"
+                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
+                    b"Connection: close\r\n\r\n" + resp_body
+                )
+            await writer.drain()
+            writer.close()
+            return
         if path == "/clipboard":
             # GET pulls the device pasteboard ({"text": "..."|null}); POST sets
             # it from JSON body {"text": "..."}. Bytes-only text path -- non-text
@@ -2263,7 +2363,7 @@ class ScreenStreamServer:
                         snapshot = await pb.get()
                     resp_body = json.dumps({"text": snapshot_text(snapshot)}).encode()
                 elif method == "POST":
-                    body = await self._read_body(reader, headers)
+                    body = await self._read_body(reader, headers, limit=_CLIPBOARD_MAX_BODY)
                     try:
                         text = str(json.loads(body)["text"])
                     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -2272,8 +2372,13 @@ class ScreenStreamServer:
                         writer.close()
                         logger.debug("clipboard POST: bad body %r (%s)", body, exc)
                         return
-                    async with PasteboardService(self._rsd) as pb:
-                        await pb.set_text(text)
+                    if self._clipboard_monitor is not None:
+                        # Same connection as the change subscription, so the
+                        # monitor can tell this copy's echo from a device copy.
+                        await self._clipboard_monitor.set_text(text)
+                    else:
+                        async with PasteboardService(self._rsd) as pb:
+                            await pb.set_text(text)
                     resp_body = b'{"ok":true}'
                 else:
                     writer.write(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -2782,6 +2887,8 @@ class ScreenStreamServer:
                     return
             old_rsd = self._rsd
             self._rsd = new_rsd
+            # Bound to the old RSD; the next /clipboard/events poll starts a fresh one.
+            await self._stop_clipboard_monitor()
             with contextlib.suppress(Exception):
                 await old_rsd.close()
             # Clear cached codec string so /codec re-derives it from the
@@ -3023,6 +3130,8 @@ class ScreenStreamServer:
             # the channel so the reader exits silently. Any in-flight
             # /accessibility request gets an exception out of its
             # await audit.* call and falls through to its try/except.
+            logger.debug("shutdown: stopping clipboard monitor")
+            await _bounded(self._stop_clipboard_monitor(), "_stop_clipboard_monitor")
             logger.debug("shutdown: closing accessibility audit")
             await _bounded(self._stop_accessibility(), "_stop_accessibility")
             # Cancel any lingering connection-handler tasks that the

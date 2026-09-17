@@ -276,6 +276,7 @@ const CODE_TO_HID = (() => {
     return m;
 })();
 
+const HID_KEY_V = 0x19;
 const pressedUsages = new Set();
 let lastKeyPost = Promise.resolve();
 function postKeys() {
@@ -366,6 +367,11 @@ window.addEventListener('keydown', (e) => {
     if (usage === undefined) return;
     e.preventDefault();
     if (e.repeat) return;            // host autorepeat -- the device does its own
+    // Paste shortcut with the shared clipboard on: get the host clipboard onto
+    // the device BEFORE the device sees the V, so it pastes what was copied here.
+    if (usage === HID_KEY_V && (e.metaKey || e.ctrlKey)) {
+        lastKeyPost = lastKeyPost.then(pushHostClipboard);
+    }
     if (!pressedUsages.has(usage)) {
         pressedUsages.add(usage);
         postKeys();
@@ -1070,6 +1076,97 @@ clipboardGetBtn.addEventListener('click', async () => {
         log('clipboard ← device (' + text.length + ' chars)');
     } catch (e) { log('clipboard get err: ' + (e.message || e)); }
 });
+
+// ----- Shared clipboard ("Sync" toggle). Device -> host: long-poll
+// /clipboard/events (the server holds the request until something is copied
+// on the device) and write the text into the browser clipboard. Host ->
+// device: read the browser clipboard whenever this page regains focus and
+// right before a paste shortcut is forwarded, and POST it when it changed.
+// Both directions need navigator.clipboard, i.e. a secure context (localhost
+// or --https); without it device copies still land in the textarea.
+const clipboardSyncBtn = document.getElementById('clipboard-sync');
+let clipboardSync = false;
+let clipboardSyncAbort = null;
+// Last text that crossed the bridge in either direction, so it isn't bounced
+// straight back to where it came from.
+let lastSharedText = null;
+// Device copy that couldn't be written because the page wasn't focused
+// (browsers refuse clipboard writes from a background document).
+let pendingHostWrite = null;
+
+async function writeHostClipboard(text) {
+    clipboardTextEl.value = text;
+    if (!(navigator.clipboard && navigator.clipboard.writeText)) return false;
+    try {
+        await navigator.clipboard.writeText(text);
+        pendingHostWrite = null;
+        return true;
+    } catch (e) {
+        pendingHostWrite = text;
+        return false;
+    }
+}
+
+async function pushHostClipboard() {
+    if (!clipboardSync || !(navigator.clipboard && navigator.clipboard.readText)) return;
+    let text;
+    try { text = await navigator.clipboard.readText(); } catch (e) { return; }
+    if (!text || text === lastSharedText) return;
+    lastSharedText = text;
+    try {
+        const r = await fetch('/clipboard', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text}),
+        });
+        if (!r.ok) { log('clipboard sync: HTTP ' + r.status); return; }
+        log('clipboard sync → device (' + text.length + ' chars)');
+    } catch (e) { log('clipboard sync err: ' + (e.message || e)); }
+}
+
+async function clipboardSyncLoop(signal) {
+    let since = null;
+    while (!signal.aborted) {
+        try {
+            const url = '/clipboard/events' + (since === null ? '' : '?since=' + since);
+            const r = await fetch(url, {cache: 'no-store', signal});
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const j = await r.json();
+            since = j.seq;
+            if (j.text == null || j.text === lastSharedText) continue;
+            lastSharedText = j.text;
+            const written = await writeHostClipboard(j.text);
+            log('clipboard sync ← device (' + j.text.length + ' chars' +
+                (written ? ')' : ', lands in the clipboard when this page is focused)'));
+        } catch (e) {
+            if (signal.aborted) return;
+            log('clipboard sync err: ' + (e.message || e));
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+}
+
+function setClipboardSync(on) {
+    clipboardSync = on;
+    clipboardSyncBtn.textContent = 'Sync: ' + (on ? 'on' : 'off');
+    clipboardSyncBtn.classList.toggle('active', on);
+    try { localStorage.setItem('clipboardSync', on ? 'true' : 'false'); } catch (e) {}
+    if (clipboardSyncAbort) { clipboardSyncAbort.abort(); clipboardSyncAbort = null; }
+    if (!on) { pendingHostWrite = null; return; }
+    if (!navigator.clipboard) {
+        log('clipboard sync: no browser clipboard access (needs localhost or --https); device copies only fill the text box');
+    }
+    clipboardSyncAbort = new AbortController();
+    clipboardSyncLoop(clipboardSyncAbort.signal);
+    pushHostClipboard();
+}
+clipboardSyncBtn.addEventListener('click', () => setClipboardSync(!clipboardSync));
+window.addEventListener('focus', () => {
+    if (!clipboardSync) return;
+    if (pendingHostWrite !== null) writeHostClipboard(pendingHostWrite);
+    else pushHostClipboard();
+});
+try { if (localStorage.getItem('clipboardSync') === 'true') setClipboardSync(true); } catch (e) {}
 
 async function run() {
     log('userAgent: ' + navigator.userAgent.slice(0, 80));

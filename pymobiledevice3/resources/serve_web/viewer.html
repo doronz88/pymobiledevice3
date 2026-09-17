@@ -53,6 +53,7 @@
   <div class="tray-content">
    <h3>Clipboard
     <button class="btn" id="clipboard-toggle" type="button" title="Toggle the clipboard panel. When off, send/get are disabled.">on</button>
+    <button class="btn" id="clipboard-sync" type="button" title="Share the clipboard: text copied on the device lands in this computer's clipboard, and text copied here is pasted on the device.">Sync: off</button>
    </h3>
    <div id="clipboard-panel">
     <textarea id="clipboard-text" rows="3" placeholder="Text staged for device / device clipboard contents"></textarea>
@@ -110,7 +111,7 @@
    <tr><td>?</td><td>Show this help</td></tr>
    <tr><td>Esc</td><td>Close this help</td></tr>
   </table>
-  <p>Click + drag on the canvas to interact with the touchscreen. Letter / arrow / modifier keys are forwarded to the device whenever the canvas has focus — a green keyboard badge in the top-right of the viewport lights up while that's the case. Click outside the canvas (a tray button, the clipboard textarea, anywhere on the page chrome) to drop capture so Ctrl-L, Cmd-W and other browser shortcuts work normally; clicking back onto the canvas resumes capture. Rotate ↺ / ↻ flip the device 90° (both the device and the canvas). The right-side panel toggles iOS appearance + accessibility knobs (light/dark, dynamic text size, reduce motion, reduce transparency, increase contrast, button borders, color filter, liquid-glass opacity) via the CoreDevice <code>ConfigurationService</code>.</p>
+  <p>Click + drag on the canvas to interact with the touchscreen. Letter / arrow / modifier keys are forwarded to the device whenever the canvas has focus — a green keyboard badge in the top-right of the viewport lights up while that's the case. Click outside the canvas (a tray button, the clipboard textarea, anywhere on the page chrome) to drop capture so Ctrl-L, Cmd-W and other browser shortcuts work normally; clicking back onto the canvas resumes capture. Clipboard <b>Sync</b> shares the clipboard both ways: text copied on the device lands in this computer's clipboard (while this page is focused; otherwise as soon as you return to it), and whatever you copied here is on the device by the time you paste there. It needs a secure context (localhost or <code>--https</code>) and the browser's clipboard permission. Rotate ↺ / ↻ flip the device 90° (both the device and the canvas). The right-side panel toggles iOS appearance + accessibility knobs (light/dark, dynamic text size, reduce motion, reduce transparency, increase contrast, button borders, color filter, liquid-glass opacity) via the CoreDevice <code>ConfigurationService</code>.</p>
  </div>
 </div>
 <script src="/viewer.js"></script>
