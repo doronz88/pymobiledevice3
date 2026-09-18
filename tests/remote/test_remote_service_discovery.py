@@ -75,3 +75,28 @@ def test_require_feature_missing_service_raises_invalid_service() -> None:
     rsd = make_rsd({})
     with pytest.raises(InvalidServiceError):
         rsd.require_feature(APP_SERVICE, "com.apple.coredevice.feature.listapps")
+
+
+async def test_another_rsd_peer_leaves_advertised_services_reachable(service_provider) -> None:
+    # iOS 27.2+ remembers the last RSD peer's handshake UUID per tunnel; a peer presenting a
+    # different one makes the device re-attach, closing every service listener it advertised to
+    # either peer (#1966).
+    if not isinstance(service_provider, RemoteServiceDiscoveryService):
+        pytest.skip("requires an RSD tunnel")
+    for attempt in range(2):
+        peer = RemoteServiceDiscoveryService(
+            service_provider.service.address, open_connection=service_provider.open_connection
+        )
+        try:
+            # connect() itself opens the lockdown service advertised to the new peer
+            await peer.connect()
+        except ConnectionResetError:
+            # Unrelated to the UUID: on a fresh native tunnel remoted may be dialing the single RSD
+            # slot at the same moment, and the device resets whichever connection loses.
+            if attempt:
+                raise
+            continue
+        await peer.close()
+        break
+    service = await service_provider.start_lockdown_service("com.apple.mobile.lockdown.remote.trusted")
+    await service.close()

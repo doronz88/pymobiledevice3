@@ -1,4 +1,5 @@
 import asyncio
+import platform
 import uuid
 from types import MethodType
 from typing import Any, cast
@@ -7,6 +8,8 @@ import pytest
 from hyperframe.frame import DataFrame, Frame, HeadersFrame, RstStreamFrame, SettingsFrame, WindowUpdateFrame
 
 from pymobiledevice3.exceptions import StreamClosedError
+from pymobiledevice3.pair_records import generate_host_id
+from pymobiledevice3.remote import remotexpc
 from pymobiledevice3.remote.remotexpc import (
     DEFAULT_PEER_WINDOW_SIZE,
     DEFAULT_SETTINGS_INITIAL_WINDOW_SIZE,
@@ -310,18 +313,93 @@ async def test_send_request_keeps_small_messages_in_one_frame():
     assert len(writer.writes) == 1 and writer.drain_calls == 1
 
 
+def _handshake_uuids(writer: FakeWriter) -> list[uuid.UUID]:
+    return [
+        decode_xpc_object(XpcWrapper.parse(frame.data).message.payload.obj)["UUID"]
+        for frame in _parse_written_frames(writer)
+    ]
+
+
 @pytest.mark.asyncio
 async def test_device_handshake_identifies_as_the_given_peer():
-    # A connection replacing another peer's on a shared RSD endpoint has to present that peer's
-    # UUID (see native_tunnel.host_remoted_uuid); the default stays a fresh random one.
     connection, writer = _sending_connection()
     peer_uuid = uuid.UUID("c9a6e86b-beea-45ea-9332-86f295536960")
 
     await connection.send_device_handshake(peer_uuid)
+
+    assert _handshake_uuids(writer) == [peer_uuid]
+
+
+@pytest.mark.asyncio
+async def test_device_handshake_defaults_to_one_stable_host_identity(monkeypatch: pytest.MonkeyPatch):
+    # iOS 27.2+ remembers the last RSD peer's UUID per tunnel and drops every advertised service
+    # listener when the next peer's differs, so separate connections (and separate processes) must
+    # all present the same one (#1966).
+    monkeypatch.setattr(remotexpc, "_IS_DARWIN", False)
+    first, first_writer = _sending_connection()
+    second, second_writer = _sending_connection()
+
+    await first.send_device_handshake()
+    await second.send_device_handshake()
+
+    assert _handshake_uuids(first_writer) == _handshake_uuids(second_writer) == [uuid.UUID(generate_host_id())]
+
+
+@pytest.mark.asyncio
+async def test_device_handshake_defaults_to_the_host_remoted_on_macos(monkeypatch: pytest.MonkeyPatch):
+    # On macOS the endpoint may be shared with remoted (the native tunnel, the NCM interface), and
+    # remoted keeps reconnecting with its own UUID -- so that is the only identity that holds.
+    monkeypatch.setattr(remotexpc, "_IS_DARWIN", True)
+    monkeypatch.setattr(remotexpc, "host_remoted_uuid", lambda: _HOST_REMOTED_UUID)
+    connection, writer = _sending_connection()
+
     await connection.send_device_handshake()
 
-    given, random_ = (
-        decode_xpc_object(XpcWrapper.parse(frame.data).message.payload.obj) for frame in _parse_written_frames(writer)
-    )
-    assert given["UUID"] == peer_uuid
-    assert isinstance(random_["UUID"], uuid.UUID) and random_["UUID"] != peer_uuid
+    assert _handshake_uuids(writer) == [_HOST_REMOTED_UUID]
+
+
+@pytest.mark.asyncio
+async def test_device_handshake_falls_back_to_the_host_id_without_remotectl(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(remotexpc, "_IS_DARWIN", True)
+    monkeypatch.setattr(remotexpc, "host_remoted_uuid", lambda: None)
+    connection, writer = _sending_connection()
+
+    await connection.send_device_handshake()
+
+    assert _handshake_uuids(writer) == [uuid.UUID(generate_host_id())]
+
+
+_HOST_REMOTED_UUID = uuid.UUID("c9a6e86b-beea-45ea-9332-86f295536960")
+
+# Head of a real ``remotectl dumpstate``: the host's own identity, then each attached device.
+_REMOTECTL_DUMPSTATE = """Local device
+\tUUID: C9A6E86B-BEEA-45EA-9332-86F295536960
+\tMessaging Protocol Version: 7
+\tProduct Type: Mac16,11
+\tServices:
+\t\tcom.apple.osanalytics.logRelay
+Found ncm-1 (ncm-device)
+\tState: connected (connectable)
+\tUUID: 687A4CFC-3E83-4CCD-B7E2-C9223A3782DD
+\tProduct Type: iPhone18,4
+"""
+
+
+def test_parse_remotectl_local_uuid_takes_the_host_not_an_attached_device() -> None:
+    assert remotexpc.parse_remotectl_local_uuid(_REMOTECTL_DUMPSTATE) == _HOST_REMOTED_UUID
+
+
+@pytest.mark.parametrize("text", ["", "Found ncm-1 (ncm-device)\n\tUUID: 687A4CFC-3E83-4CCD-B7E2-C9223A3782DD\n"])
+def test_parse_remotectl_local_uuid_is_none_without_a_local_device(text: str) -> None:
+    assert remotexpc.parse_remotectl_local_uuid(text) is None
+
+
+def test_host_remoted_uuid_is_none_when_remotectl_is_unusable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(remotexpc, "_REMOTECTL_PATH", "/nonexistent/remotectl")
+    assert remotexpc.host_remoted_uuid() is None
+
+
+def test_host_remoted_uuid_reads_this_hosts_remoted() -> None:
+    if platform.system() != "Darwin":
+        pytest.skip("remotectl is macOS-only")
+    assert isinstance(remotexpc.host_remoted_uuid(), uuid.UUID)
