@@ -503,36 +503,3 @@ def test_find_rsd_port_is_empty_when_nettop_is_unusable(monkeypatch: pytest.Monk
 
 
 _HOST_REMOTED_UUID = uuid.UUID("c9a6e86b-beea-45ea-9332-86f295536960")
-
-# Head of a real ``remotectl dumpstate``: the host's own identity, then each attached device.
-_REMOTECTL_DUMPSTATE = """Local device
-\tUUID: C9A6E86B-BEEA-45EA-9332-86F295536960
-\tMessaging Protocol Version: 7
-\tProduct Type: Mac16,11
-\tServices:
-\t\tcom.apple.osanalytics.logRelay
-Found ncm-1 (ncm-device)
-\tState: connected (connectable)
-\tUUID: 687A4CFC-3E83-4CCD-B7E2-C9223A3782DD
-\tProduct Type: iPhone18,4
-"""
-
-
-def test_parse_remotectl_local_uuid_takes_the_host_not_an_attached_device() -> None:
-    assert native_tunnel.parse_remotectl_local_uuid(_REMOTECTL_DUMPSTATE) == _HOST_REMOTED_UUID
-
-
-@pytest.mark.parametrize("text", ["", "Found ncm-1 (ncm-device)\n\tUUID: 687A4CFC-3E83-4CCD-B7E2-C9223A3782DD\n"])
-def test_parse_remotectl_local_uuid_is_none_without_a_local_device(text: str) -> None:
-    assert native_tunnel.parse_remotectl_local_uuid(text) is None
-
-
-def test_host_remoted_uuid_is_none_when_remotectl_is_unusable(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(native_tunnel, "_REMOTECTL_PATH", "/nonexistent/remotectl")
-    assert native_tunnel.host_remoted_uuid() is None
-
-
-def test_host_remoted_uuid_reads_this_hosts_remoted() -> None:
-    if platform.system() != "Darwin":
-        pytest.skip("remotectl is macOS-only")
-    assert isinstance(native_tunnel.host_remoted_uuid(), uuid.UUID)

@@ -118,9 +118,8 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             the transport that built this RSD had it. The pairing handshake carries it, but the RSD
             handshake does not, so paths without a pairing handshake leave it empty. See
             `parse_device_kvs_data` and `auxiliary_metadata`.
-        :param handshake_uuid: peer UUID to send in the RSD handshake; ``None`` sends a random one.
-            Only a transport sharing its RSD endpoint with another peer needs this (the native
-            tunnel, which must identify as the host's ``remoted``).
+        :param handshake_uuid: peer UUID to send in the RSD handshake; ``None`` sends the host-wide
+            ``remotexpc.default_handshake_uuid``, which every connection to a tunnel has to share.
         """
         super().__init__()
         self.name = name

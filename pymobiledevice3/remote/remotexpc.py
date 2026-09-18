@@ -1,5 +1,9 @@
 import asyncio
 import contextlib
+import logging
+import platform
+import re
+import subprocess
 import uuid
 from asyncio import IncompleteReadError
 from collections import deque
@@ -25,6 +29,7 @@ from pymobiledevice3.exceptions import (
     PyMobileDevice3Exception,
     StreamClosedError,
 )
+from pymobiledevice3.pair_records import generate_host_id
 from pymobiledevice3.remote.xpc_message import (
     XpcFlags,
     XpcInt64Type,
@@ -34,6 +39,10 @@ from pymobiledevice3.remote.xpc_message import (
     decode_xpc_object,
 )
 from pymobiledevice3.utils import start_ipython_shell
+
+logger = logging.getLogger(__name__)
+
+_IS_DARWIN = platform.system() == "Darwin"
 
 # Extracted by sniffing `remoted` traffic via Wireshark
 DEFAULT_SETTINGS_MAX_CONCURRENT_STREAMS = 100
@@ -59,6 +68,58 @@ REMOTE_XPC_VERSION_FLAGS = 0x0100000000000006
 MESSAGING_PROTOCOL_VERSION = 7
 
 FIRST_REPLY_TIMEOUT = 3
+
+# ``remotectl dumpstate`` prints the host ``remoted``'s own identity first (see host_remoted_uuid).
+_REMOTECTL_PATH = "/usr/libexec/remotectl"
+_REMOTECTL_TIMEOUT = 10.0
+_REMOTECTL_LOCAL_UUID_RE = re.compile(r"^Local device\n\s+UUID: (?P<uuid>[0-9A-Fa-f-]{36})$", re.MULTILINE)
+
+
+def default_handshake_uuid() -> uuid.UUID:
+    """The UUID every RSD handshake from this host identifies itself with, unless told otherwise.
+
+    The device keeps ONE RSD connection per tunnel and replaces it whenever a new one arrives. Since
+    iOS 27.2 it also remembers the UUID of the peer it replaced -- even after that peer disconnected
+    -- and, when the newcomer's differs ("Peer UUID changed across reconnect; reattaching so clients
+    re-discover it" in the device's remoted log), re-attaches the whole device: every service
+    listener it advertised, to the newcomer and to earlier peers alike, is closed and each port
+    refuses connections. So all connections to a tunnel, across processes, must present one UUID.
+
+    On macOS that has to be the host ``remoted``'s: it shares RSD endpoints with us (the native
+    tunnel, the NCM interface) and keeps reconnecting with its own UUID, so any other identity is
+    evicted again. Elsewhere the deterministic host id pymobiledevice3 already pairs with does.
+    """
+    remoted_uuid = host_remoted_uuid() if _IS_DARWIN else None
+    return remoted_uuid if remoted_uuid is not None else uuid.UUID(generate_host_id())
+
+
+def host_remoted_uuid() -> Optional[uuid.UUID]:
+    """The UUID the host's ``remoted`` identifies itself with in its RSD handshake; ``None`` if unknown.
+
+    ``remotectl dumpstate`` reports it without root.
+    """
+    try:
+        result = subprocess.run(
+            [_REMOTECTL_PATH, "dumpstate"],
+            capture_output=True,
+            text=True,
+            timeout=_REMOTECTL_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.debug("remotectl unavailable: %r", e)
+        return None
+    return parse_remotectl_local_uuid(result.stdout)
+
+
+def parse_remotectl_local_uuid(text: str) -> Optional[uuid.UUID]:
+    """Extract the ``Local device`` UUID from ``remotectl dumpstate`` output; ``None`` if absent."""
+    match = _REMOTECTL_LOCAL_UUID_RE.search(text)
+    if match is None:
+        logger.debug("remotectl dumpstate reported no local device UUID")
+        return None
+    return uuid.UUID(match.group("uuid"))
+
 
 SHELL_USAGE = """
 # This shell allows you to communicate directly with every RemoteXPC service.
@@ -180,14 +241,14 @@ class RemoteXPCConnection:
         Send only on the RSD/remoted control connection, after the HTTP/2
         handshake and before reading ``peer_info``.
 
-        :param peer_uuid: UUID to identify this peer with; ``None`` sends a random one. A connection
-            that shares its RSD endpoint with another peer (the native tunnel rides ``remoted``'s)
-            must pass that peer's UUID -- see ``native_tunnel.host_remoted_uuid``.
+        :param peer_uuid: UUID to identify this peer with; ``None`` sends `default_handshake_uuid`.
         """
+        if peer_uuid is None:
+            peer_uuid = await asyncio.to_thread(default_handshake_uuid)
         await self.send_request({
             "MessageType": "Handshake",
             "MessagingProtocolVersion": XpcUInt64Type(MESSAGING_PROTOCOL_VERSION),
-            "UUID": peer_uuid if peer_uuid is not None else uuid.uuid4(),
+            "UUID": peer_uuid,
             "Properties": {
                 "RemoteXPCVersionFlags": XpcUInt64Type(REMOTE_XPC_VERSION_FLAGS),
                 "SensitivePropertiesVisible": True,
