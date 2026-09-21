@@ -1567,6 +1567,21 @@ async def create_using_remote(
         raise
 
 
+async def _create_mobdev2_lockdown(hostname: str, pair_records: list[dict[str, Any]]) -> Optional[TcpLockdownClient]:
+    """Connect to a mobdev2 device, paired through whichever of ``pair_records`` it accepts (else unpaired)."""
+    lockdown = None
+    for pair_record in pair_records or [None]:
+        if lockdown is not None:
+            await lockdown.close()
+        try:
+            lockdown = await create_using_tcp(hostname=hostname, autopair=False, pair_record=pair_record)
+        except Exception:
+            return None
+        if lockdown.paired:
+            break
+    return lockdown
+
+
 async def get_mobdev2_lockdowns(
     udid: Optional[str] = None,
     pair_records: Optional[Path] = None,
@@ -1586,30 +1601,27 @@ async def get_mobdev2_lockdowns(
         record = plistlib.loads(file.read_bytes())
         records[record["WiFiMACAddress"]] = record
 
-    requested_record: Optional[dict[str, Any]] = None
-    if udid is not None:
+    if udid is not None and not records:
         # The record may live with usbmuxd rather than in our own folder.
-        requested_record = next(iter(records.values()), None) or await get_preferred_pair_record(udid, pair_records)
-        if requested_record is None:
+        record = await get_preferred_pair_record(udid, pair_records)
+        if record is None:
             # Nothing the requested device would accept: don't sit through a browse.
             return
+        records[record.get("WiFiMACAddress", "")] = record
 
     for answer in await browse_mobdev2(timeout=timeout):
         if "@" not in answer.instance:
             continue
         wifi_mac_address = answer.instance.split("@", 1)[0]
         # A device using a private Wi-Fi address advertises that randomized MAC rather than the
-        # WiFiMACAddress of its pair record, so the requested device cannot be told apart by name:
-        # offer its record to each advertised device, only the requested one accepts it.
-        record = records.get(wifi_mac_address, requested_record)
-
-        if only_paired and record is None:
-            continue
+        # WiFiMACAddress of its pair record, and nothing else in the advert tells us whose it is: a
+        # device we cannot name is offered every record, it accepts only its own.
+        record = records.get(wifi_mac_address)
+        candidates = [record] if record is not None else list(records.values())
 
         for address in answer.addresses:
-            try:
-                lockdown = await create_using_tcp(hostname=address.full_ip, autopair=False, pair_record=record)
-            except Exception:
+            lockdown = await _create_mobdev2_lockdown(address.full_ip, candidates)
+            if lockdown is None:
                 continue
             if (only_paired and not lockdown.paired) or (udid is not None and lockdown.udid != udid):
                 await lockdown.close()

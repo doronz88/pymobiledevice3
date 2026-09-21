@@ -236,6 +236,32 @@ async def test_mobdev2_udid_is_found_behind_a_private_wifi_address(mobdev2, tmp_
     assert await _mobdev2_hostnames(udid="UDID", pair_records=tmp_path) == ["10.0.0.1"]
 
 
+async def test_mobdev2_paired_devices_are_found_behind_private_wifi_addresses(mobdev2, tmp_path):
+    # tunneld's monitor: no udid, several records, and no advert names its device -- each device is
+    # offered the records until it accepts one; a stranger accepts none and is dropped.
+    (tmp_path / "FIRST.plist").write_bytes(plistlib.dumps({"WiFiMACAddress": MAC, "UDID": "FIRST"}))
+    (tmp_path / "SECOND.plist").write_bytes(plistlib.dumps({"WiFiMACAddress": OTHER_MAC, "UDID": "SECOND"}))
+    mobdev2.answers = [
+        _mobdev2_answer("ca:00:00:00:00:01", "10.0.0.1"),
+        _mobdev2_answer("ca:00:00:00:00:02", "10.0.0.2"),
+        _mobdev2_answer("ca:00:00:00:00:03", "10.0.0.3"),
+    ]
+    mobdev2.devices = {"10.0.0.1": "SECOND", "10.0.0.2": "STRANGER", "10.0.0.3": "FIRST"}
+
+    assert await _mobdev2_hostnames(pair_records=tmp_path, only_paired=True) == ["10.0.0.1", "10.0.0.3"]
+    assert all(lockdown.closed for lockdown in mobdev2.lockdowns if not lockdown.paired)
+
+
+async def test_mobdev2_advert_naming_its_record_is_offered_only_that_record(mobdev2, tmp_path):
+    (tmp_path / "FIRST.plist").write_bytes(plistlib.dumps({"WiFiMACAddress": MAC, "UDID": "FIRST"}))
+    (tmp_path / "SECOND.plist").write_bytes(plistlib.dumps({"WiFiMACAddress": OTHER_MAC, "UDID": "SECOND"}))
+    mobdev2.answers = [_mobdev2_answer(MAC, "10.0.0.1")]
+    mobdev2.devices = {"10.0.0.1": "FIRST"}
+
+    assert await _mobdev2_hostnames(pair_records=tmp_path, only_paired=True) == ["10.0.0.1"]
+    assert len(mobdev2.lockdowns) == 1
+
+
 async def test_mobdev2_udid_without_a_record_neither_browses_nor_connects(mobdev2, tmp_path):
     mobdev2.answers = [_mobdev2_answer(MAC, "10.0.0.1")]
 
