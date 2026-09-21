@@ -9,6 +9,7 @@ from typing import Any, Optional
 import pytest
 from opack2 import dumps
 
+import pymobiledevice3.lockdown as lockdown_module
 import pymobiledevice3.remote.tunnel_service as tunnel_service
 from pymobiledevice3.bonjour import Address, ServiceInstance
 from pymobiledevice3.exceptions import ConnectionTerminatedError
@@ -148,3 +149,74 @@ def test_pair_setup_tolerates_a_missing_alt_irk(monkeypatch, tmp_path, device_tl
     service.save_pair_record()
 
     assert PEER_ALT_IRK_KEY not in plistlib.loads(service.pair_record_path.read_bytes())
+
+
+# --- mobdev2 ---------------------------------------------------------------------------------------
+
+MAC = "aa:bb:cc:dd:ee:ff"
+OTHER_MAC = "11:22:33:44:55:66"
+
+
+def _mobdev2_answer(mac: str, ip: str) -> ServiceInstance:
+    return ServiceInstance(
+        instance=f"{mac}@fe80::1._apple-mobdev2._tcp.local.",
+        host="device.local",
+        port=62078,
+        addresses=[Address(ip=ip, iface="en0")],
+    )
+
+
+@pytest.fixture
+def mobdev2(monkeypatch):
+    @dataclasses.dataclass
+    class State:
+        answers: list[ServiceInstance] = dataclasses.field(default_factory=list)
+        usbmux_record: Optional[dict[str, Any]] = None
+        attempts: list[tuple[str, Optional[dict[str, Any]]]] = dataclasses.field(default_factory=list)
+        browses: int = 0
+
+    state = State()
+
+    async def browse(timeout):
+        state.browses += 1
+        return state.answers
+
+    async def create_using_tcp(hostname, autopair, pair_record):
+        state.attempts.append((hostname, pair_record))
+        return hostname
+
+    async def preferred_record(identifier, pairing_records_cache_folder):
+        return state.usbmux_record
+
+    monkeypatch.setattr(lockdown_module, "browse_mobdev2", browse)
+    monkeypatch.setattr(lockdown_module, "create_using_tcp", create_using_tcp)
+    monkeypatch.setattr(lockdown_module, "get_preferred_pair_record", preferred_record)
+    return state
+
+
+async def _mobdev2_lockdowns(**kwargs) -> list[Any]:
+    return [lockdown async for _, lockdown in lockdown_module.get_mobdev2_lockdowns(**kwargs)]
+
+
+async def test_mobdev2_udid_connects_only_to_the_device_of_its_record(mobdev2, tmp_path):
+    record = {"WiFiMACAddress": MAC}
+    (tmp_path / "UDID.plist").write_bytes(plistlib.dumps(record))
+    mobdev2.answers = [_mobdev2_answer(OTHER_MAC, "10.0.0.9"), _mobdev2_answer(MAC, "10.0.0.1")]
+
+    assert await _mobdev2_lockdowns(udid="UDID", pair_records=tmp_path) == ["10.0.0.1"]
+    assert mobdev2.attempts == [("10.0.0.1", record)]
+
+
+async def test_mobdev2_udid_record_may_come_from_usbmuxd(mobdev2, tmp_path):
+    mobdev2.usbmux_record = {"WiFiMACAddress": MAC}
+    mobdev2.answers = [_mobdev2_answer(OTHER_MAC, "10.0.0.9"), _mobdev2_answer(MAC, "10.0.0.1")]
+
+    assert await _mobdev2_lockdowns(udid="UDID", pair_records=tmp_path) == ["10.0.0.1"]
+
+
+async def test_mobdev2_udid_without_a_record_neither_browses_nor_connects(mobdev2, tmp_path):
+    mobdev2.answers = [_mobdev2_answer(MAC, "10.0.0.1")]
+
+    assert await _mobdev2_lockdowns(udid="UDID", pair_records=tmp_path) == []
+    assert mobdev2.browses == 0
+    assert mobdev2.attempts == []
