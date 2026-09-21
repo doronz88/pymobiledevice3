@@ -342,7 +342,10 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
                 if t == QTYPE_PTR and rr.get("name") == service_type:
                     ptr_targets.add(cast(str, rr.get("ptrdname")))
                 elif t == QTYPE_SRV:
-                    srv_map[rr["name"]].append({"target": rr.get("target"), "port": rr.get("port")})
+                    # The same record arrives once per interface and again on every re-announcement.
+                    srv = {"target": rr.get("target"), "port": rr.get("port")}
+                    if srv not in srv_map[rr["name"]]:
+                        srv_map[rr["name"]].append(srv)
                 elif t == QTYPE_TXT:
                     # TODO: This could possibly mix the properties of multiple TXT records for the same instance.
                     #       However, it's currently unused.
