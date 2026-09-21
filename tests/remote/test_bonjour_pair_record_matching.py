@@ -7,6 +7,7 @@ import plistlib
 from typing import Any, Optional
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from opack2 import dumps
 
 import pymobiledevice3.lockdown as lockdown_module
@@ -17,6 +18,7 @@ from pymobiledevice3.lockdown import compute_mobdev2_auth_tag
 from pymobiledevice3.remote.siphash import compute_auth_tag
 from pymobiledevice3.remote.tunnel_service import (
     PEER_ALT_IRK_KEY,
+    PairingDataComponentTLVBuf,
     PairingDataComponentType,
     RemotePairingTunnelService,
     get_remote_pairing_tunnel_services,
@@ -150,6 +152,32 @@ def test_pair_setup_tolerates_a_missing_alt_irk(monkeypatch, tmp_path, device_tl
     service.save_pair_record()
 
     assert PEER_ALT_IRK_KEY not in plistlib.loads(service.pair_record_path.read_bytes())
+
+
+async def test_record_without_alt_irk_still_pair_verifies(monkeypatch, tmp_path):
+    # The altIRK only serves recognizing a Wi-Fi advert. Pair-verify -- all USB/RSD needs -- must keep
+    # working with a record written before it was stored.
+    monkeypatch.setattr(tunnel_service, "create_pairing_records_cache_folder", lambda: tmp_path)
+    (tmp_path / "remote_MINE.plist").write_bytes(
+        plistlib.dumps({"private_key": b"\x01" * 32, "public_key": b"\x02" * 32, "remote_unlock_host_key": ""})
+    )
+    service = RemotePairingTunnelService("MINE", "10.0.0.1", 49152)
+    device_key = X25519PrivateKey.generate().public_key().public_bytes_raw()
+    replies = [
+        PairingDataComponentTLVBuf.build([
+            {"type": PairingDataComponentType.STATE, "data": b"\x02"},
+            {"type": PairingDataComponentType.PUBLIC_KEY, "data": device_key},
+        ]),
+        PairingDataComponentTLVBuf.build([{"type": PairingDataComponentType.STATE, "data": b"\x04"}]),
+    ]
+
+    async def send_receive_pairing_data(pairing_data):
+        return replies.pop(0)
+
+    monkeypatch.setattr(service, "_send_receive_pairing_data", send_receive_pairing_data)
+
+    assert await service._validate_pairing() is True
+    assert replies == []
 
 
 # --- mobdev2 ---------------------------------------------------------------------------------------
