@@ -8,6 +8,9 @@
   - [Pairing](#pairing)
   - [Trusted tunnel](#trusted-tunnel)
     - [Reusing the macOS trusted tunnel](#reusing-the-macos-trusted-tunnel)
+  - [Wi-Fi](#wi-fi)
+    - [The `altIRK`](#the-altirk)
+    - [The `authTag`](#the-authtag)
   - [Accessing services over the trusted tunnel](#accessing-services-over-the-trusted-tunnel)
     - [Lockdown services](#lockdown-services)
     - [RemoteXPC services](#remotexpc-services)
@@ -186,7 +189,8 @@ The pairing is done in a state machine as follows:
 
 - Wait user consent (The "Trust / Don't Trust" dialog)
 - Key exchange ([SRP](https://en.wikipedia.org/wiki/Secure_Remote_Password_protocol), with the dummy password: `000000`)
-- Request to save pair record on remote device
+- Request to save pair record on remote device. Both sides exchange an identity payload here (name, model, UDID,
+  ...), which also carries each side's [`altIRK`](#the-altirk)
 
 And... that's it! The client can now use the saved pair record to request a **trusted tunnel**.
 
@@ -257,6 +261,95 @@ Timestamp                       Thread     Type        Activity             PID 
 2023-07-19 08:22:51.917310+0300 0x559c     Info        0x0                  599    0    remotepairingd: [com.apple.dt.remotepairing:remotepairingd] device-0: Tunnel established - interface: utun3, local fd41:8efc:c0f8::2-> remote fd41:8efc:c0f8::1
 2023-07-19 08:22:51.917414+0300 0x559c     Info        0x0                  599    0    remotepairingd: [com.apple.dt.remotepairing:remotepairingd] device-0: Creating RSD backend client device for server port 60364
 ```
+
+## Wi-Fi
+
+Everything above happens over the USB Ethernet interface, where the only device in sight is the one that is plugged
+in. The same pairing service is also reachable over the LAN: a paired iOS 17+ device advertises
+`_remotepairing._tcp` over bonjour, and a host that is already paired can pair-verify against it and ask for a
+trusted tunnel exactly as before - no `remoted`, no USB.
+
+```shell
+# List the RemotePairing adverts on the network
+pymobiledevice3 bonjour remotepairing
+
+# Create a tunnel to a paired device over Wi-Fi
+sudo pymobiledevice3 remote start-tunnel -t wifi
+```
+
+The catch is knowing *which* advert belongs to a device we are paired with. The advert is privacy-preserving by
+design. Its TXT record looks like this:
+
+```
+identifier=2BE6E510-0325-4365-923E-B14C6F57DB3A authTag=kXjlTr2l ver=26 minVer=8 flags=0
+```
+
+`identifier` is an opaque UUID - it is not the UDID, and it is not the identifier the device reports during the
+handshake. The handshake itself reveals nothing either: over the network, the reply to a not-yet-verified peer
+contains no `peerDeviceInfo` at all (unlike the lockdown-tunneled control channel, which is already trusted).
+
+### The `altIRK`
+
+IRK stands for *Identity Resolving Key*, a concept borrowed from Bluetooth LE privacy: a device broadcasts something
+random-looking, and whoever holds its IRK can tell that it came from that device.
+
+The `altIRK` is a 16-byte secret. Each side generates its own and hands it to the other during pair-setup, inside
+the encrypted identity payload of the final messages (`M5` from the host, `M6` from the device):
+
+```json
+{
+  "altIRK": "<16 bytes>",
+  "accountID": "...",
+  "model": "iPhone12,1",
+  "name": "...",
+  "remotepairing_udid": "00008030-...",
+  "remotepairing_serial_number": "...",
+  "btAddr": "...",
+  "lastSeenWireProtocolVersion": 26
+}
+```
+
+`pymobiledevice3` stores the device's key in the RemotePairing pair record (`~/.pymobiledevice3/remote_<udid>.plist`)
+under `peer_alt_irk`. When `pymobiledevice3` acts as the *pairable host* (device-initiated pairing), the direction is
+mirrored: it advertises its own `authTag`, derived from the `altIRK` it gave the device.
+
+### The `authTag`
+
+```
+authTag = SipHash-2-4(key = altIRK, message = identifier)
+          -> take the 8-byte little-endian output, keep its first 6 bytes, reversed
+          -> base64
+```
+
+```python
+from pymobiledevice3.remote.siphash import validate_auth_tag
+
+validate_auth_tag(pair_record["peer_alt_irk"], txt["identifier"], txt["authTag"])
+```
+
+This is the same construction Rapport's `RPIdentity` uses (`-[RPIdentity verifyAuthTag:data:type:error:]`, with the
+paired peer's `altIRK` as the key). The `identifier` is free to change whenever the device likes: a new identifier
+simply yields a new tag that only paired hosts can recompute.
+
+`get_remote_pairing_tunnel_services()` matches every advert against the stored keys *before* anything is sent, so:
+
+- devices we are not paired with are never contacted;
+- a matched device is contacted with its own pair record only;
+- `tunneld` skips devices it already serves without connecting to them.
+
+The tag is only a hint about whom to talk to - 6 bytes authenticate nothing. The device is authenticated right
+after, by pair-verify.
+
+Pair records written before the key was stored have no `peer_alt_irk` and cannot be matched over Wi-Fi; they remain
+valid over USB, where no matching is needed. Delete the stale record and pair again - over USB this is promptless:
+
+```shell
+pymobiledevice3 lockdown remotepairing --pair
+```
+
+The lockdown-over-Wi-Fi advert (`_apple-mobdev2._tcp`) carries tags too, but keyed by the *host's* `HostID` rather
+than by the device - see
+[Wi-Fi: recognizing a device on the network](understanding_idevice_protocol_layers.md#wi-fi-recognizing-a-device-on-the-network).
 
 ## Accessing services over the trusted tunnel
 
