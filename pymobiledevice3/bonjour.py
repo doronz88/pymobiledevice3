@@ -5,6 +5,7 @@
 import asyncio
 import contextlib
 import ipaddress
+import logging
 import socket
 import struct
 import sys
@@ -18,6 +19,8 @@ import ifaddr  # pip install ifaddr
 from typing_extensions import dataclass_transform
 
 from pymobiledevice3.osu.os_utils import get_os_utils
+
+logger = logging.getLogger(__name__)
 
 REMOTEPAIRING_SERVICE_NAME = "_remotepairing._tcp.local."
 REMOTEPAIRING_MANUAL_PAIRING_SERVICE_NAME = "_remotepairing-manual-pairing._tcp.local."
@@ -230,6 +233,11 @@ class _Adapters:
 class _DatagramProtocol(asyncio.DatagramProtocol):
     def __init__(self, queue: asyncio.Queue[tuple[bytes, Any]]):
         self.queue = queue
+        self.send_errors: list[Exception] = []
+
+    def error_received(self, exc: Exception) -> None:
+        # asyncio reports a failed sendto() here instead of raising it
+        self.send_errors.append(exc)
 
     def datagram_received(self, data: bytes, addr: Any) -> None:
         # addr: IPv4 -> (host, port); IPv6 -> (host, port, flowinfo, scopeid)
@@ -284,14 +292,48 @@ async def _open_mdns_sockets() -> tuple[
     return transports, queue
 
 
-async def _send_query_all(transports: list[tuple[asyncio.DatagramTransport, socket.socket]], pkt: bytes):
+async def _send_query_all(transports: list[tuple[asyncio.DatagramTransport, socket.socket]], pkt: bytes) -> int:
+    """Send ``pkt`` on every socket/interface; returns how many sends were attempted."""
+    sent = 0
     for transport, sock in transports:
         if sock.family == socket.AF_INET:
             transport.sendto(pkt, (MDNS_MCAST_V4, MDNS_PORT))
+            sent += 1
         else:
             # Send once per iface index for better reachability
             for ifindex, _ in socket.if_nameindex():
                 transport.sendto(pkt, (MDNS_MCAST_V6, MDNS_PORT, 0, ifindex))
+                sent += 1
+    return sent
+
+
+_warned_multicast_blocked = False
+
+
+def _warn_if_multicast_blocked(transports: list[tuple[asyncio.DatagramTransport, socket.socket]], sent: int) -> None:
+    """Say so when not a single mDNS query could leave this host, instead of reporting "no devices".
+
+    Some interfaces always refuse the query (loopback, tunnels); all of them refusing means the
+    process may not use the local network. On macOS that is the Local Network privacy setting of
+    the app the process runs under (the terminal), which fails every send with EHOSTUNREACH --
+    root is exempt, so the same command works under sudo.
+    """
+    global _warned_multicast_blocked
+    errors = [
+        error for transport, _ in transports for error in cast(_DatagramProtocol, transport.get_protocol()).send_errors
+    ]
+    if _warned_multicast_blocked or not sent or len(errors) < sent:
+        return
+    _warned_multicast_blocked = True
+    hint = (
+        " Allow the app running this command (e.g. your terminal) under System Settings > Privacy & "
+        "Security > Local Network, then restart it."
+        if sys.platform == "darwin"
+        else ""
+    )
+    logger.warning(
+        "bonjour discovery is blocked: no mDNS query could be sent on any interface (%s).%s", errors[0], hint
+    )
 
 
 # ---------------- Public API ----------------
@@ -329,7 +371,7 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
             existing.append(Address(ip=ip_str, iface=iface))
 
     try:
-        await _send_query_all(transports, build_query(service_type, QTYPE_PTR, unicast=False))
+        sent = await _send_query_all(transports, build_query(service_type, QTYPE_PTR, unicast=False))
         loop = asyncio.get_running_loop()
         end = loop.time() + timeout
         while loop.time() < end:
@@ -352,6 +394,8 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
                     txt_map[rr["name"]] = rr.get("txt", {})
                 elif (t == QTYPE_A and rr.get("address")) or (t == QTYPE_AAAA and rr.get("address")):
                     _record_addr(rr["name"], rr["address"], pkt_addr)
+        if not ptr_targets:
+            _warn_if_multicast_blocked(transports, sent)
     finally:
         for transport, _ in transports:
             transport.close()

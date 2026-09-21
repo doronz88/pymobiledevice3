@@ -2,6 +2,7 @@
 
 import asyncio
 import errno
+import logging
 import socket
 from types import SimpleNamespace
 from typing import Any
@@ -70,6 +71,7 @@ def mdns(monkeypatch):
         return [(transport, SimpleNamespace(family=socket.AF_INET))], queue
 
     monkeypatch.setattr(bonjour, "_open_mdns_sockets", open_mdns_sockets)
+    monkeypatch.setattr(bonjour, "_warned_multicast_blocked", False)
     return state
 
 
@@ -80,3 +82,25 @@ async def test_a_device_answering_more_than_once_is_listed_once(mdns):
     instances = await browse_service(SERVICE, timeout=0.05)
 
     assert [(instance.instance, instance.port) for instance in instances] == [(INSTANCE, 62078)]
+
+
+async def test_blocked_multicast_is_reported_once_instead_of_no_devices(mdns, caplog):
+    # macOS Local Network privacy: every send fails with EHOSTUNREACH and nothing is ever received.
+    mdns.failing_sends = 1
+
+    with caplog.at_level(logging.WARNING, logger=bonjour.__name__):
+        assert await browse_service(SERVICE, timeout=0.05) == []
+        assert await browse_service(SERVICE, timeout=0.05) == []
+
+    warnings = [
+        record.getMessage() for record in caplog.records if "bonjour discovery is blocked" in record.getMessage()
+    ]
+    assert len(warnings) == 1
+    assert "No route to host" in warnings[0]
+
+
+async def test_an_empty_network_is_not_reported_as_blocked(mdns, caplog):
+    with caplog.at_level(logging.WARNING, logger=bonjour.__name__):
+        assert await browse_service(SERVICE, timeout=0.05) == []
+
+    assert "bonjour discovery is blocked" not in caplog.text
