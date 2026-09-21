@@ -166,13 +166,26 @@ def _mobdev2_answer(mac: str, ip: str) -> ServiceInstance:
     )
 
 
+@dataclasses.dataclass
+class _FakeLockdown:
+    hostname: str
+    udid: Optional[str]
+    paired: bool
+    closed: bool = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
 @pytest.fixture
 def mobdev2(monkeypatch):
     @dataclasses.dataclass
     class State:
         answers: list[ServiceInstance] = dataclasses.field(default_factory=list)
         usbmux_record: Optional[dict[str, Any]] = None
-        attempts: list[tuple[str, Optional[dict[str, Any]]]] = dataclasses.field(default_factory=list)
+        # hostname -> udid of the device living there; it only accepts its own record
+        devices: dict[str, str] = dataclasses.field(default_factory=dict)
+        lockdowns: list[_FakeLockdown] = dataclasses.field(default_factory=list)
         browses: int = 0
 
     state = State()
@@ -182,8 +195,11 @@ def mobdev2(monkeypatch):
         return state.answers
 
     async def create_using_tcp(hostname, autopair, pair_record):
-        state.attempts.append((hostname, pair_record))
-        return hostname
+        device_udid = state.devices[hostname]
+        accepted = pair_record is not None and pair_record["UDID"] == device_udid
+        lockdown = _FakeLockdown(hostname, device_udid if accepted else None, accepted)
+        state.lockdowns.append(lockdown)
+        return lockdown
 
     async def preferred_record(identifier, pairing_records_cache_folder):
         return state.usbmux_record
@@ -194,29 +210,35 @@ def mobdev2(monkeypatch):
     return state
 
 
-async def _mobdev2_lockdowns(**kwargs) -> list[Any]:
-    return [lockdown async for _, lockdown in lockdown_module.get_mobdev2_lockdowns(**kwargs)]
+async def _mobdev2_hostnames(**kwargs) -> list[str]:
+    return [lockdown.hostname async for _, lockdown in lockdown_module.get_mobdev2_lockdowns(**kwargs)]
 
 
-async def test_mobdev2_udid_connects_only_to_the_device_of_its_record(mobdev2, tmp_path):
-    record = {"WiFiMACAddress": MAC}
-    (tmp_path / "UDID.plist").write_bytes(plistlib.dumps(record))
+# "UDID" is not a real pair record key; the fake device uses it to decide whether the record is its own.
+RECORD = {"WiFiMACAddress": MAC, "UDID": "UDID"}
+
+
+async def test_mobdev2_udid_yields_only_the_requested_device(mobdev2, tmp_path):
+    (tmp_path / "UDID.plist").write_bytes(plistlib.dumps(RECORD))
     mobdev2.answers = [_mobdev2_answer(OTHER_MAC, "10.0.0.9"), _mobdev2_answer(MAC, "10.0.0.1")]
+    mobdev2.devices = {"10.0.0.9": "STRANGER", "10.0.0.1": "UDID"}
 
-    assert await _mobdev2_lockdowns(udid="UDID", pair_records=tmp_path) == ["10.0.0.1"]
-    assert mobdev2.attempts == [("10.0.0.1", record)]
+    assert await _mobdev2_hostnames(udid="UDID", pair_records=tmp_path) == ["10.0.0.1"]
+    assert [lockdown.closed for lockdown in mobdev2.lockdowns] == [True, False]
 
 
-async def test_mobdev2_udid_record_may_come_from_usbmuxd(mobdev2, tmp_path):
-    mobdev2.usbmux_record = {"WiFiMACAddress": MAC}
-    mobdev2.answers = [_mobdev2_answer(OTHER_MAC, "10.0.0.9"), _mobdev2_answer(MAC, "10.0.0.1")]
+async def test_mobdev2_udid_is_found_behind_a_private_wifi_address(mobdev2, tmp_path):
+    # The advertised MAC is the randomized one, not the record's WiFiMACAddress.
+    mobdev2.usbmux_record = RECORD
+    mobdev2.answers = [_mobdev2_answer(OTHER_MAC, "10.0.0.9"), _mobdev2_answer("ca:11:22:33:44:55", "10.0.0.1")]
+    mobdev2.devices = {"10.0.0.9": "STRANGER", "10.0.0.1": "UDID"}
 
-    assert await _mobdev2_lockdowns(udid="UDID", pair_records=tmp_path) == ["10.0.0.1"]
+    assert await _mobdev2_hostnames(udid="UDID", pair_records=tmp_path) == ["10.0.0.1"]
 
 
 async def test_mobdev2_udid_without_a_record_neither_browses_nor_connects(mobdev2, tmp_path):
     mobdev2.answers = [_mobdev2_answer(MAC, "10.0.0.1")]
 
-    assert await _mobdev2_lockdowns(udid="UDID", pair_records=tmp_path) == []
+    assert await _mobdev2_hostnames(udid="UDID", pair_records=tmp_path) == []
     assert mobdev2.browses == 0
-    assert mobdev2.attempts == []
+    assert mobdev2.lockdowns == []
