@@ -10,6 +10,7 @@ import psutil
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
 from pymobiledevice3.exceptions import AccessDeniedError, ConnectionTerminatedError
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
+from pymobiledevice3.remote.remotexpc import default_handshake_uuid
 
 REMOTED_PATH = "/usr/libexec/remoted"
 logger = logging.getLogger(__name__)
@@ -65,6 +66,11 @@ def stop_remoted_if_required() -> None:
     if remoted.status() == "stopped":
         # process already stopped, we don't need to do anything
         return
+
+    # Every RSD handshake identifies itself with remoted's UUID, which `remotectl` can only ask a
+    # running remoted for: left for later, each handshake would wait out remotectl's timeout and the
+    # device would be skipped.
+    default_handshake_uuid()
 
     try:
         remoted.suspend()
