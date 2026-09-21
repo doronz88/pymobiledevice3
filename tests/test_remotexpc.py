@@ -330,6 +330,13 @@ async def test_device_handshake_identifies_as_the_given_peer():
     assert _handshake_uuids(writer) == [peer_uuid]
 
 
+@pytest.fixture(autouse=True)
+def _fresh_default_handshake_uuid():
+    remotexpc.default_handshake_uuid.cache_clear()
+    yield
+    remotexpc.default_handshake_uuid.cache_clear()
+
+
 @pytest.mark.asyncio
 async def test_device_handshake_defaults_to_one_stable_host_identity(monkeypatch: pytest.MonkeyPatch):
     # iOS 27.2+ remembers the last RSD peer's UUID per tunnel and drops every advertised service
@@ -392,6 +399,22 @@ def test_parse_remotectl_local_uuid_takes_the_host_not_an_attached_device() -> N
 @pytest.mark.parametrize("text", ["", "Found ncm-1 (ncm-device)\n\tUUID: 687A4CFC-3E83-4CCD-B7E2-C9223A3782DD\n"])
 def test_parse_remotectl_local_uuid_is_none_without_a_local_device(text: str) -> None:
     assert remotexpc.parse_remotectl_local_uuid(text) is None
+
+
+def test_default_handshake_uuid_asks_remotectl_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    # remotectl cannot answer while remoted is suspended (get_rsds, tunneld), so the identity is
+    # resolved once and later handshakes must not ask again.
+    calls: list[None] = []
+
+    def host_remoted_uuid() -> uuid.UUID:
+        calls.append(None)
+        return _HOST_REMOTED_UUID
+
+    monkeypatch.setattr(remotexpc, "_IS_DARWIN", True)
+    monkeypatch.setattr(remotexpc, "host_remoted_uuid", host_remoted_uuid)
+
+    assert remotexpc.default_handshake_uuid() == remotexpc.default_handshake_uuid() == _HOST_REMOTED_UUID
+    assert len(calls) == 1
 
 
 def test_host_remoted_uuid_is_none_when_remotectl_is_unusable(monkeypatch: pytest.MonkeyPatch) -> None:

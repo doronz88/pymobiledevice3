@@ -24,3 +24,18 @@ async def test_get_rsds_skips_terminated_endpoint(monkeypatch):
     monkeypatch.setattr(utils, "stop_remoted", nullcontext)
 
     assert await utils.get_rsds() == []
+
+
+def test_handshake_uuid_is_resolved_before_remoted_is_suspended(monkeypatch):
+    # `remotectl` gets the UUID from remoted itself: asked after the SIGSTOP it hangs until its
+    # timeout inside every RSD handshake, and get_rsds ends up skipping the device.
+    events = []
+    remoted = SimpleNamespace(status=lambda: "running", suspend=lambda: events.append("suspend"))
+
+    monkeypatch.setattr(utils.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(utils, "get_remoted_process", lambda: remoted)
+    monkeypatch.setattr(utils, "default_handshake_uuid", lambda: events.append("resolve uuid"))
+
+    utils.stop_remoted_if_required()
+
+    assert events == ["resolve uuid", "suspend"]

@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import functools
 import logging
 import platform
 import re
@@ -75,6 +76,7 @@ _REMOTECTL_TIMEOUT = 10.0
 _REMOTECTL_LOCAL_UUID_RE = re.compile(r"^Local device\n\s+UUID: (?P<uuid>[0-9A-Fa-f-]{36})$", re.MULTILINE)
 
 
+@functools.cache
 def default_handshake_uuid() -> uuid.UUID:
     """The UUID every RSD handshake from this host identifies itself with, unless told otherwise.
 
@@ -88,6 +90,10 @@ def default_handshake_uuid() -> uuid.UUID:
     On macOS that has to be the host ``remoted``'s: it shares RSD endpoints with us (the native
     tunnel, the NCM interface) and keeps reconnecting with its own UUID, so any other identity is
     evicted again. Elsewhere the deterministic host id pymobiledevice3 already pairs with does.
+
+    Resolved once per process: the identity is only useful while it stays the same, and ``remotectl``
+    gets its answer from ``remoted``, which cannot give one while it is suspended -- so
+    ``stop_remoted_if_required`` resolves it before suspending.
     """
     remoted_uuid = host_remoted_uuid() if _IS_DARWIN else None
     return remoted_uuid if remoted_uuid is not None else uuid.UUID(generate_host_id())
