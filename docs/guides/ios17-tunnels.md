@@ -243,6 +243,14 @@ default applies to `remote browse`: on macOS it lists devices via `remotepairing
     (add `--raw` to keep the `deviceKVSData` blob base64-encoded). This control channel does not create
     tunnels itself.
 
+!!! warning "Wi-Fi discovery needs a pair record created by a recent version"
+
+    A device advertising RemotePairing over Wi-Fi is recognized by matching its bonjour `authTag`
+    against the `altIRK` the device hands over during pairing, so only devices you are paired with
+    are ever contacted. Pair records written before that key was stored cannot be matched: a warning
+    names the stale `remote_<udid>.plist`; delete it and pair again (the promptless USB command above
+    is the easiest way).
+
 ## Forcing the userspace tunnel (`--userspace`)
 
 The userspace tunnel is already the default, so you rarely need the flag. Pass `--userspace`
