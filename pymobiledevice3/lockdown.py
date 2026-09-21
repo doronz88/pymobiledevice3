@@ -70,6 +70,7 @@ from pymobiledevice3.pair_records import (
     create_pairing_records_cache_folder,
     generate_host_id,
     get_preferred_pair_record,
+    get_usbmux_pairing_record,
 )
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
@@ -1622,32 +1623,55 @@ async def _create_mobdev2_lockdown(hostname: str, pair_records: list[dict[str, A
     return lockdown
 
 
+async def _known_lockdown_pair_records(udid: Optional[str], folder: Optional[Path]) -> list[dict[str, Any]]:
+    """The lockdown pair records a mobdev2 device can be recognized and paired by.
+
+    An explicit ``folder`` is the only source. Otherwise records come from wherever this host keeps them:
+    our own folder, the system lockdown folder when it is readable (it is root-only on macOS), and
+    usbmuxd -- asked for ``udid``, or for every device it currently lists, since it cannot enumerate its
+    records.
+    """
+    folders = [folder] if folder is not None else [get_home_folder(), OSUTIL.pair_record_path]
+    records: list[dict[str, Any]] = []
+    for file in (file for candidate in folders for file in _glob_pair_record_files(candidate)):
+        if file.name.startswith("remote_") or (udid is not None and file.stem != udid):
+            # skip RemotePairing records
+            continue
+        with suppress(OSError, plistlib.InvalidFileException):
+            record = plistlib.loads(file.read_bytes())
+            if "HostID" in record:
+                records.append(record)
+    if udid is not None:
+        if not records:
+            record = await get_preferred_pair_record(udid, folders[0])
+            if record is not None:
+                records.append(record)
+    elif folder is None:
+        with suppress(MuxException, OSError):
+            for device in await usbmux.list_devices():
+                record = await get_usbmux_pairing_record(device.serial)
+                if record is not None and record not in records:
+                    records.append(record)
+    return records
+
+
+def _glob_pair_record_files(folder: Path) -> list[Path]:
+    with suppress(OSError):
+        return sorted(folder.glob("*.plist"))
+    return []
+
+
 async def get_mobdev2_lockdowns(
     udid: Optional[str] = None,
     pair_records: Optional[Path] = None,
     only_paired: bool = False,
     timeout: float = DEFAULT_BONJOUR_TIMEOUT,
 ) -> AsyncIterable[tuple[str, TcpLockdownClient]]:
-    records: dict[str, Any] = {}
-    if pair_records is None:
-        pair_records = get_home_folder()
-    for file in pair_records.glob("*.plist"):
-        if file.name.startswith("remote_"):
-            # skip RemotePairing records
-            continue
-        record_udid = file.parts[-1].strip(".plist")
-        if udid is not None and record_udid != udid:
-            continue
-        record = plistlib.loads(file.read_bytes())
-        records[record["WiFiMACAddress"]] = record
-
+    records = await _known_lockdown_pair_records(udid, pair_records)
     if udid is not None and not records:
-        # The record may live with usbmuxd rather than in our own folder.
-        record = await get_preferred_pair_record(udid, pair_records)
-        if record is None:
-            # Nothing the requested device would accept: don't sit through a browse.
-            return
-        records[record.get("WiFiMACAddress", "")] = record
+        # Nothing the requested device would accept: don't sit through a browse.
+        return
+    records_by_mac = {record["WiFiMACAddress"]: record for record in records if "WiFiMACAddress" in record}
 
     for answer in await browse_mobdev2(timeout=timeout):
         if "@" not in answer.instance:
@@ -1656,8 +1680,8 @@ async def get_mobdev2_lockdowns(
         # A device using a private Wi-Fi address advertises that randomized MAC rather than the
         # WiFiMACAddress of its pair record, so a device we cannot name is offered the records of the
         # hosts it says it is paired with; it accepts only its own.
-        record = records.get(wifi_mac_address)
-        candidates = _mobdev2_pair_record_candidates(answer, [record] if record is not None else list(records.values()))
+        record = records_by_mac.get(wifi_mac_address)
+        candidates = _mobdev2_pair_record_candidates(answer, [record] if record is not None else records)
         if not candidates and (only_paired or udid is not None):
             # Not paired with any of our hosts: not a device the caller asked for.
             continue
@@ -1670,3 +1694,5 @@ async def get_mobdev2_lockdowns(
                 await lockdown.close()
                 continue
             yield address.full_ip, lockdown
+            # One client per device: its other addresses lead to the same place.
+            break
