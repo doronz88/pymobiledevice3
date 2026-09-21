@@ -293,7 +293,12 @@ class TunneldCore:
                 remote_pairing_tunnel_services = []
                 claimed_services: set[RemotePairingTunnelService] = set()
                 try:
-                    remote_pairing_tunnel_services = await get_remote_pairing_tunnel_services()
+                    # Devices that already have a tunnel are not even connected to.
+                    remote_pairing_tunnel_services = await get_remote_pairing_tunnel_services(
+                        excluded_identifiers={
+                            task.udid for task in self.tunnel_tasks.values() if task.udid and task.tunnel is not None
+                        }
+                    )
                     for service in remote_pairing_tunnel_services:
                         hostname = service.hostname
                         if hostname is None:

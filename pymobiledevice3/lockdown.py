@@ -1586,13 +1586,24 @@ async def get_mobdev2_lockdowns(
         record = plistlib.loads(file.read_bytes())
         records[record["WiFiMACAddress"]] = record
 
+    if udid is not None and not records:
+        # The record may live with usbmuxd rather than in our own folder.
+        record = await get_preferred_pair_record(udid, pair_records)
+        if record is not None and "WiFiMACAddress" in record:
+            records[record["WiFiMACAddress"]] = record
+        if not records:
+            # Nothing to recognize the requested device by: don't sit through a browse.
+            return
+
     for answer in await browse_mobdev2(timeout=timeout):
         if "@" not in answer.instance:
             continue
         wifi_mac_address = answer.instance.split("@", 1)[0]
         record = records.get(wifi_mac_address)
 
-        if only_paired and record is None:
+        if record is None and (only_paired or udid is not None):
+            # A requested device is recognized by its record's WiFiMACAddress, never by connecting to
+            # every advertised device to ask who it is.
             continue
 
         for address in answer.addresses:

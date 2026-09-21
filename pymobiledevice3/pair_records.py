@@ -172,3 +172,18 @@ def iter_remote_paired_identifiers() -> Generator[str, None, None]:
     """
     for file in iter_remote_pair_records():
         yield file.parts[-1].split("remote_", 1)[1].split(".", 1)[0]
+
+
+def iter_remote_pair_records_by_identifier() -> Generator[tuple[str, Path, dict[str, Any]], None, None]:
+    """
+    Iterate over the remote pairing records in the home folder, loaded.
+
+    :return: A generator yielding ``(identifier, path, pair_record)`` for every readable remote pairing record.
+    :rtype: Generator[tuple[str, Path, dict[str, Any]], None, None]
+    """
+    for file in iter_remote_pair_records():
+        identifier = file.parts[-1].split("remote_", 1)[1].split(".", 1)[0]
+        try:
+            yield identifier, file, plistlib.loads(file.read_bytes())
+        except (OSError, plistlib.InvalidFileException):
+            logger.debug("skipping unreadable remote pairing record: %s", file)

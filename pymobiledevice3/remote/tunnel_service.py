@@ -16,7 +16,7 @@ import struct
 import sys
 from abc import ABC, abstractmethod
 from asyncio import CancelledError, StreamReader, StreamWriter
-from collections.abc import AsyncGenerator, Awaitable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Collection, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 from pathlib import Path
 from socket import create_connection
@@ -64,6 +64,7 @@ from pymobiledevice3.bonjour import (
     DEFAULT_BONJOUR_TIMEOUT,
     REMOTEPAIRING_PAIRABLE_HOST_SERVICE_NAME,
     MDNSResponder,
+    ServiceInstance,
     browse_remotepairing,
 )
 from pymobiledevice3.ca import make_cert
@@ -83,12 +84,12 @@ from pymobiledevice3.pair_records import (
     create_pairing_records_cache_folder,
     generate_host_id,
     get_remote_pairing_record_filename,
-    iter_remote_paired_identifiers,
+    iter_remote_pair_records_by_identifier,
 )
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService, parse_device_kvs_data
-from pymobiledevice3.remote.siphash import compute_auth_tag
+from pymobiledevice3.remote.siphash import compute_auth_tag, validate_auth_tag
 from pymobiledevice3.remote.utils import get_rsds, resume_remoted_if_required, stop_remoted_if_required
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.service_connection import ServiceConnection
@@ -185,6 +186,10 @@ class CDTunnelPacketData(DataclassMixin):
 CDTunnelPacket = DataclassStruct(CDTunnelPacketData)
 
 REPAIRING_PACKET_MAGIC = b"RPPairing"
+# Pair record key holding the device's 16-byte ``altIRK`` (see :func:`get_remote_pairing_tunnel_services`).
+PEER_ALT_IRK_KEY = "peer_alt_irk"
+# Records already reported as lacking it, so a polling caller (tunneld) warns once per record.
+_warned_stale_pair_records: set[str] = set()
 
 
 @dataclasses.dataclass
@@ -577,6 +582,7 @@ class RemotePairingProtocol(StartTcpTunnel):
         self.srp_context = None
         self.encryption_key = None
         self.signature = None
+        self.peer_alt_irk: Optional[bytes] = None
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @abstractmethod
@@ -772,13 +778,14 @@ class RemotePairingProtocol(StartTcpTunnel):
             await tunnel.stop_tunnel()
 
     def save_pair_record(self) -> None:
-        self.pair_record_path.write_bytes(
-            plistlib.dumps({
-                "public_key": self.ed25519_private_key.public_key().public_bytes_raw(),
-                "private_key": self.ed25519_private_key.private_bytes_raw(),
-                "remote_unlock_host_key": self.remote_unlock_host_key,
-            })
-        )
+        pair_record: dict[str, Any] = {
+            "public_key": self.ed25519_private_key.public_key().public_bytes_raw(),
+            "private_key": self.ed25519_private_key.private_bytes_raw(),
+            "remote_unlock_host_key": self.remote_unlock_host_key,
+        }
+        if self.peer_alt_irk is not None:
+            pair_record[PEER_ALT_IRK_KEY] = self.peer_alt_irk
+        self.pair_record_path.write_bytes(plistlib.dumps(pair_record))
         OSUTIL.chown_to_non_sudo_if_needed(self.pair_record_path)
 
     @property
@@ -956,8 +963,25 @@ class RemotePairingProtocol(StartTcpTunnel):
         tlv = PairingDataComponentTLVBuf.parse(
             cip.decrypt(b"\x00\x00\x00\x00PS-Msg06", data[PairingDataComponentType.ENCRYPTED_DATA], b"")
         )
+        self.peer_alt_irk = self._parse_peer_alt_irk(self.decode_tlv(tlv))
 
         return tlv
+
+    def _parse_peer_alt_irk(self, device_tlv: dict[str, Any]) -> Optional[bytes]:
+        """Extract the device's ``altIRK`` from its M6 identity payload, or ``None`` if it sent none.
+
+        The device derives the ``authTag`` it advertises over mDNS from this key, so keeping it in the
+        pair record is what lets a bonjour answer be matched to its record without connecting.
+        """
+        info = device_tlv.get(PairingDataComponentType.INFO)
+        alt_irk = None
+        if info is not None:
+            with suppress(Exception):
+                alt_irk = opack_loads(info).get("altIRK")
+        if not isinstance(alt_irk, bytes) or len(alt_irk) != 16:
+            self.logger.debug("device sent no usable altIRK during pair-setup: %r", alt_irk)
+            return None
+        return alt_irk
 
     def _init_client_server_main_encryption_keys(self) -> None:
         assert self.encryption_key is not None
@@ -1529,42 +1553,70 @@ async def get_core_device_tunnel_services(
     return result
 
 
+def _match_remote_pair_record(answer: ServiceInstance, alt_irks: Mapping[str, bytes]) -> Optional[str]:
+    """Return the identifier of the pair record whose device published this ``_remotepairing`` answer.
+
+    The advertised ``identifier`` is opaque (it is neither the UDID nor the pairing identifier); the
+    device proves who it is to already-paired hosts through ``authTag``, derived from the ``altIRK`` it
+    handed us during pair-setup.
+    """
+    service_identifier = answer.properties.get("identifier")
+    auth_tag = answer.properties.get("authTag")
+    if not service_identifier or not auth_tag:
+        return None
+    for identifier, alt_irk in alt_irks.items():
+        if validate_auth_tag(alt_irk, service_identifier, auth_tag):
+            return identifier
+    return None
+
+
 async def get_remote_pairing_tunnel_services(
-    bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT, udid: Optional[str] = None
+    bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT,
+    udid: Optional[str] = None,
+    excluded_identifiers: Collection[str] = (),
 ) -> list[RemotePairingTunnelService]:
+    """Connect to the paired devices advertising RemotePairing over bonjour.
+
+    Each answer is matched to its pair record by ``authTag`` before anything is sent, so only devices
+    we are paired with are contacted, each with its own record. ``udid`` narrows the result to one
+    device; ``excluded_identifiers`` skips devices the caller already serves.
+    """
+    alt_irks: dict[str, bytes] = {}
+    for identifier, path, pair_record in iter_remote_pair_records_by_identifier():
+        if (udid is not None and identifier != udid) or identifier in excluded_identifiers:
+            continue
+        alt_irk = pair_record.get(PEER_ALT_IRK_KEY)
+        if alt_irk is None:
+            if identifier not in _warned_stale_pair_records:
+                _warned_stale_pair_records.add(identifier)
+                logger.warning(
+                    "RemotePairing record of %s predates altIRK recording, so it cannot be matched over "
+                    "bonjour; delete %s and pair again (promptless over USB: "
+                    "`pymobiledevice3 lockdown remotepairing --pair`)",
+                    identifier,
+                    path,
+                )
+            continue
+        alt_irks[identifier] = alt_irk
+    if not alt_irks:
+        return []
+
     result: list[RemotePairingTunnelService] = []
     for answer in await browse_remotepairing(timeout=bonjour_timeout):
+        identifier = _match_remote_pair_record(answer, alt_irks)
+        if identifier is None:
+            continue
         for address in answer.addresses:
-            for identifier in iter_remote_paired_identifiers():
-                if udid is not None and identifier != udid:
-                    continue
-                conn = None
-                try:
-                    conn = await create_core_device_tunnel_service_using_remotepairing(
+            try:
+                result.append(
+                    await create_core_device_tunnel_service_using_remotepairing(
                         identifier, address.full_ip, answer.port
                     )
-                    result.append(conn)
-                    break
-                except (
-                    ConnectionTerminatedError,
-                    asyncio.IncompleteReadError,
-                    ConnectionResetError,
-                    asyncio.TimeoutError,
-                ) as e:
-                    if conn is not None:
-                        await conn.close()
-                    logger.debug(
-                        "Skipping remote pairing service %s@%s:%s: %r",
-                        identifier,
-                        address.full_ip,
-                        answer.port,
-                        e,
-                    )
-                    continue
-                except OSError:
-                    if conn is not None:
-                        await conn.close()
-                    continue
+                )
+            except (ConnectionTerminatedError, asyncio.IncompleteReadError, asyncio.TimeoutError, OSError) as e:
+                logger.debug(
+                    "Skipping remote pairing service %s@%s:%s: %r", identifier, address.full_ip, answer.port, e
+                )
     return result
 
 
@@ -1881,7 +1933,7 @@ class PairableHost:
                 "remote_unlock_host_key": "",
                 "host_identifier": self.host_info.identifier,
                 "host_alt_irk": self.host_info.alt_irk,
-                "peer_alt_irk": self.peer_device.alt_irk,
+                PEER_ALT_IRK_KEY: self.peer_device.alt_irk,
                 "peer_udid": self.peer_device.udid,
                 "peer_model": self.peer_device.model,
                 "peer_name": self.peer_device.name,
