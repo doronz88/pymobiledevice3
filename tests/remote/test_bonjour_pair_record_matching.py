@@ -13,6 +13,7 @@ import pymobiledevice3.lockdown as lockdown_module
 import pymobiledevice3.remote.tunnel_service as tunnel_service
 from pymobiledevice3.bonjour import Address, ServiceInstance
 from pymobiledevice3.exceptions import ConnectionTerminatedError
+from pymobiledevice3.lockdown import compute_mobdev2_auth_tag
 from pymobiledevice3.remote.siphash import compute_auth_tag
 from pymobiledevice3.remote.tunnel_service import (
     PEER_ALT_IRK_KEY,
@@ -157,12 +158,24 @@ MAC = "aa:bb:cc:dd:ee:ff"
 OTHER_MAC = "11:22:33:44:55:66"
 
 
-def _mobdev2_answer(mac: str, ip: str) -> ServiceInstance:
+HOST_ID = "11111111-2222-3333-4444-555555555555"
+OTHER_HOST_ID = "99999999-8888-7777-6666-555555555555"
+
+
+def _mobdev2_answer(mac: str, ip: str, paired_host_ids: Optional[tuple[str, ...]] = None) -> ServiceInstance:
+    """A mobdev2 advert; ``paired_host_ids`` adds the tags of the hosts the device is paired with (iOS 17+)."""
+    properties = {}
+    if paired_host_ids is not None:
+        properties["identifier"] = SERVICE_IDENTIFIER
+        for index, host_id in enumerate(paired_host_ids):
+            tag = base64.b64encode(compute_mobdev2_auth_tag(host_id, SERVICE_IDENTIFIER)).decode()
+            properties["authTag" if index == 0 else f"authTag#{index}"] = tag
     return ServiceInstance(
         instance=f"{mac}@fe80::1._apple-mobdev2._tcp.local.",
         host="device.local",
         port=62078,
         addresses=[Address(ip=ip, iface="en0")],
+        properties=properties,
     )
 
 
@@ -257,6 +270,37 @@ async def test_mobdev2_advert_naming_its_record_is_offered_only_that_record(mobd
     (tmp_path / "SECOND.plist").write_bytes(plistlib.dumps({"WiFiMACAddress": OTHER_MAC, "UDID": "SECOND"}))
     mobdev2.answers = [_mobdev2_answer(MAC, "10.0.0.1")]
     mobdev2.devices = {"10.0.0.1": "FIRST"}
+
+    assert await _mobdev2_hostnames(pair_records=tmp_path, only_paired=True) == ["10.0.0.1"]
+    assert len(mobdev2.lockdowns) == 1
+
+
+def test_mobdev2_auth_tag_known_answer():
+    # HMAC-SHA256(HKDF-SHA512(HostID), identifier)[:8], as MobileDevice's AMDIsTXTRecordForUDID computes it.
+    assert base64.b64encode(compute_mobdev2_auth_tag(HOST_ID, SERVICE_IDENTIFIER)) == b"DNKInlok1wk="
+
+
+async def test_mobdev2_device_not_paired_with_our_host_is_never_contacted(mobdev2, tmp_path):
+    (tmp_path / "UDID.plist").write_bytes(plistlib.dumps({**RECORD, "HostID": HOST_ID}))
+    mobdev2.answers = [
+        _mobdev2_answer("ca:00:00:00:00:01", "10.0.0.9", paired_host_ids=(OTHER_HOST_ID,)),
+        _mobdev2_answer("ca:00:00:00:00:02", "10.0.0.1", paired_host_ids=(OTHER_HOST_ID, HOST_ID)),
+    ]
+    mobdev2.devices = {"10.0.0.9": "STRANGER", "10.0.0.1": "UDID"}
+
+    assert await _mobdev2_hostnames(pair_records=tmp_path, only_paired=True) == ["10.0.0.1"]
+    assert [lockdown.hostname for lockdown in mobdev2.lockdowns] == ["10.0.0.1"]
+
+
+async def test_mobdev2_device_is_offered_only_the_records_of_hosts_it_names(mobdev2, tmp_path):
+    (tmp_path / "FIRST.plist").write_bytes(
+        plistlib.dumps({"WiFiMACAddress": MAC, "UDID": "FIRST", "HostID": OTHER_HOST_ID})
+    )
+    (tmp_path / "SECOND.plist").write_bytes(
+        plistlib.dumps({"WiFiMACAddress": OTHER_MAC, "UDID": "SECOND", "HostID": HOST_ID})
+    )
+    mobdev2.answers = [_mobdev2_answer("ca:00:00:00:00:01", "10.0.0.1", paired_host_ids=(HOST_ID,))]
+    mobdev2.devices = {"10.0.0.1": "SECOND"}
 
     assert await _mobdev2_hostnames(pair_records=tmp_path, only_paired=True) == ["10.0.0.1"]
     assert len(mobdev2.lockdowns) == 1
