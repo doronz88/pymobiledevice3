@@ -8,6 +8,7 @@
   - [DeveloperDiskImage](#developerdiskimage)
   - [DVT](#dvt)
   - [RemoteXPC](#remotexpc)
+  - [Wi-Fi: recognizing a device on the network](#wi-fi-recognizing-a-device-on-the-network)
   - [Other python service examples](#other-python-service-examples)
 
 ## Overview
@@ -22,6 +23,7 @@ In order to understand it all, we are going to review:
 - [DeveloperDiskImage](#developerdiskimage)
 - [DVT](#dvt)
 - [RemoteXPC](#remotexpc)
+- [Wi-Fi: recognizing a device on the network](#wi-fi-recognizing-a-device-on-the-network)
 
 Once we understand each part, we'll discuss how [`pymobiledevice3`](https://github.com/doronz88/pymobiledevice3) is
 structured to handle communication to all these moving parts.
@@ -532,6 +534,90 @@ async def main() -> None:
   async for entry in OsTraceService(rsds[0]).syslog():
       print(entry)
 ```
+
+## Wi-Fi: recognizing a device on the network
+
+Over USB, `usbmuxd` hands us the UDID of whatever is plugged in. Over Wi-Fi there is no such luxury: the host hears
+[bonjour](https://en.wikipedia.org/wiki/Bonjour_(software)) adverts from *every* Apple device on the LAN and has to
+work out which of them - if any - it is paired with.
+
+The adverts are deliberately built so a stranger learns nothing from them:
+
+- The MAC in a `_apple-mobdev2._tcp` instance name (`<mac>@<ipv6>-supportsRP-<version>`) is the device's **private
+  Wi-Fi address** (the iOS default) - a randomized, locally-administered MAC that has nothing to do with the
+  `WiFiMACAddress` stored in the pair record. Never treat it as an identifier.
+- The `identifier` key in the TXT record is an opaque UUID. It is neither the UDID nor any pairing identifier.
+- A lockdown connection that has not presented a valid pair record does not reveal the UDID either.
+
+What the adverts do carry is an **`authTag`**: a few bytes a paired host can recompute from a secret it already
+holds, and that are noise to everyone else. Matching is pure local hashing - nothing is sent to a device until we
+know it is ours, and each device is only ever offered its own pair record.
+
+There are two advertised services and each has its own tag:
+
+| | `_apple-mobdev2._tcp` (lockdown) | `_remotepairing._tcp` (RemotePairing) |
+| --- | --- | --- |
+| Requires | `lockdown wifi-connections on` | iOS 17+ |
+| Key behind the tag | the **host's** `HostID` | the **device's** `altIRK` |
+| Where we keep it | every lockdown pair record | `peer_alt_irk` in `remote_<udid>.plist` |
+| Tag | `HMAC-SHA256(HKDF-SHA512(HostID), identifier)[:8]` | `SipHash-2-4(altIRK, identifier)`, 6 bytes |
+| TXT keys | `authTag`, `authTag#1`, ... (one per paired host) | `authTag` |
+| Tells us | "this device is paired with host H" | "this is device D" |
+
+### Lockdown over Wi-Fi (mobdev2)
+
+The device publishes one tag per host it is paired with. The key is derived from the `HostID` of the lockdown pair
+record, so every existing record already has what is needed:
+
+```python
+from pymobiledevice3.lockdown import compute_mobdev2_auth_tag
+
+# base64-decode the advert's `authTag` / `authTag#N` values and look for this one
+compute_mobdev2_auth_tag(pair_record["HostID"], txt["identifier"])
+```
+
+This is the check Apple's MobileDevice performs (`AMDIsTXTRecordForUDID`). Note what it does and does not say: a
+host pairs *all* of its devices under a single `HostID`, so the tag rules out devices that are not ours without
+contacting them, but it cannot tell two of our own devices apart. Among those, the device still picks its record by
+accepting it - a lockdown `StartSession` with somebody else's record is simply refused.
+
+`get_mobdev2_lockdowns()` applies all of this. With a `udid` it resolves that device's pair record (from our own
+folder or from `usbmuxd`), skips the browse entirely when there is none, and yields only a paired
+`TcpLockdownClient` for that UDID:
+
+```python
+from pymobiledevice3.lockdown import get_mobdev2_lockdowns
+
+
+async def main() -> None:
+  async for ip, lockdown in get_mobdev2_lockdowns(udid='00008030-0000000000000000', only_paired=True):
+      print(ip, lockdown.product_version)
+```
+
+```shell
+pymobiledevice3 syslog live --mobdev2 --udid 00008030-0000000000000000
+```
+
+An advert that carries no tags (older iOS versions) rules nothing out; such a device is offered the known records
+directly.
+
+### RemotePairing over Wi-Fi
+
+The RemotePairing advert identifies the *device*. The key is the device's `altIRK` - see
+[RemoteXPC: Wi-Fi](RemoteXPC.md#wi-fi) for where it comes from and how the tag is computed. Because it is a device
+secret handed over during pairing, a RemotePairing record created before pymobiledevice3 started storing it cannot
+be matched over Wi-Fi (it keeps working over USB). A one-time warning names the stale file; delete it and pair again:
+
+```shell
+# Promptless over USB - no Trust dialog
+pymobiledevice3 lockdown remotepairing --pair
+```
+
+### The tag is a hint, not authentication
+
+A 6 or 8 byte tag only decides *who to talk to*. Trust is still established afterwards by the real handshake:
+the TLS session built from the lockdown pair record, or RemotePairing's pair-verify (an X25519 exchange signed with
+the Ed25519 key of the pair record). A forged advert gets a connection attempt, never a session.
 
 ## Other python service examples
 

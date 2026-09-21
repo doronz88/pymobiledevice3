@@ -250,6 +250,7 @@ default applies to `remote browse`: on macOS it lists devices via `remotepairing
     are ever contacted. Pair records written before that key was stored cannot be matched: a warning
     names the stale `remote_<udid>.plist`; delete it and pair again (the promptless USB command above
     is the easiest way).
+    See [RemoteXPC: Wi-Fi](../internals/remotexpc.md#wi-fi) for how the matching works.
 
 ## Forcing the userspace tunnel (`--userspace`)
 
