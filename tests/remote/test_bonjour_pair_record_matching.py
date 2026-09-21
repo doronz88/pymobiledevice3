@@ -4,6 +4,8 @@ import base64
 import dataclasses
 import logging
 import plistlib
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional
 
 import pytest
@@ -256,7 +258,7 @@ async def _mobdev2_hostnames(**kwargs) -> list[str]:
 
 
 # "UDID" is not a real pair record key; the fake device uses it to decide whether the record is its own.
-RECORD = {"WiFiMACAddress": MAC, "UDID": "UDID"}
+RECORD = {"WiFiMACAddress": MAC, "UDID": "UDID", "HostID": HOST_ID}
 
 
 async def test_mobdev2_udid_yields_only_the_requested_device(mobdev2, tmp_path):
@@ -280,8 +282,10 @@ async def test_mobdev2_udid_is_found_behind_a_private_wifi_address(mobdev2, tmp_
 async def test_mobdev2_paired_devices_are_found_behind_private_wifi_addresses(mobdev2, tmp_path):
     # tunneld's monitor: no udid, several records, and no advert names its device -- each device is
     # offered the records until it accepts one; a stranger accepts none and is dropped.
-    (tmp_path / "FIRST.plist").write_bytes(plistlib.dumps({"WiFiMACAddress": MAC, "UDID": "FIRST"}))
-    (tmp_path / "SECOND.plist").write_bytes(plistlib.dumps({"WiFiMACAddress": OTHER_MAC, "UDID": "SECOND"}))
+    (tmp_path / "FIRST.plist").write_bytes(plistlib.dumps({"WiFiMACAddress": MAC, "UDID": "FIRST", "HostID": HOST_ID}))
+    (tmp_path / "SECOND.plist").write_bytes(
+        plistlib.dumps({"WiFiMACAddress": OTHER_MAC, "UDID": "SECOND", "HostID": HOST_ID})
+    )
     mobdev2.answers = [
         _mobdev2_answer("ca:00:00:00:00:01", "10.0.0.1"),
         _mobdev2_answer("ca:00:00:00:00:02", "10.0.0.2"),
@@ -294,8 +298,10 @@ async def test_mobdev2_paired_devices_are_found_behind_private_wifi_addresses(mo
 
 
 async def test_mobdev2_advert_naming_its_record_is_offered_only_that_record(mobdev2, tmp_path):
-    (tmp_path / "FIRST.plist").write_bytes(plistlib.dumps({"WiFiMACAddress": MAC, "UDID": "FIRST"}))
-    (tmp_path / "SECOND.plist").write_bytes(plistlib.dumps({"WiFiMACAddress": OTHER_MAC, "UDID": "SECOND"}))
+    (tmp_path / "FIRST.plist").write_bytes(plistlib.dumps({"WiFiMACAddress": MAC, "UDID": "FIRST", "HostID": HOST_ID}))
+    (tmp_path / "SECOND.plist").write_bytes(
+        plistlib.dumps({"WiFiMACAddress": OTHER_MAC, "UDID": "SECOND", "HostID": HOST_ID})
+    )
     mobdev2.answers = [_mobdev2_answer(MAC, "10.0.0.1")]
     mobdev2.devices = {"10.0.0.1": "FIRST"}
 
@@ -332,6 +338,37 @@ async def test_mobdev2_device_is_offered_only_the_records_of_hosts_it_names(mobd
 
     assert await _mobdev2_hostnames(pair_records=tmp_path, only_paired=True) == ["10.0.0.1"]
     assert len(mobdev2.lockdowns) == 1
+
+
+async def test_mobdev2_yields_one_client_per_device(mobdev2, tmp_path):
+    # A device advertises every address it has; they all lead to the same place, and a chooser listing
+    # the same device several times is no use to anyone.
+    (tmp_path / "UDID.plist").write_bytes(plistlib.dumps(RECORD))
+    answer = _mobdev2_answer("ca:00:00:00:00:01", "10.0.0.1")
+    answer.addresses.append(Address(ip="10.0.0.2", iface="en0"))
+    mobdev2.answers = [answer]
+    mobdev2.devices = {"10.0.0.1": "UDID", "10.0.0.2": "UDID"}
+
+    assert await _mobdev2_hostnames(pair_records=tmp_path) == ["10.0.0.1"]
+
+
+async def test_mobdev2_without_udid_uses_the_records_usbmuxd_holds(mobdev2, monkeypatch):
+    # macOS/Windows keep lockdown records with usbmuxd, out of our folder and impossible to enumerate:
+    # without a udid the records of the devices usbmuxd lists are what lets the device come up paired.
+    async def list_devices():
+        return [SimpleNamespace(serial="UDID")]
+
+    async def usbmux_record(serial):
+        return RECORD if serial == "UDID" else None
+
+    monkeypatch.setattr(lockdown_module, "get_home_folder", lambda: Path("/nonexistent"))
+    monkeypatch.setattr(lockdown_module, "OSUTIL", SimpleNamespace(pair_record_path=Path("/nonexistent")))
+    monkeypatch.setattr(lockdown_module.usbmux, "list_devices", list_devices)
+    monkeypatch.setattr(lockdown_module, "get_usbmux_pairing_record", usbmux_record)
+    mobdev2.answers = [_mobdev2_answer("ca:00:00:00:00:01", "10.0.0.1", paired_host_ids=(HOST_ID,))]
+    mobdev2.devices = {"10.0.0.1": "UDID"}
+
+    assert await _mobdev2_hostnames(only_paired=True) == ["10.0.0.1"]
 
 
 async def test_mobdev2_udid_without_a_record_neither_browses_nor_connects(mobdev2, tmp_path):
