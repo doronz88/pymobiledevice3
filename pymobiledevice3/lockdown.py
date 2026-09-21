@@ -1,5 +1,9 @@
 import asyncio
+import base64
+import binascii
 import datetime
+import hashlib
+import hmac
 import logging
 import os
 import plistlib
@@ -21,13 +25,14 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7Options, PKCS7SignatureBuilder
 from packaging.version import Version
 from typing_extensions import Self
 
 from pymobiledevice3 import irecv_devices, usbmux
-from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_mobdev2
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, ServiceInstance, browse_mobdev2
 from pymobiledevice3.ca import generate_pairing_cert_chain
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
@@ -1567,6 +1572,41 @@ async def create_using_remote(
         raise
 
 
+def compute_mobdev2_auth_tag(host_id: str, service_identifier: str) -> bytes:
+    """The ``authTag`` a device publishes in its mobdev2 advert for the host paired under ``host_id``.
+
+    ``HMAC-SHA256(HKDF-SHA512(HostID), identifier)`` truncated to 8 bytes -- what MobileDevice's
+    ``AMDIsTXTRecordForUDID`` checks. The device publishes one tag per paired host (``authTag``,
+    ``authTag#1``, ...), all over the advert's opaque ``identifier``.
+    """
+    key = HKDF(algorithm=hashes.SHA512(), length=32, salt=None, info=b"").derive(host_id.encode())
+    return hmac.new(key, service_identifier.encode(), hashlib.sha256).digest()[:8]
+
+
+def _mobdev2_pair_record_candidates(
+    answer: ServiceInstance, pair_records: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The pair records worth offering to the device behind a mobdev2 advert.
+
+    The advert says which hosts the device is paired with, not which device it is (a host pairs every
+    device under one HostID), so this rules out devices that are not ours without contacting them. An
+    advert without tags (older iOS) rules nothing out.
+    """
+    service_identifier = answer.properties.get("identifier")
+    auth_tags: set[bytes] = set()
+    for key, value in answer.properties.items():
+        if key == "authTag" or key.startswith("authTag#"):
+            with suppress(binascii.Error, ValueError):
+                auth_tags.add(base64.b64decode(value))
+    if not service_identifier or not auth_tags:
+        return pair_records
+    return [
+        pair_record
+        for pair_record in pair_records
+        if "HostID" in pair_record and compute_mobdev2_auth_tag(pair_record["HostID"], service_identifier) in auth_tags
+    ]
+
+
 async def _create_mobdev2_lockdown(hostname: str, pair_records: list[dict[str, Any]]) -> Optional[TcpLockdownClient]:
     """Connect to a mobdev2 device, paired through whichever of ``pair_records`` it accepts (else unpaired)."""
     lockdown = None
@@ -1614,10 +1654,13 @@ async def get_mobdev2_lockdowns(
             continue
         wifi_mac_address = answer.instance.split("@", 1)[0]
         # A device using a private Wi-Fi address advertises that randomized MAC rather than the
-        # WiFiMACAddress of its pair record, and nothing else in the advert tells us whose it is: a
-        # device we cannot name is offered every record, it accepts only its own.
+        # WiFiMACAddress of its pair record, so a device we cannot name is offered the records of the
+        # hosts it says it is paired with; it accepts only its own.
         record = records.get(wifi_mac_address)
-        candidates = [record] if record is not None else list(records.values())
+        candidates = _mobdev2_pair_record_candidates(answer, [record] if record is not None else list(records.values()))
+        if not candidates and (only_paired or udid is not None):
+            # Not paired with any of our hosts: not a device the caller asked for.
+            continue
 
         for address in answer.addresses:
             lockdown = await _create_mobdev2_lockdown(address.full_ip, candidates)
