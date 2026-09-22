@@ -56,6 +56,7 @@ from pymobiledevice3.exceptions import (
     DeviceFeatureNotSupportedError,
     DeviceHasPasscodeSetError,
     DeviceNotFoundError,
+    DevicePathError,
     FeatureNotSupportedError,
     InstallCoordinationError,
     InternalError,
@@ -490,6 +491,8 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
         logger.error(f"File [{e.filename}] not found during afc operation: {e}")
     except AfcException as e:
         logger.error(f"Failed to perform Afc operation: {e}")
+    except DevicePathError as e:
+        logger.error(f"Refusing a path supplied by the device: {e}")
     else:
         # No exception: in practice unreachable, since a real Typer app() raises SystemExit(0) on
         # success before ever returning here
