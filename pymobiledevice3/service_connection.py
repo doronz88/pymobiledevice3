@@ -15,6 +15,7 @@ from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
     DeviceNotFoundError,
     NoDeviceConnectedError,
+    ProtocolError,
     PyMobileDevice3Exception,
 )
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -99,6 +100,10 @@ async def close_stream_writer(
 
 class ServiceConnection:
     """wrapper for tcp-relay connections"""
+
+    # Bounds one buffered response, not the total size of a streamed transfer.
+    # Applications using unusually large messages may override this per instance.
+    max_frame_size = 128 * 1024 * 1024
 
     def __init__(self, sock: socket.socket, mux_device: Optional[MuxDevice] = None) -> None:
         """
@@ -340,7 +345,7 @@ class ServiceConnection:
         size = self.recvall_sync(4)
         if not size or len(size) != 4:
             return b""
-        size = struct.unpack(endianity + "L", size)[0]
+        size = self._checked_frame_size(struct.unpack(endianity + "L", size)[0])
         while True:
             try:
                 return self.recvall_sync(size)
@@ -369,8 +374,13 @@ class ServiceConnection:
         :return: The received data block.
         """
         size = await self.recvall(4)
-        size = struct.unpack(endianity + "L", size)[0]
+        size = self._checked_frame_size(struct.unpack(endianity + "L", size)[0])
         return await self.recvall(size)
+
+    def _checked_frame_size(self, size: int) -> int:
+        if size > self.max_frame_size:
+            raise ProtocolError(f"Frame size {size} exceeds limit {self.max_frame_size}")
+        return size
 
     async def send_prefixed(self, data: bytes) -> None:
         """
