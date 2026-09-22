@@ -12,6 +12,7 @@ from pymobiledevice3.exceptions import RSDRequiredError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.safe_paths import resolve_device_path, validate_device_filename
 from pymobiledevice3.services.dtfetchsymbols import DtFetchSymbols
 from pymobiledevice3.services.remote_fetch_symbols import RemoteFetchSymbolsService
 
@@ -44,6 +45,10 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
     should_create_device_support_layout = False
     if out is None:
         assert service_provider.product_type is not None  # for type checker
+        validate_device_filename(service_provider.product_type)
+        validate_device_filename(service_provider.product_version)
+        if service_provider.product_build_version:
+            validate_device_filename(service_provider.product_build_version)
         out = get_device_support_path(
             service_provider.product_type,
             service_provider.product_version,
@@ -67,7 +72,7 @@ async def fetch_symbols_download_task(service_provider: LockdownServiceProvider,
             if file.startswith("/"):
                 # trim root to allow relative download
                 file = file[1:]
-            file = symbols_out / file
+            file = resolve_device_path(symbols_out, file)
 
             if file not in downloaded_files:
                 # first time the file was seen in list, means we can safely remove any old copy if any
