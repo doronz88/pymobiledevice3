@@ -6,6 +6,7 @@ import typer
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
+from pymobiledevice3.safe_paths import device_file_path
 from pymobiledevice3.services.misagent import MisagentService
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,6 @@ async def provision_dump(
 ) -> None:
     """dump installed provision profiles to specified location"""
     for profile in await MisagentService(lockdown=service_provider).copy_all():
-        filename = f"{profile.plist['UUID']}.mobileprovision"
-        logger.info(f"downloading {filename}")
-        (Path(out) / filename).write_bytes(profile.buf)
+        path = device_file_path(Path(out), profile.plist["UUID"], ".mobileprovision")
+        logger.info(f"downloading {path.name}")
+        path.write_bytes(profile.buf)
