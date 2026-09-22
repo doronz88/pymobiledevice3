@@ -31,6 +31,7 @@ from pymobiledevice3.exceptions import (
 )
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.safe_paths import validate_device_filename
 from pymobiledevice3.services.afc import AFC_LOCK_EX, AFC_LOCK_UN, AfcError, AfcService
 from pymobiledevice3.services.device_link import DeviceLink, ProgressCallback
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
@@ -199,7 +200,7 @@ class Mobilebackup2Service(LockdownService):
         udid = self.lockdown.udid
         if udid is None:
             raise NotConnectedError("lockdown provider has no udid; connect it first")
-        return udid
+        return validate_device_filename(udid)
 
     async def get_will_encrypt(self) -> bool:
         """
