@@ -1,5 +1,6 @@
 import dataclasses
 import plistlib
+import shutil
 import struct
 import tempfile
 import typing
@@ -9,9 +10,10 @@ from enum import IntEnum
 from pathlib import Path
 from tarfile import TarFile
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError, ProtocolError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, DevicePathError, ProtocolError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.safe_paths import resolve_device_path
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.utils import try_decode
 
@@ -358,7 +360,24 @@ class OsTraceService(LockdownService):
             file = Path(temp_dir) / "foo.tar"
             with open(file, "wb") as f:
                 await self.create_archive(f, size_limit=size_limit, age_limit=age_limit, start_time=start_time)
-            TarFile(file).extractall(out)
+            # Extract only ordinary files and directories, each kept beneath `out`. extractall()
+            # is unsafe with a device-supplied archive before Python 3.14 (absolute names, `..`,
+            # links), and a logarchive holds nothing but files and directories anyway.
+            out_path = Path(out)
+            with TarFile(file) as archive:
+                for member in archive:
+                    destination = resolve_device_path(out_path, member.name)
+                    if member.isdir():
+                        destination.mkdir(parents=True, exist_ok=True)
+                    elif member.isreg():
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        source = archive.extractfile(member)
+                        if source is None:
+                            raise DevicePathError(f"Missing archive data: {member.name!r}")
+                        with source, destination.open("wb") as target:
+                            shutil.copyfileobj(source, target)
+                    else:
+                        raise DevicePathError(f"Unsupported archive entry: {member.name!r}")
 
     async def syslog(
         self,
