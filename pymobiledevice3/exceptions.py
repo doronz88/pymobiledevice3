@@ -622,6 +622,12 @@ class ProtocolError(PyMobileDevice3Exception):
     pass
 
 
+class DevicePathError(PyMobileDevice3Exception):
+    """A device-supplied name or path would leave the host directory it belongs in"""
+
+    pass
+
+
 class TSSError(PyMobileDevice3Exception):
     """An unexpected message was received from apple ticket server"""
 

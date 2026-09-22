@@ -414,6 +414,11 @@ pymobiledevice3 developer core-device display serve-web
 pymobiledevice3 developer core-device display serve-vnc
 # then Finder ⌘K -> vnc://127.0.0.1:5901
 
+# Either one, reachable from the rest of the LAN: bind every interface and set a password,
+# since whoever reaches the port can both watch and control the device
+pymobiledevice3 developer core-device display serve-web --bind 0.0.0.0 --password s3cret
+pymobiledevice3 developer core-device display serve-vnc --bind 0.0.0.0 --password s3cret
+
 # Capture raw RTP/HEVC packets to a file (length-prefixed)
 pymobiledevice3 developer core-device display start-video-stream /tmp/cap.rtp --duration 10
 

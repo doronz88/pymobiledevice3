@@ -17,6 +17,7 @@ import base64
 import contextlib
 import datetime
 import errno
+import hmac
 import importlib.resources
 import ipaddress
 import json
@@ -661,9 +662,10 @@ class ScreenStreamServer:
         self,
         rsd: RemoteServiceDiscoveryService,
         *,
-        bind: str = "0.0.0.0",
+        bind: str = "127.0.0.1",
         http_port: int = 8080,
         display_id: int = 1,
+        password: Optional[str] = None,
         audio_default_on: bool = True,
         allow_rtcp_fb: bool = False,
         ltrp_enabled: bool = False,
@@ -698,6 +700,10 @@ class ScreenStreamServer:
         self._rctl_enabled = rctl_enabled
         self._rctl_maxk = max_bitrate_kbps
         self._bind = bind
+        # Every endpoint can watch or drive the device, so the whole server sits behind one HTTP
+        # Basic password when one is set. The browser asks once and then attaches it to the
+        # viewer's same-origin fetches by itself.
+        self._password = password
         self._http_port = http_port
         self._display_id = display_id
         self._audio_default_on = audio_default_on
@@ -1980,6 +1986,37 @@ class ScreenStreamServer:
             return 400, f"unknown button state {state!r}".encode()
         return 200, b"ok"
 
+    def _refuse_request(self, headers: dict[str, str]) -> Optional[bytes]:
+        """The response to send instead of serving this request, or None to serve it.
+
+        A browser sends ``Origin`` on cross-site requests, so a page on another site (or a
+        rebound DNS name) that tries to drive the device through this port is turned away: the
+        origin must be this server, as the client named it in ``Host``. With a password set,
+        every request must also carry it as HTTP Basic credentials (any user name).
+        """
+        origin = headers.get("origin")
+        if origin not in (None, "null") and (
+            urllib.parse.urlsplit(origin).netloc.lower() != headers.get("host", "").lower()
+        ):
+            return b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        if self._password is not None and not self._password_matches(headers.get("authorization", "")):
+            return (
+                b"HTTP/1.1 401 Unauthorized\r\n"
+                b'WWW-Authenticate: Basic realm="pymobiledevice3", charset="UTF-8"\r\n'
+                b"Content-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+        return None
+
+    def _password_matches(self, authorization: str) -> bool:
+        scheme, _, credentials = authorization.partition(" ")
+        if scheme.lower() != "basic":
+            return False
+        try:
+            _user, _, password = base64.b64decode(credentials.strip(), validate=True).decode("utf-8").partition(":")
+        except (ValueError, UnicodeDecodeError):
+            return False
+        return hmac.compare_digest(password.encode(), (self._password or "").encode())
+
     @staticmethod
     def _send_static(writer: asyncio.StreamWriter, body: bytes, content_type: bytes) -> None:
         writer.write(
@@ -2101,6 +2138,12 @@ class ScreenStreamServer:
             parts = request_line.split()
             method = parts[0].decode() if parts else "GET"
             target = parts[1].decode() if len(parts) >= 2 else "/"
+            refusal = self._refuse_request(headers)
+            if refusal is not None:
+                writer.write(refusal)
+                await writer.drain()
+                writer.close()
+                return
             # Strip the query string for route matching -- viewer.js reads its
             # flags (e.g. ?compensate=0) client-side from location.search, so
             # the server must still route "/?compensate=0" to the index page.

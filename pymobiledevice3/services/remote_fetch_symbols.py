@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.safe_paths import resolve_device_path
 
 MAX_CONCURRENT_DOWNLOADS = 4
 
@@ -99,7 +100,7 @@ class RemoteFetchSymbolsService(RemoteService):
                 return
 
             file = files[i]
-            out_file = out / file.file_path[1:]  # trim the "/" prefix
+            out_file = resolve_device_path(out, file.file_path.removeprefix("/"))
             out_file.parent.mkdir(parents=True, exist_ok=True)
             with open(out_file, "wb") as f:
                 async for chunk in self.service.iter_file_chunks(file.file_size, file_idx=i):

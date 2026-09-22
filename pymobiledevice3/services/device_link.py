@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, cast
 
 from pymobiledevice3.exceptions import NotEnoughDiskSpaceError, PyMobileDevice3Exception
+from pymobiledevice3.safe_paths import resolve_device_path
 from pymobiledevice3.service_connection import ServiceConnection
 
 SIZE_FORMAT = ">I"
@@ -112,7 +113,7 @@ class DeviceLink:
         post_file_receive: Optional[Callable[[str, str], None]] = None,
     ) -> None:
         self.service: ServiceConnection = service
-        self.root_path: Path = root_path
+        self.root_path: Path = root_path.resolve()
         self.preserve_file = preserve_file
         self.post_file_receive = post_file_receive
         self._discarded_files: set[Path] = set()
@@ -231,7 +232,7 @@ class DeviceLink:
             await self._sendall(struct.pack(SIZE_FORMAT, len(file_bytes)) + file_bytes)
 
             try:
-                file_path = self.root_path / file
+                file_path = resolve_device_path(self.root_path, file)
 
                 # Split each file into small protocol frames. BackupAgent2 buffers a whole
                 # frame in memory before flushing it to disk, so large frames drive its RSS
@@ -283,7 +284,7 @@ class DeviceLink:
 
     async def contents_of_directory(self, message: DLMessage) -> None:
         data = {}
-        path = self.root_path / cast(str, message[1])
+        path = resolve_device_path(self.root_path, cast(str, message[1]))
         for file in path.iterdir():
             ftype = "DLFileTypeUnknown"
             if file.is_dir():
@@ -310,10 +311,10 @@ class DeviceLink:
             size -= struct.calcsize(CODE_FORMAT)
             should_preserve = self.preserve_file(file_name, device_name) if self.preserve_file is not None else True
             if should_preserve:
-                with open(self.root_path / file_name, "wb") as fd:
+                with open(resolve_device_path(self.root_path, file_name), "wb") as fd:
                     size, code = await self._consume_file_transfer(size, code, fd)
             else:
-                path = self.root_path / file_name
+                path = resolve_device_path(self.root_path, file_name)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.touch()
                 self._discarded_files.add(Path(file_name))
@@ -359,10 +360,10 @@ class DeviceLink:
     async def move_items(self, message: DLMessage) -> None:
         items = cast(Mapping[str, str], message[1])
         for src, dst in items.items():
-            source = self.root_path / src
+            source = resolve_device_path(self.root_path, src)
             if not source.exists() and self.preserve_file is not None:
                 continue
-            dest = self.root_path / dst
+            dest = resolve_device_path(self.root_path, dst)
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(source, dest)
             # the source is gone after the move; the destination mirrors its kind
@@ -372,11 +373,11 @@ class DeviceLink:
         await self.status_response(0)
 
     async def copy_item(self, message: DLMessage) -> None:
-        src = self.root_path / cast(str, message[1])
+        src = resolve_device_path(self.root_path, cast(str, message[1]))
         if not src.exists() and self.preserve_file is not None:
             await self.status_response(0)
             return
-        dest = self.root_path / cast(str, message[2])
+        dest = resolve_device_path(self.root_path, cast(str, message[2]))
         dest.parent.mkdir(parents=True, exist_ok=True)
         is_dir = src.is_dir()
         if is_dir:
@@ -483,7 +484,7 @@ class DeviceLink:
 
     async def remove_items(self, message: DLMessage) -> None:
         for path in cast(Iterable[str], message[1]):
-            rm_path = self.root_path / path
+            rm_path = resolve_device_path(self.root_path, path)
             is_dir = rm_path.is_dir()
             if is_dir:
                 shutil.rmtree(rm_path)
@@ -536,7 +537,7 @@ class DeviceLink:
 
     async def create_directory(self, message: DLMessage) -> None:
         path = cast(str, message[1])
-        (self.root_path / path).mkdir(parents=True, exist_ok=True)
+        resolve_device_path(self.root_path, path).mkdir(parents=True, exist_ok=True)
         await self.status_response(0)
 
     async def status_response(self, status_code: int, status_str: str = "", status_dict: Any = None) -> None:

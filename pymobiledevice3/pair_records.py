@@ -11,6 +11,7 @@ from pymobiledevice3 import usbmux
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import MuxException, NotPairedError
 from pymobiledevice3.osu.os_utils import get_os_utils
+from pymobiledevice3.safe_paths import device_file_path, validate_device_filename
 from pymobiledevice3.usbmux import PlistMuxConnection
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ def get_itunes_pairing_record(identifier: str) -> Optional[dict[str, Any]]:
     :return: The pairing record if found, otherwise None.
     :rtype: Optional[dict]
     """
-    filename = OSUTILS.pair_record_path / f"{identifier}.plist"
+    filename = device_file_path(OSUTILS.pair_record_path, identifier, ".plist")
     try:
         with open(filename, "rb") as f:
             pair_record = plistlib.load(f)
@@ -84,7 +85,7 @@ def get_local_pairing_record(identifier: str, pairing_records_cache_folder: Path
     :rtype: Optional[dict]
     """
     logger.debug("Looking for pymobiledevice3 pairing record")
-    path = pairing_records_cache_folder / f"{identifier}.{PAIRING_RECORD_EXT}"
+    path = device_file_path(pairing_records_cache_folder, identifier, f".{PAIRING_RECORD_EXT}")
     if not path.exists():
         logger.debug(f"No pymobiledevice3 pairing record found for device {identifier}")
         return None
@@ -150,7 +151,7 @@ def get_remote_pairing_record_filename(identifier: str) -> str:
     :return: The filename for the remote pairing record.
     :rtype: str
     """
-    return f"remote_{identifier}"
+    return f"remote_{validate_device_filename(identifier)}"
 
 
 def iter_remote_pair_records() -> Generator[Path, None, None]:

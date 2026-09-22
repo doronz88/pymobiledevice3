@@ -23,6 +23,7 @@ Protocol reference: RFC 6143 (RFB 3.8).
 
 import asyncio
 import contextlib
+import hmac
 import logging
 import os
 import select
@@ -33,6 +34,9 @@ import uuid
 import zlib
 from collections import deque
 from typing import Optional
+
+from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
+from cryptography.hazmat.primitives.ciphers import Cipher, modes
 
 from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device import rfb_clipboard
@@ -263,6 +267,19 @@ class _VncClient:
         self.extended_clipboard = False
 
 
+def vnc_auth_response(password: str, challenge: bytes) -> bytes:
+    """What a client answers to a VNC Auth challenge for ``password``.
+
+    RFB VNC Authentication: the password, truncated or NUL-padded to 8 bytes, is the DES key,
+    with the bits of each key byte reversed (a quirk every VNC implementation carries); the 16
+    byte challenge is encrypted with it in ECB mode. DES is only in ``cryptography`` as
+    single-key 3DES these days, which is the same cipher.
+    """
+    key = bytes(int(f"{byte:08b}"[::-1], 2) for byte in password.encode("utf-8")[:8].ljust(8, b"\0"))
+    encryptor = Cipher(TripleDES(key * 3), modes.ECB()).encryptor()
+    return encryptor.update(challenge) + encryptor.finalize()
+
+
 class VncStreamServer:
     """RFB 3.8 server. Streams the device screen as Raw BGRA
     framebuffer updates."""
@@ -271,9 +288,10 @@ class VncStreamServer:
         self,
         rsd: RemoteServiceDiscoveryService,
         *,
-        bind: str = "0.0.0.0",
+        bind: str = "127.0.0.1",
         port: int = 5901,
         display_id: int = 1,
+        password: Optional[str] = None,
         audio: bool = False,
         decoder: str = "auto",
         allow_rtcp_fb: bool = False,
@@ -290,6 +308,7 @@ class VncStreamServer:
         self._bind = bind
         self._port = port
         self._display_id = display_id
+        self._password = password
         self._audio_enabled = audio
         self._sender_ip = rsd.service.address[0]
         # Protobuf-level negotiation knobs; see media_stream_offer.py.
@@ -1130,6 +1149,9 @@ class VncStreamServer:
             )
         except (asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
             pass
+        except ConnectionError as e:
+            # the handshake turned the client away (wrong password, unsupported security type)
+            logger.warning("VNC client %s rejected: %s", peer, e)
         except Exception:
             logger.exception("VNC client crashed: %s", peer)
         finally:
@@ -1169,12 +1191,11 @@ class VncStreamServer:
                 minor = int(client_version[8:11])
         except ValueError:
             minor = 8
-        # macOS Screen Sharing's password dialog refuses an empty entry
-        # even when the server advertises None auth, so we advertise
-        # VNC Auth (security type 2) and accept whatever the client
-        # sends in the challenge/response -- the user can type any
-        # password and the connection proceeds. Standard "open VNC
-        # server with mock auth" pattern.
+        # Always VNC Auth (security type 2): macOS Screen Sharing's password
+        # dialog refuses an empty entry even when the server advertises None
+        # auth. With a password configured the response is checked; without
+        # one, whatever the client sends is accepted (the server is
+        # loopback-only by default, and the CLI says so).
         if minor < 7:
             # RFB 3.3: server unilaterally picks the security type.
             w.write(struct.pack(">I", 2))  # VNC Auth
@@ -1193,15 +1214,21 @@ class VncStreamServer:
                 w.write(struct.pack(">I", 1) + struct.pack(">I", len(msg)) + msg)
                 await w.drain()
                 raise ConnectionError(f"client picked unsupported security={chosen}")
-        # VNC Auth challenge/response. Send 16 random bytes; the
-        # client encrypts them with DES using its (up to) 8-byte
-        # password as the key and sends the 16-byte ciphertext back.
-        # We don't actually verify the response -- any input is OK.
+        # VNC Auth challenge/response: 16 random bytes out, their DES
+        # encryption under the password back (see vnc_auth_response).
         challenge = os.urandom(16)
         w.write(challenge)
         await w.drain()
-        await r.readexactly(16)  # response (ignored)
-        logger.debug("handshake: VNC Auth accepted (any password)")
+        response = await r.readexactly(16)
+        if self._password is not None and not hmac.compare_digest(
+            response, vnc_auth_response(self._password, challenge)
+        ):
+            # SecurityResult=failed; 3.8 clients also get a reason string.
+            reason = b"Authentication failed"
+            w.write(struct.pack(">I", 1) + (struct.pack(">I", len(reason)) + reason if minor >= 8 else b""))
+            await w.drain()
+            raise ConnectionError("VNC Auth failed")
+        logger.debug("handshake: VNC Auth accepted (%s)", "password" if self._password else "any password")
         # 3.x always sends SecurityResult AFTER VNC Auth, regardless of
         # whether None auth would have skipped it.
         w.write(b"\x00\x00\x00\x00")

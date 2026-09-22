@@ -3,6 +3,7 @@ from collections.abc import AsyncIterable
 
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.safe_paths import validate_device_filename
 
 
 @dataclasses.dataclass
@@ -29,6 +30,6 @@ class DiagnosticsServiceService(CoreDeviceService):
         )
         return SysDiagnoseResponse(
             file_size=response["fileTransfer"]["expectedLength"],
-            preferred_filename=response["preferredFilename"],
+            preferred_filename=validate_device_filename(response["preferredFilename"]),
             generator=self.service.iter_file_chunks(response["fileTransfer"]["expectedLength"]),
         )

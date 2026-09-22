@@ -52,6 +52,11 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 from pymobiledevice3.services.crash_reports import CrashReportsManager
 from pymobiledevice3.utils import try_decode
 
+PASSWORD_HELP = (
+    "Require this password from every viewer. Without one, anyone who can reach the port can "
+    "watch and control the device, so only bind beyond loopback with a password set."
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -871,15 +876,13 @@ async def core_device_display_serve_web(
         typer.Option(
             "--bind",
             help=(
-                "Host to bind the webserver on. Defaults to ``0.0.0.0`` so the "
-                "viewer is reachable from any device on the LAN. The /touch / "
-                "/button / /key endpoints have no auth, so anyone reaching this "
-                "port can both watch and control the iPhone -- pass ``127.0.0.1`` "
-                "if that's not what you want."
+                "Host to bind the webserver on. Loopback by default; ``--bind 0.0.0.0`` "
+                "makes the viewer reachable from the LAN (set ``--password`` too)."
             ),
         ),
-    ] = "0.0.0.0",
+    ] = "127.0.0.1",
     http_port: Annotated[int, typer.Option("--http-port", help="Port for the webserver")] = 8080,
+    password: Annotated[Optional[str], typer.Option("--password", help=PASSWORD_HELP)] = None,
     no_audio: Annotated[
         bool,
         typer.Option(
@@ -1010,6 +1013,7 @@ async def core_device_display_serve_web(
         bind=bind,
         http_port=http_port,
         display_id=display_id,
+        password=password,
         audio_default_on=not no_audio,
         allow_rtcp_fb=rtcp_fb,
         ltrp_enabled=ltrp,
@@ -1032,14 +1036,13 @@ async def core_device_display_serve_vnc(
         typer.Option(
             "--bind",
             help=(
-                "Host to bind the VNC listener on. Defaults to ``0.0.0.0`` so "
-                "any device on the LAN can connect. The VNC server has no "
-                "password, so anyone reaching this port can watch AND control "
-                "the iPhone -- pass ``127.0.0.1`` if that's not acceptable."
+                "Host to bind the VNC listener on. Loopback by default; ``--bind 0.0.0.0`` "
+                "lets the LAN connect (set ``--password`` too)."
             ),
         ),
-    ] = "0.0.0.0",
+    ] = "127.0.0.1",
     port: Annotated[int, typer.Option("--port", help="TCP port for the VNC listener")] = 5901,
+    password: Annotated[Optional[str], typer.Option("--password", help=PASSWORD_HELP)] = None,
     audio: Annotated[
         bool,
         typer.Option(
@@ -1107,6 +1110,7 @@ async def core_device_display_serve_vnc(
         bind=bind,
         port=port,
         display_id=display_id,
+        password=password,
         audio=audio,
         decoder=decoder,
         allow_rtcp_fb=rtcp_fb,
