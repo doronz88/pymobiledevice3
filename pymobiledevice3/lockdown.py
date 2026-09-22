@@ -72,6 +72,7 @@ from pymobiledevice3.pair_records import (
     get_preferred_pair_record,
     get_usbmux_pairing_record,
 )
+from pymobiledevice3.safe_paths import device_file_path
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.usbmux import PlistMuxConnection
 
@@ -1114,7 +1115,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
         unprivileged run can rewrite it.
         """
         assert self.pairing_records_cache_folder is not None and self.pair_record is not None
-        pair_record_file = self.pairing_records_cache_folder / f"{self.identifier}.plist"
+        if self.identifier is None:
+            raise ValueError("Cannot save a pairing record without a device identifier")
+        pair_record_file = device_file_path(self.pairing_records_cache_folder, self.identifier, ".plist")
         pair_record_file.write_bytes(plistlib.dumps(self.pair_record))
         # When pairing under sudo, hand the record back to the invoking user (no-op otherwise),
         # so a later unprivileged run can still rewrite it. Without this, a sudo run leaves a
