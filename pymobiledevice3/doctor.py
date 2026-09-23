@@ -231,7 +231,9 @@ async def _wifi_discovery_check(devices: list[usbmux.MuxDevice]) -> Check:
         "Wi-Fi devices",
         Status.OK,
         f"{daemon} supports it (no device is currently listed over the network)",
-        hint="not seeing a Wi-Fi device? run `pymobiledevice3 lockdown wifi-connections on` once over USB",
+        hint="not seeing a Wi-Fi device? it must have `pymobiledevice3 lockdown wifi-connections on` set, "
+        "and *this* host must be paired with it over USB -- a device advertises one tag per paired "
+        "host, so an unpaired host cannot recognise it however the setting is set",
     )
 
 
