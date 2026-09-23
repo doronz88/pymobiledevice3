@@ -4,6 +4,7 @@ import ast
 import asyncio
 import json
 import re
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional, cast
@@ -232,6 +233,10 @@ def _sysfs_device(root: Path, node: str, vendor: str, serial: Optional[str], pro
         (entry / "product").write_text(product + "\n")
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="a realistic sysfs tree needs interface nodes like 1-1:1.0, and ':' is illegal in Windows paths",
+)
 def test_linux_reads_apple_devices_out_of_sysfs(monkeypatch, tmp_path: Path):
     # Same data lsusb parses, without depending on usbutils being installed.
     _sysfs_device(tmp_path, "1-1", "05ac", "00008030000215140A9A802E", "iPhone")
