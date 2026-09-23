@@ -1,16 +1,20 @@
 """Host checks: each one must report what was observed, and never guess past it."""
 
+import asyncio
+import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar, Optional
 
 import pytest
+from typer.testing import CliRunner
 
-from pymobiledevice3 import doctor
-from pymobiledevice3.exceptions import MuxException
+from pymobiledevice3 import __main__, doctor
+from pymobiledevice3.cli import doctor as cli_doctor
+from pymobiledevice3.exceptions import ConnectionFailedToUsbmuxdError, MuxException
 from pymobiledevice3.osu import posix_util
-from pymobiledevice3.osu.os_utils import HostUsbDevice, UsbmuxDaemon
+from pymobiledevice3.osu.os_utils import HostUsbDevice, UsbmuxDaemon, service_binary
 
 pytestmark = [pytest.mark.cli]
 
@@ -137,7 +141,7 @@ async def test_an_unreadable_pair_record_store_is_not_reported_as_empty(monkeypa
     monkeypatch.setattr(doctor, "get_home_folder", lambda: tmp_path)
     monkeypatch.setattr(doctor, "iter_remote_pair_records", lambda: iter(()))
 
-    check = doctor._pair_records_check()
+    check = await doctor._pair_records_check()
 
     assert "not readable" in check.detail
 
@@ -247,3 +251,191 @@ def test_a_udid_is_spelled_the_way_usbmux_spells_it():
     # A 40-character legacy UDID has no separator to restore.
     legacy = "a" * 40
     assert posix_util._with_udid_separator(legacy) == legacy
+
+
+# --- failures must be reported, never raised ----------------------------------
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ConnectionFailedToUsbmuxdError("refused"),
+        PermissionError("no access to /var/run/usbmuxd"),
+        OSError("Name or service not known"),
+    ],
+    ids=["refused", "no-permission", "unresolvable-address"],
+)
+async def test_an_unreachable_daemon_is_a_check_not_a_traceback(monkeypatch, error):
+    # A host whose usbmux cannot be reached is the main thing doctor exists to explain; crashing
+    # would also cost every later check, which is exactly when they matter most.
+    async def list_devices():
+        raise error
+
+    monkeypatch.setattr(doctor.usbmux, "list_devices", list_devices)
+
+    checks = await doctor._usbmux_checks()
+
+    assert [check.status for check in checks] == [doctor.Status.PROBLEM]
+    assert checks[0].title == "usbmux daemon"
+    assert checks[0].impact and checks[0].hint
+
+
+async def test_mdns_sockets_that_cannot_be_opened_are_reported(monkeypatch):
+    async def open_mdns_sockets():
+        raise OSError("Address already in use")
+
+    monkeypatch.setattr(doctor, "_open_mdns_sockets", open_mdns_sockets)
+
+    check = await doctor._mdns_check()
+
+    assert check.status is doctor.Status.PROBLEM
+    assert "no socket could be opened" in check.detail
+
+
+# --- only iOS devices, and only the link this check is about -------------------
+
+
+@pytest.mark.parametrize(
+    "serial",
+    ["F0T1234567890AB", "CPID:8030 CPFM:03 ECID:000215140A9A802E"],
+    ids=["magic-keyboard", "recovery-mode"],
+)
+def test_other_apple_usb_hardware_is_not_a_udid(serial):
+    # Apple's vendor id also covers keyboards, trackpads and displays. usbmux never lists those,
+    # so counting them would accuse a healthy daemon of being blind.
+    assert not posix_util._looks_like_udid(serial)
+
+
+def test_both_udid_shapes_are_recognized():
+    assert posix_util._looks_like_udid("00008030000215140A9A802E")
+    assert posix_util._looks_like_udid(UDID)
+    assert posix_util._looks_like_udid("a" * 40)
+
+
+def test_a_device_listed_over_usb_is_matched_however_it_is_spelled(monkeypatch):
+    # The host reports the UDID without its separator; usbmux prints it with one.
+    monkeypatch.setattr(
+        type(doctor.OSUTILS),
+        "usb_devices_seen_by_host",
+        lambda self: [HostUsbDevice(name="iPhone", serial=UDID)],
+    )
+    listed = _device("USB")
+    listed.serial = UDID.replace("-", "")
+    listed.matches_udid = lambda udid: udid.replace("-", "") == UDID.replace("-", "")
+
+    check = doctor._host_usb_check([listed])
+
+    assert check is not None
+    assert check.status is doctor.Status.OK
+
+
+async def test_the_connect_probe_prefers_usb_over_wifi():
+    # The daemon's `Connect` support is a USB-side story, and a Wi-Fi entry may be asleep.
+    attempted = []
+
+    def _candidate(connection_type: str) -> Any:
+        device = _device(connection_type)
+
+        async def connect(port: int) -> Any:
+            attempted.append(connection_type)
+            return SimpleNamespace(close=lambda: None)
+
+        device.connect = connect
+        return device
+
+    await doctor._connect_check([_candidate("Network"), _candidate("USB")])
+
+    assert attempted == ["USB"]
+
+
+async def test_a_sleeping_device_times_out_instead_of_hanging(monkeypatch):
+    async def connect(port: int) -> Any:
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(doctor, "CONNECT_PROBE_TIMEOUT", 0.01)
+    device = _device("Network")
+    device.connect = connect
+
+    check = await doctor._connect_check([device])
+
+    assert check.status is doctor.Status.PROBLEM
+    assert "timed out" in check.detail
+
+
+# --- daemon identification, the parse-heavy bits -------------------------------
+
+
+def test_the_avahi_linkage_is_read_from_whatever_is_readable(tmp_path: Path):
+    linked = tmp_path / "usbmuxd2"
+    linked.write_bytes(b"\x7fELF...libavahi-client.so.3...")
+    plain = tmp_path / "usbmuxd"
+    plain.write_bytes(b"\x7fELF...libusb-1.0.so.0...")
+
+    assert posix_util._links_mdns(linked) is True
+    assert posix_util._links_mdns(plain) is False
+    # The daemon runs as root, so an ordinary user cannot read its /proc entries.
+    assert posix_util._links_mdns(tmp_path / "unreadable") is None
+
+
+@pytest.mark.parametrize(
+    ("image_path", "expected"),
+    [
+        (r'"C:\Apple\AppleMobileDeviceService.exe" -k netsvcs', r"C:\Apple\AppleMobileDeviceService.exe"),
+        (r"C:\Program Files\Apple\AMDS.exe", r"C:\Program Files\Apple\AMDS.exe"),
+        (r"C:\Program Files\Apple\AMDS.exe -k foo", r"C:\Program Files\Apple\AMDS.exe"),
+        (r"C:\Apple\noextension", r"C:\Apple\noextension"),
+    ],
+    ids=["quoted-with-args", "unquoted-with-spaces", "unquoted-with-args", "no-suffix"],
+)
+def test_a_service_image_path_yields_just_the_executable(image_path: str, expected: str):
+    # An unquoted ImagePath may contain spaces, so arguments cannot be split off on whitespace.
+    assert service_binary(image_path) == expected
+
+
+# --- the command itself --------------------------------------------------------
+
+
+def _report(*checks: doctor.Check) -> doctor.Report:
+    return doctor.Report("env line", list(checks))
+
+
+@pytest.mark.parametrize("arguments", [[], ["--json"]], ids=["text", "json"])
+def test_a_broken_host_fails_the_command_in_both_output_modes(monkeypatch, arguments: list[str]):
+    # A script reading the machine-readable form must not pass on a host the report calls broken.
+    async def run_checks() -> doctor.Report:
+        return _report(doctor.Check("Bonjour discovery", doctor.Status.PROBLEM, "blocked"))
+
+    monkeypatch.setattr(cli_doctor, "run_checks", run_checks)
+
+    result = CliRunner().invoke(__main__.app, ["doctor", *arguments])
+
+    assert result.exit_code == 1
+
+
+def test_a_healthy_host_passes_and_json_carries_every_field(monkeypatch):
+    async def run_checks() -> doctor.Report:
+        return _report(doctor.Check("Wi-Fi devices", doctor.Status.OK, "fine", "no cost", "no fix"))
+
+    monkeypatch.setattr(cli_doctor, "run_checks", run_checks)
+
+    result = CliRunner().invoke(__main__.app, ["doctor", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    # The environment line is the first thing wanted in a pasted bug report.
+    assert payload["environment"] == "env line"
+    assert payload["checks"][0] == {
+        "title": "Wi-Fi devices",
+        "status": "OK",
+        "detail": "fine",
+        "impact": "no cost",
+        "hint": "no fix",
+    }
+
+
+async def test_running_every_check_on_this_host_produces_a_report():
+    # The whole point of the guard: whatever this machine's state, a report comes back.
+    report = await doctor.run_checks()
+
+    assert report.environment
+    assert report.checks

@@ -13,10 +13,10 @@ import asyncio
 import os
 import platform
 import sys
-from contextlib import suppress
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, cast
+from typing import Callable, Optional, cast
 
 import typer
 
@@ -30,10 +30,10 @@ from pymobiledevice3.bonjour import (
     build_query,
 )
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import MuxException, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import MuxException, PyMobileDevice3Exception, TunneldConnectionError
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.pair_records import iter_remote_pair_records
-from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, get_tunneld_devices
+from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, get_tunneld_tunnels
 
 OSUTILS = get_os_utils()
 
@@ -46,6 +46,8 @@ USBMUXD2_CONNECT_FIX_VERSION = "0.64"
 # A refused send is reported through the protocol's error_received callback rather than raised by
 # sendto(), so the errors need a turn of the loop to land before they can be counted.
 MDNS_ERROR_SETTLE_SECONDS = 0.3
+# usbmux performs no timeout of its own, and a device listed over Wi-Fi may simply be asleep.
+CONNECT_PROBE_TIMEOUT = 5.0
 # Widest title shipped, so every line in a section starts its detail at the same column.
 TITLE_COLUMN = 20
 
@@ -146,8 +148,8 @@ def _host_usb_check(devices: list[usbmux.MuxDevice]) -> Optional[Check]:
             impact="USB commands have nothing to talk to (Wi-Fi may still work)",
             hint="plug the device in and unlock it, or use Wi-Fi",
         )
-    listed = {device.serial for device in devices if device.is_usb}
-    unlisted = [device for device in seen_by_host if device.serial not in listed]
+    listed = [device for device in devices if device.is_usb]
+    unlisted = [seen for seen in seen_by_host if not any(device.matches_udid(seen.serial) for device in listed)]
     if not unlisted:
         return Check(
             "Device plugged in",
@@ -167,11 +169,19 @@ async def _usbmux_checks() -> list[Check]:
     """Reach usbmux, then exercise what it is actually asked to do."""
     try:
         devices = await usbmux.list_devices()
-    except PyMobileDevice3Exception as e:
+    except (PyMobileDevice3Exception, OSError) as e:
+        # OSError covers what the socket layer does not convert: no permission on the socket,
+        # an unresolvable USBMUXD_SOCKET_ADDRESS, a daemon that died mid-handshake.
         daemon = OSUTILS.usbmux_daemon()
-        detail = f"not reachable ({type(e).__name__})"
-        hint = "start usbmuxd" if daemon is None else f"{daemon} is installed but not serving"
-        return [Check("usbmuxd", Status.PROBLEM, detail, hint)]
+        return [
+            Check(
+                "usbmux daemon",
+                Status.PROBLEM,
+                f"not reachable ({type(e).__name__}: {e})",
+                impact="no device can be reached over USB, and Wi-Fi discovery through usbmux is gone too",
+                hint="start usbmuxd" if daemon is None else f"{daemon} is installed but not serving",
+            )
+        ]
 
     checks: list[Check] = []
     host_usb = _host_usb_check(devices)
@@ -225,9 +235,19 @@ async def _connect_check(devices: list[usbmux.MuxDevice]) -> Check:
     """Open and drop one lockdown connection -- the message usbmuxd2 used to be missing."""
     if not devices:
         return Check("Service access", Status.NOT_APPLICABLE, "no device to connect to")
-    device = devices[0]
+    # The daemon's `Connect` support is a USB-side story, and a device listed over Wi-Fi may be
+    # asleep -- usbmux has no timeout of its own, so probing that one could hang the whole command.
+    device = next((candidate for candidate in devices if candidate.is_usb), devices[0])
     try:
-        sock = await device.connect(LOCKDOWN_PORT)
+        sock = await asyncio.wait_for(device.connect(LOCKDOWN_PORT), timeout=CONNECT_PROBE_TIMEOUT)
+    except asyncio.TimeoutError:
+        return Check(
+            "Service access",
+            Status.PROBLEM,
+            f"connecting to {device.serial} over {device.connection_type} timed out",
+            impact="commands that reach this device will hang rather than fail",
+            hint="the device may be asleep or off the network; wake it, or attach it over USB",
+        )
     except MuxException as e:
         return Check(
             "Service access",
@@ -247,7 +267,16 @@ async def _mdns_check() -> Check:
     Mirrors what :func:`~pymobiledevice3.bonjour._warn_if_multicast_blocked` reports during a real
     browse: every send failing is the signal, and those failures surface asynchronously.
     """
-    transports, _ = await _open_mdns_sockets()
+    try:
+        transports, _ = await _open_mdns_sockets()
+    except OSError as e:
+        return Check(
+            "Bonjour discovery",
+            Status.PROBLEM,
+            f"no socket could be opened for mDNS ({type(e).__name__}: {e})",
+            impact="`bonjour` commands and --mobdev2 find nothing",
+            hint="another process may hold UDP/5353, or IPv6 may be disabled on this host",
+        )
     try:
         sent = await _send_query_all(transports, build_query(MOBDEV2_SERVICE_NAME, QTYPE_PTR, unicast=False))
         await asyncio.sleep(MDNS_ERROR_SETTLE_SECONDS)
@@ -292,21 +321,19 @@ async def _native_tunnel_check() -> Check:
 
 
 async def _tunneld_check() -> Check:
+    """Ask whether tunneld is up. Connecting to its devices would be a device check, not a host one."""
     try:
-        rsds = await get_tunneld_devices()
-    except Exception:
+        tunnels = await get_tunneld_tunnels()
+    except TunneldConnectionError:
         return Check(
             "Tunnel (tunneld)",
             Status.NOT_APPLICABLE,
             f"not running on {TUNNELD_DEFAULT_ADDRESS[0]}:{TUNNELD_DEFAULT_ADDRESS[1]}",
         )
-    for rsd in rsds:
-        with suppress(Exception):
-            await rsd.close()
-    return Check("Tunnel (tunneld)", Status.OK, f"running with {len(rsds)} tunnel(s)")
+    return Check("Tunnel (tunneld)", Status.OK, f"running with {len(tunnels)} tunnel(s)")
 
 
-def _userspace_check() -> Check:
+async def _userspace_check() -> Check:
     try:
         import pmd_pytcp
     except ImportError:
@@ -320,7 +347,7 @@ def _userspace_check() -> Check:
     return Check("Tunnel (userspace)", Status.OK, f"pmd-pytcp {getattr(pmd_pytcp, '__version__', 'unknown')}")
 
 
-def _pair_records_check() -> Check:
+async def _pair_records_check() -> Check:
     """Count what we can read. The system store is root-only on macOS, which is not the same as empty."""
     system_store = OSUTILS.pair_record_path
     if not system_store.is_dir():
@@ -329,17 +356,41 @@ def _pair_records_check() -> Check:
         system = f"system store {system_store} not readable (needs root)"
     else:
         system = f"{len(list(system_store.glob('*.plist')))} in {system_store}"
-    own = len(list(get_home_folder().glob("*.plist")))
+    # RemotePairing records share this folder, under a remote_ prefix; count them once.
+    own = len([path for path in get_home_folder().glob("*.plist") if not path.name.startswith("remote_")])
     remote = len(list(iter_remote_pair_records()))
     return Check("Pairing", Status.OK, f"{own} own, {remote} RemotePairing, {system}")
 
 
+async def _guarded_many(title: str, produce: Callable[[], Awaitable[list[Check]]]) -> list[Check]:
+    """Never let one check take the report down with it.
+
+    This command runs on hosts already broken in ways nobody predicted, so an unexpected exception
+    has to become a line in the report rather than a traceback that costs every later check too.
+    """
+    try:
+        return await produce()
+    except Exception as e:
+        return [Check(title, Status.UNKNOWN, f"could not be checked ({type(e).__name__}: {e})")]
+
+
+async def _guarded(title: str, produce: Callable[[], Awaitable[Check]]) -> Check:
+    return (await _guarded_many(title, lambda: _as_list(produce)))[0]
+
+
+async def _as_list(produce: Callable[[], Awaitable[Check]]) -> list[Check]:
+    return [await produce()]
+
+
 async def run_checks() -> Report:
     """Run every host check, in the order a failure would cascade."""
-    checks = await _usbmux_checks()
-    checks.append(await _mdns_check())
-    checks.append(await _native_tunnel_check())
-    checks.append(await _tunneld_check())
-    checks.append(_userspace_check())
-    checks.append(_pair_records_check())
+    checks = await _guarded_many("usbmux daemon", _usbmux_checks)
+    for title, check in (
+        ("Bonjour discovery", _mdns_check),
+        ("Tunnel (native)", _native_tunnel_check),
+        ("Tunnel (tunneld)", _tunneld_check),
+        ("Tunnel (userspace)", _userspace_check),
+        ("Pairing", _pair_records_check),
+    ):
+        checks.append(await _guarded(title, check))
     return Report(_environment(), checks)

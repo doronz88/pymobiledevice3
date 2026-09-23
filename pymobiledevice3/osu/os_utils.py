@@ -1,4 +1,5 @@
 import inspect
+import os
 import socket
 import sys
 from dataclasses import dataclass
@@ -39,6 +40,23 @@ class HostUsbDevice:
 
     def __repr__(self) -> str:
         return f"{self.name} ({self.serial})"
+
+
+def service_binary(image_path: str) -> str:
+    """The executable out of a Windows service's registry ImagePath.
+
+    Lives here rather than beside its caller because it is pure string work: ImagePath is usually
+    REG_EXPAND_SZ, so it may carry %ProgramFiles% unexpanded, and it may end in service arguments.
+    Splitting on whitespace is wrong, since an unquoted path is allowed to contain spaces
+    (``C:\\Program Files\\...``) -- the executable is delimited by its quotes when it has them, and
+    by its .exe suffix when it does not.
+    """
+    expanded = os.path.expandvars(image_path).strip()
+    if expanded.startswith('"'):
+        closing = expanded.find('"', 1)
+        return expanded[1:closing] if closing != -1 else expanded[1:]
+    suffix = expanded.lower().find(".exe")
+    return expanded[: suffix + len(".exe")] if suffix != -1 else expanded
 
 
 DEFAULT_AFTER_IDLE_SEC = 3

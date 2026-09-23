@@ -29,17 +29,21 @@ async def cli_doctor(
     """
     report = await run_checks()
     if json_output:
-        print_json([
-            {
-                "title": check.title,
-                "status": check.status.value,
-                "detail": check.detail,
-                "impact": check.impact,
-                "hint": check.hint,
-            }
-            for check in report.checks
-        ])
-        return
-    typer.echo(repr(report))
+        print_json({
+            "environment": report.environment,
+            "checks": [
+                {
+                    "title": check.title,
+                    "status": check.status.value,
+                    "detail": check.detail,
+                    "impact": check.impact,
+                    "hint": check.hint,
+                }
+                for check in report.checks
+            ],
+        })
+    else:
+        typer.echo(repr(report))
+    # Same verdict either way: a script reading the JSON must not pass on a broken host.
     if report.problems:
         raise typer.Exit(1)

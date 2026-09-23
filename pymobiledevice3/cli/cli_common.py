@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import io
 import json
 import logging
 import os
@@ -106,7 +107,7 @@ def print_json(buf: Any, colored: Optional[bool] = None, default: Callable[[Any]
     if colored is None:
         colored = user_requested_colored_output()
     formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default)
-    if colored and os.isatty(sys.stdout.fileno()):
+    if colored and isatty():
         colorful_json = cast(
             str,
             highlight(
@@ -147,7 +148,15 @@ def set_color_flag(value: bool) -> None:
 
 
 def isatty() -> bool:
-    return os.isatty(sys.stdout.fileno())
+    """Whether stdout is a terminal, tolerating replacements that have no file descriptor at all.
+
+    A test runner's capture buffer and some embedders raise from ``fileno()`` rather than returning
+    one, which used to take the whole command down on the way to deciding about colour.
+    """
+    try:
+        return os.isatty(sys.stdout.fileno())
+    except (AttributeError, ValueError, OSError, io.UnsupportedOperation):
+        return False
 
 
 def user_requested_colored_output() -> bool:

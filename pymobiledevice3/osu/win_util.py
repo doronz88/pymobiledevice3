@@ -16,14 +16,18 @@ from pymobiledevice3.osu.os_utils import (
     DEFAULT_MAX_FAILS,
     OsUtils,
     UsbmuxDaemon,
+    service_binary,
 )
 from pymobiledevice3.usbmux import MuxConnection
 
 # The service registers its binary here, readable without elevation -- unlike the process, which
 # runs as SYSTEM and whose path an ordinary user cannot always read.
 _AMDS_REGISTRY_KEY = r"SYSTEM\CurrentControlSet\Services\Apple Mobile Device Service"
-# Apple's Microsoft Store "Apple Devices" app installs under WindowsApps, and the service it ships
-# does not discover devices over Wi-Fi. The classic iTunes package installs under Common Files.
+# Apple's Microsoft Store "Apple Devices" app installs under WindowsApps. Its service does not
+# discover devices over Wi-Fi: reported in pymobiledevice3#1968 on Windows 11, where `usbmux list`
+# stayed empty for a device `bonjour mobdev2` could see and the app's own UI could not reach
+# either, with `lockdown wifi-connections` confirming the toggle was on. The classic iTunes
+# package installs under Common Files and does discover them.
 _STORE_APP_MARKER = "windowsapps"
 
 
@@ -40,7 +44,7 @@ class Win32(OsUtils):
             image_path = cast(str, winreg.QueryValueEx(key, "ImagePath")[0])  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
         if image_path is None:
             return None
-        path = Path(image_path.strip('"'))
+        path = Path(service_binary(image_path))
         if _STORE_APP_MARKER in image_path.lower():
             return UsbmuxDaemon(
                 name='Apple Mobile Device Service (Microsoft Store "Apple Devices")',
