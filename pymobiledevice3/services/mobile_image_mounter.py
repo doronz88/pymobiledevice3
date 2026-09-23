@@ -70,7 +70,7 @@ class MobileImageMounterService(LockdownService):
         assert self.IMAGE_TYPE is not None
         if await self.is_image_mounted(self.IMAGE_TYPE):
             raise AlreadyMountedError()
-        if Version(self.lockdown.product_version).major >= 16 and not await self.lockdown.get_developer_mode_status():
+        if self.lockdown.has_developer_mode and not await self.lockdown.get_developer_mode_status():
             raise DeveloperModeIsNotEnabledError()
 
     async def copy_devices(self) -> list[dict[str, Any]]:

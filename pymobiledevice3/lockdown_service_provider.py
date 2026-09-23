@@ -3,8 +3,13 @@ import logging
 from abc import abstractmethod
 from typing import Any, Optional
 
+from packaging.version import Version
+
 from pymobiledevice3.exceptions import StartServiceError
 from pymobiledevice3.service_connection import ServiceConnection
+
+# Developer mode arrived in iOS 16; before that there is nothing to enable or to query.
+DEVELOPER_MODE_MIN_VERSION = Version("16.0")
 
 
 class LockdownServiceProvider:
@@ -21,6 +26,16 @@ class LockdownServiceProvider:
     def product_version(self) -> str:
         """Return the device OS version."""
         pass
+
+    @property
+    def has_developer_mode(self) -> bool:
+        """Whether this device's OS has a developer mode at all.
+
+        The single place this cutoff is decided. Anything that gates on developer mode -- refusing
+        to mount without it, or merely reporting its state -- asks here, so the rule cannot be
+        restated somewhere that then drifts.
+        """
+        return Version(self.product_version) >= DEVELOPER_MODE_MIN_VERSION
 
     @property
     @abstractmethod

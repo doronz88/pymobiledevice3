@@ -1,5 +1,6 @@
 """Host checks: each one must report what was observed, and never guess past it."""
 
+import ast
 import asyncio
 import json
 import re
@@ -14,6 +15,7 @@ from typer.testing import CliRunner
 from pymobiledevice3 import __main__, bonjour, doctor
 from pymobiledevice3.cli import doctor as cli_doctor
 from pymobiledevice3.exceptions import ConnectionFailedToUsbmuxdError, MuxException
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu import posix_util
 from pymobiledevice3.osu.os_utils import HostUsbDevice, UsbmuxDaemon, service_binary
 from pymobiledevice3.services import mobile_image_mounter
@@ -454,6 +456,9 @@ async def test_running_every_check_on_this_host_produces_a_report():
 
 
 class _FakeLockdownClient:
+    # Borrowed, not reimplemented: a fake that restates the cutoff could not catch it drifting.
+    has_developer_mode = LockdownServiceProvider.has_developer_mode
+
     def __init__(self, paired: bool = True, version: str = "17.4", developer_mode: bool = True) -> None:
         self.paired = paired
         self.product_type = "iPhone15,4"
@@ -601,3 +606,28 @@ def test_doctor_does_not_reach_into_bonjour_internals():
     assert "_open_mdns_sockets" not in source
     assert "_send_query_all" not in source
     assert "_DatagramProtocol" not in source
+
+
+def test_the_developer_mode_cutoff_is_lockdowns_own():
+    # Stated twice it would drift: mounting refuses without developer mode, doctor reports it.
+    for version, expected in (("15.7", False), ("16.0", True), ("16.4", True), ("17.0", True), ("27.2", True)):
+        assert _FakeLockdownClient(version=version).has_developer_mode is expected
+
+
+def test_every_command_the_doctor_recommends_exists():
+    """A hint naming a command that was renamed is worse than no hint at all."""
+    source = (Path(__file__).parent.parent / "pymobiledevice3/doctor.py").read_text()
+    recommended = set()
+    for node in ast.walk(ast.parse(source)):
+        # Only string literals: an `from pymobiledevice3 import ...` line is not advice.
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            recommended.update(re.findall(r"pymobiledevice3 ([a-z0-9-]+(?: [a-z0-9-]+)?)", node.value))
+    assert recommended, "no commands found to check -- has the hint wording changed?"
+
+    runner = CliRunner()
+    unresolved = [
+        command
+        for command in sorted(recommended)
+        if runner.invoke(__main__.app, [*command.split(), "--help"]).exit_code
+    ]
+    assert not unresolved, f"doctor recommends commands that do not exist: {unresolved}"
