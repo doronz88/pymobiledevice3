@@ -147,8 +147,7 @@ class Darwin(Posix):
             return None
         devices: list[HostUsbDevice] = []
         for entry in get_io_services_by_type("IOUSBHostDevice"):
-            # ioregistry ships no type information, so its properties arrive fully untyped.
-            properties = cast(dict[str, Any], entry.properties)  # pyright: ignore[reportUnknownMemberType]
+            properties = entry.properties
             if properties.get("USB Vendor Name") != "Apple Inc.":
                 continue
             serial = cast(Optional[str], properties.get("USB Serial Number"))
