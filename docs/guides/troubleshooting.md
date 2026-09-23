@@ -50,6 +50,39 @@ the transport that was asked for it — the message names that transport (`usbmu
 pymobiledevice3 usbmux list
 ```
 
+### The device is advertising over Wi-Fi but `usbmux list` does not show it
+
+Two different things have to be true, and only the first lives on the device:
+
+```shell
+pymobiledevice3 bonjour mobdev2   # is the device announcing itself?
+pymobiledevice3 usbmux list       # has this host's daemon listed it?
+```
+
+When the browse finds it and the listing does not, nothing is wrong on the device — the host's
+daemon has not picked the announcement up. `EnableWifiConnections` takes effect immediately when
+set, so re-running `lockdown wifi-connections on` will not change anything.
+
+Three things to try, cheapest first:
+
+- Unplug and replug the cable, or toggle Wi-Fi off and on on the device. Both make the daemon
+  re-discover, and it often recovers on its own given a minute.
+- Make the device re-announce itself, which costs nothing and does not change any setting:
+
+    ```shell
+    pymobiledevice3 notification post com.apple.mobile.lockdown.BonjourServiceChanged
+    ```
+
+    `lockdownd` observes that notification, tears down its wireless connections and re-registers
+    the Bonjour service. It is what `lockdownd` posts to itself after pair records change.
+
+- Confirm **this** host is paired with the device over USB. Wi-Fi reach is per host: the device
+  advertises one authentication tag per paired host, so a machine that has never been cabled to it
+  cannot recognise it however the setting is set.
+
+If the browse finds nothing either, the setting really is off (or this host cannot send mDNS at
+all — see `pymobiledevice3 doctor`).
+
 ## Pairing and trust
 
 ### "Waiting for user dialog approval" (`PairingDialogResponsePendingError`)
