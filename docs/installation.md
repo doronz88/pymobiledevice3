@@ -34,8 +34,12 @@ pymobiledevice3 --install-completion
 
 === "Windows"
 
-    - Install iTunes from the Microsoft Store:
-      <https://apps.microsoft.com/detail/9pb2mz1zmb1s>
+    - Install iTunes: <https://www.apple.com/itunes/download/win64>. It provides the *Apple Mobile
+      Device Service* every usbmux-based command talks to.
+    - Prefer that package over the Microsoft Store "Apple Devices" app. The Store app's service
+      does not discover devices over Wi-Fi, so an uncabled device never appears in
+      `pymobiledevice3 usbmux list` even with `lockdown wifi-connections on` — reaching it then
+      takes an explicit `--mobdev2`.
     - For WSL2, enable mirrored networking mode:
 
         ```none
