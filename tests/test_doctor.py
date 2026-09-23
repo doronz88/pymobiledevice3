@@ -1,5 +1,6 @@
 """Host checks: each one must report what was observed, and never guess past it."""
 
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar
@@ -11,6 +12,15 @@ from pymobiledevice3.exceptions import MuxException
 from pymobiledevice3.osu.os_utils import HostUsbDevice, UsbmuxDaemon
 
 pytestmark = [pytest.mark.cli]
+
+# Rendering is styled at the source; assertions are about the words, not the escape codes (which
+# typer.echo drops anyway whenever the output is not a terminal).
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    return _ANSI.sub("", text)
+
 
 UDID = "00008030-000215140A9A802E"
 
@@ -132,12 +142,16 @@ async def test_an_unreadable_pair_record_store_is_not_reported_as_empty(monkeypa
 
 
 def test_a_check_shows_the_cost_and_the_fix_on_their_own_lines():
-    rendered = repr(
-        doctor.Check("Bonjour discovery", doctor.Status.PROBLEM, "blocked", "nothing is found", "allow the terminal")
+    rendered = _plain(
+        repr(
+            doctor.Check(
+                "Bonjour discovery", doctor.Status.PROBLEM, "blocked", "nothing is found", "allow the terminal"
+            )
+        )
     )
 
     lines = rendered.splitlines()
-    assert lines[1].strip() == "so: nothing is found"
+    assert lines[1].strip() == "so:  nothing is found"
     assert lines[2].strip() == "fix: allow the terminal"
 
 
@@ -151,7 +165,7 @@ def test_report_groups_by_what_it_means_for_the_reader():
         ],
     )
 
-    rendered = repr(report)
+    rendered = _plain(repr(report))
     assert rendered.startswith("env line")
     assert rendered.index("This works") < rendered.index("This does not") < rendered.index("Not available here")
     assert [check.title for check in report.problems] == ["broken"]
@@ -160,7 +174,7 @@ def test_report_groups_by_what_it_means_for_the_reader():
 def test_a_clean_report_says_nothing_is_blocking():
     report = doctor.Report("env line", [doctor.Check("works", doctor.Status.OK, "fine")])
 
-    assert "Nothing here is blocking a device connection." in repr(report)
+    assert "Nothing here is blocking a device connection." in _plain(repr(report))
 
 
 def test_a_device_the_host_sees_but_usbmux_does_not_is_a_problem(monkeypatch):

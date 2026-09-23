@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, cast
 
+import typer
+
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import (
     MOBDEV2_SERVICE_NAME,
@@ -57,6 +59,16 @@ class Status(Enum):
     NOT_APPLICABLE = "n/a"
     UNKNOWN = "?"
 
+    @property
+    def color(self) -> str:
+        return {
+            Status.OK: "green",
+            Status.WARNING: "yellow",
+            Status.PROBLEM: "red",
+            Status.NOT_APPLICABLE: "bright_black",
+            Status.UNKNOWN: "yellow",
+        }[self]
+
 
 @dataclass
 class Check:
@@ -69,11 +81,14 @@ class Check:
     hint: Optional[str] = None
 
     def __repr__(self) -> str:
-        lines = [f"  {self.title:<{TITLE_COLUMN}} {self.detail}"]
+        # Styled here rather than in the CLI so every caller renders a check the same way. Colors
+        # are dropped automatically when the output is not a terminal (``typer.echo``).
+        title = typer.style(f"{self.title:<{TITLE_COLUMN}}", fg=self.status.color, bold=True)
+        lines = [f"  {title} {self.detail}"]
         if self.impact is not None:
-            lines.append(f"      so: {self.impact}")
+            lines.append(typer.style(f"      so:  {self.impact}", fg="yellow"))
         if self.hint is not None:
-            lines.append(f"      fix: {self.hint}")
+            lines.append(typer.style(f"      fix: {self.hint}", fg="cyan"))
         return "\n".join(lines)
 
 
@@ -93,18 +108,20 @@ class Report:
 
     def __repr__(self) -> str:
         sections = [
-            ("This works", self._of(Status.OK)),
-            ("This does not", self._of(Status.PROBLEM)),
-            ("Worth knowing", self._of(Status.WARNING, Status.UNKNOWN)),
-            ("Not available here", self._of(Status.NOT_APPLICABLE)),
+            ("This works", "green", self._of(Status.OK)),
+            ("This does not", "red", self._of(Status.PROBLEM)),
+            ("Worth knowing", "yellow", self._of(Status.WARNING, Status.UNKNOWN)),
+            ("Not available here", "bright_black", self._of(Status.NOT_APPLICABLE)),
         ]
-        blocks = [self.environment]
-        for heading, checks in sections:
+        blocks = [typer.style(self.environment, dim=True)]
+        for heading, color, checks in sections:
             if not checks:
                 continue
-            blocks.append(f"{heading}:\n" + "\n".join(repr(check) for check in checks))
+            blocks.append(
+                typer.style(f"{heading}:", fg=color, bold=True) + "\n" + "\n".join(repr(check) for check in checks)
+            )
         if not self.problems:
-            blocks.append("Nothing here is blocking a device connection.")
+            blocks.append(typer.style("Nothing here is blocking a device connection.", fg="green", bold=True))
         return "\n\n".join(blocks)
 
 
