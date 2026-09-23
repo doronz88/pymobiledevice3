@@ -749,7 +749,7 @@ async def _create_no_root_tunnel_provider(serial: Optional[str], autopair: bool,
                 logger.info("No USB device for %s; using mobdev2 Wi-Fi path", serial)
                 break
         finally:
-            await mobdev2_gen.aclose()  # type: ignore[attr-defined]  # async generator at runtime
+            await mobdev2_gen.aclose()
         if lockdown is None:
             # mobdev2 didn't find the device either; re-raise the original usbmux error.
             raise

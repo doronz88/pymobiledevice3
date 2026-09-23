@@ -12,7 +12,7 @@ import tempfile
 import time
 from abc import ABC, abstractmethod
 from asyncio import IncompleteReadError
-from collections.abc import AsyncIterable, Generator, Iterable
+from collections.abc import AsyncGenerator, Generator, Iterable
 from contextlib import contextmanager, suppress
 from enum import Enum
 from pathlib import Path
@@ -1666,7 +1666,7 @@ async def get_mobdev2_lockdowns(
     pair_records: Optional[Path] = None,
     only_paired: bool = False,
     timeout: float = DEFAULT_BONJOUR_TIMEOUT,
-) -> AsyncIterable[tuple[str, TcpLockdownClient]]:
+) -> AsyncGenerator[tuple[str, TcpLockdownClient], None]:
     records = await _known_lockdown_pair_records(udid, pair_records)
     if udid is not None and not records:
         # Nothing the requested device would accept: don't sit through a browse.

@@ -442,10 +442,10 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
 
     Returns: List[ServiceInstance] with Address(ip, iface) entries.
     """
-    state = _BrowseState()
-    async for state in _browse_receive_loop(service_type, timeout=timeout):  # noqa: B007
-        pass
-    return _assemble_instances(state)
+    instances: list[ServiceInstance] = []
+    async for state in _browse_receive_loop(service_type, timeout=timeout):
+        instances = _assemble_instances(state)
+    return instances
 
 
 async def iter_browse_service(service_type: str, timeout: float = 4.0) -> AsyncIterable[ServiceInstance]:
