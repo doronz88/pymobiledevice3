@@ -2,18 +2,87 @@ import datetime
 import os
 import signal
 import socket
+import string
 import struct
+import sys
 from pathlib import Path
-from typing import Any, Union, cast
+from typing import Any, Optional, Union, cast
 
+import psutil
 from ifaddr import get_adapters
 
-from pymobiledevice3.osu.os_utils import DEFAULT_AFTER_IDLE_SEC, DEFAULT_INTERVAL_SEC, DEFAULT_MAX_FAILS, OsUtils
+if sys.platform == "darwin":
+    # IOKit, so macOS-only -- and this module is imported on every posix platform.
+    from ioregistry.ioentry import get_io_services_by_type
+else:
+    get_io_services_by_type = None
+
+from pymobiledevice3.osu.os_utils import (
+    DEFAULT_AFTER_IDLE_SEC,
+    DEFAULT_INTERVAL_SEC,
+    DEFAULT_MAX_FAILS,
+    HostUsbDevice,
+    OsUtils,
+    UsbmuxDaemon,
+)
 from pymobiledevice3.usbmux import MuxConnection
+
+# usbmuxd2 links Avahi to announce and find devices over Wi-Fi; stock libimobiledevice usbmuxd
+# has no network discovery at all, and both binaries are called "usbmuxd".
+_LINUX_MDNS_LIBRARY = b"libavahi"
+# usbmuxd2 installs under either name depending on how it was built.
+_USBMUXD_PROCESS_NAMES = ("usbmuxd", "usbmuxd2")
+
+# IOKit reports the serial without the separator modern UDIDs carry: 00008030000215140A9A802E
+# against usbmux's 00008030-000215140A9A802E. Older 40-character UDIDs have no separator at all.
+_MODERN_UDID_LENGTH = 24
+_MODERN_UDID_PREFIX_LENGTH = 8
+# 24 hex characters on modern devices, 40 on everything before the iPhone XS era.
+_UDID_LENGTHS = (_MODERN_UDID_LENGTH, 40)
+
+# Apple's USB vendor id, as sysfs spells it.
+_APPLE_USB_VENDOR_ID = "05ac"
+# What `lsusb` itself reads. Going to sysfs directly avoids depending on usbutils being installed
+# and avoids parsing another tool's output; every file here is world-readable, so no root either.
+_LINUX_USB_DEVICES = Path("/sys/bus/usb/devices")
 
 _DARWIN_TCP_KEEPALIVE = 0x10
 _DARWIN_TCP_KEEPINTVL = 0x101
 _DARWIN_TCP_KEEPCNT = 0x102
+
+
+def _links_mdns(path: Path) -> Optional[bool]:
+    """Does this mapping list, or this binary, reference Avahi? ``None`` when it cannot be read."""
+    try:
+        return _LINUX_MDNS_LIBRARY in path.read_bytes()
+    except OSError:
+        return None
+
+
+def _read_sysfs(path: Path) -> Optional[str]:
+    """One sysfs attribute, or ``None`` when the node does not carry it."""
+    try:
+        return path.read_text().strip()
+    except OSError:
+        return None
+
+
+def _looks_like_udid(serial: str) -> bool:
+    """Is this an iOS device's UDID, rather than some other Apple peripheral's serial?
+
+    Apple's vendor id also covers keyboards, trackpads and displays, none of which usbmux ever
+    lists -- reporting those as "usbmux is blind" would be a false alarm with the wrong fix. A
+    device in recovery reports a ``CPID:… ECID:…`` descriptor instead, which is also not a UDID.
+    """
+    bare = serial.replace("-", "")
+    return len(bare) in _UDID_LENGTHS and all(character in string.hexdigits for character in bare)
+
+
+def _with_udid_separator(serial: str) -> str:
+    """Render an IOKit serial the way usbmux spells the same UDID."""
+    if len(serial) == _MODERN_UDID_LENGTH and "-" not in serial:
+        return f"{serial[:_MODERN_UDID_PREFIX_LENGTH]}-{serial[_MODERN_UDID_PREFIX_LENGTH:]}"
+    return serial
 
 
 class Posix(OsUtils):
@@ -67,6 +136,31 @@ class Darwin(Posix):
     def pair_record_path(self) -> Path:
         return Path("/var/db/lockdown/")
 
+    def usbmux_daemon(self) -> Optional[UsbmuxDaemon]:
+        # Apple's own usbmuxd, launchd-activated. It has always done Wi-Fi discovery, and there is
+        # no alternative implementation to tell it apart from.
+        return UsbmuxDaemon(name="Apple usbmuxd", discovers_over_wifi=True)
+
+    def usb_devices_seen_by_host(self) -> Optional[list[HostUsbDevice]]:
+        """Ask IOKit which Apple devices are on USB, bypassing usbmux entirely."""
+        if get_io_services_by_type is None:
+            return None
+        devices: list[HostUsbDevice] = []
+        for entry in get_io_services_by_type("IOUSBHostDevice"):
+            properties = entry.properties
+            if properties.get("USB Vendor Name") != "Apple Inc.":
+                continue
+            serial = cast(Optional[str], properties.get("USB Serial Number"))
+            if serial is None or not _looks_like_udid(serial):
+                continue
+            devices.append(
+                HostUsbDevice(
+                    name=cast(str, properties.get("USB Product Name", "Apple device")),
+                    serial=_with_udid_separator(serial),
+                )
+            )
+        return devices
+
     @property
     def loopback_header(self) -> bytes:
         return struct.pack(">I", socket.AF_INET6)
@@ -88,6 +182,48 @@ class Linux(Posix):
     @property
     def pair_record_path(self) -> Path:
         return Path("/var/lib/lockdown/")
+
+    def usbmux_daemon(self) -> Optional[UsbmuxDaemon]:
+        """Tell stock ``usbmuxd`` apart from ``usbmuxd2`` by whether it links Avahi.
+
+        Both install as ``usbmuxd``, so the name settles nothing; only ``usbmuxd2`` pulls in Avahi,
+        which its Wi-Fi discovery is built on. The daemon runs as root, so its ``/proc`` entries are
+        unreadable for an ordinary user -- fall back to the binary on disk, which is world-readable
+        and answers the same question.
+        """
+        for process in psutil.process_iter(["name", "exe"]):
+            if process.info["name"] not in _USBMUXD_PROCESS_NAMES:
+                continue
+            path = Path(cast(str, process.info["exe"])) if process.info["exe"] else None
+            links_mdns = _links_mdns(Path(f"/proc/{process.pid}/maps"))
+            if links_mdns is None and path is not None:
+                links_mdns = _links_mdns(path)
+            if links_mdns is None:
+                return UsbmuxDaemon(name="usbmuxd", path=path, note="its Avahi linkage is unreadable")
+            if links_mdns:
+                return UsbmuxDaemon(name="usbmuxd2", path=path, discovers_over_wifi=True)
+            return UsbmuxDaemon(name="usbmuxd (libimobiledevice)", path=path, discovers_over_wifi=False)
+        return None
+
+    def usb_devices_seen_by_host(self) -> Optional[list[HostUsbDevice]]:
+        """Ask the kernel which Apple devices are on USB, bypassing usbmux entirely."""
+        if not _LINUX_USB_DEVICES.is_dir():
+            return None
+        devices: list[HostUsbDevice] = []
+        for entry in sorted(_LINUX_USB_DEVICES.iterdir()):
+            if _read_sysfs(entry / "idVendor") != _APPLE_USB_VENDOR_ID:
+                continue
+            serial = _read_sysfs(entry / "serial")
+            if serial is None or not _looks_like_udid(serial):
+                # An interface node, another Apple peripheral, or a device in recovery.
+                continue
+            devices.append(
+                HostUsbDevice(
+                    name=_read_sysfs(entry / "product") or "Apple device",
+                    serial=_with_udid_separator(serial),
+                )
+            )
+        return devices
 
     @property
     def loopback_header(self) -> bytes:

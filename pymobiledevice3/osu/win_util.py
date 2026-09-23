@@ -2,8 +2,10 @@ import datetime
 import logging
 import os
 import socket
+import winreg
+from contextlib import suppress
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import win32security  # pyright: ignore[reportMissingModuleSource]
 from ifaddr import get_adapters
@@ -13,11 +15,48 @@ from pymobiledevice3.osu.os_utils import (
     DEFAULT_INTERVAL_SEC,
     DEFAULT_MAX_FAILS,
     OsUtils,
+    UsbmuxDaemon,
+    service_binary,
 )
 from pymobiledevice3.usbmux import MuxConnection
 
+# The service registers its binary here, readable without elevation -- unlike the process, which
+# runs as SYSTEM and whose path an ordinary user cannot always read.
+_AMDS_REGISTRY_KEY = r"SYSTEM\CurrentControlSet\Services\Apple Mobile Device Service"
+# Apple's Microsoft Store "Apple Devices" app installs under WindowsApps. Its service does not
+# discover devices over Wi-Fi: reported in pymobiledevice3#1968 on Windows 11, where `usbmux list`
+# stayed empty for a device `bonjour mobdev2` could see and the app's own UI could not reach
+# either, with `lockdown wifi-connections` confirming the toggle was on. The classic iTunes
+# package installs under Common Files and does discover them.
+_STORE_APP_MARKER = "windowsapps"
+
 
 class Win32(OsUtils):
+    def usbmux_daemon(self) -> Optional[UsbmuxDaemon]:
+        """Identify the Apple Mobile Device Service from the path the service registry records.
+
+        The Store "Apple Devices" app and the classic iTunes package install services with the same
+        role but different Wi-Fi behavior, and only the path tells them apart.
+        """
+        image_path: Optional[str] = None
+        # winreg is Windows-only stdlib, unresolvable when pyright checks from another platform.
+        with suppress(OSError), winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _AMDS_REGISTRY_KEY) as key:  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType]
+            image_path = cast(str, winreg.QueryValueEx(key, "ImagePath")[0])  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+        if image_path is None:
+            return None
+        path = Path(service_binary(image_path))
+        if _STORE_APP_MARKER in image_path.lower():
+            return UsbmuxDaemon(
+                name='Apple Mobile Device Service (Microsoft Store "Apple Devices")',
+                path=path,
+                discovers_over_wifi=False,
+            )
+        return UsbmuxDaemon(
+            name="Apple Mobile Device Service (iTunes)",
+            path=path,
+            discovers_over_wifi=True,
+        )
+
     @property
     def is_admin(self) -> bool:
         """Check if the current OS user is an Administrator or root.

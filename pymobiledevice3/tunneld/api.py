@@ -195,13 +195,27 @@ async def get_tunneld_device_by_udid(
     return rsds[0]
 
 
+# A half-open listener on tunneld's port would otherwise block the caller forever.
+LIST_TUNNELS_TIMEOUT = 5
+
+
 def _list_tunnels(tunneld_address: TunneldAddress = TUNNELD_DEFAULT_ADDRESS) -> dict[str, list[dict[str, Any]]]:
     try:
-        resp = requests.get(f"http://{tunneld_address[0]}:{tunneld_address[1]}")
+        resp = requests.get(f"http://{tunneld_address[0]}:{tunneld_address[1]}", timeout=LIST_TUNNELS_TIMEOUT)
         tunnels = resp.json()
-    except (requests.exceptions.ConnectionError, OSError) as e:
+    except (requests.exceptions.RequestException, OSError, ValueError) as e:
         raise TunneldConnectionError() from e
     return tunnels
+
+
+async def get_tunneld_tunnels(
+    tunneld_address: TunneldAddress = TUNNELD_DEFAULT_ADDRESS,
+) -> dict[str, list[dict[str, Any]]]:
+    """The tunnels a running ``tunneld`` serves, without connecting to any of them.
+
+    :raises TunneldConnectionError: if the ``tunneld`` instance cannot be reached.
+    """
+    return await asyncio.to_thread(_list_tunnels, tunneld_address)
 
 
 async def _create_rsds_from_tunnels(

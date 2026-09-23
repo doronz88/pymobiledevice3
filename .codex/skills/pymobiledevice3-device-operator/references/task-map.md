@@ -6,13 +6,14 @@ Read this file when the user asks to do something on-device and you need to map 
 
 ## Connectivity And Discovery
 
+- `doctor`: check what this *host* can reach a device with — usbmux reachability and Wi-Fi discovery, whether mDNS can leave the machine, native/userspace/tunneld availability. Needs no device, so run it first when nothing is found at all.
 - `usbmux`: list devices, forward ports, inspect basic connectivity.
 - `bonjour`: discover RemoteXPC and related network-visible services.
 - `lockdown`: inspect values, pair or unpair, start tunnels, toggle Wi-Fi connections, basic device settings.
 - `remote`: remote pairing and tunnel helpers for CoreDevice flows.
 - `companion`: reach services on a paired companion device (e.g. Apple Watch) through the phone.
 
-Start here when the task is blocked on "find the device", "connect to the device", "`--rsd` details", or "start a tunnel".
+Start here when the task is blocked on "find the device", "connect to the device", "`--rsd` details", or "start a tunnel". When *no* device shows up at all, run `pymobiledevice3 doctor` before guessing: it separates a host that cannot discover devices from a device that is not there.
 
 Explicit tunnel setup is rarely needed: on iOS 17.4+, commands that require an RSD tunnel establish a no-root tunnel automatically — the native `remoted` tunnel on macOS, the in-process userspace tunnel elsewhere — so just run the command. Reach for `tunneld` or `start-tunnel` (see `references/transport-and-safety.md`) only for iOS 17.0-17.3 devices or when the no-root path is not viable.
 

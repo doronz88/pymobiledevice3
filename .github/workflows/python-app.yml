@@ -60,6 +60,32 @@ jobs:
         # No output redirect: pwsh on the Windows runners has no /dev/null.
         run: uv run pymobiledevice3 -h
 
+  # The doctor's daemon identification reads what a real usbmuxd links, which no fake can stand in
+  # for. Nothing here needs a device -- identifying the daemon is about the daemon.
+  usbmuxd:
+    if: '! github.event.pull_request.draft'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+      - name: Install stock usbmuxd
+        # libimobiledevice's usbmuxd: no network discovery, which is precisely what the doctor
+        # must report about it. usbmuxd2 (which links Avahi and does) is not packaged.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y usbmuxd
+          sudo systemctl start usbmuxd || sudo usbmuxd -v || true
+      - name: Identify the daemon
+        run: uv run --extra test pytest tests/test_doctor_real_daemon.py -rs
+      - name: Report on this host
+        # A doctor that crashes on a host with a daemon but no device is worse than no doctor.
+        run: uv run pymobiledevice3 doctor || true
+
   pyright:
     if: '! github.event.pull_request.draft'
     runs-on: macos-latest

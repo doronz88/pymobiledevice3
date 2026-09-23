@@ -98,21 +98,29 @@ async def test_named_device_returns_without_waiting_out_the_window(mdns, monkeyp
     assert elapsed < TIMEOUT / 3, f"took {elapsed:.1f}s of a {TIMEOUT}s window"
 
 
+# Generous enough to survive a coarse clock (Windows rounds to ~16ms and has undershot a 0.2s
+# window by 12ms), strict enough that returning at the first answer still fails this.
+LISTING_WINDOW = 0.2
+LISTING_MIN_FRACTION = 0.5
+
+
 async def test_listing_every_device_still_uses_the_whole_window(mdns, monkeypatch):
     from pymobiledevice3.cli import cli_common
 
     async def all_lockdowns(udid=None, **kwargs):
-        async for instance in bonjour.iter_browse_mobdev2(timeout=0.2):
+        async for instance in bonjour.iter_browse_mobdev2(timeout=LISTING_WINDOW):
             yield instance.addresses[0].full_ip, SimpleNamespace(udid="ANY", close=None)
 
     monkeypatch.setattr(cli_common, "get_mobdev2_lockdowns", all_lockdowns)
 
     # Without a udid the generator is drained, so the browse runs to its timeout rather than
-    # stopping at the first answer.
+    # stopping at the first answer -- which arrives immediately here.
     devices, elapsed = await _elapsed(cli_common.get_mobdev2_devices())
 
     assert len(devices) == 1
-    assert elapsed >= 0.2, f"returned in {elapsed:.2f}s, expected to sit out the 0.2s window"
+    assert elapsed >= LISTING_WINDOW * LISTING_MIN_FRACTION, (
+        f"returned in {elapsed:.2f}s, expected to sit out most of the {LISTING_WINDOW}s window"
+    )
 
 
 async def test_iter_browse_wrappers_are_closeable():

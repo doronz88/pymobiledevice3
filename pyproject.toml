@@ -84,6 +84,11 @@ dependencies = [
     "typer-injector>=0.3.0",
     "defusedxml",
     "pywin32; platform_system == 'Windows'",
+    # IORegistry access for `doctor`: tells "the host does not see this device at all" apart from
+    # "usbmuxd is not listing it", which are the same symptom with different fixes. IOKit is macOS.
+    # 0.0.6 floor: the first release shipping py.typed, without which every property read here is
+    # Unknown to pyright and needs a cast plus a suppression to stay clean.
+    "ioregistry>=0.0.6; platform_system == 'Darwin'",
     "av>=14.0.0; platform_system != 'Darwin'",
     # pmd-pytcp — the no-root userspace tunnel's TCP/IP stack, a minimal PyTCP fork
     # (https://github.com/doronz88/pmd-pytcp). Pulls its pmd-net-addr / pmd-net-proto siblings in

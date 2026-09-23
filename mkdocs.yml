@@ -147,6 +147,7 @@ nav:
       - cryptex: cli/cryptex.md
       - developer: cli/developer.md
       - diagnostics: cli/diagnostics.md
+      - doctor: cli/doctor.md
       - lockdown: cli/lockdown.md
       - mounter: cli/mounter.md
       - notification: cli/notification.md

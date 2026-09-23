@@ -1,11 +1,63 @@
 import inspect
+import os
 import socket
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 from pymobiledevice3.exceptions import FeatureNotSupportedError, OSNotSupportedError
+
+
+@dataclass
+class UsbmuxDaemon:
+    """Which usbmux daemon is serving this host, and whether it finds devices over Wi-Fi.
+
+    ``discovers_over_wifi`` is ``None`` when the implementation could not be identified -- a
+    listed device whose connection type is ``Network`` is the only *proof*; this is the
+    explanation for when none is attached.
+    """
+
+    name: str
+    path: Optional[Path] = None
+    discovers_over_wifi: Optional[bool] = None
+    note: Optional[str] = None
+
+    def __repr__(self) -> str:
+        parts = [self.name]
+        if self.path is not None:
+            parts.append(f"({self.path})")
+        return " ".join(parts)
+
+
+@dataclass
+class HostUsbDevice:
+    """An Apple device the host itself sees on USB, whatever usbmux makes of it."""
+
+    name: str
+    serial: str
+
+    def __repr__(self) -> str:
+        return f"{self.name} ({self.serial})"
+
+
+def service_binary(image_path: str) -> str:
+    """The executable out of a Windows service's registry ImagePath.
+
+    Lives here rather than beside its caller because it is pure string work: ImagePath is usually
+    REG_EXPAND_SZ, so it may carry %ProgramFiles% unexpanded, and it may end in service arguments.
+    Splitting on whitespace is wrong, since an unquoted path is allowed to contain spaces
+    (``C:\\Program Files\\...``) -- the executable is delimited by its quotes when it has them, and
+    by its .exe suffix when it does not.
+    """
+    expanded = os.path.expandvars(image_path).strip()
+    if expanded.startswith('"'):
+        closing = expanded.find('"', 1)
+        return expanded[1:closing] if closing != -1 else expanded[1:]
+    suffix = expanded.lower().find(".exe")
+    return expanded[: suffix + len(".exe")] if suffix != -1 else expanded
+
 
 DEFAULT_AFTER_IDLE_SEC = 3
 DEFAULT_INTERVAL_SEC = 3
@@ -112,6 +164,22 @@ class OsUtils:
 
     def get_home_folder_path(self) -> Path:
         return self.get_homedir() / ".pymobiledevice3"
+
+    def usbmux_daemon(self) -> Optional[UsbmuxDaemon]:
+        """Identify the usbmux daemon serving this host, when the platform allows it.
+
+        Used to explain a missing Wi-Fi device when none is attached to prove the answer either
+        way. ``None`` means the platform offers no way to tell.
+        """
+        return None
+
+    def usb_devices_seen_by_host(self) -> Optional[list[HostUsbDevice]]:
+        """The Apple devices attached to this host's USB, asked of the OS rather than of usbmux.
+
+        Lets "nothing is plugged in" be told apart from "usbmuxd is not listing what is plugged
+        in". ``None`` means the platform offers no way to ask.
+        """
+        return None
 
 
 def get_os_utils() -> OsUtils:

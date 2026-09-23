@@ -25,13 +25,22 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Include host OS, Python version, pymobiledevice3 version, target device model, and target OS version.
+      description: |
+        Paste the output of `pymobiledevice3 doctor`. It reports the host OS, Python and
+        pymobiledevice3 versions, which transports this machine can use, and — when a device is
+        attached — its model, OS version, pairing, developer mode and developer image state.
+        Most of what we would otherwise ask for in follow-up questions is in there.
+
+        If `doctor` itself fails, say so and fill this in by hand instead.
+      render: shell
       placeholder: |
-        Host OS: macOS 15.4
-        Python: 3.12.3
-        pymobiledevice3: 4.26.0
-        Device: iPhone15,4
-        Target OS: iOS 18.4
+        $ pymobiledevice3 doctor
+        pymobiledevice3 4.26.0 on macOS-15.4-arm64, python 3.12.3
+
+        This works:
+          Device plugged in    iPhone (00008030-...), and usbmux lists it
+          Device               iPhone15,4 running 18.4, paired
+          ...
     validations:
       required: true
   - type: textarea

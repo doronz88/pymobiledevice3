@@ -70,7 +70,7 @@ class MobileImageMounterService(LockdownService):
         assert self.IMAGE_TYPE is not None
         if await self.is_image_mounted(self.IMAGE_TYPE):
             raise AlreadyMountedError()
-        if Version(self.lockdown.product_version).major >= 16 and not await self.lockdown.get_developer_mode_status():
+        if self.lockdown.has_developer_mode and not await self.lockdown.get_developer_mode_status():
             raise DeveloperModeIsNotEnabledError()
 
     async def copy_devices(self) -> list[dict[str, Any]]:
@@ -323,6 +323,10 @@ class MobileImageMounterService(LockdownService):
             await self._send_recv({"Command": "RollCryptexNonce"})
         except ConnectionTerminatedError:
             return
+
+
+# iOS 17.0 replaced the shared DeveloperDiskImage with a per-device personalized one.
+PERSONALIZED_IMAGE_MIN_VERSION = Version("17.0")
 
 
 class DeveloperDiskImageMounter(MobileImageMounterService):
@@ -618,6 +622,25 @@ async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
     await PersonalizedImageMounter(lockdown=lockdown).mount(image, build_manifest, trustcache)
 
 
+def uses_personalized_image(lockdown: LockdownServiceProvider) -> bool:
+    """Whether this device personalizes its developer disk image, rather than using a shared one.
+
+    The single place this cutoff is decided. Anything that needs to know which image a device uses
+    -- mounting it, or merely reporting whether one is mounted -- asks here, so the rule cannot be
+    restated somewhere that then drifts away from what mounting actually does.
+    """
+    return Version(lockdown.product_version) >= PERSONALIZED_IMAGE_MIN_VERSION
+
+
+def image_type_for_device(lockdown: LockdownServiceProvider) -> str:
+    """The ``IMAGE_TYPE`` this device's developer disk image is mounted under."""
+    return (
+        PersonalizedImageMounter.IMAGE_TYPE
+        if uses_personalized_image(lockdown)
+        else DeveloperDiskImageMounter.IMAGE_TYPE
+    )
+
+
 async def auto_mount(
     lockdown: LockdownServiceProvider, xcode: Optional[str] = None, version: Optional[str] = None
 ) -> None:
@@ -631,7 +654,7 @@ async def auto_mount(
     :param xcode: Path to the Xcode app bundle, forwarded to `auto_mount_developer`.
     :param version: iOS version override, forwarded to `auto_mount_developer`.
     """
-    if Version(lockdown.product_version) < Version("17.0"):
-        await auto_mount_developer(lockdown, xcode=xcode, version=version)
-    else:
+    if uses_personalized_image(lockdown):
         await auto_mount_personalized(lockdown)
+    else:
+        await auto_mount_developer(lockdown, xcode=xcode, version=version)
