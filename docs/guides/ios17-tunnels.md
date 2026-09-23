@@ -326,12 +326,17 @@ python3 -m pymobiledevice3 syslog live --tunnel ''
 - Verify the tunnel process is running and the device is trusted/paired.
 - On Windows for iOS 17.0-17.3.1, ensure required additional drivers are installed.
 - **Wi-Fi-only usage (no USB cable)**: run `pymobiledevice3 lockdown wifi-connections on` once over
-  USB. After that `usbmuxd` finds the device over Wi-Fi by itself on macOS, and on Windows with the
-  legacy iTunes AMDS, so every command keeps working with no extra flag.
-  If `pymobiledevice3 usbmux list` stays empty while the device is on the same network, the host's
-  `usbmuxd` has no network-device support — stock `libimobiledevice` `usbmuxd` on Linux, or the
-  Microsoft Store "Apple Devices" app's AMDS. Check the device is advertising with
-  `pymobiledevice3 bonjour mobdev2`, then ask for bonjour discovery explicitly with `--mobdev2`,
-  which reaches it over the regular lockdown pair record on TCP — no RemotePairing record needed.
+  USB. After that the host's own daemon finds the device over Wi-Fi and every command keeps working
+  with no extra flag — on macOS always, and on Windows when the *Apple Mobile Device Service* comes
+  from the classic iTunes installer.
+  If `pymobiledevice3 usbmux list` stays empty while the device is on the same network, the daemon
+  has no network-device support. On Windows that means the Microsoft Store "Apple Devices" app,
+  whose service discovers nothing over Wi-Fi (its own UI cannot reach the device either) — install
+  iTunes from <https://www.apple.com/itunes/download/win64> instead, which is the real fix and needs
+  no flags afterwards. On Linux, stock `libimobiledevice` `usbmuxd` has the same gap, with no
+  equivalent daemon to switch to.
+  Where the daemon cannot be fixed, check the device is advertising with
+  `pymobiledevice3 bonjour mobdev2` and ask for bonjour discovery explicitly with `--mobdev2`, which
+  reaches it over the regular lockdown pair record on TCP — no RemotePairing record needed.
   Discovery is never implicit: a device `usbmuxd` cannot see fails immediately rather than every
   miss paying for a network browse, and nothing is ever served from a device you did not name.
