@@ -283,7 +283,21 @@ WebDavReadonlyOption = Annotated[bool, typer.Option("--readonly", help="expose t
 
 
 async def get_mobdev2_devices(udid: Optional[str] = None) -> list[TcpLockdownClient]:
-    return [lockdown async for _, lockdown in get_mobdev2_lockdowns(udid=udid)]
+    """The mobdev2 devices on the network, or just ``udid`` when one was named.
+
+    Asking for a specific device stops at it: there is only ever one answer worth waiting for, so
+    the browse ends as soon as it arrives instead of sitting out the rest of the window. Listing
+    every device still takes the full window, since any of them may still be announcing.
+    """
+    lockdowns = get_mobdev2_lockdowns(udid=udid)
+    if udid is None:
+        return [lockdown async for _, lockdown in lockdowns]
+    try:
+        async for _, lockdown in lockdowns:
+            return [lockdown]
+    finally:
+        await lockdowns.aclose()
+    return []
 
 
 def _parse_tunnel_spec(tunnel: str) -> tuple[str, TunneldAddress, Optional[bool]]:

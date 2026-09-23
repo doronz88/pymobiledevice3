@@ -10,7 +10,7 @@ import socket
 import struct
 import sys
 from collections import defaultdict
-from collections.abc import AsyncIterable, Iterable
+from collections.abc import AsyncGenerator, AsyncIterable, Iterable
 from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, Callable, Optional, TypeVar, cast
@@ -448,7 +448,7 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
     return instances
 
 
-async def iter_browse_service(service_type: str, timeout: float = 4.0) -> AsyncIterable[ServiceInstance]:
+async def iter_browse_service(service_type: str, timeout: float = 4.0) -> AsyncGenerator[ServiceInstance, None]:
     """Yield :class:`ServiceInstance` objects as they become complete (PTR + SRV + address).
 
     Consumers looking for a specific device can stop early (``async for`` + ``break``)
@@ -478,13 +478,23 @@ async def browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[Servi
     return await browse_service(MOBDEV2_SERVICE_NAME, timeout=timeout)
 
 
-def iter_browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> AsyncIterable[ServiceInstance]:
+def iter_browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> AsyncGenerator[ServiceInstance, None]:
     """Return an async iterator over mobdev2 service instances, yielded as they become complete."""
     return iter_browse_service(MOBDEV2_SERVICE_NAME, timeout=timeout)
 
 
+def iter_browse_remoted(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> AsyncGenerator[ServiceInstance, None]:
+    """Return an async iterator over remoted service instances, yielded as they become complete."""
+    return iter_browse_service(REMOTED_SERVICE_NAME, timeout=timeout)
+
+
 async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[ServiceInstance]:
     return await browse_service(REMOTEPAIRING_SERVICE_NAME, timeout=timeout)
+
+
+def iter_browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> AsyncGenerator[ServiceInstance, None]:
+    """Return an async iterator over RemotePairing service instances, yielded as they become complete."""
+    return iter_browse_service(REMOTEPAIRING_SERVICE_NAME, timeout=timeout)
 
 
 async def browse_remotepairing_manual_pairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[ServiceInstance]:

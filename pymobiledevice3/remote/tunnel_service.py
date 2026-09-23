@@ -65,7 +65,7 @@ from pymobiledevice3.bonjour import (
     REMOTEPAIRING_PAIRABLE_HOST_SERVICE_NAME,
     MDNSResponder,
     ServiceInstance,
-    browse_remotepairing,
+    iter_browse_remotepairing,
 )
 from pymobiledevice3.ca import make_cert
 from pymobiledevice3.exceptions import (
@@ -1602,21 +1602,28 @@ async def get_remote_pairing_tunnel_services(
         return []
 
     result: list[RemotePairingTunnelService] = []
-    for answer in await browse_remotepairing(timeout=bonjour_timeout):
-        identifier = _match_remote_pair_record(answer, alt_irks)
-        if identifier is None:
-            continue
-        for address in answer.addresses:
-            try:
-                result.append(
-                    await create_core_device_tunnel_service_using_remotepairing(
-                        identifier, address.full_ip, answer.port
+    # Asking for one device stops at it; listing them all still takes the whole window.
+    answers = iter_browse_remotepairing(timeout=bonjour_timeout)
+    try:
+        async for answer in answers:
+            identifier = _match_remote_pair_record(answer, alt_irks)
+            if identifier is None:
+                continue
+            for address in answer.addresses:
+                try:
+                    result.append(
+                        await create_core_device_tunnel_service_using_remotepairing(
+                            identifier, address.full_ip, answer.port
+                        )
                     )
-                )
-            except (ConnectionTerminatedError, asyncio.IncompleteReadError, asyncio.TimeoutError, OSError) as e:
-                logger.debug(
-                    "Skipping remote pairing service %s@%s:%s: %r", identifier, address.full_ip, answer.port, e
-                )
+                except (ConnectionTerminatedError, asyncio.IncompleteReadError, asyncio.TimeoutError, OSError) as e:
+                    logger.debug(
+                        "Skipping remote pairing service %s@%s:%s: %r", identifier, address.full_ip, answer.port, e
+                    )
+            if udid is not None and result:
+                break
+    finally:
+        await answers.aclose()
     return result
 
 

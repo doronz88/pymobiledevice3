@@ -7,7 +7,7 @@ from typing import Optional
 
 import psutil
 
-from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, iter_browse_remoted
 from pymobiledevice3.exceptions import AccessDeniedError, ConnectionTerminatedError
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
 from pymobiledevice3.remote.remotexpc import default_handshake_uuid
@@ -21,24 +21,31 @@ async def get_rsds(
 ) -> list[RemoteServiceDiscoveryService]:
     result: list[RemoteServiceDiscoveryService] = []
     with stop_remoted():
-        for answer in await browse_remoted(timeout=bonjour_timeout):
-            for address in answer.addresses:
-                rsd = RemoteServiceDiscoveryService((address.full_ip, RSD_PORT))
-                try:
-                    await rsd.connect()
-                except (
-                    ConnectionTerminatedError,
-                    asyncio.IncompleteReadError,
-                    ConnectionResetError,
-                    asyncio.TimeoutError,
-                    OSError,
-                ) as e:
-                    logger.debug("Skipping RSD endpoint %s: %r", address.full_ip, e)
-                    continue
-                if udid is None or rsd.udid == udid:
-                    result.append(rsd)
-                else:
-                    await rsd.close()
+        # Asking for one device stops at it; listing them all still takes the whole window.
+        answers = iter_browse_remoted(timeout=bonjour_timeout)
+        try:
+            async for answer in answers:
+                for address in answer.addresses:
+                    rsd = RemoteServiceDiscoveryService((address.full_ip, RSD_PORT))
+                    try:
+                        await rsd.connect()
+                    except (
+                        ConnectionTerminatedError,
+                        asyncio.IncompleteReadError,
+                        ConnectionResetError,
+                        asyncio.TimeoutError,
+                        OSError,
+                    ) as e:
+                        logger.debug("Skipping RSD endpoint %s: %r", address.full_ip, e)
+                        continue
+                    if udid is None or rsd.udid == udid:
+                        result.append(rsd)
+                    else:
+                        await rsd.close()
+                if udid is not None and result:
+                    break
+        finally:
+            await answers.aclose()
     return result
 
 
