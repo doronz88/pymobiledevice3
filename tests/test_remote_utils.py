@@ -16,11 +16,14 @@ async def test_get_rsds_skips_terminated_endpoint(monkeypatch):
         async def connect(self):
             raise ConnectionTerminatedError
 
-    async def browse_remoted(timeout):
-        return [SimpleNamespace(addresses=[SimpleNamespace(full_ip="fd00::1")])]
+    def iter_browse_remoted(timeout):
+        async def _iter():
+            yield SimpleNamespace(addresses=[SimpleNamespace(full_ip="fd00::1")])
+
+        return _iter()
 
     monkeypatch.setattr(utils, "RemoteServiceDiscoveryService", TerminatedRsd)
-    monkeypatch.setattr(utils, "browse_remoted", browse_remoted)
+    monkeypatch.setattr(utils, "iter_browse_remoted", iter_browse_remoted)
     monkeypatch.setattr(utils, "stop_remoted", nullcontext)
 
     assert await utils.get_rsds() == []
