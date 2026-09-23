@@ -1,0 +1,147 @@
+"""Host checks: each one must report what was observed, and never guess past it."""
+
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, ClassVar
+
+import pytest
+
+from pymobiledevice3 import doctor
+from pymobiledevice3.exceptions import MuxException
+from pymobiledevice3.osu.os_utils import UsbmuxDaemon
+
+pytestmark = [pytest.mark.cli]
+
+UDID = "00008030-000215140A9A802E"
+
+
+def _device(connection_type: str) -> Any:
+    return SimpleNamespace(
+        serial=UDID,
+        connection_type=connection_type,
+        is_network=connection_type == "Network",
+        is_usb=connection_type == "USB",
+    )
+
+
+async def test_a_network_device_proves_wifi_discovery(monkeypatch):
+    # Proof beats identity: whatever the daemon is, it plainly found a device over the network.
+    monkeypatch.setattr(
+        doctor.OSUTILS, "usbmux_daemon", lambda: UsbmuxDaemon(name="whatever", discovers_over_wifi=False)
+    )
+
+    check = await doctor._wifi_discovery_check([_device("Network")])
+
+    assert check.status is doctor.Status.OK
+    assert "listed over the network" in check.detail
+
+
+async def test_daemon_without_wifi_support_is_reported_with_the_way_out(monkeypatch):
+    monkeypatch.setattr(
+        doctor.OSUTILS,
+        "usbmux_daemon",
+        lambda: UsbmuxDaemon(name="usbmuxd (libimobiledevice)", discovers_over_wifi=False),
+    )
+
+    check = await doctor._wifi_discovery_check([_device("USB")])
+
+    assert check.status is doctor.Status.WARNING
+    assert "--mobdev2" in (check.hint or "")
+
+
+async def test_unidentifiable_daemon_is_unknown_not_ok(monkeypatch):
+    # Never claim a capability we could neither prove nor attribute.
+    monkeypatch.setattr(doctor.OSUTILS, "usbmux_daemon", lambda: None)
+
+    check = await doctor._wifi_discovery_check([])
+
+    assert check.status is doctor.Status.UNKNOWN
+
+
+async def test_listing_without_connecting_points_at_old_usbmuxd2():
+    # usbmuxd2 shipped without `Connect`: listing worked while every service connection failed,
+    # which is the failure this check exists to name (pymobiledevice3#1147).
+    async def connect(port: int) -> Any:
+        raise MuxException("CONNREFUSED")
+
+    device = _device("USB")
+    device.connect = connect
+
+    check = await doctor._connect_check([device])
+
+    assert check.status is doctor.Status.PROBLEM
+    assert "usbmuxd2" in (check.hint or "")
+
+
+async def test_connect_probe_closes_what_it_opens():
+    closed = []
+
+    async def connect(port: int) -> Any:
+        assert port == doctor.LOCKDOWN_PORT
+        return SimpleNamespace(close=lambda: closed.append(True))
+
+    device = _device("USB")
+    device.connect = connect
+
+    check = await doctor._connect_check([device])
+
+    assert check.status is doctor.Status.OK
+    assert closed == [True]
+
+
+async def test_every_send_failing_is_reported_as_blocked(monkeypatch):
+    # The failures arrive through error_received, not from sendto, so a check that only counts
+    # sends would call a fully blocked host healthy.
+    class FakeProtocol:
+        send_errors: ClassVar[list[OSError]] = [OSError("No route to host")]
+
+    class FakeTransport:
+        def get_protocol(self) -> Any:
+            return FakeProtocol()
+
+        def close(self) -> None:
+            pass
+
+    async def open_mdns_sockets() -> Any:
+        return [(FakeTransport(), None)], None
+
+    async def send_query_all(transports: Any, pkt: bytes) -> int:
+        return 1
+
+    monkeypatch.setattr(doctor, "_open_mdns_sockets", open_mdns_sockets)
+    monkeypatch.setattr(doctor, "_send_query_all", send_query_all)
+    monkeypatch.setattr(doctor, "MDNS_ERROR_SETTLE_SECONDS", 0)
+
+    check = await doctor._mdns_check()
+
+    assert check.status is doctor.Status.PROBLEM
+    assert "refused" in check.detail
+
+
+async def test_an_unreadable_pair_record_store_is_not_reported_as_empty(monkeypatch, tmp_path: Path):
+    # /var/db/lockdown is root-only on macOS; globbing it silently yields nothing, which is not
+    # the same as there being no records.
+    monkeypatch.setattr(type(doctor.OSUTILS), "pair_record_path", property(lambda self: tmp_path))
+    monkeypatch.setattr(doctor.os, "access", lambda path, mode: False)
+    monkeypatch.setattr(doctor, "get_home_folder", lambda: tmp_path)
+    monkeypatch.setattr(doctor, "iter_remote_pair_records", lambda: iter(()))
+
+    check = doctor._pair_records_check()
+
+    assert "not readable" in check.detail
+
+
+def test_a_check_renders_its_hint_on_its_own_line():
+    rendered = repr(doctor.Check("mDNS", doctor.Status.PROBLEM, "blocked", "allow the terminal"))
+
+    assert rendered.splitlines()[0].startswith("FAIL")
+    assert rendered.splitlines()[1].strip().startswith("-> allow the terminal")
+
+
+def test_report_collects_problems():
+    report = doctor.Report([
+        doctor.Check("a", doctor.Status.OK, "fine"),
+        doctor.Check("b", doctor.Status.PROBLEM, "broken"),
+    ])
+
+    assert [check.title for check in report.problems] == ["b"]

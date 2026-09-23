@@ -1,11 +1,34 @@
 import inspect
 import socket
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 from pymobiledevice3.exceptions import FeatureNotSupportedError, OSNotSupportedError
+
+
+@dataclass
+class UsbmuxDaemon:
+    """Which usbmux daemon is serving this host, and whether it finds devices over Wi-Fi.
+
+    ``discovers_over_wifi`` is ``None`` when the implementation could not be identified -- a
+    listed device whose connection type is ``Network`` is the only *proof*; this is the
+    explanation for when none is attached.
+    """
+
+    name: str
+    path: Optional[Path] = None
+    discovers_over_wifi: Optional[bool] = None
+    note: Optional[str] = None
+
+    def __repr__(self) -> str:
+        parts = [self.name]
+        if self.path is not None:
+            parts.append(f"({self.path})")
+        return " ".join(parts)
+
 
 DEFAULT_AFTER_IDLE_SEC = 3
 DEFAULT_INTERVAL_SEC = 3
@@ -112,6 +135,14 @@ class OsUtils:
 
     def get_home_folder_path(self) -> Path:
         return self.get_homedir() / ".pymobiledevice3"
+
+    def usbmux_daemon(self) -> Optional[UsbmuxDaemon]:
+        """Identify the usbmux daemon serving this host, when the platform allows it.
+
+        Used to explain a missing Wi-Fi device when none is attached to prove the answer either
+        way. ``None`` means the platform offers no way to tell.
+        """
+        return None
 
 
 def get_os_utils() -> OsUtils:

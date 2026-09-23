@@ -8,6 +8,18 @@ search:
 Common failures mapped to their causes and fixes. Each section quotes the error message (or
 exception name) the CLI prints, so you can search this page for what you're seeing.
 
+Start with `doctor`. It checks the *host* — whether usbmux is reachable and finds devices over
+Wi-Fi, whether mDNS queries can leave the machine, and which tunnel transports are usable. It needs
+no device attached, which is the point when nothing shows up at all, and it separates "this machine
+cannot discover devices" from "the device is not there":
+
+```shell
+pymobiledevice3 doctor
+```
+
+It exits non-zero when something is broken, and `--json` produces output worth pasting into a bug
+report.
+
 For any problem, running with increased verbosity usually reveals what is going on:
 
 ```shell

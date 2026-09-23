@@ -3,13 +3,25 @@ import os
 import signal
 import socket
 import struct
+from contextlib import suppress
 from pathlib import Path
-from typing import Any, Union, cast
+from typing import Any, Optional, Union, cast
 
+import psutil
 from ifaddr import get_adapters
 
-from pymobiledevice3.osu.os_utils import DEFAULT_AFTER_IDLE_SEC, DEFAULT_INTERVAL_SEC, DEFAULT_MAX_FAILS, OsUtils
+from pymobiledevice3.osu.os_utils import (
+    DEFAULT_AFTER_IDLE_SEC,
+    DEFAULT_INTERVAL_SEC,
+    DEFAULT_MAX_FAILS,
+    OsUtils,
+    UsbmuxDaemon,
+)
 from pymobiledevice3.usbmux import MuxConnection
+
+# usbmuxd2 links Avahi to announce and find devices over Wi-Fi; stock libimobiledevice usbmuxd
+# has no network discovery at all, and both binaries are called "usbmuxd".
+_LINUX_MDNS_LIBRARY = "libavahi"
 
 _DARWIN_TCP_KEEPALIVE = 0x10
 _DARWIN_TCP_KEEPINTVL = 0x101
@@ -67,6 +79,11 @@ class Darwin(Posix):
     def pair_record_path(self) -> Path:
         return Path("/var/db/lockdown/")
 
+    def usbmux_daemon(self) -> Optional[UsbmuxDaemon]:
+        # Apple's own usbmuxd, launchd-activated. It has always done Wi-Fi discovery, and there is
+        # no alternative implementation to tell it apart from.
+        return UsbmuxDaemon(name="Apple usbmuxd", discovers_over_wifi=True)
+
     @property
     def loopback_header(self) -> bytes:
         return struct.pack(">I", socket.AF_INET6)
@@ -88,6 +105,28 @@ class Linux(Posix):
     @property
     def pair_record_path(self) -> Path:
         return Path("/var/lib/lockdown/")
+
+    def usbmux_daemon(self) -> Optional[UsbmuxDaemon]:
+        """Tell stock ``usbmuxd`` apart from ``usbmuxd2`` by what the running process links.
+
+        Both are installed as ``usbmuxd``, so the name settles nothing; only ``usbmuxd2`` pulls in
+        Avahi, which is what its Wi-Fi discovery is built on.
+        """
+        for process in psutil.process_iter(["name"]):
+            if process.info["name"] != "usbmuxd":
+                continue
+            path: Optional[Path] = None
+            with suppress(psutil.Error, OSError):
+                path = Path(process.exe())
+            try:
+                mappings = Path(f"/proc/{process.pid}/maps").read_text()
+            except OSError:
+                return UsbmuxDaemon(name="usbmuxd", path=path, note="cannot read its linked libraries")
+            links_mdns = _LINUX_MDNS_LIBRARY in mappings
+            if links_mdns:
+                return UsbmuxDaemon(name="usbmuxd2", path=path, discovers_over_wifi=True)
+            return UsbmuxDaemon(name="usbmuxd (libimobiledevice)", path=path, discovers_over_wifi=False)
+        return None
 
     @property
     def loopback_header(self) -> bytes:

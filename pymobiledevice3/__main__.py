@@ -134,6 +134,7 @@ CLI_GROUPS = {
     "cryptex": "cryptex",
     "developer": "developer",
     "diagnostics": "diagnostics",
+    "doctor": "doctor",
     "lockdown": "lockdown",
     "mounter": "mounter",
     "notification": "notification",
