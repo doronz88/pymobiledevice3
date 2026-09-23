@@ -16,30 +16,19 @@ import sys
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Optional, cast
+from typing import Callable, Optional
 
 import typer
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.bonjour import (
-    MOBDEV2_SERVICE_NAME,
-    QTYPE_PTR,
-    _DatagramProtocol,
-    _open_mdns_sockets,
-    _send_query_all,
-    build_query,
-)
+from pymobiledevice3.bonjour import is_multicast_blocked, probe_multicast
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import MuxException, PyMobileDevice3Exception, TunneldConnectionError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.pair_records import iter_remote_pair_records
-from pymobiledevice3.services.mobile_image_mounter import (
-    DeveloperDiskImageMounter,
-    MobileImageMounterService,
-    PersonalizedImageMounter,
-)
+from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService, image_type_for_device
 from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, get_tunneld_tunnels
 
 OSUTILS = get_os_utils()
@@ -50,9 +39,6 @@ LOCKDOWN_PORT = 62078
 # usbmuxd2 shipped without `Connect` until 0.64; listing worked while every service connection
 # failed, which is the most confusing way this can break (pymobiledevice3#1147).
 USBMUXD2_CONNECT_FIX_VERSION = "0.64"
-# A refused send is reported through the protocol's error_received callback rather than raised by
-# sendto(), so the errors need a turn of the loop to land before they can be counted.
-MDNS_ERROR_SETTLE_SECONDS = 0.3
 # usbmux performs no timeout of its own, and a device listed over Wi-Fi may simply be asleep.
 CONNECT_PROBE_TIMEOUT = 5.0
 # Widest title shipped, so every line in a section starts its detail at the same column.
@@ -101,34 +87,45 @@ class Check:
         return "\n".join(lines)
 
 
+# What a check is about. The two answer different questions -- "can this machine reach a device"
+# versus "is this device ready" -- and a reader fixing one should not have to sift the other.
+HOST = "Host"
+DEVICE = "Device"
+
+
 @dataclass
 class Report:
-    """Every check, grouped by what it means for the reader rather than by the order it ran."""
+    """Every check, split by what it is about and then by what it means for the reader."""
 
     environment: str
-    checks: list[Check] = field(default_factory=list[Check])
+    host: list[Check] = field(default_factory=list[Check])
+    device: list[Check] = field(default_factory=list[Check])
 
-    def _of(self, *statuses: Status) -> list[Check]:
-        return [check for check in self.checks if check.status in statuses]
+    @property
+    def checks(self) -> list[Check]:
+        return self.host + self.device
 
     @property
     def problems(self) -> list[Check]:
-        return self._of(Status.PROBLEM)
+        return [check for check in self.checks if check.status is Status.PROBLEM]
 
     def __repr__(self) -> str:
-        sections = [
-            ("This works", "green", self._of(Status.OK)),
-            ("This does not", "red", self._of(Status.PROBLEM)),
-            ("Worth knowing", "yellow", self._of(Status.WARNING, Status.UNKNOWN)),
-            ("Not available here", "bright_black", self._of(Status.NOT_APPLICABLE)),
+        outcomes: list[tuple[str, str, tuple[Status, ...]]] = [
+            ("this works", "green", (Status.OK,)),
+            ("this does not", "red", (Status.PROBLEM,)),
+            ("worth knowing", "yellow", (Status.WARNING, Status.UNKNOWN)),
+            ("not available here", "bright_black", (Status.NOT_APPLICABLE,)),
         ]
         blocks = [typer.style(self.environment, dim=True)]
-        for heading, color, checks in sections:
-            if not checks:
-                continue
-            blocks.append(
-                typer.style(f"{heading}:", fg=color, bold=True) + "\n" + "\n".join(repr(check) for check in checks)
-            )
+        for scope, checks in ((HOST, self.host), (DEVICE, self.device)):
+            for outcome, color, statuses in outcomes:
+                matching = [check for check in checks if check.status in statuses]
+                if not matching:
+                    continue
+                heading = typer.style(f"{scope} — {outcome}:", fg=color, bold=True)
+                blocks.append(heading + "\n" + "\n".join(repr(check) for check in matching))
+        if not self.device:
+            blocks.append(typer.style("No device is attached, so only the host was checked.", dim=True))
         if not self.problems:
             blocks.append(typer.style("Nothing here is blocking a device connection.", fg="green", bold=True))
         return "\n\n".join(blocks)
@@ -297,7 +294,7 @@ async def _device_checks(devices: list[usbmux.MuxDevice]) -> list[Check]:
         checks = [Check("Device", Status.OK, f"{identity}, paired")]
         version = Version(lockdown.product_version)
         checks.append(await _developer_mode_check(lockdown, version))
-        checks.append(await _developer_image_check(lockdown, version))
+        checks.append(await _developer_image_check(lockdown))
         return checks
     finally:
         await lockdown.close()
@@ -318,9 +315,13 @@ async def _developer_mode_check(lockdown: LockdownClient, version: Version) -> C
     )
 
 
-async def _developer_image_check(lockdown: LockdownClient, version: Version) -> Check:
-    """Is a developer disk image mounted? iOS 17 personalizes it; older releases do not."""
-    image_type = PersonalizedImageMounter.IMAGE_TYPE if version.major >= 17 else DeveloperDiskImageMounter.IMAGE_TYPE
+async def _developer_image_check(lockdown: LockdownClient) -> Check:
+    """Is a developer disk image mounted?
+
+    Which image applies is the mounter's rule, not ours -- asking it keeps this honest when the
+    cutoff moves.
+    """
+    image_type = image_type_for_device(lockdown)
     async with MobileImageMounterService(lockdown=lockdown) as mounter:
         mounted = await mounter.is_image_mounted(image_type)
     if mounted:
@@ -335,13 +336,9 @@ async def _developer_image_check(lockdown: LockdownClient, version: Version) -> 
 
 
 async def _mdns_check() -> Check:
-    """Can an mDNS query leave this host at all? (macOS Local Network permission, firewalls)
-
-    Mirrors what :func:`~pymobiledevice3.bonjour._warn_if_multicast_blocked` reports during a real
-    browse: every send failing is the signal, and those failures surface asynchronously.
-    """
+    """Can an mDNS query leave this host at all? (macOS Local Network permission, firewalls)"""
     try:
-        transports, _ = await _open_mdns_sockets()
+        sent, errors = await probe_multicast()
     except OSError as e:
         return Check(
             "Bonjour discovery",
@@ -350,21 +347,7 @@ async def _mdns_check() -> Check:
             impact="`bonjour` commands and --mobdev2 find nothing",
             hint="another process may hold UDP/5353, or IPv6 may be disabled on this host",
         )
-    try:
-        sent = await _send_query_all(transports, build_query(MOBDEV2_SERVICE_NAME, QTYPE_PTR, unicast=False))
-        await asyncio.sleep(MDNS_ERROR_SETTLE_SECONDS)
-        errors = [
-            error
-            for transport, _ in transports
-            for error in cast(_DatagramProtocol, transport.get_protocol()).send_errors
-        ]
-    finally:
-        for transport, _ in transports:
-            transport.close()
-
-    if not sent:
-        return Check("Bonjour discovery", Status.PROBLEM, "no interface could be opened for mDNS at all")
-    if len(errors) >= sent:
+    if is_multicast_blocked(sent, errors):
         return Check(
             "Bonjour discovery",
             Status.PROBLEM,
@@ -373,6 +356,8 @@ async def _mdns_check() -> Check:
             hint="on macOS allow the app running this command (e.g. your terminal) under System Settings > "
             "Privacy & Security > Local Network, then restart it; elsewhere check the firewall",
         )
+    if not sent:
+        return Check("Bonjour discovery", Status.PROBLEM, "no interface could be opened for mDNS at all")
     return Check(
         "Bonjour discovery", Status.OK, f"queries left the host on {sent - len(errors)} of {sent} interface(s)"
     )
@@ -465,9 +450,7 @@ async def _guarded_devices() -> list[usbmux.MuxDevice]:
 
 async def run_checks() -> Report:
     """Run every host check, in the order a failure would cascade."""
-    checks = await _guarded_many("usbmux daemon", _usbmux_checks)
-    devices = await _guarded_devices()
-    checks += await _guarded_many("Device", lambda: _device_checks(devices))
+    host = await _guarded_many("usbmux daemon", _usbmux_checks)
     for title, check in (
         ("Bonjour discovery", _mdns_check),
         ("Tunnel (native)", _native_tunnel_check),
@@ -475,5 +458,7 @@ async def run_checks() -> Report:
         ("Tunnel (userspace)", _userspace_check),
         ("Pairing", _pair_records_check),
     ):
-        checks.append(await _guarded(title, check))
-    return Report(_environment(), checks)
+        host.append(await _guarded(title, check))
+    devices = await _guarded_devices()
+    device = await _guarded_many("Device", lambda: _device_checks(devices))
+    return Report(_environment(), host, device)

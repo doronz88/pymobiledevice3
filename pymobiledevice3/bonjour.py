@@ -309,20 +309,59 @@ async def _send_query_all(transports: list[tuple[asyncio.DatagramTransport, sock
 
 _warned_multicast_blocked = False
 
+# A refused send is reported through the protocol's error_received callback rather than raised by
+# sendto(), so the errors need a turn of the loop to land before they can be counted.
+MULTICAST_PROBE_SETTLE = 0.3
+
+
+def multicast_send_errors(transports: list[tuple[asyncio.DatagramTransport, socket.socket]]) -> list[Exception]:
+    """Every send failure the datagram protocols have recorded so far.
+
+    asyncio hands a failed ``sendto()`` to the protocol instead of raising it, so this is the only
+    place the failures show up.
+    """
+    return [
+        error for transport, _ in transports for error in cast(_DatagramProtocol, transport.get_protocol()).send_errors
+    ]
+
+
+def is_multicast_blocked(sent: int, errors: list[Exception]) -> bool:
+    """Whether not a single mDNS query could leave this host.
+
+    Some interfaces always refuse the query (loopback, tunnels); all of them refusing is the
+    signal. Shared so a caller that only wants the verdict cannot restate the rule differently.
+    """
+    return bool(sent) and len(errors) >= sent
+
+
+async def probe_multicast(settle: float = MULTICAST_PROBE_SETTLE) -> tuple[int, list[Exception]]:
+    """Send one mDNS query on every interface and report ``(sent, errors)``.
+
+    For callers that want to know whether multicast works at all rather than to browse. Interpret
+    the result with :func:`is_multicast_blocked`.
+
+    :raises OSError: if no socket could be opened for mDNS.
+    """
+    transports, _ = await _open_mdns_sockets()
+    try:
+        sent = await _send_query_all(transports, build_query(MOBDEV2_SERVICE_NAME, QTYPE_PTR, unicast=False))
+        await asyncio.sleep(settle)
+        return sent, multicast_send_errors(transports)
+    finally:
+        for transport, _ in transports:
+            transport.close()
+
 
 def _warn_if_multicast_blocked(transports: list[tuple[asyncio.DatagramTransport, socket.socket]], sent: int) -> None:
     """Say so when not a single mDNS query could leave this host, instead of reporting "no devices".
 
-    Some interfaces always refuse the query (loopback, tunnels); all of them refusing means the
-    process may not use the local network. On macOS that is the Local Network privacy setting of
-    the app the process runs under (the terminal), which fails every send with EHOSTUNREACH --
-    root is exempt, so the same command works under sudo.
+    On macOS that is the Local Network privacy setting of the app the process runs under (the
+    terminal), which fails every send with EHOSTUNREACH -- root is exempt, so the same command
+    works under sudo.
     """
     global _warned_multicast_blocked
-    errors = [
-        error for transport, _ in transports for error in cast(_DatagramProtocol, transport.get_protocol()).send_errors
-    ]
-    if _warned_multicast_blocked or not sent or len(errors) < sent:
+    errors = multicast_send_errors(transports)
+    if _warned_multicast_blocked or not is_multicast_blocked(sent, errors):
         return
     _warned_multicast_blocked = True
     hint = (

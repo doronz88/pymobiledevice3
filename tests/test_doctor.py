@@ -5,16 +5,18 @@ import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, ClassVar, Optional
+from typing import Any, Optional, cast
 
 import pytest
+from packaging.version import Version
 from typer.testing import CliRunner
 
-from pymobiledevice3 import __main__, doctor
+from pymobiledevice3 import __main__, bonjour, doctor
 from pymobiledevice3.cli import doctor as cli_doctor
 from pymobiledevice3.exceptions import ConnectionFailedToUsbmuxdError, MuxException
 from pymobiledevice3.osu import posix_util
 from pymobiledevice3.osu.os_utils import HostUsbDevice, UsbmuxDaemon, service_binary
+from pymobiledevice3.services import mobile_image_mounter
 
 pytestmark = [pytest.mark.cli]
 
@@ -106,31 +108,28 @@ async def test_connect_probe_closes_what_it_opens():
 
 async def test_every_send_failing_is_reported_as_blocked(monkeypatch):
     # The failures arrive through error_received, not from sendto, so a check that only counts
-    # sends would call a fully blocked host healthy.
-    class FakeProtocol:
-        send_errors: ClassVar[list[OSError]] = [OSError("No route to host")]
+    # sends would call a fully blocked host healthy. bonjour owns that rule; this pins the report.
+    async def probe_multicast(*args: Any, **kwargs: Any) -> tuple[int, list[Exception]]:
+        return 3, [OSError("No route to host")] * 3
 
-    class FakeTransport:
-        def get_protocol(self) -> Any:
-            return FakeProtocol()
-
-        def close(self) -> None:
-            pass
-
-    async def open_mdns_sockets() -> Any:
-        return [(FakeTransport(), None)], None
-
-    async def send_query_all(transports: Any, pkt: bytes) -> int:
-        return 1
-
-    monkeypatch.setattr(doctor, "_open_mdns_sockets", open_mdns_sockets)
-    monkeypatch.setattr(doctor, "_send_query_all", send_query_all)
-    monkeypatch.setattr(doctor, "MDNS_ERROR_SETTLE_SECONDS", 0)
+    monkeypatch.setattr(doctor, "probe_multicast", probe_multicast)
 
     check = await doctor._mdns_check()
 
     assert check.status is doctor.Status.PROBLEM
     assert "refused" in check.detail
+
+
+async def test_a_host_where_some_interfaces_answer_is_fine(monkeypatch):
+    async def probe_multicast(*args: Any, **kwargs: Any) -> tuple[int, list[Exception]]:
+        return 3, [OSError("loopback refuses")]
+
+    monkeypatch.setattr(doctor, "probe_multicast", probe_multicast)
+
+    check = await doctor._mdns_check()
+
+    assert check.status is doctor.Status.OK
+    assert "2 of 3" in check.detail
 
 
 async def test_an_unreadable_pair_record_store_is_not_reported_as_empty(monkeypatch, tmp_path: Path):
@@ -160,20 +159,25 @@ def test_a_check_shows_the_cost_and_the_fix_on_their_own_lines():
     assert lines[2].strip() == "fix: allow the terminal"
 
 
-def test_report_groups_by_what_it_means_for_the_reader():
+def test_report_separates_the_host_from_the_device():
+    # The two answer different questions, and someone fixing one should not sift the other.
     report = doctor.Report(
         "env line",
-        [
-            doctor.Check("works", doctor.Status.OK, "fine"),
-            doctor.Check("broken", doctor.Status.PROBLEM, "bad"),
-            doctor.Check("absent", doctor.Status.NOT_APPLICABLE, "n/a"),
-        ],
+        [doctor.Check("host-ok", doctor.Status.OK, "fine"), doctor.Check("host-bad", doctor.Status.PROBLEM, "bad")],
+        [doctor.Check("device-ok", doctor.Status.OK, "ready")],
     )
 
     rendered = _plain(repr(report))
     assert rendered.startswith("env line")
-    assert rendered.index("This works") < rendered.index("This does not") < rendered.index("Not available here")
-    assert [check.title for check in report.problems] == ["broken"]
+    assert rendered.index("Host — this works") < rendered.index("Host — this does not")
+    assert rendered.index("Host — this does not") < rendered.index("Device — this works")
+    assert [check.title for check in report.problems] == ["host-bad"]
+
+
+def test_a_host_with_no_device_says_only_the_host_was_checked():
+    report = doctor.Report("env line", [doctor.Check("host-ok", doctor.Status.OK, "fine")], [])
+
+    assert "No device is attached" in _plain(repr(report))
 
 
 def test_a_clean_report_says_nothing_is_blocking():
@@ -281,10 +285,10 @@ async def test_an_unreachable_daemon_is_a_check_not_a_traceback(monkeypatch, err
 
 
 async def test_mdns_sockets_that_cannot_be_opened_are_reported(monkeypatch):
-    async def open_mdns_sockets():
+    async def probe_multicast(*args: Any, **kwargs: Any) -> tuple[int, list[Exception]]:
         raise OSError("Address already in use")
 
-    monkeypatch.setattr(doctor, "_open_mdns_sockets", open_mdns_sockets)
+    monkeypatch.setattr(doctor, "probe_multicast", probe_multicast)
 
     check = await doctor._mdns_check()
 
@@ -399,6 +403,10 @@ def _report(*checks: doctor.Check) -> doctor.Report:
     return doctor.Report("env line", list(checks))
 
 
+def _scoped_report(host: list[doctor.Check], device: list[doctor.Check]) -> doctor.Report:
+    return doctor.Report("env line", host, device)
+
+
 @pytest.mark.parametrize("arguments", [[], ["--json"]], ids=["text", "json"])
 def test_a_broken_host_fails_the_command_in_both_output_modes(monkeypatch, arguments: list[str]):
     # A script reading the machine-readable form must not pass on a host the report calls broken.
@@ -425,6 +433,7 @@ def test_a_healthy_host_passes_and_json_carries_every_field(monkeypatch):
     # The environment line is the first thing wanted in a pasted bug report.
     assert payload["environment"] == "env line"
     assert payload["checks"][0] == {
+        "scope": "Host",
         "title": "Wi-Fi devices",
         "status": "OK",
         "detail": "fine",
@@ -547,3 +556,48 @@ async def test_the_lockdown_connection_is_always_closed(monkeypatch):
     await doctor._device_checks([_device("USB")])
 
     assert lockdown.closed
+
+
+# --- drift: the doctor must not restate rules that live elsewhere ---------------
+
+
+@pytest.mark.parametrize("version", ["14.8", "15.7", "16.0", "16.7.1", "17.0", "17.4", "18.0", "26.1", "27.2"])
+def test_the_image_type_reported_is_the_one_mounting_would_use(version: str):
+    # doctor reports which image is mounted; auto_mount decides which to mount. If those ever
+    # disagree, the report is confidently wrong -- so they must come from the same rule.
+    lockdown = cast(Any, SimpleNamespace(product_version=version))
+    personalized = mobile_image_mounter.uses_personalized_image(lockdown)
+
+    expected = (
+        mobile_image_mounter.PersonalizedImageMounter.IMAGE_TYPE
+        if personalized
+        else mobile_image_mounter.DeveloperDiskImageMounter.IMAGE_TYPE
+    )
+    assert mobile_image_mounter.image_type_for_device(lockdown) == expected
+    # and the cutoff itself is where the mounters say it is
+    assert personalized == (Version(version) >= mobile_image_mounter.PERSONALIZED_IMAGE_MIN_VERSION)
+
+
+@pytest.mark.parametrize(
+    ("sent", "errors", "blocked"),
+    [
+        (0, [], False),
+        (3, [], False),
+        (3, [OSError("x")], False),
+        (3, [OSError("x")] * 2, False),
+        (3, [OSError("x")] * 3, True),
+        (1, [OSError("x")], True),
+    ],
+)
+def test_the_blocked_verdict_is_bonjours_own(sent: int, errors: list[Exception], blocked: bool):
+    # doctor and the browse warning must agree on what "blocked" means; one rule, one answer.
+    assert bonjour.is_multicast_blocked(sent, errors) is blocked
+
+
+def test_doctor_does_not_reach_into_bonjour_internals():
+    # Privates drift without warning and carry no compatibility promise. If this needs relaxing,
+    # add a public helper to bonjour instead.
+    source = (Path(__file__).parent.parent / "pymobiledevice3/doctor.py").read_text()
+    assert "_open_mdns_sockets" not in source
+    assert "_send_query_all" not in source
+    assert "_DatagramProtocol" not in source

@@ -4,7 +4,7 @@ import typer
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import async_command, print_json
-from pymobiledevice3.doctor import run_checks
+from pymobiledevice3.doctor import DEVICE, HOST, run_checks
 
 cli = InjectingTyper(
     name="doctor",
@@ -33,13 +33,15 @@ async def cli_doctor(
             "environment": report.environment,
             "checks": [
                 {
+                    "scope": scope,
                     "title": check.title,
                     "status": check.status.value,
                     "detail": check.detail,
                     "impact": check.impact,
                     "hint": check.hint,
                 }
-                for check in report.checks
+                for scope, checks in ((HOST, report.host), (DEVICE, report.device))
+                for check in checks
             ],
         })
     else:
