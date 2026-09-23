@@ -325,10 +325,19 @@ python3 -m pymobiledevice3 syslog live --tunnel ''
   there. `--userspace` can still force the userspace path over Wi-Fi if you prefer.
 - Verify the tunnel process is running and the device is trusted/paired.
 - On Windows for iOS 17.0-17.3.1, ensure required additional drivers are installed.
-- **Wi-Fi-only usage (no USB cable)**: on macOS and on Windows with the legacy iTunes AMDS,
-  `usbmuxd` discovers Wi-Fi devices automatically once `pymobiledevice3 lockdown wifi-connections on`
-  has been run once over USB. If `pymobiledevice3 usbmux list` returns empty despite the device
-  being on the same network, the host's `usbmuxd` may lack network-device support (stock
-  `libimobiledevice` `usbmuxd` on Linux, or the Microsoft Store "Apple Devices" app's AMDS).
-  In that case, pass `--udid <UDID>` — the userspace path will fall back to the mobdev2 Wi-Fi
-  path (regular lockdown pair record over TCP, no additional flags needed).
+- **Wi-Fi-only usage (no USB cable)**: run `pymobiledevice3 lockdown wifi-connections on` once over
+  USB. After that `usbmuxd` finds the device over Wi-Fi by itself on macOS, and on Windows with the
+  legacy iTunes AMDS, so every command keeps working with no extra flag.
+  If `pymobiledevice3 usbmux list` stays empty while the device is on the same network, the host's
+  `usbmuxd` has no network-device support — stock `libimobiledevice` `usbmuxd` on Linux, or the
+  Microsoft Store "Apple Devices" app's AMDS. Check the device is advertising with
+  `pymobiledevice3 bonjour mobdev2`, then reach it over the mobdev2 route (the regular lockdown pair
+  record over TCP — no RemotePairing record needed):
+  - commands that need a tunnel (`developer core-device`, `developer debugserver`, `remote *`)
+    find it with `--udid <UDID>` alone, since the no-root tunnel falls back to mobdev2 when
+    `usbmuxd` has no such device;
+  - every other command talks to lockdownd directly, so discovery has to be asked for:
+    `--mobdev2` (browse instead of usbmux), or `--userspace` to force the tunnel route above.
+
+  Both are deliberately explicit: without a flag a device `usbmuxd` cannot see still fails
+  immediately, instead of every miss paying for a bonjour browse.
