@@ -131,17 +131,35 @@ async def test_an_unreadable_pair_record_store_is_not_reported_as_empty(monkeypa
     assert "not readable" in check.detail
 
 
-def test_a_check_renders_its_hint_on_its_own_line():
-    rendered = repr(doctor.Check("mDNS", doctor.Status.PROBLEM, "blocked", "allow the terminal"))
+def test_a_check_shows_the_cost_and_the_fix_on_their_own_lines():
+    rendered = repr(
+        doctor.Check("Bonjour discovery", doctor.Status.PROBLEM, "blocked", "nothing is found", "allow the terminal")
+    )
 
-    assert rendered.splitlines()[0].startswith("FAIL")
-    assert rendered.splitlines()[1].strip().startswith("-> allow the terminal")
+    lines = rendered.splitlines()
+    assert lines[1].strip() == "so: nothing is found"
+    assert lines[2].strip() == "fix: allow the terminal"
 
 
-def test_report_collects_problems():
-    report = doctor.Report([
-        doctor.Check("a", doctor.Status.OK, "fine"),
-        doctor.Check("b", doctor.Status.PROBLEM, "broken"),
-    ])
+def test_report_groups_by_what_it_means_for_the_reader():
+    report = doctor.Report(
+        "env line",
+        [
+            doctor.Check("works", doctor.Status.OK, "fine"),
+            doctor.Check("broken", doctor.Status.PROBLEM, "bad"),
+            doctor.Check("absent", doctor.Status.NOT_APPLICABLE, "n/a"),
+        ],
+    )
 
-    assert [check.title for check in report.problems] == ["b"]
+    rendered = repr(report)
+    assert rendered.startswith("env line")
+    assert rendered.index("This works") < rendered.index("This does not") < rendered.index("Not available here")
+    assert [check.title for check in report.problems] == ["broken"]
+
+
+def test_a_clean_report_says_nothing_is_blocking():
+    report = doctor.Report("env line", [doctor.Check("works", doctor.Status.OK, "fine")])
+
+    assert "Nothing here is blocking a device connection." in repr(report)
+
+

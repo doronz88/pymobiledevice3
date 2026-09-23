@@ -34,6 +34,7 @@ async def cli_doctor(
                 "title": check.title,
                 "status": check.status.value,
                 "detail": check.detail,
+                "impact": check.impact,
                 "hint": check.hint,
             }
             for check in report.checks
