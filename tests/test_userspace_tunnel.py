@@ -481,3 +481,61 @@ async def test_remotepairing_fallback_disabled_with_invalid_service(mock_tunnel_
 
     with pytest.raises(UserspaceTunnelUnavailableError, match="RemotePairing fallback was disabled"):
         await userspace_tunnel._create_no_root_tunnel_provider(serial=None, autopair=True, remotepairing_fallback=False)
+
+
+async def test_remotepairing_asks_for_the_device_it_handshook_with(mock_tunnel_provider, monkeypatch):
+    """With no --udid, the RemotePairing lookup must still name the USB device we just talked to.
+
+    Otherwise every paired device on the network is contacted and the first answer wins, which can
+    be a different phone than the command targeted.
+    """
+
+    class FakeLockdown:
+        udid = "USB-DEVICE-UDID"
+
+        async def close(self):
+            pass
+
+    asked = []
+
+    async def get_remote_pairing_tunnel_services(udid=None, **kwargs):
+        asked.append(udid)
+        return ["service-for-" + str(udid)]
+
+    mock_tunnel_provider.create_using_usbmux.return_value = FakeLockdown()
+    mock_tunnel_provider.core_device_proxy_create.side_effect = InvalidServiceError("no CoreDeviceProxy", None, "17.0")
+    monkeypatch.setattr(
+        userspace_tunnel.tunnel_service, "get_remote_pairing_tunnel_services", get_remote_pairing_tunnel_services
+    )
+
+    provider, lockdown = await userspace_tunnel._create_no_root_tunnel_provider(serial=None, autopair=True)
+
+    assert asked == ["USB-DEVICE-UDID"]
+    assert provider == "service-for-USB-DEVICE-UDID"
+    assert lockdown is None
+
+
+async def test_remotepairing_prefers_an_explicit_serial(mock_tunnel_provider, monkeypatch):
+    """An explicit --udid wins over the handshake, so the caller's choice is never second-guessed."""
+
+    class FakeLockdown:
+        udid = "HANDSHAKE-UDID"
+
+        async def close(self):
+            pass
+
+    asked = []
+
+    async def get_remote_pairing_tunnel_services(udid=None, **kwargs):
+        asked.append(udid)
+        return ["service"]
+
+    mock_tunnel_provider.create_using_usbmux.return_value = FakeLockdown()
+    mock_tunnel_provider.core_device_proxy_create.side_effect = InvalidServiceError("no CoreDeviceProxy", None, "17.0")
+    monkeypatch.setattr(
+        userspace_tunnel.tunnel_service, "get_remote_pairing_tunnel_services", get_remote_pairing_tunnel_services
+    )
+
+    await userspace_tunnel._create_no_root_tunnel_provider(serial="EXPLICIT-UDID", autopair=True)
+
+    assert asked == ["EXPLICIT-UDID"]
