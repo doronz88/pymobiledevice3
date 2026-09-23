@@ -3,6 +3,7 @@ import os
 import signal
 import socket
 import struct
+import sys
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Optional, Union, cast
@@ -10,10 +11,17 @@ from typing import Any, Optional, Union, cast
 import psutil
 from ifaddr import get_adapters
 
+if sys.platform == "darwin":
+    # IOKit, so macOS-only -- and this module is imported on every posix platform.
+    from ioregistry.ioentry import get_io_services_by_type
+else:
+    get_io_services_by_type = None
+
 from pymobiledevice3.osu.os_utils import (
     DEFAULT_AFTER_IDLE_SEC,
     DEFAULT_INTERVAL_SEC,
     DEFAULT_MAX_FAILS,
+    HostUsbDevice,
     OsUtils,
     UsbmuxDaemon,
 )
@@ -23,9 +31,21 @@ from pymobiledevice3.usbmux import MuxConnection
 # has no network discovery at all, and both binaries are called "usbmuxd".
 _LINUX_MDNS_LIBRARY = "libavahi"
 
+# IOKit reports the serial without the separator modern UDIDs carry: 00008030000215140A9A802E
+# against usbmux's 00008030-000215140A9A802E. Older 40-character UDIDs have no separator at all.
+_MODERN_UDID_LENGTH = 24
+_MODERN_UDID_PREFIX_LENGTH = 8
+
 _DARWIN_TCP_KEEPALIVE = 0x10
 _DARWIN_TCP_KEEPINTVL = 0x101
 _DARWIN_TCP_KEEPCNT = 0x102
+
+
+def _with_udid_separator(serial: str) -> str:
+    """Render an IOKit serial the way usbmux spells the same UDID."""
+    if len(serial) == _MODERN_UDID_LENGTH and "-" not in serial:
+        return f"{serial[:_MODERN_UDID_PREFIX_LENGTH]}-{serial[_MODERN_UDID_PREFIX_LENGTH:]}"
+    return serial
 
 
 class Posix(OsUtils):
@@ -83,6 +103,27 @@ class Darwin(Posix):
         # Apple's own usbmuxd, launchd-activated. It has always done Wi-Fi discovery, and there is
         # no alternative implementation to tell it apart from.
         return UsbmuxDaemon(name="Apple usbmuxd", discovers_over_wifi=True)
+
+    def usb_devices_seen_by_host(self) -> Optional[list[HostUsbDevice]]:
+        """Ask IOKit which Apple devices are on USB, bypassing usbmux entirely."""
+        if get_io_services_by_type is None:
+            return None
+        devices: list[HostUsbDevice] = []
+        for entry in get_io_services_by_type("IOUSBHostDevice"):
+            # ioregistry ships no type information, so its properties arrive fully untyped.
+            properties = cast(dict[str, Any], entry.properties)  # pyright: ignore[reportUnknownMemberType]
+            if properties.get("USB Vendor Name") != "Apple Inc.":
+                continue
+            serial = cast(Optional[str], properties.get("USB Serial Number"))
+            if serial is None:
+                continue
+            devices.append(
+                HostUsbDevice(
+                    name=cast(str, properties.get("USB Product Name", "Apple device")),
+                    serial=_with_udid_separator(serial),
+                )
+            )
+        return devices
 
     @property
     def loopback_header(self) -> bytes:

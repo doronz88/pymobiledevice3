@@ -116,6 +116,36 @@ def _environment() -> str:
     return f"pymobiledevice3 {__version__} on {platform.platform()}, python {platform.python_version()}"
 
 
+def _host_usb_check(devices: list[usbmux.MuxDevice]) -> Optional[Check]:
+    """Ask the OS what is plugged in, so "nothing attached" and "usbmuxd is blind" read differently."""
+    seen_by_host = OSUTILS.usb_devices_seen_by_host()
+    if seen_by_host is None:
+        return None
+    if not seen_by_host:
+        return Check(
+            "Device plugged in",
+            Status.NOT_APPLICABLE,
+            "the host sees no Apple device on USB",
+            impact="USB commands have nothing to talk to (Wi-Fi may still work)",
+            hint="plug the device in and unlock it, or use Wi-Fi",
+        )
+    listed = {device.serial for device in devices if device.is_usb}
+    unlisted = [device for device in seen_by_host if device.serial not in listed]
+    if not unlisted:
+        return Check(
+            "Device plugged in",
+            Status.OK,
+            ", ".join(repr(device) for device in seen_by_host) + ", and usbmux lists it",
+        )
+    return Check(
+        "Device plugged in",
+        Status.PROBLEM,
+        ", ".join(repr(device) for device in unlisted) + " -- the host sees it, usbmux does not",
+        impact='every command fails with "device not found" although the cable is fine',
+        hint="restart the usbmux daemon, and make sure the device is unlocked and trusted",
+    )
+
+
 async def _usbmux_checks() -> list[Check]:
     """Reach usbmux, then exercise what it is actually asked to do."""
     try:
@@ -126,14 +156,18 @@ async def _usbmux_checks() -> list[Check]:
         hint = "start usbmuxd" if daemon is None else f"{daemon} is installed but not serving"
         return [Check("usbmuxd", Status.PROBLEM, detail, hint)]
 
-    checks = [
+    checks: list[Check] = []
+    host_usb = _host_usb_check(devices)
+    if host_usb is not None:
+        checks.append(host_usb)
+    checks.append(
         Check(
             "usbmux daemon",
             Status.OK,
             f"reachable, {len(devices)} device(s): "
             + (", ".join(f"{device.serial} over {device.connection_type}" for device in devices) or "none listed"),
         )
-    ]
+    )
     checks.append(await _wifi_discovery_check(devices))
     checks.append(await _connect_check(devices))
     return checks

@@ -30,6 +30,17 @@ class UsbmuxDaemon:
         return " ".join(parts)
 
 
+@dataclass
+class HostUsbDevice:
+    """An Apple device the host itself sees on USB, whatever usbmux makes of it."""
+
+    name: str
+    serial: str
+
+    def __repr__(self) -> str:
+        return f"{self.name} ({self.serial})"
+
+
 DEFAULT_AFTER_IDLE_SEC = 3
 DEFAULT_INTERVAL_SEC = 3
 DEFAULT_MAX_FAILS = 3
@@ -141,6 +152,14 @@ class OsUtils:
 
         Used to explain a missing Wi-Fi device when none is attached to prove the answer either
         way. ``None`` means the platform offers no way to tell.
+        """
+        return None
+
+    def usb_devices_seen_by_host(self) -> Optional[list[HostUsbDevice]]:
+        """The Apple devices attached to this host's USB, asked of the OS rather than of usbmux.
+
+        Lets "nothing is plugged in" be told apart from "usbmuxd is not listing what is plugged
+        in". ``None`` means the platform offers no way to ask.
         """
         return None
 

@@ -8,7 +8,7 @@ import pytest
 
 from pymobiledevice3 import doctor
 from pymobiledevice3.exceptions import MuxException
-from pymobiledevice3.osu.os_utils import UsbmuxDaemon
+from pymobiledevice3.osu.os_utils import HostUsbDevice, UsbmuxDaemon
 
 pytestmark = [pytest.mark.cli]
 
@@ -163,3 +163,32 @@ def test_a_clean_report_says_nothing_is_blocking():
     assert "Nothing here is blocking a device connection." in repr(report)
 
 
+def test_a_device_the_host_sees_but_usbmux_does_not_is_a_problem(monkeypatch):
+    # The cable is fine and the OS enumerated the device; usbmux simply is not listing it. That is
+    # a different fix from "plug it in", so it must not read the same.
+    monkeypatch.setattr(
+        type(doctor.OSUTILS),
+        "usb_devices_seen_by_host",
+        lambda self: [HostUsbDevice(name="iPhone", serial=UDID)],
+    )
+
+    check = doctor._host_usb_check([])
+
+    assert check is not None
+    assert check.status is doctor.Status.PROBLEM
+    assert "usbmux does not" in check.detail
+
+
+def test_a_host_with_nothing_plugged_in_is_not_an_error(monkeypatch):
+    monkeypatch.setattr(type(doctor.OSUTILS), "usb_devices_seen_by_host", lambda self: [])
+
+    check = doctor._host_usb_check([])
+
+    assert check is not None
+    assert check.status is doctor.Status.NOT_APPLICABLE
+
+
+def test_a_platform_that_cannot_be_asked_reports_nothing(monkeypatch):
+    monkeypatch.setattr(type(doctor.OSUTILS), "usb_devices_seen_by_host", lambda self: None)
+
+    assert doctor._host_usb_check([]) is None
