@@ -36,9 +36,23 @@ _LINUX_MDNS_LIBRARY = "libavahi"
 _MODERN_UDID_LENGTH = 24
 _MODERN_UDID_PREFIX_LENGTH = 8
 
+# Apple's USB vendor id, as sysfs spells it.
+_APPLE_USB_VENDOR_ID = "05ac"
+# What `lsusb` itself reads. Going to sysfs directly avoids depending on usbutils being installed
+# and avoids parsing another tool's output; every file here is world-readable, so no root either.
+_LINUX_USB_DEVICES = Path("/sys/bus/usb/devices")
+
 _DARWIN_TCP_KEEPALIVE = 0x10
 _DARWIN_TCP_KEEPINTVL = 0x101
 _DARWIN_TCP_KEEPCNT = 0x102
+
+
+def _read_sysfs(path: Path) -> Optional[str]:
+    """One sysfs attribute, or ``None`` when the node does not carry it."""
+    try:
+        return path.read_text().strip()
+    except OSError:
+        return None
 
 
 def _with_udid_separator(serial: str) -> str:
@@ -168,6 +182,26 @@ class Linux(Posix):
                 return UsbmuxDaemon(name="usbmuxd2", path=path, discovers_over_wifi=True)
             return UsbmuxDaemon(name="usbmuxd (libimobiledevice)", path=path, discovers_over_wifi=False)
         return None
+
+    def usb_devices_seen_by_host(self) -> Optional[list[HostUsbDevice]]:
+        """Ask the kernel which Apple devices are on USB, bypassing usbmux entirely."""
+        if not _LINUX_USB_DEVICES.is_dir():
+            return None
+        devices: list[HostUsbDevice] = []
+        for entry in sorted(_LINUX_USB_DEVICES.iterdir()):
+            if _read_sysfs(entry / "idVendor") != _APPLE_USB_VENDOR_ID:
+                continue
+            serial = _read_sysfs(entry / "serial")
+            if serial is None:
+                # An interface node rather than the device itself, or a device that reports none.
+                continue
+            devices.append(
+                HostUsbDevice(
+                    name=_read_sysfs(entry / "product") or "Apple device",
+                    serial=_with_udid_separator(serial),
+                )
+            )
+        return devices
 
     @property
     def loopback_header(self) -> bytes:

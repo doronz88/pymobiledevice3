@@ -3,12 +3,13 @@
 import re
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional
 
 import pytest
 
 from pymobiledevice3 import doctor
 from pymobiledevice3.exceptions import MuxException
+from pymobiledevice3.osu import posix_util
 from pymobiledevice3.osu.os_utils import HostUsbDevice, UsbmuxDaemon
 
 pytestmark = [pytest.mark.cli]
@@ -206,3 +207,43 @@ def test_a_platform_that_cannot_be_asked_reports_nothing(monkeypatch):
     monkeypatch.setattr(type(doctor.OSUTILS), "usb_devices_seen_by_host", lambda self: None)
 
     assert doctor._host_usb_check([]) is None
+
+
+# --- host USB enumeration, per platform ---------------------------------------
+
+
+def _sysfs_device(root: Path, node: str, vendor: str, serial: Optional[str], product: Optional[str]) -> None:
+    entry = root / node
+    entry.mkdir()
+    (entry / "idVendor").write_text(vendor + "\n")
+    if serial is not None:
+        (entry / "serial").write_text(serial + "\n")
+    if product is not None:
+        (entry / "product").write_text(product + "\n")
+
+
+def test_linux_reads_apple_devices_out_of_sysfs(monkeypatch, tmp_path: Path):
+    # Same data lsusb parses, without depending on usbutils being installed.
+    _sysfs_device(tmp_path, "1-1", "05ac", "00008030000215140A9A802E", "iPhone")
+    _sysfs_device(tmp_path, "2-1", "8087", "somehub", "Integrated Hub")  # not Apple
+    _sysfs_device(tmp_path, "1-1:1.0", "05ac", None, None)  # an interface node, not the device
+    monkeypatch.setattr(posix_util, "_LINUX_USB_DEVICES", tmp_path)
+
+    devices = posix_util.Linux().usb_devices_seen_by_host()
+
+    assert devices is not None
+    assert [(device.name, device.serial) for device in devices] == [("iPhone", UDID)]
+
+
+def test_linux_without_sysfs_cannot_answer(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(posix_util, "_LINUX_USB_DEVICES", tmp_path / "absent")
+
+    assert posix_util.Linux().usb_devices_seen_by_host() is None
+
+
+def test_a_udid_is_spelled_the_way_usbmux_spells_it():
+    # Both IOKit and sysfs report a modern UDID without its separator.
+    assert posix_util._with_udid_separator("00008030000215140A9A802E") == UDID
+    # A 40-character legacy UDID has no separator to restore.
+    legacy = "a" * 40
+    assert posix_util._with_udid_separator(legacy) == legacy
