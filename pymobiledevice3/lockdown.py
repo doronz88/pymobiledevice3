@@ -12,7 +12,7 @@ import tempfile
 import time
 from abc import ABC, abstractmethod
 from asyncio import IncompleteReadError
-from collections.abc import AsyncIterable, Generator, Iterable
+from collections.abc import AsyncGenerator, Generator, Iterable
 from contextlib import contextmanager, suppress
 from enum import Enum
 from pathlib import Path
@@ -32,7 +32,7 @@ from packaging.version import Version
 from typing_extensions import Self
 
 from pymobiledevice3 import irecv_devices, usbmux
-from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, ServiceInstance, browse_mobdev2
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, ServiceInstance, iter_browse_mobdev2
 from pymobiledevice3.ca import generate_pairing_cert_chain
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
@@ -1669,14 +1669,14 @@ async def get_mobdev2_lockdowns(
     pair_records: Optional[Path] = None,
     only_paired: bool = False,
     timeout: float = DEFAULT_BONJOUR_TIMEOUT,
-) -> AsyncIterable[tuple[str, TcpLockdownClient]]:
+) -> AsyncGenerator[tuple[str, TcpLockdownClient], None]:
     records = await _known_lockdown_pair_records(udid, pair_records)
     if udid is not None and not records:
         # Nothing the requested device would accept: don't sit through a browse.
         return
     records_by_mac = {record["WiFiMACAddress"]: record for record in records if "WiFiMACAddress" in record}
 
-    for answer in await browse_mobdev2(timeout=timeout):
+    async for answer in iter_browse_mobdev2(timeout=timeout):
         if "@" not in answer.instance:
             continue
         wifi_mac_address = answer.instance.split("@", 1)[0]

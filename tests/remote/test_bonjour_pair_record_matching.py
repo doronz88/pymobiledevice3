@@ -235,7 +235,8 @@ def mobdev2(monkeypatch):
 
     async def browse(timeout):
         state.browses += 1
-        return state.answers
+        for answer in state.answers:
+            yield answer
 
     async def create_using_tcp(hostname, autopair, pair_record):
         device_udid = state.devices[hostname]
@@ -247,7 +248,7 @@ def mobdev2(monkeypatch):
     async def preferred_record(identifier, pairing_records_cache_folder):
         return state.usbmux_record
 
-    monkeypatch.setattr(lockdown_module, "browse_mobdev2", browse)
+    monkeypatch.setattr(lockdown_module, "iter_browse_mobdev2", browse)
     monkeypatch.setattr(lockdown_module, "create_using_tcp", create_using_tcp)
     monkeypatch.setattr(lockdown_module, "get_preferred_pair_record", preferred_record)
     return state
