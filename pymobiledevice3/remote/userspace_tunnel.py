@@ -54,8 +54,15 @@ from pmd_pytcp.socket import AF_INET6, SHUT_RDWR, SOCK_DGRAM, SOCK_STREAM
 from pmd_pytcp.socket import socket as pytcp_socket
 
 import pymobiledevice3.remote.tunnel_service as tunnel_service
-from pymobiledevice3.exceptions import InvalidServiceError, PyMobileDevice3Exception, UserspaceTunnelUnavailableError
-from pymobiledevice3.lockdown import create_using_usbmux
+from pymobiledevice3.exceptions import (
+    ConnectionFailedToUsbmuxdError,
+    DeviceNotFoundError,
+    InvalidServiceError,
+    NoDeviceConnectedError,
+    PyMobileDevice3Exception,
+    UserspaceTunnelUnavailableError,
+)
+from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.utils import get_asyncio_loop
@@ -710,6 +717,9 @@ async def _create_no_root_tunnel_provider(serial: Optional[str], autopair: bool,
       (the ``com.apple.internal.devicecompute.CoreDeviceProxy`` lockdown service — no remoted).
     * iOS 17.0-17.3 / Wi-Fi: RemotePairing over bonjour
       (:func:`~pymobiledevice3.remote.tunnel_service.get_remote_pairing_tunnel_services`).
+    * No USB device but explicit ``serial``: mobdev2 Wi-Fi path via
+      :func:`~pymobiledevice3.lockdown.get_mobdev2_lockdowns` (regular lockdown pair
+      record over TCP — no RemotePairing bootstrap needed).
 
     The RSD/USB path (``get_core_device_tunnel_services``) is intentionally NOT attempted: it
     suspends remoted via :func:`stop_remoted`, which needs root on macOS — defeating the no-root
@@ -722,7 +732,27 @@ async def _create_no_root_tunnel_provider(serial: Optional[str], autopair: bool,
     devices elsewhere, e.g. a kernel tunnel). Either way, a device that cannot be served no-root
     raises :class:`UserspaceTunnelUnavailableError`.
     """
-    lockdown = await create_using_usbmux(serial=serial, autopair=autopair)
+    try:
+        lockdown = await create_using_usbmux(serial=serial, autopair=autopair)
+    except (NoDeviceConnectedError, DeviceNotFoundError, ConnectionFailedToUsbmuxdError):
+        if serial is None:
+            raise
+        # No USB device for this serial; try the mobdev2 Wi-Fi path (lockdown pair record
+        # over TCP -- no RemotePairing record needed). get_mobdev2_lockdowns returns
+        # immediately without browsing when no pair record exists for the udid, and uses
+        # iter_browse_mobdev2 internally so a present device returns in ~one mDNS round-trip.
+        lockdown = None
+        mobdev2_gen = get_mobdev2_lockdowns(udid=serial, only_paired=True)
+        try:
+            async for _, mobdev2_lockdown in mobdev2_gen:
+                lockdown = mobdev2_lockdown
+                logger.info("No USB device for %s; using mobdev2 Wi-Fi path", serial)
+                break
+        finally:
+            await mobdev2_gen.aclose()  # type: ignore[attr-defined]  # async generator at runtime
+        if lockdown is None:
+            # mobdev2 didn't find the device either; re-raise the original usbmux error.
+            raise
     try:
         return await tunnel_service.CoreDeviceTunnelProxy.create(lockdown), lockdown
     except InvalidServiceError:

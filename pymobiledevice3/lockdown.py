@@ -32,7 +32,7 @@ from packaging.version import Version
 from typing_extensions import Self
 
 from pymobiledevice3 import irecv_devices, usbmux
-from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, ServiceInstance, browse_mobdev2
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, ServiceInstance, iter_browse_mobdev2
 from pymobiledevice3.ca import generate_pairing_cert_chain
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
@@ -1673,7 +1673,7 @@ async def get_mobdev2_lockdowns(
         return
     records_by_mac = {record["WiFiMACAddress"]: record for record in records if "WiFiMACAddress" in record}
 
-    for answer in await browse_mobdev2(timeout=timeout):
+    async for answer in iter_browse_mobdev2(timeout=timeout):
         if "@" not in answer.instance:
             continue
         wifi_mac_address = answer.instance.split("@", 1)[0]

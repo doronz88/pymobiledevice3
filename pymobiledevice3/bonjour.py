@@ -10,7 +10,7 @@ import socket
 import struct
 import sys
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import AsyncIterable, Iterable
 from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, Callable, Optional, TypeVar, cast
@@ -339,72 +339,28 @@ def _warn_if_multicast_blocked(transports: list[tuple[asyncio.DatagramTransport,
 # ---------------- Public API ----------------
 
 
-async def browse_service(service_type: str, timeout: float = 4.0) -> list[ServiceInstance]:
+@dataclass
+class _BrowseState:
+    """Accumulated mDNS browse state -- mutated in place by :func:`_browse_receive_loop`."""
+
+    ptr_targets: set[str] = field(default_factory=set[str])
+    srv_map: dict[str, list[dict[str, Any]]] = field(default_factory=lambda: defaultdict(list))
+    txt_map: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
+    host_addrs: dict[str, list[Address]] = field(default_factory=lambda: defaultdict(list))
+    sent: int = 0
+
+
+def _assemble_instances(state: _BrowseState) -> list[ServiceInstance]:
+    """Build :class:`ServiceInstance` list from accumulated browse state.
+
+    Sorted by instance name, matching the historic ``browse_service()`` ordering.
+    Instances whose SRV target has no resolved A/AAAA yet are included with
+    ``addresses=[]``, exactly as the pre-iter assembly did.
     """
-    Discover a DNS-SD/mDNS service type (e.g. "_remoted._tcp.local.") on the local network.
-
-    Returns: List[ServiceInstance] with Address(ip, iface) entries.
-    """
-    if not service_type.endswith("."):
-        service_type += "."
-
-    transports, queue = await _open_mdns_sockets()
-    adapters = _Adapters()
-
-    ptr_targets: set[str] = set()
-    srv_map: dict[str, list[dict[str, Any]]] = defaultdict(list)  # instance_name -> list of {"target", "port"}
-    txt_map: dict[str, dict[str, Any]] = {}
-    host_addrs: dict[str, list[Address]] = defaultdict(list)  # host -> list[(ip, iface)]
-
-    def _record_addr(rr_name: str, ip_str: str, pkt_addr: Any) -> None:
-        # Determine family and possible scopeid from the packet that delivered this RR
-        family = socket.AF_INET6 if ":" in ip_str else socket.AF_INET
-        scopeid: Optional[int] = None
-        if isinstance(pkt_addr, tuple) and len(cast(tuple[Any, ...], pkt_addr)) == 4:  # IPv6 remote tuple
-            scopeid = cast(Optional[int], pkt_addr[3])
-        iface = adapters.pick_iface_for_ip(ip_str, family, scopeid)
-        if iface is None:
-            return
-        # Avoid duplicates for the same host/ip
-        existing = host_addrs[rr_name]
-        if not any(a.ip == ip_str for a in existing):
-            existing.append(Address(ip=ip_str, iface=iface))
-
-    try:
-        sent = await _send_query_all(transports, build_query(service_type, QTYPE_PTR, unicast=False))
-        loop = asyncio.get_running_loop()
-        end = loop.time() + timeout
-        while loop.time() < end:
-            try:
-                data, pkt_addr = await asyncio.wait_for(queue.get(), timeout=end - loop.time())
-            except asyncio.TimeoutError:
-                break
-            for rr in parse_mdns_message(data):
-                t = rr.get("type")
-                if t == QTYPE_PTR and rr.get("name") == service_type:
-                    ptr_targets.add(cast(str, rr.get("ptrdname")))
-                elif t == QTYPE_SRV:
-                    # The same record arrives once per interface and again on every re-announcement.
-                    srv = {"target": rr.get("target"), "port": rr.get("port")}
-                    if srv not in srv_map[rr["name"]]:
-                        srv_map[rr["name"]].append(srv)
-                elif t == QTYPE_TXT:
-                    # TODO: This could possibly mix the properties of multiple TXT records for the same instance.
-                    #       However, it's currently unused.
-                    txt_map[rr["name"]] = rr.get("txt", {})
-                elif (t == QTYPE_A and rr.get("address")) or (t == QTYPE_AAAA and rr.get("address")):
-                    _record_addr(rr["name"], rr["address"], pkt_addr)
-        if not ptr_targets:
-            _warn_if_multicast_blocked(transports, sent)
-    finally:
-        for transport, _ in transports:
-            transport.close()
-
-    # Assemble dataclasses
     results: list[ServiceInstance] = []
-    for inst in sorted(ptr_targets):
-        srv_entries = srv_map.get(inst, [])
-        props = txt_map.get(inst, {})
+    for inst in sorted(state.ptr_targets):
+        srv_entries = state.srv_map.get(inst, [])
+        props = state.txt_map.get(inst, {})
         for srv in srv_entries:
             port = srv.get("port")
             if port is None:
@@ -412,7 +368,7 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
                 continue
             target = srv.get("target")
             host = (target[:-1] if target and target.endswith(".") else target) or None
-            addrs = host_addrs.get(target, []) if target else []
+            addrs = state.host_addrs.get(target, []) if target else []
             results.append(
                 ServiceInstance(
                     instance=inst,
@@ -425,12 +381,106 @@ async def browse_service(service_type: str, timeout: float = 4.0) -> list[Servic
     return results
 
 
+async def _browse_receive_loop(service_type: str, timeout: float) -> AsyncIterable[_BrowseState]:
+    """Shared mDNS receive loop that yields accumulated state after each packet.
+
+    The state object is mutated in place; consumers must snapshot what they need
+    before the next iteration.  When the consumer stops iterating early (e.g.
+    ``break``), the multicast sockets are closed in the ``finally`` block.
+    """
+    if not service_type.endswith("."):
+        service_type += "."
+
+    transports, queue = await _open_mdns_sockets()
+    adapters = _Adapters()
+    state = _BrowseState()
+
+    def _record_addr(rr_name: str, ip_str: str, pkt_addr: Any) -> None:
+        family = socket.AF_INET6 if ":" in ip_str else socket.AF_INET
+        scopeid: Optional[int] = None
+        if isinstance(pkt_addr, tuple) and len(cast(tuple[Any, ...], pkt_addr)) == 4:
+            scopeid = cast(Optional[int], pkt_addr[3])
+        iface = adapters.pick_iface_for_ip(ip_str, family, scopeid)
+        if iface is None:
+            return
+        existing = state.host_addrs[rr_name]
+        if not any(a.ip == ip_str for a in existing):
+            existing.append(Address(ip=ip_str, iface=iface))
+
+    try:
+        state.sent = await _send_query_all(transports, build_query(service_type, QTYPE_PTR, unicast=False))
+        loop = asyncio.get_running_loop()
+        end = loop.time() + timeout
+        while loop.time() < end:
+            try:
+                data, pkt_addr = await asyncio.wait_for(queue.get(), timeout=end - loop.time())
+            except asyncio.TimeoutError:
+                break
+            for rr in parse_mdns_message(data):
+                t = rr.get("type")
+                if t == QTYPE_PTR and rr.get("name") == service_type:
+                    state.ptr_targets.add(cast(str, rr.get("ptrdname")))
+                elif t == QTYPE_SRV:
+                    srv = {"target": rr.get("target"), "port": rr.get("port")}
+                    if srv not in state.srv_map[rr["name"]]:
+                        state.srv_map[rr["name"]].append(srv)
+                elif t == QTYPE_TXT:
+                    state.txt_map[rr["name"]] = rr.get("txt", {})
+                elif (t == QTYPE_A and rr.get("address")) or (t == QTYPE_AAAA and rr.get("address")):
+                    _record_addr(rr["name"], rr["address"], pkt_addr)
+            yield state
+        if not state.ptr_targets:
+            _warn_if_multicast_blocked(transports, state.sent)
+    finally:
+        for transport, _ in transports:
+            transport.close()
+
+
+async def browse_service(service_type: str, timeout: float = 4.0) -> list[ServiceInstance]:
+    """
+    Discover a DNS-SD/mDNS service type (e.g. "_remoted._tcp.local.") on the local network.
+
+    Returns: List[ServiceInstance] with Address(ip, iface) entries.
+    """
+    state = _BrowseState()
+    async for state in _browse_receive_loop(service_type, timeout=timeout):  # noqa: B007
+        pass
+    return _assemble_instances(state)
+
+
+async def iter_browse_service(service_type: str, timeout: float = 4.0) -> AsyncIterable[ServiceInstance]:
+    """Yield :class:`ServiceInstance` objects as they become complete (PTR + SRV + address).
+
+    Consumers looking for a specific device can stop early (``async for`` + ``break``)
+    to avoid waiting the full *timeout*. Use :func:`browse_service` to collect all
+    answers over the full window.
+
+    .. note::
+
+       Breaking out of the ``async for`` closes the multicast sockets via the
+       generator's ``finally``.  On Python 3.9 you may want to call
+    ``await gen.aclose()`` explicitly for deterministic cleanup under ``-X dev``.
+    """
+    yielded: set[tuple[str, int]] = set()
+    async for state in _browse_receive_loop(service_type, timeout=timeout):
+        for instance in _assemble_instances(state):
+            key = (instance.instance, instance.port)
+            if key not in yielded and instance.addresses:
+                yielded.add(key)
+                yield instance
+
+
 async def browse_remoted(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[ServiceInstance]:
     return await browse_service(REMOTED_SERVICE_NAME, timeout=timeout)
 
 
 async def browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[ServiceInstance]:
     return await browse_service(MOBDEV2_SERVICE_NAME, timeout=timeout)
+
+
+def iter_browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> AsyncIterable[ServiceInstance]:
+    """Return an async iterator over mobdev2 service instances, yielded as they become complete."""
+    return iter_browse_service(MOBDEV2_SERVICE_NAME, timeout=timeout)
 
 
 async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[ServiceInstance]:

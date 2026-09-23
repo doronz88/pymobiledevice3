@@ -11,6 +11,7 @@ import pytest
 
 from pymobiledevice3 import bonjour
 from pymobiledevice3.bonjour import (
+    QTYPE_A,
     QTYPE_PTR,
     QTYPE_SRV,
     QTYPE_TXT,
@@ -21,6 +22,7 @@ from pymobiledevice3.bonjour import (
     _encode_txt,
     browse_service,
     encode_name,
+    iter_browse_service,
 )
 
 SERVICE = "_apple-mobdev2._tcp.local."
@@ -72,6 +74,8 @@ def mdns(monkeypatch):
 
     monkeypatch.setattr(bonjour, "_open_mdns_sockets", open_mdns_sockets)
     monkeypatch.setattr(bonjour, "_warned_multicast_blocked", False)
+    # Make every IP match a local interface so scripted addresses are recorded in CI/sandboxes.
+    monkeypatch.setattr(bonjour._Adapters, "pick_iface_for_ip", lambda self, ip, fam, sid: "eth0")
     return state
 
 
@@ -104,3 +108,48 @@ async def test_an_empty_network_is_not_reported_as_blocked(mdns, caplog):
         assert await browse_service(SERVICE, timeout=0.05) == []
 
     assert "bonjour discovery is blocked" not in caplog.text
+
+
+async def test_browse_service_aggregates_across_packets(mdns):
+    ptr_only = MDNSResponder._build_message(
+        [_build_rr(SERVICE, QTYPE_PTR, encode_name(INSTANCE), 120, False)],
+        [],
+    )
+    srv_and_addr = MDNSResponder._build_message(
+        [],
+        [
+            _build_rr(INSTANCE, QTYPE_SRV, _encode_srv(0, 0, 62078, "device.local."), 120, True),
+            _build_rr(INSTANCE, QTYPE_TXT, _encode_txt({"identifier": "X"}), 120, True),
+            _build_rr("device.local.", QTYPE_A, socket.inet_aton("192.0.2.10"), 120, True),
+        ],
+    )
+    mdns.packets = [ptr_only, srv_and_addr]
+    instances = await browse_service(SERVICE, timeout=0.05)
+    assert len(instances) == 1
+    assert instances[0].instance == INSTANCE
+    assert instances[0].port == 62078
+    assert any(a.ip == "192.0.2.10" for a in instances[0].addresses)
+
+
+async def test_iter_browse_service_yields_before_timeout(mdns):
+    # _response() has no A record; iter_browse_service requires addresses to yield.
+    full = MDNSResponder._build_message(
+        [_build_rr(SERVICE, QTYPE_PTR, encode_name(INSTANCE), 120, False)],
+        [
+            _build_rr(INSTANCE, QTYPE_SRV, _encode_srv(0, 0, 62078, "device.local."), 120, True),
+            _build_rr(INSTANCE, QTYPE_TXT, _encode_txt({"identifier": "X"}), 120, True),
+            _build_rr("device.local.", QTYPE_A, socket.inet_aton("192.0.2.1"), 120, True),
+        ],
+    )
+    mdns.packets = [full]
+    timeout = 10.0
+    start = asyncio.get_running_loop().time()
+    results = []
+    async for instance in iter_browse_service(SERVICE, timeout=timeout):
+        results.append(instance)
+        break
+    elapsed = asyncio.get_running_loop().time() - start
+    assert len(results) == 1
+    assert results[0].instance == INSTANCE
+    assert results[0].port == 62078
+    assert elapsed < 2.0, f"early exit took {elapsed:.1f}s"
