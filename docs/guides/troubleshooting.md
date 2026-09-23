@@ -9,16 +9,21 @@ Common failures mapped to their causes and fixes. Each section quotes the error 
 exception name) the CLI prints, so you can search this page for what you're seeing.
 
 Start with `doctor`. It checks the *host* — whether usbmux is reachable and finds devices over
-Wi-Fi, whether mDNS queries can leave the machine, and which tunnel transports are usable. It needs
-no device attached, which is the point when nothing shows up at all, and it separates "this machine
-cannot discover devices" from "the device is not there":
+Wi-Fi, whether mDNS queries can leave the machine, and which tunnel transports are usable — and,
+when a device is attached, what that device is: its model and OS version, whether it is paired, and
+whether developer mode and a developer disk image are in place. It needs no device, which is the
+point when nothing shows up at all, and it separates "this machine cannot discover devices" from
+"the device is not there":
 
 ```shell
 pymobiledevice3 doctor
 ```
 
-It exits non-zero when something is broken, and `--json` produces output worth pasting into a bug
-report.
+It exits non-zero when something is broken, and `--json` produces the same report as data. It never
+pairs, so running it cannot pop a trust dialog.
+
+Please paste its output when opening an issue — it answers most of what would otherwise be asked in
+follow-up questions.
 
 For any problem, running with increased verbosity usually reveals what is going on:
 

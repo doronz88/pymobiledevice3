@@ -439,3 +439,111 @@ async def test_running_every_check_on_this_host_produces_a_report():
 
     assert report.environment
     assert report.checks
+
+
+# --- the device, when one is attached ------------------------------------------
+
+
+class _FakeLockdownClient:
+    def __init__(self, paired: bool = True, version: str = "17.4", developer_mode: bool = True) -> None:
+        self.paired = paired
+        self.product_type = "iPhone15,4"
+        self.product_version = version
+        self._developer_mode = developer_mode
+        self.closed = False
+
+    async def get_developer_mode_status(self) -> bool:
+        return self._developer_mode
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def _attach(monkeypatch, lockdown: _FakeLockdownClient, mounted: bool = True) -> None:
+    async def create_using_usbmux(serial=None, **kwargs):
+        # Pairing here would pop a trust dialog on someone's device just for running a diagnostic.
+        assert kwargs.get("autopair") is False
+        return lockdown
+
+    class _Mounter:
+        def __init__(self, lockdown=None) -> None:
+            pass
+
+        async def __aenter__(self) -> "_Mounter":
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            return None
+
+        async def is_image_mounted(self, image_type: str) -> bool:
+            return mounted
+
+    monkeypatch.setattr(doctor, "create_using_usbmux", create_using_usbmux)
+    monkeypatch.setattr(doctor, "MobileImageMounterService", _Mounter)
+
+
+async def test_no_device_means_no_device_section(monkeypatch):
+    assert await doctor._device_checks([]) == []
+
+
+async def test_a_ready_device_reports_its_version_mode_and_image(monkeypatch):
+    _attach(monkeypatch, _FakeLockdownClient())
+
+    checks = await doctor._device_checks([_device("USB")])
+
+    assert [check.title for check in checks] == ["Device", "Developer mode", "Developer image"]
+    assert all(check.status is doctor.Status.OK for check in checks)
+    assert "iPhone15,4 running 17.4" in checks[0].detail
+
+
+async def test_an_unpaired_device_is_reported_without_pairing_it(monkeypatch):
+    lockdown = _FakeLockdownClient(paired=False)
+    _attach(monkeypatch, lockdown)
+
+    checks = await doctor._device_checks([_device("USB")])
+
+    # Stops at the identity: everything after it would be refused anyway.
+    assert [check.title for check in checks] == ["Device"]
+    assert checks[0].status is doctor.Status.WARNING
+    assert lockdown.closed
+
+
+async def test_developer_mode_is_not_a_concept_before_ios_16(monkeypatch):
+    _attach(monkeypatch, _FakeLockdownClient(version="15.7", developer_mode=False))
+
+    checks = await doctor._device_checks([_device("USB")])
+
+    mode = next(check for check in checks if check.title == "Developer mode")
+    assert mode.status is doctor.Status.NOT_APPLICABLE
+
+
+async def test_developer_mode_off_says_what_it_costs(monkeypatch):
+    _attach(monkeypatch, _FakeLockdownClient(developer_mode=False))
+
+    checks = await doctor._device_checks([_device("USB")])
+
+    mode = next(check for check in checks if check.title == "Developer mode")
+    assert mode.status is doctor.Status.WARNING
+    assert mode.impact and mode.hint
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"), [("17.4", "Personalized"), ("16.7", "Developer")], ids=["ios17", "ios16"]
+)
+async def test_the_image_type_follows_the_os_version(monkeypatch, version: str, expected: str):
+    _attach(monkeypatch, _FakeLockdownClient(version=version), mounted=False)
+
+    checks = await doctor._device_checks([_device("USB")])
+
+    image = next(check for check in checks if check.title == "Developer image")
+    assert expected in image.detail
+    assert image.status is doctor.Status.WARNING
+
+
+async def test_the_lockdown_connection_is_always_closed(monkeypatch):
+    lockdown = _FakeLockdownClient()
+    _attach(monkeypatch, lockdown)
+
+    await doctor._device_checks([_device("USB")])
+
+    assert lockdown.closed

@@ -19,6 +19,7 @@ from enum import Enum
 from typing import Callable, Optional, cast
 
 import typer
+from packaging.version import Version
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import (
@@ -31,8 +32,14 @@ from pymobiledevice3.bonjour import (
 )
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import MuxException, PyMobileDevice3Exception, TunneldConnectionError
+from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.pair_records import iter_remote_pair_records
+from pymobiledevice3.services.mobile_image_mounter import (
+    DeveloperDiskImageMounter,
+    MobileImageMounterService,
+    PersonalizedImageMounter,
+)
 from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, get_tunneld_tunnels
 
 OSUTILS = get_os_utils()
@@ -261,6 +268,72 @@ async def _connect_check(devices: list[usbmux.MuxDevice]) -> Check:
     return Check("Service access", Status.OK, f"opened a lockdown connection to {device.serial}")
 
 
+async def _device_checks(devices: list[usbmux.MuxDevice]) -> list[Check]:
+    """What the attached device is, and whether it is ready for developer work.
+
+    Host facts alone do not explain a command that fails on one device and works on another. The
+    OS version decides which transports even apply, and developer mode plus a mounted developer
+    image are the two most common reasons a `developer` command fails with the tunnel working
+    perfectly.
+
+    Never pairs: an unpaired device is a fact to report, not a trust dialog to provoke.
+    """
+    if not devices:
+        return []
+    device = next((candidate for candidate in devices if candidate.is_usb), devices[0])
+    lockdown = await create_using_usbmux(serial=device.serial, autopair=False)
+    try:
+        identity = f"{lockdown.product_type} running {lockdown.product_version}"
+        if not lockdown.paired:
+            return [
+                Check(
+                    "Device",
+                    Status.WARNING,
+                    f"{identity}, not paired with this host",
+                    impact="anything beyond listing the device will be refused",
+                    hint="run any command with the device unlocked and accept the trust prompt",
+                )
+            ]
+        checks = [Check("Device", Status.OK, f"{identity}, paired")]
+        version = Version(lockdown.product_version)
+        checks.append(await _developer_mode_check(lockdown, version))
+        checks.append(await _developer_image_check(lockdown, version))
+        return checks
+    finally:
+        await lockdown.close()
+
+
+async def _developer_mode_check(lockdown: LockdownClient, version: Version) -> Check:
+    """Developer mode gates every developer service, and iOS 16 is where it appeared."""
+    if version.major < 16:
+        return Check("Developer mode", Status.NOT_APPLICABLE, "iOS 16 and later only")
+    if await lockdown.get_developer_mode_status():
+        return Check("Developer mode", Status.OK, "enabled")
+    return Check(
+        "Developer mode",
+        Status.WARNING,
+        "disabled",
+        impact="no developer image can be mounted and every `developer` command will be refused",
+        hint="pymobiledevice3 amfi enable-developer-mode (the device reboots and must be unlocked)",
+    )
+
+
+async def _developer_image_check(lockdown: LockdownClient, version: Version) -> Check:
+    """Is a developer disk image mounted? iOS 17 personalizes it; older releases do not."""
+    image_type = PersonalizedImageMounter.IMAGE_TYPE if version.major >= 17 else DeveloperDiskImageMounter.IMAGE_TYPE
+    async with MobileImageMounterService(lockdown=lockdown) as mounter:
+        mounted = await mounter.is_image_mounted(image_type)
+    if mounted:
+        return Check("Developer image", Status.OK, f"a {image_type} image is mounted")
+    return Check(
+        "Developer image",
+        Status.WARNING,
+        f"no {image_type} image is mounted",
+        impact="`developer` commands will fail even with a working tunnel",
+        hint="pymobiledevice3 mounter auto-mount",
+    )
+
+
 async def _mdns_check() -> Check:
     """Can an mDNS query leave this host at all? (macOS Local Network permission, firewalls)
 
@@ -382,9 +455,19 @@ async def _as_list(produce: Callable[[], Awaitable[Check]]) -> list[Check]:
     return [await produce()]
 
 
+async def _guarded_devices() -> list[usbmux.MuxDevice]:
+    """The device list again, for the device section; its absence is already reported above."""
+    try:
+        return await usbmux.list_devices()
+    except Exception:
+        return []
+
+
 async def run_checks() -> Report:
     """Run every host check, in the order a failure would cascade."""
     checks = await _guarded_many("usbmux daemon", _usbmux_checks)
+    devices = await _guarded_devices()
+    checks += await _guarded_many("Device", lambda: _device_checks(devices))
     for title, check in (
         ("Bonjour discovery", _mdns_check),
         ("Tunnel (native)", _native_tunnel_check),
