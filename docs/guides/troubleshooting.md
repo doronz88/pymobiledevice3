@@ -23,9 +23,10 @@ No device was found over usbmux.
 - Check the cable and that the device shows up in `pymobiledevice3 usbmux list`.
 - On Linux, make sure [usbmuxd](https://github.com/libimobiledevice/usbmuxd) is installed and
   running.
-- On Windows, install iTunes from the
-  [Microsoft Store](https://apps.microsoft.com/detail/9pb2mz1zmb1s) — it provides the Apple
-  Mobile Device Support service that pymobiledevice3 relies on.
+- On Windows, install iTunes — it provides the Apple Mobile Device Support service that
+  pymobiledevice3 relies on. Prefer the [classic installer](https://www.apple.com/itunes/download/win64)
+  over the Microsoft Store "Apple Devices" app: the Store app's service does not discover devices
+  over Wi-Fi, so a device with no cable never appears in `usbmux list`.
 - If you passed `--udid`, verify it matches a connected device (see the next section).
 
 ### "Failed to connect to usbmuxd socket" (`ConnectionFailedToUsbmuxdError`)

@@ -401,23 +401,7 @@ async def test_tun_address_usable_when_up_returns():
         await tun.close()
 
 
-# --- _create_no_root_tunnel_provider fallback behavior -------------------------
-
-
-class _FakeMobdev2Lockdown:
-    """Stand-in for a TcpLockdownClient returned by get_mobdev2_lockdowns."""
-
-    def __init__(self, udid: str = "MOBDEV2-UDID", paired: bool = True) -> None:
-        self.udid = udid
-        self.paired = paired
-        self.closed = False
-
-    async def close(self) -> None:
-        self.closed = True
-
-
-async def _noop_close_lockdown() -> None:
-    pass
+# --- _create_no_root_tunnel_provider transport selection ----------------------
 
 
 @pytest.fixture
@@ -425,16 +409,9 @@ def mock_tunnel_provider():
     """Mock the external dependencies of _create_no_root_tunnel_provider."""
 
     class Mocks:
-        def __init__(self):
+        def __init__(self) -> None:
             self.create_using_usbmux = AsyncMock()
             self.core_device_proxy_create = AsyncMock()
-            self._mobdev2_results: list[tuple[str, Any]] = []
-            self.mobdev2_called_with: dict[str, Any] = {}
-
-        async def get_mobdev2_lockdowns(self, **kwargs):
-            self.mobdev2_called_with = kwargs
-            for item in self._mobdev2_results:
-                yield item
 
     mocks = Mocks()
 
@@ -445,13 +422,12 @@ def mock_tunnel_provider():
             "CoreDeviceTunnelProxy",
             type("P", (), {"create": staticmethod(mocks.core_device_proxy_create)}),
         ),
-        patch.object(userspace_tunnel, "get_mobdev2_lockdowns", mocks.get_mobdev2_lockdowns),
     ):
         yield mocks
 
 
 async def test_no_root_tunnel_usb_succeeds(mock_tunnel_provider):
-    """USB device with CoreDeviceProxy — the happy path, no fallback needed."""
+    """USB device with CoreDeviceProxy — the happy path."""
     fake_lockdown = object()
     fake_proxy = object()
     mock_tunnel_provider.create_using_usbmux.return_value = fake_lockdown
@@ -462,69 +438,35 @@ async def test_no_root_tunnel_usb_succeeds(mock_tunnel_provider):
     assert lockdown is fake_lockdown
 
 
-async def test_no_usb_with_serial_mobdev2_hit(mock_tunnel_provider):
-    """No USB device + explicit serial + mobdev2 finds it → fallback succeeds."""
-    serial = "TEST-UDID-1234"
-    fake_mobdev2_lockdown = _FakeMobdev2Lockdown(udid=serial)
-    fake_proxy = object()
+@pytest.mark.parametrize("serial", [None, "TEST-UDID-1234"], ids=["no-serial", "with-serial"])
+@pytest.mark.parametrize(
+    "error",
+    [
+        NoDeviceConnectedError("no device"),
+        DeviceNotFoundError("not found"),
+        ConnectionFailedToUsbmuxdError("no usbmuxd"),
+    ],
+    ids=["no-device", "not-found", "no-usbmuxd"],
+)
+async def test_usbmux_lookup_failure_propagates(mock_tunnel_provider, error, serial):
+    """A device usbmux cannot serve fails right here, with or without a serial.
 
-    mock_tunnel_provider.create_using_usbmux.side_effect = NoDeviceConnectedError("no device")
-    mock_tunnel_provider._mobdev2_results = [("172.16.2.18", fake_mobdev2_lockdown)]
-    mock_tunnel_provider.core_device_proxy_create.return_value = fake_proxy
+    Reaching it over Wi-Fi has to be asked for explicitly (``--mobdev2``); browsing bonjour on
+    every miss would turn "nothing is connected" into a multi-second wait and could serve a
+    device the user never named.
+    """
+    mock_tunnel_provider.create_using_usbmux.side_effect = error
 
-    provider, lockdown = await userspace_tunnel._create_no_root_tunnel_provider(serial=serial, autopair=True)
-    assert provider is fake_proxy
-    assert lockdown is fake_mobdev2_lockdown
-
-
-async def test_no_usb_with_serial_no_mobdev2_reraises(mock_tunnel_provider):
-    """No USB + serial + mobdev2 finds nothing → re-raise original usbmux error."""
-    serial = "TEST-UDID-1234"
-    mock_tunnel_provider.create_using_usbmux.side_effect = NoDeviceConnectedError("no device")
-    mock_tunnel_provider._mobdev2_results = []
-
-    with pytest.raises(NoDeviceConnectedError, match="no device"):
-        await userspace_tunnel._create_no_root_tunnel_provider(serial=serial, autopair=True)
-
-
-async def test_no_usb_no_serial_reraises_immediately(mock_tunnel_provider):
-    """No USB + no serial → re-raise immediately without any mobdev2 browse."""
-    mock_tunnel_provider.create_using_usbmux.side_effect = NoDeviceConnectedError("no device")
-
-    with pytest.raises(NoDeviceConnectedError, match="no device"):
-        await userspace_tunnel._create_no_root_tunnel_provider(serial=None, autopair=True)
-
-    assert not mock_tunnel_provider.mobdev2_called_with  # not called
-
-
-async def test_no_usb_serial_device_not_found_reraises(mock_tunnel_provider):
-    """DeviceNotFoundError + serial + mobdev2 empty → re-raise DeviceNotFoundError."""
-    serial = "TEST-UDID-5678"
-    mock_tunnel_provider.create_using_usbmux.side_effect = DeviceNotFoundError("not found")
-    mock_tunnel_provider._mobdev2_results = []
-
-    with pytest.raises(DeviceNotFoundError, match="not found"):
-        await userspace_tunnel._create_no_root_tunnel_provider(serial=serial, autopair=True)
-
-
-async def test_no_usb_usbmuxd_unreachable_reraises(mock_tunnel_provider):
-    """ConnectionFailedToUsbmuxdError + serial + mobdev2 empty → re-raise."""
-    serial = "TEST-UDID-9999"
-    mock_tunnel_provider.create_using_usbmux.side_effect = ConnectionFailedToUsbmuxdError("no usbmuxd")
-    mock_tunnel_provider._mobdev2_results = []
-
-    with pytest.raises(ConnectionFailedToUsbmuxdError, match="no usbmuxd"):
+    with pytest.raises(type(error), match=str(error)):
         await userspace_tunnel._create_no_root_tunnel_provider(serial=serial, autopair=True)
 
 
 async def test_pairing_error_from_usb_propagates_unchanged(mock_tunnel_provider):
-    """A lockdown pairing error from a USB-attached device must propagate, not be caught."""
+    """A lockdown pairing error from a USB-attached device must propagate untouched."""
     mock_tunnel_provider.create_using_usbmux.side_effect = PasswordRequiredError("unlock", None, "17.0")
 
     with pytest.raises(PasswordRequiredError, match="unlock"):
         await userspace_tunnel._create_no_root_tunnel_provider(serial="TEST-UDID", autopair=True)
-
-    assert not mock_tunnel_provider.mobdev2_called_with  # not called
 
 
 async def test_remotepairing_fallback_disabled_with_invalid_service(mock_tunnel_provider):
