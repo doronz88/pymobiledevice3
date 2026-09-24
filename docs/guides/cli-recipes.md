@@ -118,8 +118,10 @@ pymobiledevice3 profile remove com.example.profile
 
 ## Cryptexes (iOS 17+, RSD tunnel)
 
-Talks to `cryptexd` directly. `cryptex list` reports a mounted personalized DeveloperDiskImage as
-`com.apple.MobileAsset.DDI`.
+Talks to `cryptexd` directly. `cryptex list` reports a DeveloperDiskImage installed as a cryptex
+(by `cryptex auto-install`, by `mounter auto-mount`, or by Xcode) as
+`com.apple.MobileAsset.DDI`. A `PersonalizedDMG` mounted through the image mounter is not a
+cryptex, so it does not appear there -- `mounter list` shows both.
 
 ```shell
 pymobiledevice3 cryptex list
@@ -141,7 +143,15 @@ pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI
 DeveloperDiskImage over `cryptexd` alone, without the image mounter: it has Apple sign a Cryptex1
 ticket for this device and installs the payloads, leaving the DDI's developer services (DVT,
 testmanagerd, …) usable. The end result is indistinguishable from a `mounter auto-mount` —
-`mounter list` reports it as a `Personalized` image at `/System/Developer`.
+`mounter list` reports it as a `Personalized` image at `/System/Developer`. In fact, over an RSD
+tunnel `mounter auto-mount` itself installs this cryptex rather than mounting the older
+`PersonalizedDMG`, since the cryptex is not tied to the boards listed in the DDI's build manifest
+and so also covers devices newer than the DDI. From iOS 17.4 it always does, setting up the tunnel
+itself.
+
+It refuses to run while a DeveloperDiskImage is already present, whichever front-end put it there:
+remove a cryptex with `cryptex uninstall com.apple.MobileAsset.DDI`, or a `PersonalizedDMG` with
+`mounter umount-personalized`.
 
 Also like `mounter auto-mount`, it downloads the DDI it needs and caches it under
 `~/.pymobiledevice3` (`$XDG_DATA_HOME/pymobiledevice3` on new Linux installs), so no Xcode
@@ -227,16 +237,32 @@ pymobiledevice3 amfi enable-developer-mode
 
 # Auto-mount DeveloperDiskImage
 pymobiledevice3 mounter auto-mount
-
-# Or install it as a cryptex instead, over cryptexd (iOS 17+, needs RSD)
-pymobiledevice3 cryptex auto-install
 ```
 
-Both download the DDI and cache it under `~/.pymobiledevice3` (`$XDG_DATA_HOME/pymobiledevice3`
-on new Linux installs), and both end with the image mounted
-at `/System/Developer`. `mounter auto-mount` works over plain USB and covers iOS < 17 as well;
-`cryptex auto-install` needs an RSD tunnel but bypasses the image mounter entirely. See
-[Cryptexes](#cryptexes-ios-17-rsd-tunnel) for the differences.
+`mounter auto-mount` picks the right DeveloperDiskImage for the device's iOS version:
+
+| iOS | Image |
+| --- | --- |
+| < 17.0 | the classic `DeveloperDiskImage.dmg` for that version, over the image mounter |
+| 17.0 - 17.3.1 | the Cryptex1 DDI over `cryptexd` when an RSD tunnel is in use, otherwise the `PersonalizedDMG` over the image mounter |
+| 17.4+ | the Cryptex1 DDI over `cryptexd` |
+
+!!! note "Newer devices (e.g. the iPhone 18 series) only work with the Cryptex1 DDI"
+
+    Every `PersonalizedDMG` build identity is tied to one chip/board pair, so it can only be
+    personalized for the devices listed in the DDI's build manifest -- and even Xcode 27.1's DDI
+    stops at `iPhone18,5`. A device outside that list gets no ticket for it (see
+    [`NoSuchBuildIdentityError`](troubleshooting.md#could-not-find-the-manifest-for-board-and-chip-nosuchbuildidentityerror)).
+    The Cryptex1 identity names no device at all, so its ticket request is valid for any device and
+    Apple's signing server decides. This is also how Xcode supports these devices. For them,
+    `auto-mount` over an RSD tunnel (automatic from iOS 17.4) or `cryptex auto-install` is the
+    only way to get a DeveloperDiskImage.
+
+Installing the Cryptex1 DDI needs an RSD tunnel; you don't need to pass one: the CLI sets up a no-root tunnel and retries by itself
+(*"Trying again over ... since RSD is required for this command"*). All variants are downloaded
+and cached under `~/.pymobiledevice3` (`$XDG_DATA_HOME/pymobiledevice3` on new Linux installs),
+and the iOS 17+ ones end up mounted at `/System/Developer`. See
+[Cryptexes](#cryptexes-ios-17-rsd-tunnel) for installing the cryptex directly.
 
 For iOS 17+ tunnel setup, see:
 [iOS 17+ tunnels](ios17-tunnels.md)

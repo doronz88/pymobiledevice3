@@ -33,10 +33,15 @@ Many `developer dvt` and related developer commands need all of the following:
    `uvx --from . pymobiledevice3 amfi enable-developer-mode`
 2. Developer image mounted:
    `uvx --from . pymobiledevice3 mounter auto-mount`
-   On iOS 17+ the same image can instead be installed as a cryptex, bypassing the image
-   mounter: `uvx --from . pymobiledevice3 cryptex auto-install` (needs RSD; both cache the
-   download under `~/.pymobiledevice3` — `$XDG_DATA_HOME/pymobiledevice3` on new Linux
-   installs — and end up mounted at `/System/Developer`).
+   From iOS 17.4 the image is the Cryptex1 DDI, installed through `cryptexd`. Devices newer
+   than the DDI (e.g. the iPhone 18 series) can only use this variant: the `PersonalizedDMG`
+   manifest does not list them (`NoSuchBuildIdentityError`); the command needs RSD for it and retries over a no-root tunnel
+   by itself. On iOS 17.0-17.3.1 without a tunnel it mounts the `PersonalizedDMG`. To
+   install the cryptex directly: `uvx --from . pymobiledevice3 cryptex auto-install` (needs
+   RSD). All cache the download under `~/.pymobiledevice3` — `$XDG_DATA_HOME/pymobiledevice3`
+   on new Linux installs — and end up mounted at `/System/Developer`. Both refuse while a DDI
+   is already present; remove it with `cryptex uninstall com.apple.MobileAsset.DDI` or
+   `mounter umount-personalized`, depending on which front-end mounted it.
 3. A CoreDevice transport path. On iOS 17.4+ this needs **no setup**: a no-root tunnel is
    established automatically when the command runs — the native `remoted` tunnel on macOS,
    the in-process userspace tunnel elsewhere. iOS 17.0-17.3 devices (which predate
