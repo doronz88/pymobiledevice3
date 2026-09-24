@@ -155,14 +155,49 @@ it yet. In order:
 
     This downloads the correct image for your iOS version and caches it under
     `~/.pymobiledevice3` (`$XDG_DATA_HOME/pymobiledevice3` on new Linux installs) — no Xcode
-    required. On iOS 17+ you can alternatively use
-    `pymobiledevice3 cryptex auto-install` (see the
+    required. From iOS 17.4 the image is the Cryptex1 DDI, installed over `cryptexd` just like
+    `pymobiledevice3 cryptex auto-install`; it also covers devices newer than the DDI itself.
+    That needs an RSD tunnel, which `auto-mount` sets up by itself (see the
     [CLI recipes](cli-recipes.md#cryptexes-ios-17-rsd-tunnel)).
 
 3. On **iOS 17+**, developer commands also need a tunnel — but you normally don't need to do
    anything: the CLI establishes a no-root userspace tunnel in-process automatically (you'll
    see a *"Trying again over a no-root userspace tunnel"* warning, which is normal). See
    [iOS 17+ tunnels](ios17-tunnels.md) for the full picture.
+
+### "DeveloperDiskImage already mounted" (`AlreadyMountedError`)
+
+Nothing to fix: the image is already there and developer services can use it. To replace it — for
+example with a newer DDI — remove it first. Which command applies depends on how it was mounted:
+`cryptex list` shows `com.apple.MobileAsset.DDI` only when it was installed as a cryptex (by
+`auto-mount` from iOS 17.4, `cryptex auto-install`, or Xcode):
+
+```shell
+pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI   # installed as a cryptex
+pymobiledevice3 mounter umount-personalized                   # mounted by the image mounter
+pymobiledevice3 mounter umount-developer                      # iOS < 17
+```
+
+Older versions of `cryptex auto-install` did not notice an image mounted by the image mounter and
+failed late with *"mkdir custom mount path: /System/Developer [17: File exists]"*. That is the
+same situation — remove the mounted image as above, or upgrade pymobiledevice3.
+
+### "Trying again over ... since RSD is required for this command"
+
+A warning, not an error. From iOS 17.4 the DeveloperDiskImage is installed as a cryptex over
+`cryptexd`, which is only reachable through an RSD tunnel, so `mounter auto-mount` asks for one
+and the CLI retries over a no-root tunnel by itself. Pass `--tunnel`, `--userspace` or `--native`
+to pick the transport up front. If the retry itself fails, see
+[iOS 17+ tunnels](ios17-tunnels.md).
+
+### "Could not find the manifest for board ... and chip ..." (`NoSuchBuildIdentityError`)
+
+The device is newer than the DeveloperDiskImage — typically a newly released model such as the
+iPhone 18 series. The image mounter's `PersonalizedDMG` only lists the boards known when the DDI
+was built (Xcode 27.1's stops at `iPhone18,5`), so there is nothing to personalize for this one,
+and such devices can **only** use the Cryptex1 DDI, which has no such list. Upgrade pymobiledevice3 — from iOS 17.4 `mounter auto-mount`
+installs the cryptex — and on iOS 17.0–17.3.1 run it over a tunnel (`--tunnel`, `--userspace` or
+`--native`) so it can take the cryptex path.
 
 ### "Unable to connect to Tunneld" (`TunneldConnectionError`)
 

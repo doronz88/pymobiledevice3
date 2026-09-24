@@ -13,7 +13,7 @@ from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import FileTransferType, XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.restore.tss import TSSRequest
-from pymobiledevice3.services.mobile_image_mounter import LATEST_DDI_BUILD_ID
+from pymobiledevice3.services.mobile_image_mounter import LATEST_DDI_BUILD_ID, PersonalizedImageMounter
 
 logger = logging.getLogger(__name__)
 
@@ -379,7 +379,8 @@ class CryptexdService(RemoteService):
         :param restore_dir: an unpacked DDI ``Restore`` directory; defaults to the cached download
             from the DeveloperDiskImage repository, so no Xcode installation is required.
         :returns: the installed cryptex, as reported back by `copy_installed`.
-        :raises AlreadyMountedError: if the DDI cryptex is already installed.
+        :raises AlreadyMountedError: if the DDI cryptex is already installed, or the image mounter
+            already has a Personalized image mounted.
         :raises CryptexdError: if the daemon rejected the image.
         :raises TSSError: if Apple refused to sign the personalization request.
         """
@@ -388,6 +389,8 @@ class CryptexdService(RemoteService):
             raise AlreadyMountedError(
                 f"{already_installed.identifier} {already_installed.version} is already installed"
             )
+        if await self._ddi_mounted_by_image_mounter():
+            raise AlreadyMountedError("a Personalized image is already mounted by the image mounter")
 
         assets = load_cryptex1_assets(restore_dir)
         request = TSSRequest()
@@ -411,6 +414,16 @@ class CryptexdService(RemoteService):
         if ddi is None:
             raise CryptexdError(f"install reported success but {DDI_CRYPTEX_IDENTIFIER} is not installed")
         return ddi
+
+    async def _ddi_mounted_by_image_mounter(self) -> bool:
+        """Whether the image mounter has a Personalized image mounted at ``/System/Developer``.
+
+        Such an image is not a cryptex, so `copy_installed` does not report it, yet it holds the
+        mount path the DDI cryptex needs: installing over it fails with
+        ``mkdir custom mount path: /System/Developer [17: File exists]``.
+        """
+        async with PersonalizedImageMounter(lockdown=self.rsd) as mounter:
+            return await mounter.is_image_mounted(PersonalizedImageMounter.IMAGE_TYPE)
 
     async def _installed_ddi(self) -> Optional[InstalledCryptex]:
         """Return the installed DeveloperDiskImage cryptex, or ``None`` if there is none."""

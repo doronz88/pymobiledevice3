@@ -7,6 +7,7 @@ import typer
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, async_command, print_json
+from pymobiledevice3.cli.mounter import PERSONALIZED_DDI_REMOVAL_HINT
 from pymobiledevice3.exceptions import AlreadyMountedError
 from pymobiledevice3.services.cryptexd import XCODE_DDI_RESTORE_DIR, CryptexdService
 
@@ -60,7 +61,7 @@ async def cryptex_auto_install(
     except FileNotFoundError as e:
         raise typer.BadParameter(str(e)) from e
     except AlreadyMountedError as e:
-        logger.error(f"DeveloperDiskImage cryptex already installed ({e}); uninstall it first")
+        logger.error(f"DeveloperDiskImage already mounted ({e}); {PERSONALIZED_DDI_REMOVAL_HINT}")
         raise typer.Exit(1) from e
     logger.info(f"Installed {installed.identifier} {installed.version}")
 

@@ -45,11 +45,14 @@ TUNNEL_ADDRESS = "127.0.0.1"
 
 class _EchoHandler(socketserver.BaseRequestHandler):
     def handle(self) -> None:
-        while True:
-            data = self.request.recv(65536)
-            if not data:
-                break
-            self.request.sendall(data)
+        # A test kills its tunnelds once done, and Windows may then reset the relayed connection
+        # (WinError 10054) instead of closing it; either way the peer is gone.
+        with suppress(ConnectionError):
+            while True:
+                data = self.request.recv(65536)
+                if not data:
+                    break
+                self.request.sendall(data)
 
 
 @pytest.fixture(scope="module")
@@ -182,13 +185,24 @@ def test_local_entries_report_no_origin(federated_pair: tuple[int, int]) -> None
     assert _list_tunnels(port_a)[UDID_A][0]["origin"] is None
 
 
-async def _close_writer(writer: asyncio.StreamWriter) -> None:
-    """Fully close a dialed stream before its tunneld process is killed. `close()` alone only
-    schedules the close: a StreamWriter GC'd with its transport still open raises in `__del__`,
-    which pytest reports as an unraisable-exception error (flaky on the Windows runners)."""
+async def _close_writer(writer: asyncio.StreamWriter, dialer: TunneldConnectDialer) -> None:
+    """Fully close a dialed stream, and the bridge behind it, before its tunneld process is killed.
+
+    `close()` alone only schedules the close: a StreamWriter GC'd with its transport still open
+    raises in `__del__`, which pytest reports as an unraisable-exception error (flaky on the
+    Windows runners). That holds for the bridge's own streams too -- its pump only notices the
+    caller left after the caller's close, and closes the socketpair and websocket legs
+    synchronously -- so wait for every pump to finish, then let the loop run the closes it
+    scheduled, before the test's event loop goes away.
+    """
     writer.close()
     with suppress(ConnectionError):
         await writer.wait_closed()
+    deadline = time.monotonic() + 10
+    while dialer._pumps:
+        assert time.monotonic() < deadline, "bridge pump did not finish"
+        await asyncio.sleep(0.01)
+    await asyncio.sleep(0)
 
 
 async def test_connect_relays_through_aggregator(aggregator: tuple[int, int], echo_port: int) -> None:
@@ -203,7 +217,7 @@ async def test_connect_relays_through_aggregator(aggregator: tuple[int, int], ec
             await writer.drain()
             assert await reader.readexactly(len(payload)) == payload
     finally:
-        await _close_writer(writer)
+        await _close_writer(writer, dialer)
 
 
 async def test_connect_reports_no_tunnel_when_no_upstream_owns_it(aggregator: tuple[int, int]) -> None:
@@ -299,7 +313,7 @@ async def test_schemeless_upstream_relays(echo_port: int) -> None:
             await writer.drain()
             assert await reader.readexactly(10) == b"schemeless"
         finally:
-            await _close_writer(writer)
+            await _close_writer(writer, dialer)
     finally:
         for proc in procs:
             proc.kill()
@@ -334,7 +348,7 @@ async def test_connect_picks_the_tunnel_the_client_named(echo_port: int) -> None
             await writer.drain()
             assert await reader.readexactly(12) == b"named tunnel"
         finally:
-            await _close_writer(writer)
+            await _close_writer(writer, dialer)
     finally:
         for proc in procs:
             proc.kill()
@@ -354,7 +368,7 @@ async def test_connect_still_serves_its_own_tunnel_by_address(echo_port: int) ->
             await writer.drain()
             assert await reader.readexactly(10) == b"own tunnel"
         finally:
-            await _close_writer(writer)
+            await _close_writer(writer, dialer)
     finally:
         for proc in procs:
             proc.kill()
