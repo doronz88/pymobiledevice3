@@ -36,10 +36,12 @@ def catch_errors(func: Callable[..., Any]) -> Callable[..., Any]:
     def catch_function(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
-        except AlreadyMountedError:
+        except AlreadyMountedError as e:
             logger.error("Given image was already mounted")
-        except UnsupportedCommandError:
+            raise typer.Exit(1) from e
+        except UnsupportedCommandError as e:
             logger.error("Your iOS version doesn't support this command")
+            raise typer.Exit(1) from e
 
     return update_wrapper(catch_function, func)
 
@@ -186,24 +188,31 @@ async def mounter_auto_mount(
         typer.Option(help="Use a different DeveloperDiskImage version from the one retrieved by lockdownconnection"),
     ] = None,
 ) -> None:
-    """auto-detect correct DeveloperDiskImage and mount it"""
+    """auto-detect correct DeveloperDiskImage and mount it
+
+    Exits non-zero when no image could be mounted. An image that is already mounted is what was
+    asked for, so that succeeds -- scripts can run this unconditionally before developer commands.
+    """
     try:
         await auto_mount(service_provider, xcode=str(xcode) if xcode is not None else None, version=version)
         logger.info("DeveloperDiskImage mounted successfully")
-    except URLError:
-        logger.warning("failed to query DeveloperDiskImage versions")
-    except DeveloperDiskImageNotFoundError:
-        logger.error("Unable to find the correct DeveloperDiskImage")
     except AlreadyMountedError:
         if uses_personalized_image(service_provider):
-            logger.error(f"DeveloperDiskImage already mounted; to replace it, {PERSONALIZED_DDI_REMOVAL_HINT}")
+            logger.info(f"DeveloperDiskImage already mounted; to replace it, {PERSONALIZED_DDI_REMOVAL_HINT}")
         else:
-            logger.error("DeveloperDiskImage already mounted; to replace it, run `mounter umount-developer` first")
+            logger.info("DeveloperDiskImage already mounted; to replace it, run `mounter umount-developer` first")
+    except URLError as e:
+        logger.error("failed to query DeveloperDiskImage versions")
+        raise typer.Exit(1) from e
+    except DeveloperDiskImageNotFoundError as e:
+        logger.error("Unable to find the correct DeveloperDiskImage")
+        raise typer.Exit(1) from e
     except PermissionError as e:
         logger.error(
             f"DeveloperDiskImage could not be saved to Xcode default path ({e.filename}). "
             f"Please make sure your user has the necessary permissions"
         )
+        raise typer.Exit(1) from e
 
 
 @cli.command("query-developer-mode-status")

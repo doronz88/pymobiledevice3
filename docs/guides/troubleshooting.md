@@ -167,7 +167,9 @@ it yet. In order:
 
 ### "DeveloperDiskImage already mounted" (`AlreadyMountedError`)
 
-Nothing to fix: the image is already there and developer services can use it. To replace it — for
+Nothing to fix: the image is already there and developer services can use it, so
+`mounter auto-mount` reports this at info level and exits 0 -- scripts can run it unconditionally.
+It exits non-zero only when no image could be mounted. To replace it — for
 example with a newer DDI — remove it first. Which command applies depends on how it was mounted:
 `cryptex list` shows `com.apple.MobileAsset.DDI` only when it was installed as a cryptex (by
 `auto-mount` from iOS 17.4, `cryptex auto-install`, or Xcode):
