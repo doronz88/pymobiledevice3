@@ -878,8 +878,13 @@ class NativeRemotedTunnel:
             await self.rsd.close()
             self.rsd = None
         if self._session is not None:
-            await asyncio.to_thread(self._session.close)
-            self._session = None
+            await asyncio.to_thread(self._close_session)
+
+    def _close_session(self) -> None:
+        """Release the assertion and cancel the XPC connections; blocking (waits on replies)."""
+        session, self._session = self._session, None
+        if session is not None:
+            session.close()
 
     async def __aenter__(self) -> RemoteServiceDiscoveryService:
         return await self.aopen()
@@ -929,5 +934,13 @@ def _close_cli_native_tunnel_at_exit() -> None:
     if tunnel is None:
         return
     _cli_native_tunnel = None
+    rsd, tunnel.rsd = tunnel.rsd, None
+    if rsd is not None:
+        with contextlib.suppress(Exception):
+            asyncio.run(rsd.close())
+    # Not through aclose(): its asyncio.to_thread() is refused once interpreter shutdown has begun
+    # ("can't register atexit after shutdown"). The session must close regardless -- otherwise
+    # remotepairingd keeps calling its XPC handlers while the interpreter finalizes, which crashes
+    # the process, and the device keeps the tunnel assertion.
     with contextlib.suppress(Exception):
-        asyncio.run(tunnel.aclose())
+        tunnel._close_session()

@@ -503,3 +503,29 @@ def test_find_rsd_port_is_empty_when_nettop_is_unusable(monkeypatch: pytest.Monk
 
 
 _HOST_REMOTED_UUID = uuid.UUID("c9a6e86b-beea-45ea-9332-86f295536960")
+
+
+def test_cli_exit_hook_closes_the_session_although_threads_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Regression: the exit hook ran aclose(), whose asyncio.to_thread() fails once interpreter
+    # shutdown has begun ("can't register atexit after shutdown"). The error was suppressed, so the
+    # session was never closed: its XPC handlers kept firing into the finalizing interpreter
+    # (SIGSEGV) and the device kept the tunnel assertion.
+    closed: list[bool] = []
+
+    class FakeSession:
+        def close(self) -> None:
+            closed.append(True)
+
+    async def refuse(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("can't register atexit after shutdown")
+
+    monkeypatch.setattr(native_tunnel.asyncio, "to_thread", refuse)
+    tunnel = native_tunnel.NativeRemotedTunnel()
+    tunnel._session = cast(Any, FakeSession())
+    monkeypatch.setattr(native_tunnel, "_cli_native_tunnel", tunnel)
+
+    native_tunnel._close_cli_native_tunnel_at_exit()
+
+    assert closed == [True]
+    assert tunnel._session is None
+    assert native_tunnel._cli_native_tunnel is None
