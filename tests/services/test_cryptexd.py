@@ -361,6 +361,24 @@ async def test_auto_install_ddi_refuses_when_already_installed() -> None:
     assert [request["routine"] for request in sent] == ["copy-installed"]
 
 
+@pytest.mark.asyncio
+async def test_auto_install_ddi_refuses_an_image_mounted_by_the_image_mounter(monkeypatch) -> None:
+    # Regression: a PersonalizedDMG mounted through the image mounter is invisible to
+    # copy-installed, so the install went ahead and failed after the TSS round-trip with
+    # "mkdir custom mount path: /System/Developer [17: File exists]".
+    service, sent = _service({"error": 0, "argv": {"remote-cryptex-array": []}})
+
+    async def mounted_by_image_mounter(_: CryptexdService) -> bool:
+        return True
+
+    monkeypatch.setattr(CryptexdService, "_ddi_mounted_by_image_mounter", mounted_by_image_mounter)
+
+    with pytest.raises(AlreadyMountedError, match="image mounter"):
+        await service.auto_install_ddi()
+
+    assert [request["routine"] for request in sent] == ["copy-installed"]
+
+
 def _write_cryptex_bundle(restore: Path, build_id: str, names: dict[str, str]) -> None:
     """Write a minimal Cryptex1 DDI bundle, laid out however `names` says."""
     manifest = {}

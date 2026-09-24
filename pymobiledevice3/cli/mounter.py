@@ -19,9 +19,17 @@ from pymobiledevice3.services.mobile_image_mounter import (
     MobileImageMounterService,
     PersonalizedImageMounter,
     auto_mount,
+    uses_personalized_image,
 )
 
 logger = logging.getLogger(__name__)
+
+#: How to remove an iOS 17+ DeveloperDiskImage. Which one applies depends on the front-end that put
+#: it there: `cryptex list` shows the DDI only when it was installed as a cryptex.
+PERSONALIZED_DDI_REMOVAL_HINT = (
+    "remove it first with `cryptex uninstall com.apple.MobileAsset.DDI` (if `cryptex list` shows it) "
+    "or `mounter umount-personalized`"
+)
 
 
 def catch_errors(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -187,7 +195,10 @@ async def mounter_auto_mount(
     except DeveloperDiskImageNotFoundError:
         logger.error("Unable to find the correct DeveloperDiskImage")
     except AlreadyMountedError:
-        logger.error("DeveloperDiskImage already mounted")
+        if uses_personalized_image(service_provider):
+            logger.error(f"DeveloperDiskImage already mounted; to replace it, {PERSONALIZED_DDI_REMOVAL_HINT}")
+        else:
+            logger.error("DeveloperDiskImage already mounted; to replace it, run `mounter umount-developer` first")
     except PermissionError as e:
         logger.error(
             f"DeveloperDiskImage could not be saved to Xcode default path ({e.filename}). "
