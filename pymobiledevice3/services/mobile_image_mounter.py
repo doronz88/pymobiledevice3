@@ -13,16 +13,20 @@ from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
     DeveloperDiskImageNotFoundError,
     DeveloperModeIsNotEnabledError,
+    DeviceFeatureNotSupportedError,
     InternalError,
+    InvalidServiceError,
     MessageNotSupportedError,
     MissingManifestError,
     NoSuchBuildIdentityError,
     NotMountedError,
     PyMobileDevice3Exception,
+    RSDRequiredError,
     UnsupportedCommandError,
 )
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.restore.tss import TSSRequest
 from pymobiledevice3.services.lockdown_service import LockdownService
 
@@ -328,6 +332,12 @@ class MobileImageMounterService(LockdownService):
 # iOS 17.0 replaced the shared DeveloperDiskImage with a per-device personalized one.
 PERSONALIZED_IMAGE_MIN_VERSION = Version("17.0")
 
+# From here the DDI is the Cryptex1 variant, installed over cryptexd: unlike the PersonalizedDMG it
+# is not tied to the boards in the DDI's build manifest, so it also covers devices newer than the
+# DDI. cryptexd itself exists since iOS 17.0, but 17.4 is where a tunnel stops needing root on every
+# host, so requiring one does not break a plain USB mount that works today.
+CRYPTEX_IMAGE_MIN_VERSION = Version("17.4")
+
 
 class DeveloperDiskImageMounter(MobileImageMounterService):
     """Mounter for the classic (pre-iOS 17) ``Developer`` Disk Image."""
@@ -612,12 +622,51 @@ def fetch_personalized_ddi() -> tuple[Path, Path, Path]:
     return image, build_manifest, trustcache
 
 
+def uses_cryptex_image(lockdown: LockdownServiceProvider) -> bool:
+    """Whether the Developer Disk Image can be installed as a cryptex over ``cryptexd``.
+
+    Requires an RSD tunnel, since ``cryptexd`` is not reachable over plain lockdown, and a
+    ``cryptexd`` that does not rule out ``CryptexInstall``.
+    """
+    # Imported here: cryptexd imports this module for `LATEST_DDI_BUILD_ID`
+    from pymobiledevice3.services.cryptexd import FEATURE_CRYPTEX_INSTALL, CryptexdService
+
+    if not isinstance(lockdown, RemoteServiceDiscoveryService):
+        return False
+    try:
+        lockdown.require_feature(CryptexdService.SERVICE_NAME, FEATURE_CRYPTEX_INSTALL)
+    except (InvalidServiceError, DeviceFeatureNotSupportedError):
+        return False
+    return True
+
+
 async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
     """
     Download (if needed) and mount the Personalized Developer Disk Image.
 
+    Prefers the device-agnostic Cryptex1 DDI installed over ``cryptexd``: unlike the
+    ``PersonalizedDMG``, whose build manifest only lists the boards known when it was built, it can
+    be personalized for devices newer than the DDI itself. From `CRYPTEX_IMAGE_MIN_VERSION` the
+    cryptex is the only choice, so plain lockdown is refused with `RSDRequiredError` (which the CLI
+    answers by retrying over a tunnel). Below it, falls back to the ``PersonalizedDMG`` over the
+    image mounter when `uses_cryptex_image` rules the cryptex out.
+
     :param lockdown: Lockdown service provider for the target device.
+    :raises RSDRequiredError: on `CRYPTEX_IMAGE_MIN_VERSION` and later without an RSD tunnel.
     """
+    if not isinstance(lockdown, RemoteServiceDiscoveryService) and (
+        Version(lockdown.product_version) >= CRYPTEX_IMAGE_MIN_VERSION
+    ):
+        raise RSDRequiredError(lockdown.udid, lockdown.product_version)
+
+    if uses_cryptex_image(lockdown):
+        from pymobiledevice3.services.cryptexd import CryptexdService
+
+        async with PersonalizedImageMounter(lockdown=lockdown) as mounter:
+            await mounter.raise_if_cannot_mount()
+        await CryptexdService(cast(RemoteServiceDiscoveryService, lockdown)).auto_install_ddi()
+        return
+
     image, build_manifest, trustcache = fetch_personalized_ddi()
     await PersonalizedImageMounter(lockdown=lockdown).mount(image, build_manifest, trustcache)
 
@@ -648,7 +697,8 @@ async def auto_mount(
     Auto-mount the appropriate Developer Disk Image for the device's iOS version.
 
     Dispatches to `auto_mount_developer` for iOS versions below 17.0 and to
-    `auto_mount_personalized` for iOS 17.0 and later.
+    `auto_mount_personalized` for iOS 17.0 and later, which installs the Cryptex1 DDI over an RSD
+    tunnel (required from `CRYPTEX_IMAGE_MIN_VERSION`) and mounts the ``PersonalizedDMG`` otherwise.
 
     :param lockdown: Lockdown service provider for the target device.
     :param xcode: Path to the Xcode app bundle, forwarded to `auto_mount_developer`.
