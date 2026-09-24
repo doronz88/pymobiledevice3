@@ -505,6 +505,86 @@ def test_find_rsd_port_is_empty_when_nettop_is_unusable(monkeypatch: pytest.Monk
 _HOST_REMOTED_UUID = uuid.UUID("c9a6e86b-beea-45ea-9332-86f295536960")
 
 
+class _FakeXpcDeliveringLateInvalidation:
+    """libxpc as seen after `xpc_connection_cancel`: the connection's final
+    XPC_ERROR_CONNECTION_INVALID arrives later, on another thread, like a libdispatch callout."""
+
+    error_connection_invalid = 0xDEAD
+
+    def __init__(self, delay: float = 0.2) -> None:
+        self.delay = delay
+        self.handlers: dict[int, Any] = {}
+        self.cancelled: list[int] = []
+
+    def connection_cancel(self, conn: int) -> None:
+        import threading
+        import time
+
+        self.cancelled.append(conn)
+
+        def deliver() -> None:
+            time.sleep(self.delay)
+            self.handlers[conn](self.error_connection_invalid)
+
+        threading.Thread(target=deliver, daemon=True).start()
+
+
+def test_cancel_connection_waits_for_the_final_invalidation() -> None:
+    # Regression: the CLI cancels its native tunnel from atexit. Returning before libxpc's final
+    # event let it reach the Python handler after interpreter finalization -> SIGSEGV in
+    # PyGILState_Ensure, after the command itself had succeeded.
+    import threading
+
+    xpc = _FakeXpcDeliveringLateInvalidation()
+    invalidated = threading.Event()
+    xpc.handlers[1] = lambda obj: obj == xpc.error_connection_invalid and invalidated.set()
+
+    native_tunnel._cancel_connection(cast(Any, xpc), 1, invalidated)
+
+    assert xpc.cancelled == [1]
+    assert invalidated.is_set()
+
+
+def test_cancel_connection_gives_up_on_a_wedged_daemon(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Bounded, so a daemon that never answers cannot hang interpreter exit
+    import threading
+
+    monkeypatch.setattr(native_tunnel, "_CANCEL_TIMEOUT", 0.05)
+    xpc = _FakeXpcDeliveringLateInvalidation(delay=10)
+    xpc.handlers[1] = lambda _obj: None
+
+    native_tunnel._cancel_connection(cast(Any, xpc), 1, threading.Event())
+
+    assert xpc.cancelled == [1]
+
+
+def test_session_close_waits_for_every_connection_to_invalidate() -> None:
+    import threading
+
+    xpc = _FakeXpcDeliveringLateInvalidation()
+    session = cast(Any, native_tunnel._RemotePairingSession.__new__(native_tunnel._RemotePairingSession))
+    session._xpc = xpc
+    session._assertion_id = None
+
+    browse = cast(Any, native_tunnel._BrowseAttempt.__new__(native_tunnel._BrowseAttempt))
+    browse._xpc = xpc
+    browse.conn = 1
+    browse.invalid = threading.Event()
+    xpc.handlers[1] = lambda obj: obj == xpc.error_connection_invalid and browse.invalid.set()
+    session._browse_attempt = browse
+
+    session._device_conn = 2
+    session._device_invalidated = threading.Event()
+    xpc.handlers[2] = lambda obj: obj == xpc.error_connection_invalid and session._device_invalidated.set()
+
+    session.close()
+
+    assert sorted(xpc.cancelled) == [1, 2]
+    assert browse.invalid.is_set()
+    assert session._device_invalidated.is_set()
+    assert session._device_conn is None and session._browse_attempt is None
+
+
 def test_cli_exit_hook_closes_the_session_although_threads_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     # Regression: the exit hook ran aclose(), whose asyncio.to_thread() fails once interpreter
     # shutdown has begun ("can't register atexit after shutdown"). The error was suppressed, so the

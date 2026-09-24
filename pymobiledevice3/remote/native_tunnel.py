@@ -412,6 +412,29 @@ def _create_remotepairing_connection(xpc: _LibXpc, queue: int, target_uid: Optio
     return conn
 
 
+#: How long `_cancel_connection` waits for libxpc's final event. It normally arrives at once; the
+#: bound only keeps a wedged daemon from hanging interpreter exit.
+_CANCEL_TIMEOUT = 2.0
+
+
+def _cancel_connection(xpc: _LibXpc, conn: int, invalidated: threading.Event) -> None:
+    """Cancel ``conn`` and wait for libxpc's final ``XPC_ERROR_CONNECTION_INVALID`` on it.
+
+    Cancelling is asynchronous: libxpc still delivers that event to the connection's handler
+    afterwards, on a libdispatch thread. The handler is a Python callback, so if the interpreter is
+    already finalizing by then -- the CLI closes its native tunnel from ``atexit`` -- taking the GIL
+    for it crashes the process (SIGSEGV in ``PyGILState_Ensure``), after the command itself has
+    succeeded. The event is the last one libxpc delivers to the connection, so once it has arrived
+    nothing can call back into Python.
+
+    :param invalidated: set by the connection's handler when it receives the invalidation.
+    """
+    with contextlib.suppress(Exception):
+        xpc.connection_cancel(conn)
+    if not invalidated.wait(_CANCEL_TIMEOUT):
+        logger.debug(f"xpc connection {conn:#x} was not invalidated within {_CANCEL_TIMEOUT}s of its cancel")
+
+
 class _BrowseAttempt:
     """One activated browse connection, tracking whether libxpc reported the service missing.
 
@@ -447,8 +470,8 @@ class _BrowseAttempt:
         _send_browse_request(xpc, self.conn, queue)
 
     def cancel(self) -> None:
-        with contextlib.suppress(Exception):
-            self._xpc.connection_cancel(self.conn)
+        """Cancel the connection and wait until libxpc will no longer call its handler."""
+        _cancel_connection(self._xpc, self.conn, self.invalid)
 
 
 def _send_browse_request(xpc: _LibXpc, conn: int, queue: int) -> None:
@@ -493,8 +516,9 @@ class _RemotePairingSession:
     def __init__(self, xpc: _LibXpc) -> None:
         self._xpc = xpc
         self._queue = xpc.dispatch_queue_create(b"pymobiledevice3.native-remotepairing", None)
-        self._browse_conn: Optional[int] = None
+        self._browse_attempt: Optional[_BrowseAttempt] = None
         self._device_conn: Optional[int] = None
+        self._device_invalidated = threading.Event()
         self._assertion_id: Optional[int] = None  # retained xpc uuid object
         self.tunnel_ip: Optional[str] = None
         # Device auxiliary metadata (decoded ``deviceKVSData``) captured from the browse ``deviceInfo``.
@@ -562,7 +586,7 @@ class _RemotePairingSession:
         def attempt(target_uid: Optional[int]) -> _BrowseAttempt:
             settled = threading.Event()
             att = _BrowseAttempt(xpc, self._queue, make_on_device(settled), target_uid, settled)
-            self._browse_conn = att.conn
+            self._browse_attempt = att
             settled.wait(self._REPLY_TIMEOUT)
             return att
 
@@ -590,7 +614,12 @@ class _RemotePairingSession:
 
         device_conn = xpc.connection_create_from_endpoint(endpoint_holder[0])
         self._device_conn = device_conn
-        xpc.connection_set_event_handler(device_conn, xpc.make_block(lambda _obj: None))
+
+        def on_device_event(obj: int) -> None:
+            if obj and obj == xpc.error_connection_invalid:
+                self._device_invalidated.set()
+
+        xpc.connection_set_event_handler(device_conn, xpc.make_block(on_device_event))
         xpc.connection_activate(device_conn)
 
     def open_tunnel(self) -> str:
@@ -653,12 +682,13 @@ class _RemotePairingSession:
                 xpc.release(release)
             xpc.release(self._assertion_id)
             self._assertion_id = None
-        for conn in (self._device_conn, self._browse_conn):
-            if conn is not None:
-                with contextlib.suppress(Exception):
-                    xpc.connection_cancel(conn)
+        # Wait out each cancel, so no handler can fire once this returns (see _cancel_connection)
+        if self._device_conn is not None:
+            _cancel_connection(xpc, self._device_conn, self._device_invalidated)
+        if self._browse_attempt is not None:
+            self._browse_attempt.cancel()
         self._device_conn = None
-        self._browse_conn = None
+        self._browse_attempt = None
 
 
 def _browse_native_devices_sync(xpc: _LibXpc, timeout: float) -> list[dict[str, Any]]:
