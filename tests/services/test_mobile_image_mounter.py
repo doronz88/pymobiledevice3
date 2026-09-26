@@ -78,13 +78,13 @@ async def test_is_image_mounted_survives_copy_devices_hangup() -> None:
     assert len(copy_devices_sent) == 1
 
 
-def _rsd(cryptexd_features: Optional[list[str]]) -> RemoteServiceDiscoveryService:
+def _rsd(cryptexd_features: Optional[list[str]], os_version: str = "27.0") -> RemoteServiceDiscoveryService:
     """An RSD whose handshake offers cryptexd advertising *cryptexd_features*, or no cryptexd at all."""
     rsd = RemoteServiceDiscoveryService(("127.0.0.1", 0))
     services: dict[str, Any] = {}
     if cryptexd_features is not None:
         services[CryptexdService.SERVICE_NAME] = {"Port": "1024", "Properties": {"Features": cryptexd_features}}
-    rsd.peer_info = {"Properties": {"OSVersion": "27.0"}, "Services": services}
+    rsd.peer_info = {"Properties": {"OSVersion": os_version}, "Services": services}
     return rsd
 
 
@@ -124,6 +124,11 @@ class _AutoMountCalls:
 
         async def close(mounter: Any) -> None: ...
 
+        async def connect(mounter: Any) -> None: ...
+
+        # Faked too: `async with` connects, and the fake RSD offers no mounter service -- which
+        # conftest turns into a skip rather than a failure, hiding every test through this path
+        monkeypatch.setattr(PersonalizedImageMounter, "connect", connect)
         monkeypatch.setattr(PersonalizedImageMounter, "raise_if_cannot_mount", raise_if_cannot_mount)
         monkeypatch.setattr(PersonalizedImageMounter, "mount", mount)
         monkeypatch.setattr(PersonalizedImageMounter, "close", close)
@@ -159,7 +164,7 @@ def _usb_lockdown(product_version: str) -> LockdownServiceProvider:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("version", ["17.4", "26.0", "27.2"])
+@pytest.mark.parametrize("version", ["27.0", "27.2"])
 async def test_auto_mount_requires_rsd_where_the_cryptex_is_the_ddi(
     monkeypatch: pytest.MonkeyPatch, version: str
 ) -> None:
@@ -176,13 +181,32 @@ async def test_auto_mount_requires_rsd_where_the_cryptex_is_the_ddi(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("version", ["17.0", "17.3.1"])
+@pytest.mark.parametrize("version", ["17.0", "17.3.1", "17.4", "26.0.1"])
 async def test_auto_mount_keeps_the_personalized_ddi_over_usb_below_the_cutoff(
     monkeypatch: pytest.MonkeyPatch, version: str
 ) -> None:
-    # iOS 17.0-17.3.1 has no no-root tunnel on Linux/Windows, so requiring RSD would break it
+    # Below iOS 27 the cryptex install is unverified -- iOS 26's cryptexd aborts on it (#1991) --
+    # so plain USB keeps mounting the PersonalizedDMG rather than being told to get a tunnel
     recorder = _AutoMountCalls(monkeypatch)
 
     await mobile_image_mounter.auto_mount(_usb_lockdown(version))
+
+    assert recorder.calls == ["personalized"]
+
+
+@pytest.mark.parametrize("version", ["17.0", "17.4", "26.0.1"])
+def test_uses_cryptex_image_only_from_the_cutoff(version: str) -> None:
+    # Regression (#1991): iOS 26's cryptexd aborts installing the DDI cryptex with
+    # "asset already present: Cryptex1,GenericVolume", so an RSD tunnel alone must not pick it
+    assert not mobile_image_mounter.uses_cryptex_image(_rsd(["CryptexInstall"], os_version=version))
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_over_rsd_below_the_cutoff_mounts_the_personalized_ddi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorder = _AutoMountCalls(monkeypatch)
+
+    await mobile_image_mounter.auto_mount(_rsd(["CryptexInstall"], os_version="26.0.1"))
 
     assert recorder.calls == ["personalized"]

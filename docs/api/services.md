@@ -32,10 +32,10 @@ otherwise, they derive from `LockdownService`.
 
 `CryptexdService` installs the DeveloperDiskImage as a cryptex without the image mounter. It is a
 RemoteXPC service: construct it with a `RemoteServiceDiscoveryService` (it requires an RSD
-tunnel), not a lockdown client. `auto_mount` installs the DDI through it whenever it is given
-such a provider (see `uses_cryptex_image`). From `CRYPTEX_IMAGE_MIN_VERSION` (iOS 17.4) it
-requires one and raises `RSDRequiredError` for a plain lockdown client; below that it falls back to
-the image mounter's `PersonalizedDMG`. Devices newer than the DDI (e.g. the iPhone 18 series) are
+tunnel), not a lockdown client. From `CRYPTEX_IMAGE_MIN_VERSION` (iOS 27) `auto_mount` installs
+the DDI through it (see `uses_cryptex_image`), requiring such a provider and raising
+`RSDRequiredError` for a plain lockdown client; below that it mounts the image mounter's
+`PersonalizedDMG`, since older `cryptexd` versions reject the install. Devices newer than the DDI (e.g. the iPhone 18 series) are
 not in the `PersonalizedDMG`'s build manifest, so for them the cryptex is the only option.
 
 ::: pymobiledevice3.services.cryptexd.CryptexdService
