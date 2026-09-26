@@ -334,9 +334,11 @@ PERSONALIZED_IMAGE_MIN_VERSION = Version("17.0")
 
 # From here the DDI is the Cryptex1 variant, installed over cryptexd: unlike the PersonalizedDMG it
 # is not tied to the boards in the DDI's build manifest, so it also covers devices newer than the
-# DDI. cryptexd itself exists since iOS 17.0, but 17.4 is where a tunnel stops needing root on every
-# host, so requiring one does not break a plain USB mount that works today.
-CRYPTEX_IMAGE_MIN_VERSION = Version("17.4")
+# DDI (e.g. the iPhone 18 series, which ships with iOS 27). cryptexd advertises CryptexInstall since
+# iOS 17.0, but older daemons do not take the install the way Xcode sends it to iOS 27: iOS 26's
+# aborts with "asset already present: Cryptex1,GenericVolume" (#1991). Below this, the
+# PersonalizedDMG, which lists every board those versions run on, keeps working.
+CRYPTEX_IMAGE_MIN_VERSION = Version("27.0")
 
 
 class DeveloperDiskImageMounter(MobileImageMounterService):
@@ -625,13 +627,15 @@ def fetch_personalized_ddi() -> tuple[Path, Path, Path]:
 def uses_cryptex_image(lockdown: LockdownServiceProvider) -> bool:
     """Whether the Developer Disk Image can be installed as a cryptex over ``cryptexd``.
 
-    Requires an RSD tunnel, since ``cryptexd`` is not reachable over plain lockdown, and a
-    ``cryptexd`` that does not rule out ``CryptexInstall``.
+    Requires iOS `CRYPTEX_IMAGE_MIN_VERSION` or later, an RSD tunnel, since ``cryptexd`` is not
+    reachable over plain lockdown, and a ``cryptexd`` that does not rule out ``CryptexInstall``.
     """
     # Imported here: cryptexd imports this module for `LATEST_DDI_BUILD_ID`
     from pymobiledevice3.services.cryptexd import FEATURE_CRYPTEX_INSTALL, CryptexdService
 
     if not isinstance(lockdown, RemoteServiceDiscoveryService):
+        return False
+    if Version(lockdown.product_version) < CRYPTEX_IMAGE_MIN_VERSION:
         return False
     try:
         lockdown.require_feature(CryptexdService.SERVICE_NAME, FEATURE_CRYPTEX_INSTALL)
@@ -648,8 +652,8 @@ async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
     ``PersonalizedDMG``, whose build manifest only lists the boards known when it was built, it can
     be personalized for devices newer than the DDI itself. From `CRYPTEX_IMAGE_MIN_VERSION` the
     cryptex is the only choice, so plain lockdown is refused with `RSDRequiredError` (which the CLI
-    answers by retrying over a tunnel). Below it, falls back to the ``PersonalizedDMG`` over the
-    image mounter when `uses_cryptex_image` rules the cryptex out.
+    answers by retrying over a tunnel). Below it -- or where `uses_cryptex_image` otherwise rules
+    the cryptex out -- mounts the ``PersonalizedDMG`` over the image mounter.
 
     :param lockdown: Lockdown service provider for the target device.
     :raises RSDRequiredError: on `CRYPTEX_IMAGE_MIN_VERSION` and later without an RSD tunnel.
@@ -698,7 +702,7 @@ async def auto_mount(
 
     Dispatches to `auto_mount_developer` for iOS versions below 17.0 and to
     `auto_mount_personalized` for iOS 17.0 and later, which installs the Cryptex1 DDI over an RSD
-    tunnel (required from `CRYPTEX_IMAGE_MIN_VERSION`) and mounts the ``PersonalizedDMG`` otherwise.
+    tunnel from `CRYPTEX_IMAGE_MIN_VERSION` and mounts the ``PersonalizedDMG`` below it.
 
     :param lockdown: Lockdown service provider for the target device.
     :param xcode: Path to the Xcode app bundle, forwarded to `auto_mount_developer`.
