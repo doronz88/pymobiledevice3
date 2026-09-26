@@ -507,13 +507,15 @@ _HOST_REMOTED_UUID = uuid.UUID("c9a6e86b-beea-45ea-9332-86f295536960")
 
 class _FakeXpcDeliveringLateInvalidation:
     """libxpc as seen after `xpc_connection_cancel`: the connection's final
-    XPC_ERROR_CONNECTION_INVALID arrives later, on another thread, like a libdispatch callout."""
+    XPC_ERROR_CONNECTION_INVALID arrives later, on another thread, like a libdispatch callout --
+    and the error for each still-pending reply block arrives later still, as a separate callout."""
 
     error_connection_invalid = 0xDEAD
 
     def __init__(self, delay: float = 0.2) -> None:
         self.delay = delay
         self.handlers: dict[int, Any] = {}
+        self.reply_blocks: dict[int, list[Any]] = {}
         self.cancelled: list[int] = []
 
     def connection_cancel(self, conn: int) -> None:
@@ -525,6 +527,9 @@ class _FakeXpcDeliveringLateInvalidation:
         def deliver() -> None:
             time.sleep(self.delay)
             self.handlers[conn](self.error_connection_invalid)
+            time.sleep(self.delay)
+            for reply_block in self.reply_blocks.pop(conn, []):
+                reply_block(self.error_connection_invalid)
 
         threading.Thread(target=deliver, daemon=True).start()
 
@@ -543,6 +548,24 @@ def test_cancel_connection_waits_for_the_final_invalidation() -> None:
 
     assert xpc.cancelled == [1]
     assert invalidated.is_set()
+
+
+def test_cancel_connection_waits_for_pending_reply_blocks() -> None:
+    # Regression (#1989): a pending reply block gets its error in a callout of its own, after the
+    # invalidation. Returning at the invalidation let it reach Python during finalization ->
+    # SIGTRAP (exit 133) in about half of the CLI's native-tunnel runs.
+    import threading
+
+    xpc = _FakeXpcDeliveringLateInvalidation()
+    invalidated = threading.Event()
+    replied = threading.Event()
+    xpc.handlers[1] = lambda obj: obj == xpc.error_connection_invalid and invalidated.set()
+    xpc.reply_blocks[1] = [lambda _obj: replied.set()]
+
+    native_tunnel._cancel_connection(cast(Any, xpc), 1, invalidated, (replied,))
+
+    assert invalidated.is_set()
+    assert replied.is_set()
 
 
 def test_cancel_connection_gives_up_on_a_wedged_daemon(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -570,18 +593,24 @@ def test_session_close_waits_for_every_connection_to_invalidate() -> None:
     browse._xpc = xpc
     browse.conn = 1
     browse.invalid = threading.Event()
+    browse.replied = threading.Event()
     xpc.handlers[1] = lambda obj: obj == xpc.error_connection_invalid and browse.invalid.set()
+    xpc.reply_blocks[1] = [lambda _obj: browse.replied.set()]
     session._browse_attempt = browse
 
     session._device_conn = 2
     session._device_invalidated = threading.Event()
+    timed_out_reply = threading.Event()  # a _request whose reply never came
+    session._pending_replies = [timed_out_reply]
     xpc.handlers[2] = lambda obj: obj == xpc.error_connection_invalid and session._device_invalidated.set()
+    xpc.reply_blocks[2] = [lambda _obj: timed_out_reply.set()]
 
     session.close()
 
     assert sorted(xpc.cancelled) == [1, 2]
-    assert browse.invalid.is_set()
-    assert session._device_invalidated.is_set()
+    assert browse.invalid.is_set() and browse.replied.is_set()
+    assert session._device_invalidated.is_set() and timed_out_reply.is_set()
+    assert session._pending_replies == []
     assert session._device_conn is None and session._browse_attempt is None
 
 

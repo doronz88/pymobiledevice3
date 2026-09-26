@@ -30,7 +30,9 @@ import re
 import socket
 import subprocess
 import threading
+import time
 import uuid
+from collections.abc import Iterable
 from typing import Any, Callable, Optional, cast
 
 from pymobiledevice3.exceptions import DeviceNotFoundError, UserspaceTunnelUnavailableError
@@ -417,22 +419,29 @@ def _create_remotepairing_connection(xpc: _LibXpc, queue: int, target_uid: Optio
 _CANCEL_TIMEOUT = 2.0
 
 
-def _cancel_connection(xpc: _LibXpc, conn: int, invalidated: threading.Event) -> None:
-    """Cancel ``conn`` and wait for libxpc's final ``XPC_ERROR_CONNECTION_INVALID`` on it.
+def _cancel_connection(
+    xpc: _LibXpc, conn: int, invalidated: threading.Event, pending_replies: Iterable[threading.Event] = ()
+) -> None:
+    """Cancel ``conn`` and wait for libxpc's final callouts on it.
 
-    Cancelling is asynchronous: libxpc still delivers that event to the connection's handler
-    afterwards, on a libdispatch thread. The handler is a Python callback, so if the interpreter is
-    already finalizing by then -- the CLI closes its native tunnel from ``atexit`` -- taking the GIL
-    for it crashes the process (SIGSEGV in ``PyGILState_Ensure``), after the command itself has
-    succeeded. The event is the last one libxpc delivers to the connection, so once it has arrived
-    nothing can call back into Python.
+    Cancelling is asynchronous: libxpc still delivers ``XPC_ERROR_CONNECTION_INVALID`` to the
+    connection's handler afterwards, on a libdispatch thread, and an error to the reply block of
+    every message still awaiting a reply -- a separate callout, which may come after the
+    invalidation. Both are Python callbacks, so if the interpreter is already finalizing by then --
+    the CLI closes its native tunnel from ``atexit`` -- taking the GIL for one crashes the process
+    (SIGSEGV or SIGTRAP under ``PyGILState_Ensure``), after the command itself has succeeded. Once
+    all of them have arrived, nothing on ``conn`` can call back into Python.
 
     :param invalidated: set by the connection's handler when it receives the invalidation.
+    :param pending_replies: set by the reply block of each message sent on ``conn`` with a reply.
     """
     with contextlib.suppress(Exception):
         xpc.connection_cancel(conn)
-    if not invalidated.wait(_CANCEL_TIMEOUT):
-        logger.debug(f"xpc connection {conn:#x} was not invalidated within {_CANCEL_TIMEOUT}s of its cancel")
+    deadline = time.monotonic() + _CANCEL_TIMEOUT
+    for event in (invalidated, *pending_replies):
+        if not event.wait(max(0.0, deadline - time.monotonic())):
+            logger.debug(f"xpc connection {conn:#x} still had pending callouts {_CANCEL_TIMEOUT}s after its cancel")
+            return
 
 
 class _BrowseAttempt:
@@ -467,24 +476,26 @@ class _BrowseAttempt:
 
         xpc.connection_set_event_handler(self.conn, xpc.make_block(handler))
         xpc.connection_activate(self.conn)
-        _send_browse_request(xpc, self.conn, queue)
+        self.replied = threading.Event()
+        _send_browse_request(xpc, self.conn, queue, self.replied)
 
     def cancel(self) -> None:
-        """Cancel the connection and wait until libxpc will no longer call its handler."""
-        _cancel_connection(self._xpc, self.conn, self.invalid)
+        """Cancel the connection and wait until libxpc will no longer call its handler or reply block."""
+        _cancel_connection(self._xpc, self.conn, self.invalid, (self.replied,))
 
 
-def _send_browse_request(xpc: _LibXpc, conn: int, queue: int) -> None:
+def _send_browse_request(xpc: _LibXpc, conn: int, queue: int, replied: threading.Event) -> None:
     """Send ``RemotePairing.BrowseRequest``; devices arrive via the connection's event handler.
 
-    Mercury needs a reply channel or it silently drops the request; the reply itself is ignored.
+    Mercury needs a reply channel or it silently drops the request; the reply itself is ignored,
+    except that ``replied`` is set once it (or the error libxpc delivers on cancel) arrives.
     """
     message = xpc.dictionary_create(None, None, 0)
     body = xpc.dictionary_create(None, None, 0)
     xpc.dictionary_set_bool(body, b"currentDevicesOnly", False)
     xpc.dictionary_set_string(message, b"mangledTypeName", b"RemotePairing.BrowseRequest")
     xpc.dictionary_set_value(message, b"value", body)
-    xpc.connection_send_message_with_reply(conn, message, queue, xpc.make_block(lambda _obj: None))
+    xpc.connection_send_message_with_reply(conn, message, queue, xpc.make_block(lambda _obj: replied.set()))
 
 
 class _RemotePairingError(UserspaceTunnelUnavailableError):
@@ -519,6 +530,8 @@ class _RemotePairingSession:
         self._browse_attempt: Optional[_BrowseAttempt] = None
         self._device_conn: Optional[int] = None
         self._device_invalidated = threading.Event()
+        # One event per request whose reply block has not run yet (a timed-out one stays here)
+        self._pending_replies: list[threading.Event] = []
         self._assertion_id: Optional[int] = None  # retained xpc uuid object
         self.tunnel_ip: Optional[str] = None
         # Device auxiliary metadata (decoded ``deviceKVSData``) captured from the browse ``deviceInfo``.
@@ -542,9 +555,12 @@ class _RemotePairingSession:
             holder.append(reply)
             done.set()
 
+        self._pending_replies.append(done)
         xpc.connection_send_message_with_reply(conn, message, self._queue, xpc.make_block(on_reply))
         if not done.wait(self._REPLY_TIMEOUT):
+            # The reply block stays pending: close() waits for the error libxpc delivers to it
             raise _RemotePairingError(f"timed out waiting for reply to {mangled_type_name.decode()}")
+        self._pending_replies.remove(done)
         return holder[0]
 
     def browse(self, serial: Optional[str]) -> None:
@@ -684,7 +700,8 @@ class _RemotePairingSession:
             self._assertion_id = None
         # Wait out each cancel, so no handler can fire once this returns (see _cancel_connection)
         if self._device_conn is not None:
-            _cancel_connection(xpc, self._device_conn, self._device_invalidated)
+            _cancel_connection(xpc, self._device_conn, self._device_invalidated, self._pending_replies)
+            self._pending_replies.clear()
         if self._browse_attempt is not None:
             self._browse_attempt.cancel()
         self._device_conn = None
