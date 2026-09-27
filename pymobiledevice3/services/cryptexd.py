@@ -8,7 +8,7 @@ from developer_disk_image.repo import DeveloperDiskImageRepository
 
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.darwin_errno import describe_errno
-from pymobiledevice3.exceptions import AlreadyMountedError, CryptexdError
+from pymobiledevice3.exceptions import AlreadyMountedError, ConnectionTerminatedError, CryptexdError
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import FileTransferType, XpcInt64Type, XpcUInt64Type
@@ -305,7 +305,8 @@ class CryptexdService(RemoteService):
         :param persistence: cryptex persistence mode.
         :param nonce_persistence: nonce persistence mode.
         :param auth: authentication mode.
-        :raises CryptexdError: if the daemon rejected the request or the install failed.
+        :raises CryptexdError: if the daemon rejected the request, the install failed, or the daemon
+            closed the connection without replying.
         :raises DeviceFeatureNotSupportedError: if the device does not advertise the
             ``CryptexInstall`` capability.
         """
@@ -335,6 +336,11 @@ class CryptexdService(RemoteService):
             for transfer_id, (_, payload) in enumerate(transfers, start=1):
                 await connection.send_file_transfer(transfer_id, payload)
             response = await connection.receive_response()
+        except ConnectionTerminatedError as e:
+            raise CryptexdError(
+                "install failed: cryptexd closed the connection without replying, so it most likely "
+                "rejected or crashed on the request; `pymobiledevice3 syslog live -m cryptexd` shows why"
+            ) from e
         finally:
             await connection.close()
         self._unwrap("install", response)

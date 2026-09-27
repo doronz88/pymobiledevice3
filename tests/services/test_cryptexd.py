@@ -6,7 +6,12 @@ from typing import Any, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import AlreadyMountedError, CryptexdError, DeviceFeatureNotSupportedError
+from pymobiledevice3.exceptions import (
+    AlreadyMountedError,
+    ConnectionTerminatedError,
+    CryptexdError,
+    DeviceFeatureNotSupportedError,
+)
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services import cryptexd
 from pymobiledevice3.services.cryptexd import (
@@ -311,6 +316,21 @@ async def test_install_sends_the_scalar_keys_the_daemon_requires() -> None:
     assert int(argv["client-version"]) == 3
     assert int(argv["image-type-index"]) == 10
     assert (int(argv["persistence"]), int(argv["nonce-persistence"])) == (2, 1)
+
+
+@pytest.mark.asyncio
+async def test_install_explains_a_connection_cryptexd_dropped() -> None:
+    # Regression (#1991): cryptexd aborted mid-install and the CLI printed nothing but "Aborted."
+    service, connection = _install_service({"error": 0})
+
+    async def dropped() -> dict[str, Any]:
+        raise ConnectionTerminatedError()
+
+    connection.receive_response = dropped  # type: ignore[method-assign]
+
+    with pytest.raises(CryptexdError, match="closed the connection"):
+        await service.install(b"i", b"t", b"m", b"info", b"vol", {})
+    assert connection.closed
 
 
 @pytest.mark.asyncio
