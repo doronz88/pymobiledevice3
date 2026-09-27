@@ -7,7 +7,7 @@ from typing import Any, cast
 import pytest
 from hyperframe.frame import DataFrame, Frame, HeadersFrame, RstStreamFrame, SettingsFrame, WindowUpdateFrame
 
-from pymobiledevice3.exceptions import StreamClosedError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, StreamClosedError
 from pymobiledevice3.pair_records import generate_host_id
 from pymobiledevice3.remote import remotexpc
 from pymobiledevice3.remote.remotexpc import (
@@ -426,3 +426,18 @@ def test_host_remoted_uuid_reads_this_hosts_remoted() -> None:
     if platform.system() != "Darwin":
         pytest.skip("remotectl is macOS-only")
     assert isinstance(remotexpc.host_remoted_uuid(), uuid.UUID)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("received", [b"", b"\x00\x00\x01"], ids=["between-frames", "mid-header"])
+async def test_peer_closing_the_connection_is_a_terminated_connection(received: bytes):
+    # Regression (#1991): EOF while reading a frame header escaped as a bare IncompleteReadError --
+    # an EOFError, which the CLI reports as nothing but "Aborted." -- unlike EOF in a frame body
+    connection = RemoteXPCConnection(("localhost", 0))
+    reader = asyncio.StreamReader()
+    reader.feed_data(received)
+    reader.feed_eof()
+    connection._reader = reader
+
+    with pytest.raises(ConnectionTerminatedError):
+        await connection.receive_response()

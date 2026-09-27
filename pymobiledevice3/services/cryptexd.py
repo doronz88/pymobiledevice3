@@ -5,10 +5,16 @@ from pathlib import Path
 from typing import Any, Optional
 
 from developer_disk_image.repo import DeveloperDiskImageRepository
+from packaging.version import Version
 
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.darwin_errno import describe_errno
-from pymobiledevice3.exceptions import AlreadyMountedError, CryptexdError
+from pymobiledevice3.exceptions import (
+    AlreadyMountedError,
+    ConnectionTerminatedError,
+    CryptexdError,
+    DeviceFeatureNotSupportedError,
+)
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import FileTransferType, XpcInt64Type, XpcUInt64Type
@@ -25,10 +31,28 @@ NONCE_DOMAIN_CRYPTEX = 2
 DDI_CRYPTEX_IDENTIFIER = "com.apple.MobileAsset.DDI"
 
 #: Values Xcode sends when installing the DDI cryptex, captured from a ``devicectl`` install.
+#: ``image-type-index`` names the image's asset type by its index in the device's
+#: ``cryptex_asset_types`` table (libcryptex_core): 10 is Cryptex1,GenericDmg (``gdmg``).
 CLIENT_VERSION = 3
 DDI_IMAGE_TYPE_INDEX = 10
 DDI_PERSISTENCE = 2
 DDI_NONCE_PERSISTENCE = 1
+
+#: Earliest iOS that installs the DeveloperDiskImage as a cryptex; below it the DDI goes through the
+#: image mounter's PersonalizedDMG, as `auto_mount` does there. Read from the firmware, two things
+#: change between 26.3.1 and 26.4 and match 27.0 from 26.4 on (#1991):
+#:
+#: - The platform sandbox profile's rule for cryptex mounts. Below 26.4, cryptexd imports a Cryptex1
+#:   image but the kernel denies it mounting one at ``/System/Developer``, the DDI's
+#:   ``RequiredMountPath`` ("deny(1) file-mount /System/Developer" on 26.0.1).
+#: - The asset type table, whose ``root`` entry iOS 26.4 split into ``asset_root`` and
+#:   ``content_root``. Below it `DDI_IMAGE_TYPE_INDEX` names Cryptex1,GenericVolume (``gtgv``)
+#:   instead, and cryptexd crashes on the volume hash that follows: "asset already present:
+#:   Cryptex1,GenericVolume".
+DDI_CRYPTEX_MIN_VERSION = Version("26.4")
+
+#: `DeviceFeatureNotSupportedError.feature` when the iOS is below `DDI_CRYPTEX_MIN_VERSION`.
+FEATURE_DDI_CRYPTEX = "DeveloperDiskImage cryptex install"
 
 
 #: Capability tags cryptexd advertises in the RSD handshake (``peer_info`` ``Features``).
@@ -108,6 +132,19 @@ def _cryptex_build_identity(build_manifest: dict[str, Any], source: Path) -> dic
     if identity is None:
         raise FileNotFoundError(f"no {CRYPTEX_VARIANT_SUFFIX!r} build identity in {source}")
     return identity
+
+
+def require_ddi_cryptex_support(product_version: str, identifier: Optional[str]) -> None:
+    """Raise unless this iOS installs the DeveloperDiskImage as a cryptex (see `DDI_CRYPTEX_MIN_VERSION`).
+
+    :param product_version: the device's iOS version.
+    :param identifier: the device's UDID, for the error.
+    :raises DeviceFeatureNotSupportedError: below `DDI_CRYPTEX_MIN_VERSION`.
+    """
+    if Version(product_version) < DDI_CRYPTEX_MIN_VERSION:
+        raise DeviceFeatureNotSupportedError(
+            CryptexdService.SERVICE_NAME, FEATURE_DDI_CRYPTEX, identifier, product_version
+        )
 
 
 def unwrap_nonce(blob: bytes) -> bytes:
@@ -305,7 +342,8 @@ class CryptexdService(RemoteService):
         :param persistence: cryptex persistence mode.
         :param nonce_persistence: nonce persistence mode.
         :param auth: authentication mode.
-        :raises CryptexdError: if the daemon rejected the request or the install failed.
+        :raises CryptexdError: if the daemon rejected the request, the install failed, or the daemon
+            closed the connection without replying.
         :raises DeviceFeatureNotSupportedError: if the device does not advertise the
             ``CryptexInstall`` capability.
         """
@@ -335,6 +373,11 @@ class CryptexdService(RemoteService):
             for transfer_id, (_, payload) in enumerate(transfers, start=1):
                 await connection.send_file_transfer(transfer_id, payload)
             response = await connection.receive_response()
+        except ConnectionTerminatedError as e:
+            raise CryptexdError(
+                "install failed: cryptexd closed the connection without replying, so it most likely "
+                "rejected or crashed on the request; `pymobiledevice3 syslog live -m cryptexd` shows why"
+            ) from e
         finally:
             await connection.close()
         self._unwrap("install", response)
@@ -383,7 +426,10 @@ class CryptexdService(RemoteService):
             already has a Personalized image mounted.
         :raises CryptexdError: if the daemon rejected the image.
         :raises TSSError: if Apple refused to sign the personalization request.
+        :raises DeviceFeatureNotSupportedError: below `DDI_CRYPTEX_MIN_VERSION`.
         """
+        # Before asking Apple to sign anything the device cannot mount
+        require_ddi_cryptex_support(self.rsd.product_version, self.rsd.udid)
         already_installed = await self._installed_ddi()
         if already_installed is not None:
             raise AlreadyMountedError(

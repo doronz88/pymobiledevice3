@@ -200,12 +200,19 @@ was built (Xcode 27.1's stops at `iPhone18,5`), so there is nothing to personali
 and such devices can **only** use the Cryptex1 DDI, which has no such list. Upgrade
 pymobiledevice3: these devices run iOS 27 or later, where `mounter auto-mount` installs the cryptex.
 
-### "asset already present: Cryptex1,GenericVolume" / `cryptex auto-install` aborts on iOS 26
+### "does not install the DeveloperDiskImage as a cryptex" / "asset already present: Cryptex1,GenericVolume"
 
-`cryptexd` on iOS 26 and earlier does not accept the DDI cryptex install the way it is sent to
-iOS 27, and aborts ([#1991](https://github.com/doronz88/pymobiledevice3/issues/1991)). On those
-versions use `pymobiledevice3 mounter auto-mount`, which mounts the `PersonalizedDMG` instead. If an
-older pymobiledevice3 (11.19.0 - 11.19.2) tried the cryptex path there, upgrade.
+iOS installs the DeveloperDiskImage as a cryptex only from 26.4. Below it, `cryptexd` may import
+the image but the kernel does not let it mount one at `/System/Developer`, and its asset-type table
+is ordered differently, so the install fails: older pymobiledevice3 versions crashed `cryptexd`
+there (*"asset already present: Cryptex1,GenericVolume"*, followed by a bare *"Aborted."*)
+([#1991](https://github.com/doronz88/pymobiledevice3/issues/1991)). On those versions use
+`pymobiledevice3 mounter auto-mount`, which mounts the `PersonalizedDMG`, and upgrade if an older
+pymobiledevice3 (11.19.0 - 11.19.2) took the cryptex path there.
+
+If `cryptex auto-install` fails on iOS 26.4 or later with *"cryptexd closed the connection without
+replying"*, capture `pymobiledevice3 syslog live -m cryptexd` while running it and open an issue with
+both.
 
 ### "Unable to connect to Tunneld" (`TunneldConnectionError`)
 

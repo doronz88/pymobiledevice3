@@ -37,8 +37,8 @@ Many `developer dvt` and related developer commands need all of the following:
    than the DDI (e.g. the iPhone 18 series) can only use this variant: the `PersonalizedDMG`
    manifest does not list them (`NoSuchBuildIdentityError`); the command needs RSD for it and retries over a no-root tunnel
    by itself. On iOS 17.0-26.x it mounts the `PersonalizedDMG`. To install the cryptex
-   directly on iOS 27+: `uvx --from . pymobiledevice3 cryptex auto-install` (needs RSD;
-   iOS 26's `cryptexd` aborts on it). All cache the download under `~/.pymobiledevice3` — `$XDG_DATA_HOME/pymobiledevice3`
+   directly on iOS 27+: `uvx --from . pymobiledevice3 cryptex auto-install` (needs RSD
+   and iOS 26.4+, the first to install the DDI as a cryptex). All cache the download under `~/.pymobiledevice3` — `$XDG_DATA_HOME/pymobiledevice3`
    on new Linux installs — and end up mounted at `/System/Developer`. Both refuse while a DDI
    is already present; remove it with `cryptex uninstall com.apple.MobileAsset.DDI` or
    `mounter umount-personalized`, depending on which front-end mounted it.

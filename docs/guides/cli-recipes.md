@@ -148,12 +148,12 @@ testmanagerd, …) usable. The end result is indistinguishable from a `mounter a
 setting up the tunnel itself, since the cryptex is not tied to the boards listed in the DDI's build
 manifest and so also covers devices newer than the DDI.
 
-!!! warning "iOS 26 and earlier"
+!!! note "iOS 26.4 and later"
 
-    `cryptexd` on iOS 26 and earlier does not accept the install the way it is sent to iOS 27: on
-    iOS 26 it aborts with *"asset already present: Cryptex1,GenericVolume"*
-    ([#1991](https://github.com/doronz88/pymobiledevice3/issues/1991)). There, use
-    `mounter auto-mount`, which mounts the `PersonalizedDMG` on those versions.
+    iOS installs the DeveloperDiskImage as a cryptex only from 26.4. Below it, `cryptexd` may
+    import the image but not mount it at `/System/Developer`, so `cryptex auto-install` refuses,
+    and `mounter auto-mount` mounts the `PersonalizedDMG` instead
+    ([#1991](https://github.com/doronz88/pymobiledevice3/issues/1991)).
 
 It refuses to run while a DeveloperDiskImage is already present, whichever front-end put it there:
 remove a cryptex with `cryptex uninstall com.apple.MobileAsset.DDI`, or a `PersonalizedDMG` with

@@ -6,7 +6,12 @@ from typing import Any, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import AlreadyMountedError, CryptexdError, DeviceFeatureNotSupportedError
+from pymobiledevice3.exceptions import (
+    AlreadyMountedError,
+    ConnectionTerminatedError,
+    CryptexdError,
+    DeviceFeatureNotSupportedError,
+)
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services import cryptexd
 from pymobiledevice3.services.cryptexd import (
@@ -42,6 +47,9 @@ class FakeConnection:
 
 
 class FakeRsd:
+    udid = "00008030-000215140A9A802E"
+    product_version = "27.2"
+
     def __init__(self, response: dict[str, Any], sent: list[dict[str, Any]]) -> None:
         self._response = response
         self._sent = sent
@@ -264,10 +272,17 @@ class RecordingConnection:
         self.closed = True
 
 
-def _install_service(response: dict[str, Any]) -> tuple[CryptexdService, RecordingConnection]:
+def _install_service(
+    response: dict[str, Any], product_version: str = "27.2"
+) -> tuple[CryptexdService, RecordingConnection]:
     connection = RecordingConnection(response)
 
     class Rsd:
+        udid = "00008030-000215140A9A802E"
+
+        def __init__(self) -> None:
+            self.product_version = product_version
+
         def require_feature(self, service_name: str, feature: str) -> None:
             pass
 
@@ -311,6 +326,21 @@ async def test_install_sends_the_scalar_keys_the_daemon_requires() -> None:
     assert int(argv["client-version"]) == 3
     assert int(argv["image-type-index"]) == 10
     assert (int(argv["persistence"]), int(argv["nonce-persistence"])) == (2, 1)
+
+
+@pytest.mark.asyncio
+async def test_install_explains_a_connection_cryptexd_dropped() -> None:
+    # Regression (#1991): cryptexd aborted mid-install and the CLI printed nothing but "Aborted."
+    service, connection = _install_service({"error": 0})
+
+    async def dropped() -> dict[str, Any]:
+        raise ConnectionTerminatedError()
+
+    connection.receive_response = dropped  # type: ignore[method-assign]
+
+    with pytest.raises(CryptexdError, match="closed the connection"):
+        await service.install(b"i", b"t", b"m", b"info", b"vol", {})
+    assert connection.closed
 
 
 @pytest.mark.asyncio
@@ -560,3 +590,28 @@ def test_unwrap_nonce_extracts_the_nonce_from_the_daemon_structure() -> None:
     nonce = bytes(range(48))
     blob = b"\x00\x00" + nonce + b"\x00\x00" + (48).to_bytes(4, "little")
     assert unwrap_nonce(blob) == nonce
+
+
+@pytest.mark.parametrize("product_version", ["17.0", "17.7", "18.6.2", "26.0.1", "26.3.1"])
+def test_the_ddi_cryptex_needs_ios_26_4(product_version: str) -> None:
+    # Regression (#1991): below iOS 26.4 cryptexd imports a Cryptex1 image but may not mount it at
+    # /System/Developer ("deny(1) file-mount /System/Developer"), and its asset type table is laid
+    # out differently: DDI_IMAGE_TYPE_INDEX named the image Cryptex1,GenericVolume there and
+    # crashed cryptexd with "asset already present: Cryptex1,GenericVolume"
+    with pytest.raises(DeviceFeatureNotSupportedError, match="DeveloperDiskImage cryptex"):
+        cryptexd.require_ddi_cryptex_support(product_version, "udid")
+
+
+@pytest.mark.parametrize("product_version", ["26.4", "26.7", "27.0", "27.2"])
+def test_the_ddi_cryptex_installs_from_ios_26_4(product_version: str) -> None:
+    cryptexd.require_ddi_cryptex_support(product_version, "udid")
+
+
+@pytest.mark.asyncio
+async def test_auto_install_ddi_refuses_an_unsupported_ios_before_contacting_anything() -> None:
+    service, connection = _install_service({"error": 0}, "26.0.1")
+
+    with pytest.raises(DeviceFeatureNotSupportedError):
+        await service.auto_install_ddi()
+
+    assert connection.request == {}

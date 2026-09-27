@@ -563,7 +563,7 @@ class RemoteXPCConnection:
         await writer.drain()
 
     async def _receive_frame(self) -> Frame:
-        buf = await self.reader.readexactly(FRAME_HEADER_SIZE)
+        buf = await self._recvall(FRAME_HEADER_SIZE)
         frame, additional_size = Frame.parse_frame_header(memoryview(buf))
         frame.parse_body(memoryview(await self._recvall(additional_size)))
         return frame
