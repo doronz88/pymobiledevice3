@@ -8,8 +8,13 @@ from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, async_command, print_json
 from pymobiledevice3.cli.mounter import PERSONALIZED_DDI_REMOVAL_HINT
-from pymobiledevice3.exceptions import AlreadyMountedError
-from pymobiledevice3.services.cryptexd import XCODE_DDI_RESTORE_DIR, CryptexdService
+from pymobiledevice3.exceptions import AlreadyMountedError, DeviceFeatureNotSupportedError
+from pymobiledevice3.services.cryptexd import (
+    DDI_CRYPTEX_MIN_VERSION,
+    FEATURE_DDI_CRYPTEX,
+    XCODE_DDI_RESTORE_DIR,
+    CryptexdService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +65,14 @@ async def cryptex_auto_install(
         installed = await cryptexd.auto_install_ddi(restore_dir)
     except FileNotFoundError as e:
         raise typer.BadParameter(str(e)) from e
+    except DeviceFeatureNotSupportedError as e:
+        if e.feature != FEATURE_DDI_CRYPTEX:
+            raise
+        logger.error(
+            f"iOS {e.product_version} does not install the DeveloperDiskImage as a cryptex (iOS "
+            f"{DDI_CRYPTEX_MIN_VERSION}+ does); use `pymobiledevice3 mounter auto-mount` instead"
+        )
+        raise typer.Exit(1) from e
     except AlreadyMountedError as e:
         logger.error(f"DeveloperDiskImage already mounted ({e}); {PERSONALIZED_DDI_REMOVAL_HINT}")
         raise typer.Exit(1) from e

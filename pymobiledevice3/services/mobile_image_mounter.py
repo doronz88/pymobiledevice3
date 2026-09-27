@@ -334,10 +334,9 @@ PERSONALIZED_IMAGE_MIN_VERSION = Version("17.0")
 
 # From here the DDI is the Cryptex1 variant, installed over cryptexd: unlike the PersonalizedDMG it
 # is not tied to the boards in the DDI's build manifest, so it also covers devices newer than the
-# DDI (e.g. the iPhone 18 series, which ships with iOS 27). cryptexd advertises CryptexInstall since
-# iOS 17.0, but older daemons do not take the install the way Xcode sends it to iOS 27: iOS 26's
-# aborts with "asset already present: Cryptex1,GenericVolume" (#1991). Below this, the
-# PersonalizedDMG, which lists every board those versions run on, keeps working.
+# DDI (e.g. the iPhone 18 series, which ships with iOS 27). iOS only installs the DDI as a cryptex
+# from 26.4 (see cryptexd.DDI_CRYPTEX_MIN_VERSION), but that is unverified on a device below 27,
+# while the PersonalizedDMG lists every board those versions run on and keeps working.
 CRYPTEX_IMAGE_MIN_VERSION = Version("27.0")
 
 
