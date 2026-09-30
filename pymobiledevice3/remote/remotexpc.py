@@ -81,19 +81,30 @@ _REMOTECTL_LOCAL_UUID_RE = re.compile(r"^Local device\n\s+UUID: (?P<uuid>[0-9A-F
 def default_handshake_uuid() -> uuid.UUID:
     """The UUID every RSD handshake from this host identifies itself with, unless told otherwise.
 
-    The device keeps ONE RSD connection per tunnel and replaces it whenever a new one arrives. Since
-    iOS 27.2 it also remembers the UUID of the peer it replaced -- even after that peer disconnected
-    -- and, when the newcomer's differs ("Peer UUID changed across reconnect; reattaching so clients
-    re-discover it" in the device's remoted log), re-attaches the whole device: every service
-    listener it advertised, to the newcomer and to earlier peers alike, is closed and each port
-    refuses connections. So all connections to a tunnel, across processes, must present one UUID:
-    the deterministic host id pymobiledevice3 already pairs with.
+    The device's ``remoted`` applies two rules to incoming RSD connections (read from iOS 27.2's
+    ``/usr/libexec/remoted``):
 
-    It must not be the host ``remoted``'s on a tunnel of our own: from iOS 26.2 the device keeps one
-    RSD connection per peer UUID, so a handshake presenting remoted's evicts remoted's own
-    connection, remoted redials and resets ours, and after a few rounds remoted stops redialing at
-    all -- leaving Xcode/``devicectl`` without the device (#1994). Links remoted itself uses are the
-    exception (see `remoted_handshake_uuid`).
+    * **Replacement, by source address.** An incoming connection whose source IP (port stripped)
+      matches a peer it already has replaces that peer's connection ("canceling existing
+      connection to replace it"), before any handshake is read. Every process on one host end of a
+      link shares that address, so connections to the same tunnel replace one another whatever
+      UUID they send.
+    * **Re-attach, by handshake UUID** (``-[RSDRemoteDevice shouldReattachForHandshake:]``). Each
+      handshake stores its ``UUID`` on the peer, and stores nothing when the key is missing. When
+      the peer already has a stored UUID and a new handshake carries a different one ("Peer UUID
+      changed across reconnect; reattaching so clients re-discover it"), the device re-attaches:
+      every service listener it advertised, to the newcomer and to earlier connections alike, is
+      closed and each port refuses connections.
+
+    So all connections to a tunnel, across processes, must present one UUID: the deterministic host
+    id pymobiledevice3 already pairs with. Leaving the key out would avoid the re-attach, but over
+    the native tunnel such handshakes timed out, so it is always sent.
+
+    It must not be the host ``remoted``'s on a tunnel of our own: from iOS 26.2, handshakes
+    presenting remoted's UUID were seen to evict remoted's own connection, remoted redialed and
+    reset ours, and after a few rounds remoted stopped redialing at all -- leaving
+    Xcode/``devicectl`` without the device (#1994). Links remoted itself uses are the exception
+    (see `remoted_handshake_uuid`).
     """
     return uuid.UUID(generate_host_id())
 
@@ -103,8 +114,11 @@ def remoted_handshake_uuid() -> Optional[uuid.UUID]:
     """The UUID for an RSD handshake on a link the host ``remoted`` also uses; ``None`` off macOS.
 
     On such a link -- the USB NCM interface (``get_rsds``, tunneld) and remoted's own tunnel (the
-    native tunnel) -- remoted's UUID is the last peer the device remembers, so any other identity
-    makes iOS 27.2+ re-attach (see `default_handshake_uuid`) and reset what we just opened. Pass
+    native tunnel) -- we connect from remoted's source address, so the device treats us as the same
+    peer and remembers remoted's UUID for it. Any other identity makes iOS 27.2+ re-attach (see
+    `default_handshake_uuid`) and reset what we just opened. The same address rule also means our
+    connection replaces remoted's there, and remoted's redial replaces ours: nothing we send avoids
+    that, which is why the NCM path suspends remoted and the native tunnel is opt-in. Pass
     the result as the handshake UUID there; ``None`` (off macOS, or when ``remotectl`` does not
     know) falls back to `default_handshake_uuid`.
 

@@ -215,15 +215,20 @@ Teardown details worth knowing when reading the code:
 does not suspend `remoted` (contrast the kernel/bonjour path; see the callout above).
 
 !!! warning "It competes with `remoted` for the device"
-    The device keeps a **single RSD connection per tunnel**, and on this tunnel `remoted` already
-    holds it. Opening ours evicts `remoted`'s (`Device connection interrupted` in its log);
-    `remoted` redials about a second later and evicts ours back, whatever handshake UUID we send.
-    Commands then fail intermittently (`ConnectionResetError`, or `ConnectionRefusedError` on iOS
-    27.2+, which also re-attaches the device when the peer UUID changes), and after a few rounds
-    `remoted` stops redialing, so Xcode/`devicectl` lose the device until `remoted` restarts or the
-    device is replugged ([#1994](https://github.com/doronz88/pymobiledevice3/issues/1994)). This is
-    why the native tunnel is opt-in: the userspace tunnel brings up a tunnel of its own, which
-    nothing else on the host competes for.
+    The device's `remoted` treats every incoming RSD connection from the same **source IP** (port
+    ignored) as the same peer, and replaces that peer's existing connection with the new one before
+    reading any handshake. On this tunnel `remoted` and pymobiledevice3 connect from the same host
+    address, so opening ours evicts `remoted`'s (`Device connection interrupted` in its log);
+    `remoted` redials about a second later and evicts ours back. No handshake field changes this.
+    On iOS 27.2+ the device also re-attaches (closing every advertised service port) when a peer's
+    handshake UUID differs from the one it last sent, so ours has to present `remoted`'s UUID here.
+
+    Commands therefore fail intermittently (`ConnectionResetError`, or `ConnectionRefusedError`
+    after a re-attach), and after a few rounds `remoted` stops redialing, so Xcode/`devicectl` lose
+    the device until `remoted` restarts or the device is replugged
+    ([#1994](https://github.com/doronz88/pymobiledevice3/issues/1994)). This is why the native
+    tunnel is opt-in: the userspace tunnel brings up a tunnel of its own, with its own host
+    address, so the device keeps it apart from `remoted`.
 
 ```mermaid
 flowchart LR
