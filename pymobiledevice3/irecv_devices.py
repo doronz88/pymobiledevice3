@@ -404,6 +404,20 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         display_name="iPhone 15 Pro Max",
     ),
     IRecvDevice(
+        product_type="iPhone17,1",
+        hardware_model="d93ap",
+        board_id=0x0C,
+        chip_id=0x8140,
+        display_name="iPhone 16 Pro",
+    ),
+    IRecvDevice(
+        product_type="iPhone17,2",
+        hardware_model="d94ap",
+        board_id=0x0E,
+        chip_id=0x8140,
+        display_name="iPhone 16 Pro Max",
+    ),
+    IRecvDevice(
         product_type="iPhone17,3",
         hardware_model="d47ap",
         board_id=0x08,
@@ -423,27 +437,6 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         board_id=0x04,
         chip_id=0x8140,
         display_name="iPhone 16e",
-    ),
-    IRecvDevice(
-        product_type="iPhone17,1",
-        hardware_model="d93ap",
-        board_id=0x0C,
-        chip_id=0x8140,
-        display_name="iPhone 16 Pro",
-    ),
-    IRecvDevice(
-        product_type="iPhone17,2",
-        hardware_model="d94ap",
-        board_id=0x0E,
-        chip_id=0x8140,
-        display_name="iPhone 16 Pro Max",
-    ),
-    IRecvDevice(
-        product_type="iPhone18,4",
-        hardware_model="d23ap",
-        board_id=0x0A,
-        chip_id=0x8150,
-        display_name="iPhone Air",
     ),
     IRecvDevice(
         product_type="iPhone18,1",
@@ -467,11 +460,39 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         display_name="iPhone 17",
     ),
     IRecvDevice(
+        product_type="iPhone18,4",
+        hardware_model="d23ap",
+        board_id=0x0A,
+        chip_id=0x8150,
+        display_name="iPhone Air",
+    ),
+    IRecvDevice(
         product_type="iPhone18,5",
         hardware_model="v159ap",
         board_id=0x16,
         chip_id=0x8150,
         display_name="iPhone 17e",
+    ),
+    IRecvDevice(
+        product_type="iPhone19,2",
+        hardware_model="v63ap",
+        board_id=0x0A,
+        chip_id=0x8160,
+        display_name="iPhone 18 Pro",
+    ),
+    IRecvDevice(
+        product_type="iPhone19,3",
+        hardware_model="v64ap",
+        board_id=0x0C,
+        chip_id=0x8160,
+        display_name="iPhone 18 Pro Max (US)",
+    ),
+    IRecvDevice(
+        product_type="iPhone19,7",
+        hardware_model="v64sap",
+        board_id=0x12,
+        chip_id=0x8160,
+        display_name="iPhone 18 Pro Max (Global)",
     ),
     # iPod
     IRecvDevice(
@@ -1329,14 +1350,14 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         hardware_model="b238aap",
         board_id=0x38,
         chip_id=0x7000,
-        display_name="HomePod",
+        display_name="HomePod (1st gen)",
     ),
     IRecvDevice(
         product_type="AudioAccessory1,2",
         hardware_model="b238ap",
         board_id=0x1A,
         chip_id=0x7000,
-        display_name="HomePod",
+        display_name="HomePod (1st gen)",
     ),
     IRecvDevice(
         product_type="AudioAccessory5,1",
@@ -1568,28 +1589,28 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         hardware_model="n143sap",
         board_id=0x28,
         chip_id=0x8301,
-        display_name="Apple Watch SE (2nd generation) (40mm)",
+        display_name="Apple Watch SE 2 (40mm)",
     ),
     IRecvDevice(
         product_type="Watch6,11",
         hardware_model="n143bap",
         board_id=0x2A,
         chip_id=0x8301,
-        display_name="Apple Watch SE (2nd generation) (44mm)",
+        display_name="Apple Watch SE 2 (44mm)",
     ),
     IRecvDevice(
         product_type="Watch6,12",
         hardware_model="n149sap",
         board_id=0x2C,
         chip_id=0x8301,
-        display_name="Apple Watch SE (2nd generation) (40mm Cellular)",
+        display_name="Apple Watch SE 2 (40mm Cellular)",
     ),
     IRecvDevice(
         product_type="Watch6,13",
         hardware_model="n149bap",
         board_id=0x2E,
         chip_id=0x8301,
-        display_name="Apple Watch SE (2nd generation) (44m Cellular)",
+        display_name="Apple Watch SE 2 (44mm Cellular)",
     ),
     IRecvDevice(
         product_type="Watch6,14",
@@ -1752,6 +1773,41 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         chip_id=0x8310,
         display_name="Apple Watch Series 11 (46mm Cellular)",
     ),
+    IRecvDevice(
+        product_type="Watch8,1",
+        hardware_model="n240ap",
+        board_id=0x02,
+        chip_id=0x8320,
+        display_name="Apple Watch Ultra 4",
+    ),
+    IRecvDevice(
+        product_type="Watch8,2",
+        hardware_model="n237sap",
+        board_id=0x08,
+        chip_id=0x8320,
+        display_name="Apple Watch Series 12 (42mm)",
+    ),
+    IRecvDevice(
+        product_type="Watch8,3",
+        hardware_model="n237bap",
+        board_id=0x0A,
+        chip_id=0x8320,
+        display_name="Apple Watch Series 12 (46mm)",
+    ),
+    IRecvDevice(
+        product_type="Watch8,4",
+        hardware_model="n238sap",
+        board_id=0x0C,
+        chip_id=0x8320,
+        display_name="Apple Watch Series 12 (42mm Cellular)",
+    ),
+    IRecvDevice(
+        product_type="Watch8,5",
+        hardware_model="n238bap",
+        board_id=0x0E,
+        chip_id=0x8320,
+        display_name="Apple Watch Series 12 (46mm Cellular)",
+    ),
     # Apple Silicon Macs
     IRecvDevice(
         product_type="ADP3,2",
@@ -1845,6 +1901,13 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         display_name="MacBook Air (M2, 2022)",
     ),
     IRecvDevice(
+        product_type="Mac14,7",
+        hardware_model="j493ap",
+        board_id=0x2A,
+        chip_id=0x8112,
+        display_name="MacBook Pro (M2, 13-inch, 2022)",
+    ),
+    IRecvDevice(
         product_type="Mac14,3",
         hardware_model="j473ap",
         board_id=0x24,
@@ -1864,13 +1927,6 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         board_id=0x06,
         chip_id=0x6021,
         display_name="MacBook Pro (16-inch, M2 Max, 2023)",
-    ),
-    IRecvDevice(
-        product_type="Mac14,7",
-        hardware_model="j493ap",
-        board_id=0x2A,
-        chip_id=0x8112,
-        display_name="MacBook Pro (M2, 13-inch, 2022)",
     ),
     IRecvDevice(
         product_type="Mac14,8",
@@ -2146,6 +2202,35 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         display_name="MacBook Pro (14-inch, M5 Pro, 2026)",
     ),
     IRecvDevice(
+        product_type="Mac17,14",
+        hardware_model="j775cap",
+        board_id=0x10,
+        chip_id=0x6050,
+        display_name="Mac Studio (M5 Max, 2026)",
+    ),
+    IRecvDevice(
+        product_type="Mac17,15",
+        hardware_model="j775dap",
+        board_id=0x12,
+        chip_id=0x6050,
+        display_name="Mac Studio (M5 Ultra, 2026)",
+    ),
+    IRecvDevice(
+        product_type="Mac17,16",
+        hardware_model="j873sap",
+        board_id=0x02,
+        chip_id=0x6050,
+        display_name="Mac mini (M5 Pro, 2026)",
+    ),
+    IRecvDevice(
+        product_type="Mac18,5",
+        hardware_model="j873gap",
+        board_id=0x24,
+        chip_id=0x6050,
+        display_name="Mac mini (M6, 2026)",
+    ),
+    # Apple Silicon VMs (supported by Virtualization.framework on macOS 12)
+    IRecvDevice(
         product_type="VirtualMac2,1",
         hardware_model="vma2macosap",
         board_id=0x20,
@@ -2265,6 +2350,21 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         chip_id=0x8012,
         display_name="Apple T2 MacBookPro16,4 (j215)",
     ),
+    # Lightning Video Adapters
+    IRecvDevice(
+        product_type="iAccy1,1",
+        hardware_model="b137ap",
+        board_id=0x00,
+        chip_id=0x8747,
+        display_name="Lightning Digital AV Adapter",
+    ),
+    IRecvDevice(
+        product_type="iAccy1,2",
+        hardware_model="b165ap",
+        board_id=0x02,
+        chip_id=0x8747,
+        display_name="Lightning to VGA Adapter",
+    ),
     # Apple Displays
     IRecvDevice(
         product_type="AppleDisplay2,1",
@@ -2272,6 +2372,20 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         board_id=0x22,
         chip_id=0x8030,
         display_name="Studio Display",
+    ),
+    IRecvDevice(
+        product_type="AppleDisplay18,1",
+        hardware_model="j427ap",
+        board_id=0x02,
+        chip_id=0x8150,
+        display_name="Studio Display XDR",
+    ),
+    IRecvDevice(
+        product_type="AppleDisplay18,2",
+        hardware_model="j527ap",
+        board_id=0x04,
+        chip_id=0x8150,
+        display_name="Studio Display (2026)",
     ),
     # Apple Vision Pro
     IRecvDevice(
@@ -2288,27 +2402,12 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         chip_id=0x8142,
         display_name="Apple Vision Pro (M5)",
     ),
-    # Lightning adapters
-    IRecvDevice(
-        product_type="iAccy1,1",
-        hardware_model="b137ap",
-        board_id=0x00,
-        chip_id=0x8747,
-        display_name="Lightning Digital AV Adapter",
-    ),
-    IRecvDevice(
-        product_type="iAccy1,2",
-        hardware_model="b165ap",
-        board_id=0x02,
-        chip_id=0x8747,
-        display_name="Lightning to VGA Adapter",
-    ),
-    # Virtual iPhone Research Environment
+    # Private Cloud Compute Research Environment
     IRecvDevice(
         product_type="iPhone99,11",
         hardware_model="vresearch101ap",
         board_id=0x90,
         chip_id=0xFE01,
-        display_name="Virtual iPhone (99,11)",
+        display_name="iPhone 99,11",
     ),
 )
