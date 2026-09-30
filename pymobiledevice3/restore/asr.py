@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import os
@@ -6,7 +7,7 @@ import typing
 
 from tqdm import trange
 
-from pymobiledevice3.exceptions import NotConnectedError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import ConnectionFailedError, NotConnectedError, PyMobileDevice3Exception
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.utils import current_task_name
 
@@ -18,6 +19,8 @@ ASR_PACKETS_PER_FEC = 25
 ASR_PAYLOAD_PACKET_SIZE = 1450
 ASR_PAYLOAD_CHUNK_SIZE = 0x20000
 ASR_CHECKSUM_CHUNK_SIZE = ASR_PAYLOAD_CHUNK_SIZE
+ASR_CONNECT_ATTEMPTS = 30
+ASR_CONNECT_RETRY_DELAY = 2.0
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +47,20 @@ class ASRClient:
         return self._service
 
     async def connect(self, port: int = DEFAULT_ASR_SYNC_PORT) -> None:
-        self._service = await ServiceConnection.create_using_usbmux(self._udid, port, connection_type="USB")
-        await self._service.start()
+        """Connect to ASR, retrying while restored brings its listener up.
+
+        :raises ConnectionFailedError: if the port is still closed after ``ASR_CONNECT_ATTEMPTS`` attempts.
+        """
+        for attempt in range(1, ASR_CONNECT_ATTEMPTS + 1):
+            try:
+                self._service = await ServiceConnection.create_using_usbmux(self._udid, port, connection_type="USB")
+                break
+            except ConnectionFailedError:
+                if attempt >= ASR_CONNECT_ATTEMPTS:
+                    raise
+                self.logger.debug(f"ASR connection failed, retrying ({attempt}/{ASR_CONNECT_ATTEMPTS})")
+                await asyncio.sleep(ASR_CONNECT_RETRY_DELAY)
+        await self.service.start()
 
         # receive Initiate command message
         data = await self.recv_plist()
