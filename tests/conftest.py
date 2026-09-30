@@ -149,8 +149,8 @@ async def service_provider(
                 await rsd.close()
     else:
         # No transport asked for: establish one. Every RSD-requiring service is reachable
-        # in-process without root - the native tunnel on macOS, the userspace tunnel elsewhere -
-        # so those tests run by default instead of skipping until someone supplies tunneld.
+        # in-process without root - the userspace tunnel (the native one for iOS 17.0-17.3 on
+        # macOS) - so those tests run by default instead of skipping until someone supplies tunneld.
         # Per test rather than per session on purpose: the tunnel's asyncio objects belong to the
         # loop that opened them, and the suite runs each test on a loop of its own.
         tunnel = PreferredRsdTunnel()
