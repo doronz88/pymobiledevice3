@@ -212,8 +212,18 @@ Teardown details worth knowing when reading the code:
 
 `--native` (or `PYMOBILEDEVICE3_NATIVE=1`) reaches the RSD by **piggybacking Apple's own
 `remoted` tunnel** instead of building one. It needs no root, no entitlement and no Xcode, and
-leaves `remoted` running — so it coexists with Xcode/`devicectl` (contrast the kernel/bonjour path,
-which must suspend `remoted`; see the callout above).
+does not suspend `remoted` (contrast the kernel/bonjour path; see the callout above).
+
+!!! warning "It competes with `remoted` for the device"
+    The device keeps a **single RSD connection per tunnel**, and on this tunnel `remoted` already
+    holds it. Opening ours evicts `remoted`'s (`Device connection interrupted` in its log);
+    `remoted` redials about a second later and evicts ours back, whatever handshake UUID we send.
+    Commands then fail intermittently (`ConnectionResetError`, or `ConnectionRefusedError` on iOS
+    27.2+, which also re-attaches the device when the peer UUID changes), and after a few rounds
+    `remoted` stops redialing, so Xcode/`devicectl` lose the device until `remoted` restarts or the
+    device is replugged ([#1994](https://github.com/doronz88/pymobiledevice3/issues/1994)). This is
+    why the native tunnel is opt-in: the userspace tunnel brings up a tunnel of its own, which
+    nothing else on the host competes for.
 
 ```mermaid
 flowchart LR
@@ -272,16 +282,17 @@ How it works (all via `ctypes` + libxpc, no pyobjc):
   effective uid is 0.
 - **Reachability:** the tunnel address is a real kernel route (Apple's tunnel), so unlike the
   userspace tunnel it *is* reachable by other tools; it lives only while the handle (its assertion)
-  is held. `remote start-tunnel` publishes this address for other processes (no `sudo`; the native
-  path is its macOS default) and `remote browse` lists the devices `remotepairingd` reports (also
-  the macOS default; `--no-native` forces the classic tunnel / bonjour browse).
-- **Default on macOS:** this is the built-in default transport for RSD-required commands (and the
-  CLI's automatic retry) on macOS — chosen ahead of the userspace tunnel, with userspace and then
-  `tunneld` as fallbacks. On other platforms the userspace tunnel remains the default (`remoted` does
-  not exist there).
-- **Overriding the default:** `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` sets which
-  transport the automatic selection prefers. Set it to `userspace` to opt back out of the macOS
-  native default, or `tunneld` to route to the privileged daemon.
+  is held. `remote start-tunnel --native` publishes this address for other processes (no `sudo`;
+  without `--native` it builds the classic root tunnel). `remote browse` lists the devices
+  `remotepairingd` reports — that is the macOS default, since browsing opens no RSD connection
+  (`--no-native` forces the bonjour browse).
+- **When it is used:** only when asked for (`--native`, `PYMOBILEDEVICE3_NATIVE=1`, or
+  `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native`), and automatically for iOS 17.0-17.3 on macOS, which
+  the userspace tunnel cannot serve (no CoreDeviceProxy). The built-in default everywhere is the
+  userspace tunnel.
+- **Changing the preference:** `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` sets which
+  transport the automatic selection prefers. Set it to `native` to prefer this tunnel, or `tunneld`
+  to route to the privileged daemon.
 - **Throughput:** rides the kernel-routable tunnel, so it avoids the userspace stack's per-packet
   Python overhead. Fair same-device AFC comparison on a physical iPhone 17-class device: device->host
   is USB-bound and on par with the userspace tunnel (~36 MB/s both), while host->device is ~1.8x
@@ -302,13 +313,13 @@ service is opened) reading from it.
 
 Availability differs by transport, because only some perform a metadata-carrying pairing handshake:
 
-- **Native (macOS default):** the host `remotepairingd` exposes its *merged, persisted* KVS, which
+- **Native (`--native`, macOS):** the host `remotepairingd` exposes its *merged, persisted* KVS, which
   reliably includes `com.apple.WebInspector`. `is_remote_web_inspector_enabled()` returns a real
   `True`/`False` here.
 - **`tunneld` / RemotePairing-over-bonjour:** the RemotePairing handshake carries the device's
   **base** KVS. A fresh handshake omits lazily-registered domains like `com.apple.WebInspector`, so
   `is_remote_web_inspector_enabled()` is typically `None` (unknown).
-- **Userspace no-root default (CoreDeviceProxy, iOS 17.4+):** the tunnel is established without a
+- **Userspace (the no-root default, CoreDeviceProxy, iOS 17.4+):** the tunnel is established without a
   pair-verify handshake, so no `deviceKVSData` is exchanged — `auxiliary_metadata` is empty and the
   helper returns `None`.
 
@@ -316,8 +327,8 @@ Availability differs by transport, because only some perform a metadata-carrying
 definitive Web Inspector answer.
 
 From the CLI, `pymobiledevice3 remote auxiliary-metadata` prints the whole decoded map as JSON (it
-uses the same transport selection as `rsd-info`, so it defaults to `--native` on macOS):
+uses the same transport selection as `rsd-info`, so pass `--native` on macOS for the full map):
 
 ```shell
-pymobiledevice3 remote auxiliary-metadata | jq '.["com.apple.WebInspector"].EnableRemoteInspection'
+pymobiledevice3 remote auxiliary-metadata --native | jq '.["com.apple.WebInspector"].EnableRemoteInspection'
 ```

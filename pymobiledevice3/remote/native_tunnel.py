@@ -14,8 +14,9 @@ macOS, no Xcode) to hand us the device's existing tunnel, then rides it:
    kernel-routable, so no root) and run the standard RSD handshake via
    :class:`~pymobiledevice3.remote.remote_service_discovery.RemoteServiceDiscoveryService`.
 
-No root, no entitlement, no Xcode, and ``remoted`` is left running -- so unlike the kernel/bonjour
-path this coexists with Xcode/``devicectl``. The whole XPC conversation goes through ``ctypes`` +
+No root, no entitlement, no Xcode, and ``remoted`` is not suspended, unlike on the kernel/bonjour
+path. But on this tunnel the device keeps a single RSD connection, so ours and ``remoted``'s keep
+evicting each other (#1994); that makes this transport opt-in. The whole XPC conversation goes through ``ctypes`` +
 libxpc (no pyobjc). See ``docs/guides/network-stacks.md``.
 """
 
