@@ -900,7 +900,7 @@ class NativeRemotedTunnel:
         # Identify as remoted, whose connection this one replaces on its own tunnel: a different peer
         # UUID makes the device (iOS 27.2+) tear down the services it has just advertised (see
         # remotexpc.remoted_handshake_uuid). The device still evicts remoted's connection for ours,
-        # and remoted redials and evicts ours back (#1994).
+        # and remoted redials and evicts ours back (#1994), which is why this transport is opt-in.
         handshake_uuid = await asyncio.to_thread(remoted_handshake_uuid)
         for attempt in range(_RSD_CONNECT_ATTEMPTS):
             if attempt:

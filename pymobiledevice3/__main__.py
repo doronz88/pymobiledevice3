@@ -412,8 +412,8 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
         ):
             reason = "it is a developer command on an iOS 17+ device"
         # Retry once, establishing the default RSD chain in-process (see make_rsd_dependency): the
-        # preferred transport is chosen by default_transport_preference() (native on macOS, else
-        # userspace; PYMOBILEDEVICE3_DEFAULT_FALLBACK overrides) and falls back through the other
+        # preferred transport is chosen by default_transport_preference() (userspace;
+        # PYMOBILEDEVICE3_DEFAULT_FALLBACK overrides) and falls back through the other
         # no-root path and tunneld as needed. FORCE_TUNNEL_ENV_VAR both requests this and guards
         # against looping; an explicit transport env means the user already chose one, so don't retry.
         if (

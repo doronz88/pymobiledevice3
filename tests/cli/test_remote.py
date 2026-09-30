@@ -207,9 +207,10 @@ def test_cli_browse_native_uses_remotepairingd(monkeypatch):
     assert printed == [[{"udid": "UDID"}]]
 
 
-def test_cli_browse_defaults_by_transport_preference(monkeypatch):
-    # No --native/--no-native: the transport preference decides (native on macOS, bonjour elsewhere);
-    # --no-native forces bonjour even when the preference is native.
+def test_cli_browse_defaults_to_remotepairingd_on_macos(monkeypatch):
+    # No --native/--no-native: macOS browses remotepairingd whichever tunnel transport is preferred
+    # (browsing opens no RSD connection on remoted's tunnel), unless tunneld opts out of remoted
+    # entirely; elsewhere bonjour. --no-native forces bonjour.
     calls = []
 
     async def fake_browse_native_devices(timeout):
@@ -223,11 +224,14 @@ def test_cli_browse_defaults_by_transport_preference(monkeypatch):
     monkeypatch.setattr(remote, "cli_browse", fake_cli_browse)
     monkeypatch.setattr(remote, "print_json", lambda obj: None)
 
-    monkeypatch.setattr(remote, "default_transport_preference", lambda: "native")
-    remote.browse()
+    monkeypatch.setattr(remote.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(remote, "default_transport_preference", lambda: "userspace")
     remote.browse()
-    monkeypatch.setattr(remote, "default_transport_preference", lambda: "native")
+    monkeypatch.setattr(remote, "default_transport_preference", lambda: "tunneld")
+    remote.browse()
+    monkeypatch.setattr(remote, "default_transport_preference", lambda: "userspace")
     remote.browse(native=False)
+    monkeypatch.setattr(remote.platform, "system", lambda: "Linux")
+    remote.browse()
 
-    assert calls == ["native", "bonjour", "bonjour"]
+    assert calls == ["native", "bonjour", "bonjour", "bonjour"]
