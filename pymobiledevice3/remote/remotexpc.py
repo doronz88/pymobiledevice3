@@ -43,7 +43,6 @@ from pymobiledevice3.utils import start_ipython_shell
 
 logger = logging.getLogger(__name__)
 
-_IS_DARWIN = platform.system() == "Darwin"
 
 # Extracted by sniffing `remoted` traffic via Wireshark
 DEFAULT_SETTINGS_MAX_CONCURRENT_STREAMS = 100
@@ -70,6 +69,8 @@ MESSAGING_PROTOCOL_VERSION = 7
 
 FIRST_REPLY_TIMEOUT = 3
 
+_IS_DARWIN = platform.system() == "Darwin"
+
 # ``remotectl dumpstate`` prints the host ``remoted``'s own identity first (see host_remoted_uuid).
 _REMOTECTL_PATH = "/usr/libexec/remotectl"
 _REMOTECTL_TIMEOUT = 10.0
@@ -85,18 +86,32 @@ def default_handshake_uuid() -> uuid.UUID:
     -- and, when the newcomer's differs ("Peer UUID changed across reconnect; reattaching so clients
     re-discover it" in the device's remoted log), re-attaches the whole device: every service
     listener it advertised, to the newcomer and to earlier peers alike, is closed and each port
-    refuses connections. So all connections to a tunnel, across processes, must present one UUID.
+    refuses connections. So all connections to a tunnel, across processes, must present one UUID:
+    the deterministic host id pymobiledevice3 already pairs with.
 
-    On macOS that has to be the host ``remoted``'s: it shares RSD endpoints with us (the native
-    tunnel, the NCM interface) and keeps reconnecting with its own UUID, so any other identity is
-    evicted again. Elsewhere the deterministic host id pymobiledevice3 already pairs with does.
-
-    Resolved once per process: the identity is only useful while it stays the same, and ``remotectl``
-    gets its answer from ``remoted``, which cannot give one while it is suspended -- so
-    ``stop_remoted_if_required`` resolves it before suspending.
+    It must not be the host ``remoted``'s on a tunnel of our own: from iOS 26.2 the device keeps one
+    RSD connection per peer UUID, so a handshake presenting remoted's evicts remoted's own
+    connection, remoted redials and resets ours, and after a few rounds remoted stops redialing at
+    all -- leaving Xcode/``devicectl`` without the device (#1994). Links remoted itself uses are the
+    exception (see `remoted_handshake_uuid`).
     """
-    remoted_uuid = host_remoted_uuid() if _IS_DARWIN else None
-    return remoted_uuid if remoted_uuid is not None else uuid.UUID(generate_host_id())
+    return uuid.UUID(generate_host_id())
+
+
+@functools.cache
+def remoted_handshake_uuid() -> Optional[uuid.UUID]:
+    """The UUID for an RSD handshake on a link the host ``remoted`` also uses; ``None`` off macOS.
+
+    On such a link -- the USB NCM interface (``get_rsds``, tunneld) and remoted's own tunnel (the
+    native tunnel) -- remoted's UUID is the last peer the device remembers, so any other identity
+    makes iOS 27.2+ re-attach (see `default_handshake_uuid`) and reset what we just opened. Pass
+    the result as the handshake UUID there; ``None`` (off macOS, or when ``remotectl`` does not
+    know) falls back to `default_handshake_uuid`.
+
+    Resolved once per process: ``remotectl`` gets its answer from ``remoted``, which cannot give one
+    while it is suspended -- so ``stop_remoted_if_required`` resolves it before suspending.
+    """
+    return host_remoted_uuid() if _IS_DARWIN else None
 
 
 def host_remoted_uuid() -> Optional[uuid.UUID]:

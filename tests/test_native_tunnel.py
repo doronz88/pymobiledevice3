@@ -113,7 +113,7 @@ async def test_aopen_retries_handshake_with_fresh_port_scan(
     monkeypatch.setattr(native_tunnel, "_libxpc", lambda: object())
     monkeypatch.setattr(native_tunnel, "_RemotePairingSession", FakeSession)
     monkeypatch.setattr(native_tunnel, "find_rsd_port", fake_find_rsd_port)
-    monkeypatch.setattr(native_tunnel, "host_remoted_uuid", lambda: _HOST_REMOTED_UUID)
+    monkeypatch.setattr(native_tunnel, "remoted_handshake_uuid", lambda: _HOST_REMOTED_UUID)
     monkeypatch.setattr(native_tunnel, "RemoteServiceDiscoveryService", FakeRsd)
     monkeypatch.setattr(native_tunnel, "_RSD_CONNECT_RETRY_DELAY", 0, raising=False)
 
