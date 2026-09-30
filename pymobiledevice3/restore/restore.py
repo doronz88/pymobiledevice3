@@ -248,12 +248,7 @@ class Restore(BaseRestore):
         self.logger.info(f"connecting to ASR on port {asr_port}")
         assert self._restored is not None
         asr = ASRClient(self._restored.udid)
-        while True:
-            try:
-                await asr.connect(asr_port)
-                break
-            except ConnectionFailedError:
-                pass
+        await asr.connect(asr_port)
 
         self.logger.info("connected to ASR")
 
