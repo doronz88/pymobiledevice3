@@ -331,18 +331,19 @@ async def test_device_handshake_identifies_as_the_given_peer():
 
 
 @pytest.fixture(autouse=True)
-def _fresh_default_handshake_uuid():
+def _fresh_handshake_uuids():
     remotexpc.default_handshake_uuid.cache_clear()
+    remotexpc.remoted_handshake_uuid.cache_clear()
     yield
     remotexpc.default_handshake_uuid.cache_clear()
+    remotexpc.remoted_handshake_uuid.cache_clear()
 
 
 @pytest.mark.asyncio
-async def test_device_handshake_defaults_to_one_stable_host_identity(monkeypatch: pytest.MonkeyPatch):
+async def test_device_handshake_defaults_to_one_stable_host_identity():
     # iOS 27.2+ remembers the last RSD peer's UUID per tunnel and drops every advertised service
     # listener when the next peer's differs, so separate connections (and separate processes) must
     # all present the same one (#1966).
-    monkeypatch.setattr(remotexpc, "_IS_DARWIN", False)
     first, first_writer = _sending_connection()
     second, second_writer = _sending_connection()
 
@@ -353,22 +354,13 @@ async def test_device_handshake_defaults_to_one_stable_host_identity(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_device_handshake_defaults_to_the_host_remoted_on_macos(monkeypatch: pytest.MonkeyPatch):
-    # On macOS the endpoint may be shared with remoted (the native tunnel, the NCM interface), and
-    # remoted keeps reconnecting with its own UUID -- so that is the only identity that holds.
-    monkeypatch.setattr(remotexpc, "_IS_DARWIN", True)
-    monkeypatch.setattr(remotexpc, "host_remoted_uuid", lambda: _HOST_REMOTED_UUID)
-    connection, writer = _sending_connection()
+async def test_device_handshake_never_identifies_as_the_host_remoted(monkeypatch: pytest.MonkeyPatch):
+    # From iOS 26.2 a handshake presenting remoted's UUID evicts remoted's own RSD connection, and
+    # remoted's redial then resets ours (#1994). Only the native tunnel passes remoted's explicitly.
+    def host_remoted_uuid() -> uuid.UUID:
+        raise AssertionError("the default handshake must not ask for remoted's UUID")
 
-    await connection.send_device_handshake()
-
-    assert _handshake_uuids(writer) == [_HOST_REMOTED_UUID]
-
-
-@pytest.mark.asyncio
-async def test_device_handshake_falls_back_to_the_host_id_without_remotectl(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(remotexpc, "_IS_DARWIN", True)
-    monkeypatch.setattr(remotexpc, "host_remoted_uuid", lambda: None)
+    monkeypatch.setattr(remotexpc, "host_remoted_uuid", host_remoted_uuid)
     connection, writer = _sending_connection()
 
     await connection.send_device_handshake()
@@ -401,7 +393,7 @@ def test_parse_remotectl_local_uuid_is_none_without_a_local_device(text: str) ->
     assert remotexpc.parse_remotectl_local_uuid(text) is None
 
 
-def test_default_handshake_uuid_asks_remotectl_once(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remoted_handshake_uuid_asks_remotectl_once(monkeypatch: pytest.MonkeyPatch) -> None:
     # remotectl cannot answer while remoted is suspended (get_rsds, tunneld), so the identity is
     # resolved once and later handshakes must not ask again.
     calls: list[None] = []
@@ -413,8 +405,18 @@ def test_default_handshake_uuid_asks_remotectl_once(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(remotexpc, "_IS_DARWIN", True)
     monkeypatch.setattr(remotexpc, "host_remoted_uuid", host_remoted_uuid)
 
-    assert remotexpc.default_handshake_uuid() == remotexpc.default_handshake_uuid() == _HOST_REMOTED_UUID
+    assert remotexpc.remoted_handshake_uuid() == remotexpc.remoted_handshake_uuid() == _HOST_REMOTED_UUID
     assert len(calls) == 1
+
+
+def test_remoted_handshake_uuid_is_none_off_macos(monkeypatch: pytest.MonkeyPatch) -> None:
+    def host_remoted_uuid() -> uuid.UUID:
+        raise AssertionError("remotectl only exists on macOS")
+
+    monkeypatch.setattr(remotexpc, "_IS_DARWIN", False)
+    monkeypatch.setattr(remotexpc, "host_remoted_uuid", host_remoted_uuid)
+
+    assert remotexpc.remoted_handshake_uuid() is None
 
 
 def test_host_remoted_uuid_is_none_when_remotectl_is_unusable(monkeypatch: pytest.MonkeyPatch) -> None:

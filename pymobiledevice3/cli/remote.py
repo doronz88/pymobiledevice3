@@ -166,13 +166,16 @@ async def browse(
         typer.Option(
             "--native/--no-native",
             help="Browse via Apple's remotepairingd (the remoted tunnel daemon) instead of bonjour; no root, "
-            "macOS only, and the default there. --no-native forces the bonjour browse.",
+            "macOS only, and the default there unless PYMOBILEDEVICE3_DEFAULT_FALLBACK=tunneld. --no-native "
+            "forces the bonjour browse.",
         ),
     ] = None,
 ) -> None:
     """browse RemoteXPC devices (remotepairingd on macOS by default, bonjour elsewhere)"""
     if native is None:
-        native = default_transport_preference() == "native"
+        # Browsing only asks remotepairingd; unlike the native tunnel it opens no RSD connection on
+        # remoted's tunnel, so it stays the macOS default whichever tunnel transport is preferred.
+        native = platform.system() == "Darwin" and default_transport_preference() != "tunneld"
     if native:
         from pymobiledevice3.remote.native_tunnel import browse_native_devices
 
@@ -366,12 +369,13 @@ async def cli_start_tunnel(
         typer.Option(
             "--native/--no-native",
             help="Piggyback Apple's remoted tunnel via remotepairingd and publish its RSD address instead of "
-            "creating a new tunnel; no root, macOS only, and the default there. --no-native forces the "
-            "classic (root) tunnel, as does passing any of the classic-tunnel options.",
+            "creating a new tunnel; no root, macOS only. Its RSD connection and remoted's evict each other, "
+            "so it is opt-in (or PYMOBILEDEVICE3_DEFAULT_FALLBACK=native). --no-native forces the classic "
+            "(root) tunnel, as does passing any of the classic-tunnel options.",
         ),
     ] = None,
 ) -> None:
-    """start tunnel (Apple's native tunnel on macOS by default — no root; classic tunnel elsewhere)"""
+    """start tunnel (classic root tunnel by default; --native piggybacks Apple's tunnel on macOS, no root)"""
     # Detect explicitly-passed classic-tunnel options via sentinel Nones rather than value-vs-default
     # (TunnelProtocol.DEFAULT is version-dependent -- QUIC on Python <3.13, TCP otherwise -- so a
     # value comparison cannot tell an explicit `--protocol quic` on 3.12 from the default).
@@ -386,8 +390,8 @@ async def cli_start_tunnel(
         if is_set
     ]
     if native is None:
-        # Auto: native on macOS (unless PYMOBILEDEVICE3_DEFAULT_FALLBACK opts out of it); an option
-        # that shapes a new tunnel implies the classic path -- those options don't apply to Apple's
+        # Auto: classic, unless PYMOBILEDEVICE3_DEFAULT_FALLBACK=native opts into the native tunnel; an
+        # option that shapes a new tunnel implies the classic path -- those options don't apply to Apple's
         # already-existing tunnel.
         prefers_native = default_transport_preference() == "native"
         native = prefers_native and not classic_options

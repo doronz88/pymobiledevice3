@@ -10,7 +10,7 @@ import psutil
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, iter_browse_remoted
 from pymobiledevice3.exceptions import AccessDeniedError, ConnectionTerminatedError
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
-from pymobiledevice3.remote.remotexpc import default_handshake_uuid
+from pymobiledevice3.remote.remotexpc import remoted_handshake_uuid
 
 REMOTED_PATH = "/usr/libexec/remoted"
 logger = logging.getLogger(__name__)
@@ -20,13 +20,16 @@ async def get_rsds(
     bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT, udid: Optional[str] = None
 ) -> list[RemoteServiceDiscoveryService]:
     result: list[RemoteServiceDiscoveryService] = []
+    # The NCM link is remoted's too: identify as remoted (see remoted_handshake_uuid), resolved while
+    # remoted can still answer.
+    handshake_uuid = await asyncio.to_thread(remoted_handshake_uuid)
     with stop_remoted():
         # Asking for one device stops at it; listing them all still takes the whole window.
         answers = iter_browse_remoted(timeout=bonjour_timeout)
         try:
             async for answer in answers:
                 for address in answer.addresses:
-                    rsd = RemoteServiceDiscoveryService((address.full_ip, RSD_PORT))
+                    rsd = RemoteServiceDiscoveryService((address.full_ip, RSD_PORT), handshake_uuid=handshake_uuid)
                     try:
                         await rsd.connect()
                     except (
@@ -74,10 +77,10 @@ def stop_remoted_if_required() -> None:
         # process already stopped, we don't need to do anything
         return
 
-    # Every RSD handshake identifies itself with remoted's UUID, which `remotectl` can only ask a
-    # running remoted for: left for later, each handshake would wait out remotectl's timeout and the
-    # device would be skipped.
-    default_handshake_uuid()
+    # Handshakes on the NCM link identify as remoted, whose UUID `remotectl` can only ask a running
+    # remoted for: left for later, each handshake would wait out remotectl's timeout and the device
+    # would be skipped.
+    remoted_handshake_uuid()
 
     try:
         remoted.suspend()

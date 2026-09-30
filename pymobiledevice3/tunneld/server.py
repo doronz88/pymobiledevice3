@@ -48,6 +48,7 @@ from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.module_imports import start_tunnel
 from pymobiledevice3.remote.remote_service_discovery import RSD_PORT, RemoteServiceDiscoveryService
+from pymobiledevice3.remote.remotexpc import remoted_handshake_uuid
 from pymobiledevice3.remote.tunnel_service import (
     CoreDeviceTunnelProxy,
     RemotePairingProtocol,
@@ -509,8 +510,11 @@ class TunneldCore:
     async def handle_new_potential_usb_cdc_ncm_interface_task(self, ip: str) -> None:
         rsd = None
         try:
-            # establish an untrusted RSD handshake
-            rsd = RemoteServiceDiscoveryService((ip, RSD_PORT))
+            # establish an untrusted RSD handshake, as remoted: the NCM link is its too (see
+            # remoted_handshake_uuid)
+            rsd = RemoteServiceDiscoveryService(
+                (ip, RSD_PORT), handshake_uuid=await asyncio.to_thread(remoted_handshake_uuid)
+            )
 
             with stop_remoted():
                 first_time = True

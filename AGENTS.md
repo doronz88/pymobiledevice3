@@ -60,25 +60,25 @@ Guidance for AI coding agents and automation contributors working in this reposi
 - Developer/DVT commands on iOS 17+ devices require an RSD tunnel, and every
   command that requires one **already establishes it in-process by default**, with
   **no `sudo`/root**. Just run the command — do not reach for a flag. The default
-  transport is the **native** tunnel on macOS and the **userspace** tunnel
-  elsewhere (see below).
+  transport is the **userspace** tunnel on every platform (see below).
   - Example: `pymobiledevice3 developer dvt oslog`, `pymobiledevice3 cryptex list`.
-- `--native` (**macOS only**, the macOS default) reaches the tunnel by
-  piggybacking Apple's own `remoted` tunnel via the `remotepairingd` service —
-  **no `sudo`/root, no entitlement, no Xcode** — and leaves `remoted` running (so
-  it coexists with Xcode/`devicectl`). It rides the kernel-routable tunnel:
-  faster host->device and lower latency than the userspace stack.
-  `PYMOBILEDEVICE3_NATIVE=1` forces it explicitly.
-- `--userspace` forces the pure-Python in-process userspace tunnel (the default
-  off macOS). `PYMOBILEDEVICE3_USERSPACE=1` is the env-var equivalent.
+- `--userspace` forces the pure-Python in-process userspace tunnel (the default).
+  `PYMOBILEDEVICE3_USERSPACE=1` is the env-var equivalent.
+- `--native` (**macOS only**, opt-in) reaches the tunnel by piggybacking Apple's
+  own `remoted` tunnel via the `remotepairingd` service — **no `sudo`/root, no
+  entitlement, no Xcode**. It rides the kernel-routable tunnel (faster
+  host->device and lower latency than the userspace stack), but the device keeps
+  a single RSD connection on it: ours and `remoted`'s evict each other, which can
+  reset connections and leave Xcode/`devicectl` without the device (#1994).
+  `PYMOBILEDEVICE3_NATIVE=1` forces it explicitly. It is still the automatic
+  no-root fallback for iOS 17.0-17.3, which the userspace tunnel cannot serve.
 - Use a privileged `tunneld` (needs root) only when the no-root paths are not
   viable — e.g. non-macOS iOS 17.0-17.3, or when you need a tunnel shared across
   processes / reachable by external tools where `--native` is unavailable.
 - `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` overrides which
   transport the automatic selection prefers (both the required-RSD default and
   the retry the CLI performs when a command turns out to need a tunnel). Built-in
-  default: `native` on macOS, `userspace` elsewhere. `=tunneld` opts out of the
-  no-root default entirely.
+  default: `userspace`. `=tunneld` opts out of the no-root default entirely.
 - `--rsd`, `--tunnel`, `--userspace` and `--native` are mutually exclusive.
 
 ## Testing Expectations

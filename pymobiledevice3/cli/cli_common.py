@@ -422,9 +422,11 @@ def default_transport_preference() -> str:
     """Preferred transport for the automatic fallback (required-RSD default and the ``__main__`` retry).
 
     Returns one of ``"native"``, ``"userspace"`` or ``"tunneld"``. The built-in default is
-    ``"native"`` on macOS (faster, no root, coexists with Xcode) and ``"userspace"`` elsewhere
-    (``remoted`` only exists on macOS). Set via ``PYMOBILEDEVICE3_DEFAULT_FALLBACK`` to override; an
-    unrecognized value is ignored (falls back to the built-in default).
+    ``"userspace"`` everywhere: it brings up a tunnel of its own, so nothing else on the host
+    competes for it. The native tunnel rides the host ``remoted``'s tunnel, where the device keeps a
+    single RSD connection: each one we open evicts ``remoted``'s and is evicted in turn when
+    ``remoted`` redials (#1994), so it is opt-in. Set via ``PYMOBILEDEVICE3_DEFAULT_FALLBACK`` to
+    override; an unrecognized value is ignored (falls back to the built-in default).
     """
     value = os.getenv(DEFAULT_FALLBACK_ENV_VAR)
     if value:
@@ -437,7 +439,7 @@ def default_transport_preference() -> str:
             value,
             ", ".join(_VALID_DEFAULT_FALLBACKS),
         )
-    return "native" if platform.system() == "Darwin" else "userspace"
+    return "userspace"
 
 
 def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteServiceDiscoveryService]]:
@@ -508,9 +510,11 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
                 envvar=NATIVE_ENV_VAR,
                 help=dedent("""\
                     macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own `remoted` tunnel via the
-                    `remotepairingd` service. NO root, no entitlement, no Xcode, and `remoted` is left running (so
-                    it coexists with Xcode/devicectl). Rides Apple's kernel-routable tunnel, so throughput matches
-                    the kernel tunnel. Mutually exclusive with --rsd/--tunnel/--userspace.
+                    `remotepairingd` service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable
+                    tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection
+                    on it: `remoted` and this process evict each other's, which can reset connections and leave
+                    Xcode/devicectl without the device until `remoted` reconnects. Mutually exclusive with
+                    --rsd/--tunnel/--userspace.
                 """),
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),

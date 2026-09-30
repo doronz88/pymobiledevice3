@@ -113,7 +113,7 @@ async def test_aopen_retries_handshake_with_fresh_port_scan(
     monkeypatch.setattr(native_tunnel, "_libxpc", lambda: object())
     monkeypatch.setattr(native_tunnel, "_RemotePairingSession", FakeSession)
     monkeypatch.setattr(native_tunnel, "find_rsd_port", fake_find_rsd_port)
-    monkeypatch.setattr(native_tunnel, "host_remoted_uuid", lambda: _HOST_REMOTED_UUID)
+    monkeypatch.setattr(native_tunnel, "remoted_handshake_uuid", lambda: _HOST_REMOTED_UUID)
     monkeypatch.setattr(native_tunnel, "RemoteServiceDiscoveryService", FakeRsd)
     monkeypatch.setattr(native_tunnel, "_RSD_CONNECT_RETRY_DELAY", 0, raising=False)
 
@@ -230,14 +230,16 @@ def _route(
     return result, calls
 
 
-def test_macos_default_uses_native_first(monkeypatch: pytest.MonkeyPatch) -> None:
-    # On macOS the built-in default prefers the native tunnel (no DEFAULT_FALLBACK set).
+def test_macos_default_uses_userspace(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The native tunnel's RSD connection and remoted's evict each other (#1994), so macOS defaults
+    # to a tunnel of its own like every other platform.
     result, calls = _route(monkeypatch, system="Darwin")
-    assert result == "NATIVE"
-    assert calls == ["native"]  # userspace/tunneld never attempted
+    assert result == "USERSPACE"
+    assert calls == ["userspace"]  # native/tunneld never attempted
 
 
-def test_macos_default_falls_through_native_userspace_tunneld(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_macos_default_falls_through_userspace_native_tunneld(monkeypatch: pytest.MonkeyPatch) -> None:
+    # iOS 17.0-17.3 has no CoreDeviceProxy: the native tunnel is still the no-root way to reach it.
     result, calls = _route(
         monkeypatch,
         system="Darwin",
@@ -245,7 +247,7 @@ def test_macos_default_falls_through_native_userspace_tunneld(monkeypatch: pytes
         userspace_exc=UserspaceTunnelUnavailableError("no 17.4"),
     )
     assert result == "TUNNELD"
-    assert calls == ["native", "userspace", "tunneld"]
+    assert calls == ["userspace", "native", "tunneld"]
 
 
 def test_non_macos_default_uses_userspace(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -305,7 +307,6 @@ def test_default_fallback_tunneld_skips_no_root_paths(monkeypatch: pytest.Monkey
 
 
 def test_default_fallback_userspace_forces_userspace_on_macos(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Opt back out of the macOS native default without going all the way to tunneld.
     result, calls = _route(monkeypatch, system="Darwin", default_fallback="userspace")
     assert result == "USERSPACE"
     assert calls == ["userspace"]
@@ -319,8 +320,8 @@ def test_force_tunnel_marker_establishes_chain_for_lockdown_command(monkeypatch:
     assert none_calls == []  # no tunnel attempted without the marker
 
     result, calls = _route(monkeypatch, system="Darwin", allow_none=True, force_tunnel=True)
-    assert result == "NATIVE"
-    assert calls == ["native"]  # marker -> full chain, macOS default is native
+    assert result == "USERSPACE"
+    assert calls == ["userspace"]  # marker -> full chain, starting with the default transport
 
 
 def test_default_transport_preference_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -328,9 +329,9 @@ def test_default_transport_preference_env(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.delenv("PYMOBILEDEVICE3_DEFAULT_FALLBACK", raising=False)
     monkeypatch.setattr(cli_common.platform, "system", lambda: "Darwin")
-    assert cli_common.default_transport_preference() == "native"  # built-in default on macOS
+    assert cli_common.default_transport_preference() == "userspace"  # built-in default on macOS too
     monkeypatch.setattr(cli_common.platform, "system", lambda: "Linux")
-    assert cli_common.default_transport_preference() == "userspace"  # built-in default elsewhere
+    assert cli_common.default_transport_preference() == "userspace"
 
     monkeypatch.setenv("PYMOBILEDEVICE3_DEFAULT_FALLBACK", "NATIVE")  # case-insensitive
     assert cli_common.default_transport_preference() == "native"

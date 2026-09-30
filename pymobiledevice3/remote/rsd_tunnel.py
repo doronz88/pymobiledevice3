@@ -1,11 +1,12 @@
 """A no-root iOS 17+ RSD tunnel that automatically picks the best transport for the host.
 
-On macOS this prefers the :class:`~pymobiledevice3.remote.native_tunnel.NativeRemotedTunnel`
-(piggybacks Apple's own ``remoted`` — faster host->device and lower latency, and it coexists with
-Xcode), falling back to the in-process
-:class:`~pymobiledevice3.remote.userspace_tunnel.UserspaceRsdTunnel` when the native path is not
-available. On every other platform (where ``remoted`` does not exist) it uses the userspace tunnel.
-Both are no-root.
+This uses the in-process :class:`~pymobiledevice3.remote.userspace_tunnel.UserspaceRsdTunnel`,
+which brings up a tunnel of its own. On macOS, a device the userspace tunnel cannot serve (iOS
+17.0-17.3, which has no CoreDeviceProxy) falls back to the
+:class:`~pymobiledevice3.remote.native_tunnel.NativeRemotedTunnel`, which piggybacks Apple's own
+``remoted`` tunnel. The native tunnel is faster host->device, but on that tunnel the device keeps a
+single RSD connection, which ours and ``remoted``'s keep evicting from each other (#1994), so it is
+only tried first when asked for (``prefer_native=True``). Both are no-root.
 
 Prefer this over picking a concrete tunnel class when you just want "a working no-root RSD on iOS
 17+" and don't care which mechanism provides it.
@@ -14,6 +15,7 @@ Prefer this over picking a concrete tunnel class when you just want "a working n
 import platform
 from typing import TYPE_CHECKING, Any, Optional, Union
 
+from pymobiledevice3.exceptions import UserspaceTunnelUnavailableError
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 if TYPE_CHECKING:
@@ -32,12 +34,13 @@ class PreferredRsdTunnel:
             ...  # rsd is a connected RemoteServiceDiscoveryService
 
     Or open/close explicitly with :meth:`aopen` / :meth:`aclose`. ``serial`` selects the device
-    (``None`` => first/only device). ``prefer_native=False`` forces the userspace tunnel even on
-    macOS. On macOS the native tunnel is tried first and, if it is unavailable, the userspace tunnel
-    is used instead; elsewhere the userspace tunnel is used directly.
+    (``None`` => first/only device). The userspace tunnel is used, falling back on macOS to the native
+    tunnel when the userspace tunnel cannot serve the device. ``prefer_native=True`` tries the
+    native tunnel first on macOS instead, falling back to the userspace tunnel when it is
+    unavailable.
     """
 
-    def __init__(self, serial: Optional[str] = None, autopair: bool = True, prefer_native: bool = True) -> None:
+    def __init__(self, serial: Optional[str] = None, autopair: bool = True, prefer_native: bool = False) -> None:
         self.serial = serial
         self.autopair = autopair
         self.prefer_native = prefer_native
@@ -48,21 +51,37 @@ class PreferredRsdTunnel:
         if self.rsd is not None:
             return self.rsd
         if _IS_DARWIN and self.prefer_native:
-            # Imported here so non-macOS callers never touch the ctypes/libxpc layer.
-            from pymobiledevice3.remote.native_tunnel import NativeRemotedTunnel
-
-            native = NativeRemotedTunnel(serial=self.serial)
             try:
-                rsd = await native.aopen()
+                return await self._open_native()
             except Exception:
                 # Any native-path failure (unavailable, or an unexpected ctypes/libxpc error) falls
                 # back to the userspace tunnel rather than propagating.
-                await native.aclose()  # release anything half-acquired before falling back
-            else:
-                self.rsd = rsd
-                self._handle = native
-                return rsd
+                pass
+            return await self._open_userspace()
 
+        try:
+            return await self._open_userspace()
+        except UserspaceTunnelUnavailableError:
+            if not _IS_DARWIN:
+                raise
+        # iOS 17.0-17.3 has no CoreDeviceProxy; remoted still reaches it, with no root.
+        return await self._open_native()
+
+    async def _open_native(self) -> RemoteServiceDiscoveryService:
+        # Imported here so non-macOS callers never touch the ctypes/libxpc layer.
+        from pymobiledevice3.remote.native_tunnel import NativeRemotedTunnel
+
+        native = NativeRemotedTunnel(serial=self.serial)
+        try:
+            rsd = await native.aopen()
+        except BaseException:
+            await native.aclose()  # release anything half-acquired
+            raise
+        self.rsd = rsd
+        self._handle = native
+        return rsd
+
+    async def _open_userspace(self) -> RemoteServiceDiscoveryService:
         # Imported lazily: the userspace stack (pmd-pytcp) import is expensive.
         from pymobiledevice3.remote.userspace_tunnel import UserspaceRsdTunnel
 

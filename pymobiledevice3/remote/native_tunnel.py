@@ -14,8 +14,9 @@ macOS, no Xcode) to hand us the device's existing tunnel, then rides it:
    kernel-routable, so no root) and run the standard RSD handshake via
    :class:`~pymobiledevice3.remote.remote_service_discovery.RemoteServiceDiscoveryService`.
 
-No root, no entitlement, no Xcode, and ``remoted`` is left running -- so unlike the kernel/bonjour
-path this coexists with Xcode/``devicectl``. The whole XPC conversation goes through ``ctypes`` +
+No root, no entitlement, no Xcode, and ``remoted`` is not suspended, unlike on the kernel/bonjour
+path. But on this tunnel the device keeps a single RSD connection, so ours and ``remoted``'s keep
+evicting each other (#1994); that makes this transport opt-in. The whole XPC conversation goes through ``ctypes`` +
 libxpc (no pyobjc). See ``docs/guides/network-stacks.md``.
 """
 
@@ -37,7 +38,7 @@ from typing import Any, Callable, Optional, cast
 
 from pymobiledevice3.exceptions import DeviceNotFoundError, UserspaceTunnelUnavailableError
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService, parse_device_kvs_data
-from pymobiledevice3.remote.remotexpc import host_remoted_uuid
+from pymobiledevice3.remote.remotexpc import remoted_handshake_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -897,9 +898,11 @@ class NativeRemotedTunnel:
         # re-scan the socket table on every attempt: a cached candidate list goes stale the moment
         # remoted redials (the scan may also simply run before remoted has connected at all).
         last_error: Optional[Exception] = None
-        # Identify as remoted, whose connection this one replaces: a different peer UUID makes the
-        # device (iOS 27.2+) tear down the services it has just advertised (see remotexpc.default_handshake_uuid).
-        handshake_uuid = await asyncio.to_thread(host_remoted_uuid)
+        # Identify as remoted, whose connection this one replaces on its own tunnel: a different peer
+        # UUID makes the device (iOS 27.2+) tear down the services it has just advertised (see
+        # remotexpc.remoted_handshake_uuid). The device still evicts remoted's connection for ours,
+        # and remoted redials and evicts ours back (#1994), which is why this transport is opt-in.
+        handshake_uuid = await asyncio.to_thread(remoted_handshake_uuid)
         for attempt in range(_RSD_CONNECT_ATTEMPTS):
             if attempt:
                 await asyncio.sleep(_RSD_CONNECT_RETRY_DELAY)

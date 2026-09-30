@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 import plistlib
@@ -21,7 +22,7 @@ from pymobiledevice3.exceptions import (
 from pymobiledevice3.lockdown import LockdownClient, create_using_remote
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.pair_records import get_local_pairing_record, get_remote_pairing_record_filename
-from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
+from pymobiledevice3.remote.remotexpc import RemoteXPCConnection, remoted_handshake_uuid
 from pymobiledevice3.service_connection import ServiceConnection
 
 
@@ -119,7 +120,8 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             handshake does not, so paths without a pairing handshake leave it empty. See
             `parse_device_kvs_data` and `auxiliary_metadata`.
         :param handshake_uuid: peer UUID to send in the RSD handshake; ``None`` sends the host-wide
-            ``remotexpc.default_handshake_uuid``, which every connection to a tunnel has to share.
+            ``remotexpc.default_handshake_uuid``, which every connection to a tunnel has to share. On a
+            link the host ``remoted`` also uses, pass ``remotexpc.remoted_handshake_uuid`` instead.
         """
         super().__init__()
         self.name = name
@@ -578,9 +580,11 @@ async def get_remoted_devices(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[
     :returns: a list of `RSDDevice` records, one per discovered device address.
     """
     result: list[RSDDevice] = []
+    # remoted advertises (and uses) these NCM endpoints itself: identify as remoted.
+    handshake_uuid = await asyncio.to_thread(remoted_handshake_uuid)
     for instance in await browse_remoted(timeout):
         for address in instance.addresses:
-            async with RemoteServiceDiscoveryService((address.full_ip, RSD_PORT)) as rsd:
+            async with RemoteServiceDiscoveryService((address.full_ip, RSD_PORT), handshake_uuid=handshake_uuid) as rsd:
                 properties = rsd._require_peer_info()["Properties"]
                 result.append(
                     RSDDevice(

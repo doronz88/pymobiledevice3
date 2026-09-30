@@ -20,8 +20,8 @@ based on the iOS version and the service you need:
 | Connection | Python entry point | iOS | Root? | Use when |
 | --- | --- | --- | --- | --- |
 | Lockdown (USB / Wi-Fi) | `create_using_usbmux` | all | no | Classic services: AFC, app install, syslog, diagnostics, backup, profiles |
-| RSD — best no-root tunnel | `PreferredRsdTunnel` | 17+ | no | **Default** for developer/DVT: auto-picks the native tunnel on macOS, the userspace tunnel elsewhere |
-| RSD — native (macOS) | `NativeRemotedTunnel` | 17+ | no | macOS only: piggybacks Apple's `remoted`; faster host->device, coexists with Xcode |
+| RSD — best no-root tunnel | `PreferredRsdTunnel` | 17+ | no | **Default** for developer/DVT: the userspace tunnel, falling back to the native tunnel for iOS 17.0-17.3 on macOS |
+| RSD — native (macOS) | `NativeRemotedTunnel` | 17+ | no | macOS only: piggybacks Apple's `remoted`; faster host->device, but evicts and is evicted by `remoted`'s own connection ([#1994](https://github.com/doronz88/pymobiledevice3/issues/1994)) |
 | RSD — userspace | `UserspaceRsdTunnel` | 17+ | no | Cross-platform in-process tunnel; the tunnel address is reachable only from this process |
 | RSD — `tunneld` | `get_tunneld_devices` | 17+ | yes (daemon) | You need a shared/persistent tunnel, or an external tool (e.g. `lldb`) must reach the device |
 
@@ -52,10 +52,10 @@ asyncio.run(main())
 
 Developer/DVT services on iOS 17+ require an RSD tunnel.
 
-**Preferred: `PreferredRsdTunnel`.** It picks the best no-root transport for the host — the native
-tunnel on macOS (piggybacks Apple's `remoted`: faster host->device, lower latency, and it coexists
-with Xcode), the in-process userspace tunnel elsewhere — and falls back automatically if the first
-choice is unavailable. **No `sudo` and no separate `tunneld` daemon.** It is a closeable async
+**Preferred: `PreferredRsdTunnel`.** It picks the best no-root transport for the host — the
+in-process userspace tunnel, which brings up a tunnel of its own — and on macOS falls back
+automatically to the native tunnel (piggybacking Apple's `remoted`) for iOS 17.0-17.3, which the
+userspace tunnel cannot serve. **No `sudo` and no separate `tunneld` daemon.** It is a closeable async
 context manager that yields a connected `RemoteServiceDiscoveryService`:
 
 ```python
@@ -63,7 +63,7 @@ from pymobiledevice3.remote.rsd_tunnel import PreferredRsdTunnel
 
 
 async def main():
-    # serial=None -> first device; prefer_native=False forces the userspace tunnel even on macOS
+    # serial=None -> first device; prefer_native=True tries the macOS native tunnel first
     async with PreferredRsdTunnel(serial=None) as rsd:
         print(rsd.product_version)
         # `rsd` now drives any developer service / DvtProvider
@@ -75,7 +75,8 @@ macOS embedders who want to be explicit can use `NativeRemotedTunnel` (from
 the same async-context-manager / `aopen()` + `aclose()` shape. Caveats: one userspace tunnel per
 process, and the userspace tunnel's device address is reachable only from this process (don't hand it
 to external tools such as `lldb`) — the native tunnel's address is kernel-routable, so it does not
-have that limitation.
+have that limitation, but on that tunnel the device keeps a single RSD connection, which ours and
+`remoted`'s keep evicting from each other, and that can leave Xcode/`devicectl` without the device.
 
 The CLI's `--userspace` flag uses the same machinery through the convenience wrapper
 `establish_userspace_rsd()`, which opens the tunnel and keeps it alive for the process lifetime

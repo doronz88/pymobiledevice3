@@ -30,18 +30,18 @@ Reference protocol details:
 
 When a developer command needs an RSD tunnel and you passed no transport flag (`--rsd` /
 `--tunnel` / `--userspace` / `--native`), pymobiledevice3 brings up a **no-root tunnel** for you,
-built when the command starts and torn down when it exits. The kind depends on the host:
+built when the command starts and torn down when it exits: an **in-process userspace tunnel**
+using a pure-Python network stack (PyTCP) — no kernel interface, so no root/admin either, on every
+host.
 
-- **macOS** rides Apple's own `remoted` tunnel (the **native** path) by piggybacking
-  `remotepairingd` — no root, no Xcode, and `remoted` is left running so it coexists with
-  Xcode/`devicectl`. Its address is kernel-routable, so it is faster host->device and lower
-  latency than the userspace stack. See
-  [Native remoted tunnel](network-stacks.md#native-remoted-tunnel-macos-only).
-- **Linux/Windows** bring up an **in-process userspace tunnel** using a pure-Python network stack
-  (PyTCP) — no kernel interface, so no root/admin either.
+On macOS, `--native` instead rides Apple's own `remoted` tunnel by piggybacking `remotepairingd` —
+also no root and no Xcode, and its address is kernel-routable, so it is faster host->device and
+lower latency than the userspace stack. It is opt-in because on that tunnel the device keeps a
+single RSD connection, which ours and `remoted`'s keep evicting from each other; see
+[Native remoted tunnel](network-stacks.md#native-remoted-tunnel-macos-only).
 
-If the native path is unavailable on macOS it falls back automatically (userspace, then `tunneld`).
-Either way you just run the command. This covers iOS 17.4+ over USB with no privileges (it uses the
+If the userspace tunnel can't serve the device it falls back automatically (the native tunnel on
+macOS, then `tunneld`). Either way you just run the command. This covers iOS 17.4+ over USB with no privileges (it uses the
 CoreDeviceProxy lockdown service); iOS 17.0-17.3.1 is handled differently — see the note below.
 Set `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` to change which transport the
 automatic selection prefers (see [Environment variables](environment-variables.md) for every
@@ -189,10 +189,10 @@ python3 -m pymobiledevice3 developer dvt ls /
 ## Starting a tunnel manually
 
 ```shell
-# macOS (the default there): no sudo — publishes Apple's own remoted tunnel
-# (kernel-routable, so other tools can use the printed --rsd too). See "Native
-# remoted tunnel" in the network stacks guide.
-python3 -m pymobiledevice3 remote start-tunnel
+# macOS, no sudo: publishes Apple's own remoted tunnel (kernel-routable, so
+# other tools can use the printed --rsd too). It competes with remoted for the
+# device; see "Native remoted tunnel" in the network stacks guide.
+python3 -m pymobiledevice3 remote start-tunnel --native
 
 # Optional for remote-pairing devices.
 python3 -m pymobiledevice3 remote pair
@@ -203,9 +203,8 @@ sudo python3 -m pymobiledevice3 lockdown start-tunnel
 # Optional: allow Wi-Fi connections over lockdown
 python3 -m pymobiledevice3 lockdown wifi-connections on
 
-# iOS 17.0-17.3.1 fallback, and the default off macOS.
-# Add `-t wifi` to force Wi-Fi transport (on macOS this routes to this classic
-# tunnel automatically, as does --no-native or any other classic-tunnel option).
+# iOS 17.0-17.3.1 fallback, and the default without --native.
+# Add `-t wifi` to force Wi-Fi transport.
 sudo python3 -m pymobiledevice3 remote start-tunnel
 ```
 
@@ -220,13 +219,14 @@ Use the following connection option:
 ```
 
 The classic tunnel creation command must run with elevated privileges because it creates a TUN/TAP
-interface. The native path (`--native`, the macOS default) is the exception: it rides Apple's
+interface. The native path (`--native`, macOS) is the exception: it rides Apple's
 already-existing tunnel instead of creating one, so it needs no privileges. Device selection there
 is by `--udid`; the classic-tunnel-shaping options (`--protocol`/`--secrets`/`--max-idle-timeout`/
-`-t`) don't apply to it, and passing one routes the command to the classic tunnel (as does
-`--no-native`, or `PYMOBILEDEVICE3_DEFAULT_FALLBACK` set to anything but `native`). The same
-default applies to `remote browse`: on macOS it lists devices via `remotepairingd` with no root
-(`--no-native` forces the bonjour browse, which needs root to suspend `remoted`).
+`-t`) don't apply to it, and passing one routes the command to the classic tunnel. Without
+`--native` (or `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native`) the command builds the classic tunnel.
+`remote browse` is different: on macOS it lists devices via `remotepairingd` with no root by
+default, since browsing opens no RSD connection (`--no-native` forces the bonjour browse, which
+needs root to suspend `remoted`).
 
 !!! tip "Bootstrap the RemotePairing record over USB (no Trust dialog)"
 

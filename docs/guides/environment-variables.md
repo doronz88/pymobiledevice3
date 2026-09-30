@@ -21,8 +21,8 @@ Each one is a default: the matching command-line option always wins.
 
 | Variable | Value | Effect |
 | --- | --- | --- |
-| `PYMOBILEDEVICE3_DEFAULT_FALLBACK` | `native`, `userspace` or `tunneld` | Which transport the **automatic** selection prefers, both for commands that require an RSD and for the retry the CLI performs when a command turns out to need a tunnel. Built-in default: `native` on macOS, `userspace` elsewhere. An unrecognized value logs a warning and is ignored. |
-| `PYMOBILEDEVICE3_NATIVE` | `1` | Same as `--native`: piggyback Apple's `remoted` tunnel via `remotepairingd`. macOS only, no root. |
+| `PYMOBILEDEVICE3_DEFAULT_FALLBACK` | `native`, `userspace` or `tunneld` | Which transport the **automatic** selection prefers, both for commands that require an RSD and for the retry the CLI performs when a command turns out to need a tunnel. Built-in default: `userspace`. An unrecognized value logs a warning and is ignored. |
+| `PYMOBILEDEVICE3_NATIVE` | `1` | Same as `--native`: piggyback Apple's `remoted` tunnel via `remotepairingd`. macOS only, no root, opt-in (see [Native remoted tunnel](network-stacks.md#native-remoted-tunnel-macos-only)). |
 | `PYMOBILEDEVICE3_USERSPACE` | `1` | Same as `--userspace`: force the in-process pure-Python userspace tunnel. |
 | `PYMOBILEDEVICE3_TUNNEL` | `UDID`, `UDID:PORT` or `UDID@HOST[:PORT]` | Same as `--tunnel`: take the tunnel from a running `tunneld`; the `@HOST` form bridges through a remote tunneld's `WS /connect`. An empty UDID picks the only tunnel, or prompts. |
 
@@ -31,8 +31,8 @@ their variables. See [iOS 17+ tunnels](ios17-tunnels.md) for when each transport
 [Understanding the network stacks](network-stacks.md) for how they differ.
 
 ```shell
-# opt back out of the macOS native default for this shell
-export PYMOBILEDEVICE3_DEFAULT_FALLBACK=userspace
+# prefer the macOS native tunnel for this shell
+export PYMOBILEDEVICE3_DEFAULT_FALLBACK=native
 ```
 
 ## Advanced
