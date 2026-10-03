@@ -1,3 +1,4 @@
+import datetime
 import ipaddress
 import json
 from typing import cast
@@ -63,6 +64,25 @@ def test_energy_emits_ndjson_records(monkeypatch, capsys):
 
     lines = capsys.readouterr().out.strip().splitlines()
     assert [json.loads(line) for line in lines] == samples
+
+
+def test_network_statistics_emits_one_ndjson_record_per_pid(monkeypatch, capsys):
+    time = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+    samples = [
+        {
+            123: {"pid": 123, "net.bytes": 10, "time": time},
+            456: {"pid": 456, "net.bytes": 20, "time": time},
+        }
+    ]
+    monkeypatch.setattr(dvt_module, "NetworkStatistics", _fake_stream(samples))
+
+    dvt_module.dvt_network_statistics(_FAKE_SERVICE_PROVIDER, [123, 456])
+
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert [json.loads(line) for line in lines] == [
+        {"pid": 123, "net.bytes": 10, "time": "2026-01-01T00:00:00+00:00"},
+        {"pid": 456, "net.bytes": 20, "time": "2026-01-01T00:00:00+00:00"},
+    ]
 
 
 def test_notifications_emits_ndjson_records(monkeypatch, capsys):

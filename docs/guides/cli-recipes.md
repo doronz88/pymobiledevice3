@@ -336,6 +336,9 @@ pymobiledevice3 developer dvt device-information
 
 # Energy monitor
 pymobiledevice3 developer dvt energy PID1 PID2 ...
+
+# Per-process network traffic (bytes/packets, rx/tx)
+pymobiledevice3 developer dvt network-statistics PID1 PID2 ...
 ```
 
 ## Core Device (iOS 17+)

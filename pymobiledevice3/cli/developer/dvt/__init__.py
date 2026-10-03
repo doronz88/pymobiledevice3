@@ -33,6 +33,7 @@ from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
 from pymobiledevice3.services.dvt.instruments.graphics import Graphics
 from pymobiledevice3.services.dvt.instruments.network_monitor import ConnectionDetectionEvent, NetworkMonitor
+from pymobiledevice3.services.dvt.instruments.network_statistics import NetworkStatistics
 from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
@@ -626,6 +627,25 @@ async def dvt_energy(service_provider: ServiceProviderDep, pid_list: list[str]) 
     ):
         async for telemetry in energy_monitor:
             print_json_line(telemetry)
+
+
+@cli.command("network-statistics")
+@async_command
+async def dvt_network_statistics(
+    service_provider: ServiceProviderDep,
+    pid_list: list[int],
+    interval: Annotated[
+        int, typer.Option("--interval", "-i", help="Interval in milliseconds between samples")
+    ] = NetworkStatistics.DEFAULT_INTERVAL_MS,
+) -> None:
+    """Monitor the network traffic for given PIDs, one record per PID per sample"""
+    async with (
+        DvtProvider(service_provider) as dvt,
+        NetworkStatistics(dvt, pid_list, interval_ms=interval) as network_statistics,
+    ):
+        async for sample in network_statistics:
+            for record in sample.values():
+                print_json_line(record)
 
 
 @cli.command("notifications")
