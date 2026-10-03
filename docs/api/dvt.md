@@ -35,6 +35,8 @@ an async context manager; several instruments are async-iterable and yield telem
 
 ::: pymobiledevice3.services.dvt.instruments.energy_monitor.EnergyMonitor
 
+::: pymobiledevice3.services.dvt.instruments.network_statistics.NetworkStatistics
+
 ::: pymobiledevice3.services.dvt.instruments.graphics.Graphics
 
 ::: pymobiledevice3.services.dvt.instruments.activity_trace_tap.ActivityTraceTap
