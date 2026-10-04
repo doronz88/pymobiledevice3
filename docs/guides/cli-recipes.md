@@ -339,6 +339,9 @@ pymobiledevice3 developer dvt energy PID1 PID2 ...
 
 # Per-process network traffic (bytes/packets, rx/tx)
 pymobiledevice3 developer dvt network-statistics PID1 PID2 ...
+
+# Display frame rate (Core Animation FPS), once a second
+pymobiledevice3 developer dvt fps
 ```
 
 ## Core Device (iOS 17+)

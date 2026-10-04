@@ -37,7 +37,7 @@ class Graphics(DtxService[GraphicsService]):
 
     Constructed with a `DvtProvider`. Use as an async context manager: entering starts sampling
     and exiting stops it. The object is async-iterable, yielding graphics sample events as they
-    arrive from the device.
+    arrive from the device. `fps()` yields just the frame rate.
     """
 
     async def __aenter__(self):
@@ -56,3 +56,21 @@ class Graphics(DtxService[GraphicsService]):
         """
         while True:
             yield await self.service.events.get()
+
+    async def fps(self) -> AsyncGenerator[int, None]:
+        """
+        Yield the Core Animation frame rate of the whole display, about once a second.
+
+        Call it in place of iterating the object directly. The first sample arrives right after
+        sampling starts and doesn't cover a full second, so it is skipped.
+
+        :yields: Frames per second; 0 while nothing on screen changes.
+        """
+        first = True
+        async for sample in self:
+            if not isinstance(sample, dict):
+                continue
+            if first:
+                first = False
+                continue
+            yield sample["CoreAnimationFramesPerSecond"]

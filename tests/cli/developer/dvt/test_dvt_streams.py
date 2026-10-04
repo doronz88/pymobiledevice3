@@ -105,6 +105,22 @@ def test_graphics_emits_ndjson_records(monkeypatch, capsys):
     assert [json.loads(line) for line in lines] == samples
 
 
+def test_fps_emits_one_ndjson_record_per_sample(monkeypatch, capsys):
+    class _FakeGraphics(_fake_stream([])):
+        async def fps(self):
+            for fps in (60, 0):
+                yield fps
+
+    monkeypatch.setattr(dvt_module, "Graphics", _FakeGraphics)
+
+    dvt_module.dvt_fps(_FAKE_SERVICE_PROVIDER)
+
+    records = [json.loads(line) for line in capsys.readouterr().out.strip().splitlines()]
+    assert [record["fps"] for record in records] == [60, 0]
+    for record in records:
+        assert datetime.datetime.fromisoformat(record["timestamp"]).tzinfo is not None
+
+
 def _connection_event() -> ConnectionDetectionEvent:
     def address(ip: str, port: int) -> SocketAddress:
         return SocketAddress(

@@ -56,6 +56,7 @@ pymobiledevice3 diagnostics battery monitor | jq .CurrentCapacity
 Streams whose records are structured data emit NDJSON always:
 
 - `developer dvt graphics`
+- `developer dvt fps`
 - `developer dvt energy`
 - `developer dvt network-statistics`
 - `developer dvt notifications`

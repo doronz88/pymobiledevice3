@@ -4,7 +4,7 @@ import os
 import posixpath
 import shlex
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import IntEnum
 from pathlib import Path
 from typing import Annotated, Any, NamedTuple, Optional, cast
@@ -664,6 +664,15 @@ async def dvt_graphics(service_provider: ServiceProviderDep) -> None:
     async with DvtProvider(service_provider) as dvt, Graphics(dvt) as graphics:
         async for stats in graphics:
             print_json_line(stats)
+
+
+@cli.command("fps")
+@async_command
+async def dvt_fps(service_provider: ServiceProviderDep) -> None:
+    """Monitor the display frame rate (Core Animation FPS), one record per second"""
+    async with DvtProvider(service_provider) as dvt, Graphics(dvt) as graphics:
+        async for fps in graphics.fps():
+            print_json_line({"fps": fps, "timestamp": datetime.now(timezone.utc).isoformat()})
 
 
 @cli.command("har")
