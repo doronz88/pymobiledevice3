@@ -162,6 +162,32 @@ PairingDataComponentTLV8 = Struct(
 
 PairingDataComponentTLVBuf = GreedyRange(PairingDataComponentTLV8)
 
+# Values of the ERROR component, as CoreUtils' pair-setup maps them to/from its OSStatus codes (noted per value).
+# HomeKit's published kTLVError_* table only agrees up to BACKOFF.
+PairingErrorCode = ConstructEnum(
+    Int8ul,
+    UNKNOWN=0x01,  # kUnknownErr
+    AUTHENTICATION=0x02,  # kAuthenticationErr
+    BACKOFF=0x03,  # kBackoffErr, sent along with RETRY_DELAY
+    UNKNOWN_PEER=0x04,  # kNotFoundErr
+    MAX_PEERS=0x05,  # kNoSpaceErr
+    MAX_TRIES=0x06,  # kCountErr, pair-setup disabled after too many attempts
+    PERMISSION=0x07,  # kPermissionErr
+    OWNERSHIP_FAILURE=0x08,  # kOwnershipFailureErr
+    ACCESS=0x09,  # kAccessErr
+    UNSUPPORTED=0x0A,  # kUnsupportedErr
+)
+
+
+def _describe_pairing_error(tlv: dict[str, Any]) -> str:
+    """Describe the ERROR component of a decoded pairing TLV."""
+    message = f"device returned pairing error: {PairingErrorCode.parse(tlv[PairingDataComponentType.ERROR])}"
+    retry_delay = tlv.get(PairingDataComponentType.RETRY_DELAY)
+    if retry_delay:
+        # little-endian seconds until the device accepts another attempt
+        message += f", retry in {int.from_bytes(retry_delay, 'little')} seconds"
+    return message
+
 
 class PairConsentResult(NamedTuple):
     public_key: bytes
@@ -846,7 +872,7 @@ class RemotePairingProtocol(StartTcpTunnel):
         response = await self._receive_plain_response()
         response = response["event"]["_0"]
 
-        pin = None
+        ask_pin = False
         if "pairingRejectedWithError" in response:
             raise PairingError(
                 response["pairingRejectedWithError"]["wrappedError"]["userInfo"]["NSLocalizedDescription"]
@@ -857,10 +883,14 @@ class RemotePairingProtocol(StartTcpTunnel):
             # On tvOS no consent is needed and pairing data is returned immediately.
             pairing_data = self._decode_bytes_if_needed(response["pairingData"]["_0"]["data"])
             # On tvOS we need pin to setup pairing.
-            if "AppleTV" in self.remote_device_model:
-                pin = input("Enter PIN: ")
+            ask_pin = "AppleTV" in self.remote_device_model
 
         data = self.decode_tlv(PairingDataComponentTLVBuf.parse(pairing_data))
+        if PairingDataComponentType.ERROR in data:
+            # e.g. BACKOFF, sent without PUBLIC_KEY and SALT
+            raise PairingError(_describe_pairing_error(data))
+
+        pin = input("Enter PIN: ") if ask_pin else None
         return PairConsentResult(
             public_key=data[PairingDataComponentType.PUBLIC_KEY], salt=data[PairingDataComponentType.SALT], pin=pin
         )
@@ -1973,7 +2003,7 @@ class PairableHost:
     @staticmethod
     def _ensure_no_error(tlv: dict[str, Any]) -> None:
         if PairingDataComponentType.ERROR in tlv:
-            raise PairingError(f"device returned pairing error: {tlv[PairingDataComponentType.ERROR]!r}")
+            raise PairingError(_describe_pairing_error(tlv))
 
     @staticmethod
     def decode_tlv(tlv_list: list[Container[Any]]) -> dict[str, Any]:
