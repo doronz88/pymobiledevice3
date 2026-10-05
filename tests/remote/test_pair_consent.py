@@ -10,9 +10,10 @@ from pymobiledevice3.remote.tunnel_service import (
     PairingDataComponentTLVBuf,
     PairingDataComponentType,
     RemotePairingProtocol,
+    _describe_pairing_error,
 )
 
-# M2 from issue #879, sent by a device in pairing backoff: ERROR=3, RETRY_DELAY, STATE=2
+# M2 from issue #879, sent by a device in pairing backoff: ERROR=3, RETRY_DELAY=8316 (seconds), STATE=2
 BACKOFF_M2 = b"\x07\x01\x03\x08\x02\x7c\x20\x06\x01\x02"
 
 PUBLIC_KEY = bytes(range(256)) + bytes(128)
@@ -65,7 +66,7 @@ def no_input(monkeypatch):
 async def test_pair_consent_error_raises_pairing_error(no_input, model, events):
     protocol = _ScriptedProtocol(model, events)
 
-    with pytest.raises(PairingError, match="BACKOFF"):
+    with pytest.raises(PairingError, match="BACKOFF, retry in 8316 seconds"):
         await protocol._request_pair_consent()
 
     assert protocol.events == []
@@ -82,3 +83,20 @@ async def test_pair_consent_asks_apple_tv_for_pin(monkeypatch):
     protocol = _ScriptedProtocol("AppleTV5,3", [_pairing_data(VALID_M2)])
 
     assert await protocol._request_pair_consent() == PairConsentResult(public_key=PUBLIC_KEY, salt=SALT, pin="123456")
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (b"\x02", "AUTHENTICATION"),
+        (b"\x04", "UNKNOWN_PEER"),
+        (b"\x05", "MAX_PEERS"),
+        (b"\x06", "MAX_TRIES"),
+        (b"\x0a", "UNSUPPORTED"),
+        (b"\x7f", "127"),
+    ],
+)
+def test_describe_pairing_error_names_code(error, expected):
+    tlv = RemotePairingProtocol.decode_tlv(PairingDataComponentTLVBuf.parse(b"\x07\x01" + error + b"\x06\x01\x02"))
+
+    assert _describe_pairing_error(tlv) == f"device returned pairing error: {expected}"

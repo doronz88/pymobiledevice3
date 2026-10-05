@@ -162,17 +162,31 @@ PairingDataComponentTLV8 = Struct(
 
 PairingDataComponentTLVBuf = GreedyRange(PairingDataComponentTLV8)
 
-# Values of the ERROR component (HomeKit's kTLVError_* codes)
+# Values of the ERROR component, as CoreUtils' pair-setup maps them to/from its OSStatus codes (noted per value).
+# HomeKit's published kTLVError_* table only agrees up to BACKOFF.
 PairingErrorCode = ConstructEnum(
     Int8ul,
-    UNKNOWN=0x01,
-    AUTHENTICATION=0x02,
-    BACKOFF=0x03,
-    MAX_PEERS=0x04,
-    MAX_TRIES=0x05,
-    UNAVAILABLE=0x06,
-    BUSY=0x07,
+    UNKNOWN=0x01,  # kUnknownErr
+    AUTHENTICATION=0x02,  # kAuthenticationErr
+    BACKOFF=0x03,  # kBackoffErr, sent along with RETRY_DELAY
+    UNKNOWN_PEER=0x04,  # kNotFoundErr
+    MAX_PEERS=0x05,  # kNoSpaceErr
+    MAX_TRIES=0x06,  # kCountErr, pair-setup disabled after too many attempts
+    PERMISSION=0x07,  # kPermissionErr
+    OWNERSHIP_FAILURE=0x08,  # kOwnershipFailureErr
+    ACCESS=0x09,  # kAccessErr
+    UNSUPPORTED=0x0A,  # kUnsupportedErr
 )
+
+
+def _describe_pairing_error(tlv: dict[str, Any]) -> str:
+    """Describe the ERROR component of a decoded pairing TLV."""
+    message = f"device returned pairing error: {PairingErrorCode.parse(tlv[PairingDataComponentType.ERROR])}"
+    retry_delay = tlv.get(PairingDataComponentType.RETRY_DELAY)
+    if retry_delay:
+        # little-endian seconds until the device accepts another attempt
+        message += f", retry in {int.from_bytes(retry_delay, 'little')} seconds"
+    return message
 
 
 class PairConsentResult(NamedTuple):
@@ -874,9 +888,7 @@ class RemotePairingProtocol(StartTcpTunnel):
         data = self.decode_tlv(PairingDataComponentTLVBuf.parse(pairing_data))
         if PairingDataComponentType.ERROR in data:
             # e.g. BACKOFF, sent without PUBLIC_KEY and SALT
-            raise PairingError(
-                f"device returned pairing error: {PairingErrorCode.parse(data[PairingDataComponentType.ERROR])}"
-            )
+            raise PairingError(_describe_pairing_error(data))
 
         pin = input("Enter PIN: ") if ask_pin else None
         return PairConsentResult(
@@ -1991,7 +2003,7 @@ class PairableHost:
     @staticmethod
     def _ensure_no_error(tlv: dict[str, Any]) -> None:
         if PairingDataComponentType.ERROR in tlv:
-            raise PairingError(f"device returned pairing error: {tlv[PairingDataComponentType.ERROR]!r}")
+            raise PairingError(_describe_pairing_error(tlv))
 
     @staticmethod
     def decode_tlv(tlv_list: list[Container[Any]]) -> dict[str, Any]:
