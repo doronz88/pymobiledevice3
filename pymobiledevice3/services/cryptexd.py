@@ -149,12 +149,18 @@ class CryptexAssetType(enum.IntEnum):
 #: ``ServiceVersion`` cryptexd's launchd plist advertises for the remote service.
 CLIENT_VERSION = 3
 
-#: ``persistence`` and ``nonce-persistence`` Xcode sends when installing the DDI cryptex. Xcode's
-#: ``CryptexKitHost.framework`` (761.1.1) derives both from one install option in
+#: ``persistence`` and ``nonce-persistence`` Xcode sends when installing the DDI cryptex.
+#:
+#: Xcode's ``CryptexKitHost.framework`` (761.1.1) derives both from one install option in
 #: ``OS_cryptex_attr.from(Cryptex.InstallOptions)``: set, it sends 0 and 0; clear, 2 and 1, which
 #: is the DDI's case. The option is read from the first byte of ``InstallOptions``, where
-#: ``ephemeral`` is the first field, so it is most likely that flag. The binaries name none of the
-#: values, and no meaning was found for a ``persistence`` of 1.
+#: ``ephemeral`` is the first field, so it is most likely that flag. The same framework's
+#: ``CryptexNonceSpec.isEphemeral`` treats ``CryptexPersistence.untilReboot`` as ephemeral and
+#: ``.untilSoftwareUpdate`` as not, which makes 0 "until reboot" and 2 / 1 "until software update".
+#:
+#: Checked on a virtual iPhone17,3 26.4 by installing the DDI and rebooting: a ``persistence`` of
+#: 0 is gone after the reboot, 1 and 2 both survive it, and ``nonce-persistence`` 0 or 1 makes no
+#: difference to that. Nothing here shows what ends a ``persistence`` of 2, or how 1 differs.
 DDI_PERSISTENCE = 2
 DDI_NONCE_PERSISTENCE = 1
 
