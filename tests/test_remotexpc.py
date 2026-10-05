@@ -19,7 +19,7 @@ from pymobiledevice3.remote.remotexpc import (
     WINDOW_UPDATE_THRESHOLD,
     RemoteXPCConnection,
 )
-from pymobiledevice3.remote.xpc_message import XpcWrapper, decode_xpc_object
+from pymobiledevice3.remote.xpc_message import XpcFlags, XpcWrapper, decode_xpc_object
 
 
 class FakeWriter:
@@ -230,6 +230,33 @@ async def test_preamble_consumes_flow_control_window():
 
     preamble_len = len(_parse_written_frames(writer)[1].data)
     assert connection._outbound_connection_window == before - preamble_len
+
+
+@pytest.mark.asyncio
+async def test_requests_consume_flow_control_window():
+    """A request is DATA too; uncharged, a later file transfer overruns the window by its size."""
+    connection, writer = _sending_connection()
+    before = connection._outbound_connection_window
+
+    await connection.send_request({"routine": "install"})
+
+    request_len = len(_parse_written_frames(writer)[0].data)
+    assert connection._outbound_connection_window == before - request_len
+    assert connection._outbound_stream_windows[1] == before - request_len
+
+
+@pytest.mark.asyncio
+async def test_every_data_frame_sent_is_charged_to_the_connection_window():
+    """The window left must be the window granted minus every DATA byte on the wire."""
+    connection, writer = _sending_connection(window=10 * MAX_OUTBOUND_FRAME_SIZE)
+    before = connection._outbound_connection_window
+
+    await connection.send_request({"routine": "install"})
+    await connection._open_channel(3, XpcFlags.FILE_TX_STREAM_RESPONSE)
+    await connection.send_file_transfer(transfer_id=1, data=b"z" * (MAX_OUTBOUND_FRAME_SIZE + 5))
+
+    sent = sum(len(f.data) for f in _parse_written_frames(writer) if isinstance(f, DataFrame))
+    assert connection._outbound_connection_window == before - sent
 
 
 def test_window_update_frames_grow_the_outbound_windows():

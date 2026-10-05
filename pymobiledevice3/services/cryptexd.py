@@ -1,4 +1,5 @@
 import dataclasses
+import enum
 import logging
 import plistlib
 from pathlib import Path
@@ -23,18 +24,143 @@ from pymobiledevice3.services.mobile_image_mounter import LATEST_DDI_BUILD_ID, P
 
 logger = logging.getLogger(__name__)
 
-#: ``nonce-domain`` index used for the cryptex nonce on current devices. The daemon resolves the
-#: index through its own nonce-domain table, so unsupported indices fail with a ``cferr``.
-NONCE_DOMAIN_CRYPTEX = 2
+
+class NonceDomain(enum.IntEnum):
+    """
+    ``nonce-domain``: an ``img4_nonce_domain_index`` (XNU ``EXTERNAL_HEADERS/img4/nonce.h``).
+
+    cryptexd accepts 1-10 only; index 0 is Apple's internal test domain and fails with a ``cferr``,
+    as does anything above 10. Xcode uses an index only for non-Cryptex1 images; Cryptex1 images
+    go by `NonceDomainHandle`.
+
+    Sources, to re-verify against a new build:
+
+    - Values and meanings: ``OS_CLOSED_ENUM(img4_nonce_domain_index, ...)`` and the
+      ``IMG4_NONCE_DOMAIN_*`` doc comments in XNU's ``EXTERNAL_HEADERS/img4/nonce.h``
+      (xnu-12377.1.9).
+    - Accepted range: ``_img4_get_nonce_domain_from_index`` in ``/usr/libexec/cryptexd`` and the
+      ten ``_img4_nonce_domain_*`` binds of its table (``dyld_info -fixups``), read from
+      iPhone18,4 27.0 (24A5370h).
+    - Xcode's choices: ``cryptex_core_get_nonce_domain_index`` in macOS's
+      ``CryptexKitHost.framework`` (761.1.1), which ``CoreDeviceService`` links.
+    - Device check: ``cryptex nonce --nonce-domain N`` for 0-11 on a physical iPhone18,4 27.2
+      (24B5084k) and on a virtual iPhone17,3 26.4 (23E246); on both, 0 and 11 do not exist, and
+      9 and 10 return the same nonces as handles 3 and 4.
+    """
+
+    #: Trust cache personalizations.
+    TRUST_CACHE = 1
+    #: Personalized disk images. Xcode's choice for a ``pdmg`` image with persistence below 2.
+    PDI = 2
+    #: Cryptex personalizations (pre-Cryptex1). Xcode's choice for a ``cpxd`` image.
+    CRYPTEX = 3
+    #: Developer disk image personalizations. Xcode's choice for a ``pdmg`` image with persistence 2.
+    DDI = 4
+    #: Ephemeral cryptex personalizations.
+    EPHEMERAL_CRYPTEX = 5
+    #: Null stub for the Cryptex1 ``snuf`` value (software update freshness nonce).
+    CRYPTEX1_SNUF_STUB = 6
+    #: Cryptex1 boot objects.
+    CRYPTEX1_BOOT = 7
+    #: Cryptex1 asset brain objects.
+    CRYPTEX1_ASSET = 8
+    #: Cryptex1 generic supplemental objects.
+    CRYPTEX1_GENERIC = 9
+    #: Cryptex1 Simulator runtime objects. Also the domain the DDI cryptex is personalized against.
+    CRYPTEX1_SIMULATOR = 10
+
+
+class NonceDomainHandle(enum.IntEnum):
+    """
+    ``nonce-domain-handle``: the value of a build identity's ``Cryptex1,NonceDomain`` tag.
+
+    Resolved by libimage4's ``img4_nonce_domain_get_from_handle``. This is what Xcode sends for
+    any Cryptex1 image, taking the value from the manifest.
+
+    Sources, to re-verify against a new build:
+
+    - Values 1-4 and meanings: the ``IMG4_NONCE_DOMAIN_CRYPTEX1_*`` doc comments in XNU's
+      ``EXTERNAL_HEADERS/img4/nonce.h`` (xnu-12377.1.9), each stating the ``Cryptex1,NonceDomain``
+      value it corresponds to. The header also gives the snuf stub the value 0, but the table
+      below has no entry there.
+    - Populated handles, including 8 and 9: the table ``img4_nonce_domain_get_from_handle`` indexes
+      in ``/usr/lib/libimage4.dylib``, whose entries point at the ``_img4_nonce_domain_*`` symbols,
+      read from iPhone18,4 27.0 (24A5370h).
+    - Xcode's use: ``cryptex_core_get_nonce_domain_handle`` and
+      ``remote_service_create_nonce_handle_request`` in macOS's ``CryptexKitHost.framework``
+      (761.1.1).
+    - The DDI's handle: ``Cryptex1,NonceDomain`` of the "Developer Disk Image Cryptex" identity in
+      Xcode's ``iOS_DDI/Restore/BuildManifest.plist`` (27A266a).
+    - Device check: ``cryptex nonce --nonce-domain-handle N`` for 0-10 on a physical iPhone18,4
+      27.2 (24B5084k) and on a virtual iPhone17,3 26.4 (23E246); on both, only 1-4, 8 and 9 exist.
+    """
+
+    #: Cryptex1 boot objects.
+    CRYPTEX1_BOOT = 1
+    #: Cryptex1 asset brain objects.
+    CRYPTEX1_ASSET = 2
+    #: Cryptex1 generic supplemental objects.
+    CRYPTEX1_GENERIC = 3
+    #: Cryptex1 Simulator runtime objects. The DDI cryptex identity declares this one.
+    CRYPTEX1_SIMULATOR = 4
+    #: Named ``cryptex1_generic_ephemeral`` in libimage4; undocumented.
+    CRYPTEX1_GENERIC_EPHEMERAL = 8
+    #: Named ``cryptex1_generic_erm`` in libimage4; undocumented.
+    CRYPTEX1_GENERIC_ERM = 9
+
 
 #: Identifier the mounted personalized DeveloperDiskImage is installed under.
 DDI_CRYPTEX_IDENTIFIER = "com.apple.MobileAsset.DDI"
 
-#: Values Xcode sends when installing the DDI cryptex, captured from a ``devicectl`` install.
-#: ``image-type-index`` names the image's asset type by its index in the device's
-#: ``cryptex_asset_types`` table (libcryptex_core): 10 is Cryptex1,GenericDmg (``gdmg``).
+
+class CryptexAssetType(enum.IntEnum):
+    """
+    ``image-type-index``: an asset type, by its index in the device's ``cryptex_asset_types`` table.
+
+    The numbering is only valid from iOS 26.4 (see `DDI_CRYPTEX_MIN_VERSION`): that release split
+    ``root`` into ``asset_root`` and ``content_root``, shifting every entry after it.
+
+    Source, to re-verify against a new build: the ``cryptex_asset_types`` array in
+    ``/usr/lib/libcryptex_core.dylib``, whose entries point at the ``_cryptex_asset_type_*``
+    symbols, read from iPhone18,4 27.0 (24A5370h). The manifest keys noted below sit next to their
+    tags in the same library's strings.
+    """
+
+    CPXD = 0
+    LTRS = 1
+    C411 = 2
+    IM4M = 3
+    ASSET_ROOT = 4
+    CONTENT_ROOT = 5
+    PDMG = 6
+    ROOTHASH = 7
+    #: ``Cryptex1,GenericTrustCache``.
+    GTCD = 8
+    #: ``Cryptex1,CryptexInfoPlist``.
+    GINF = 9
+    #: ``Cryptex1,GenericDmg``; the DDI cryptex's image.
+    GDMG = 10
+    #: ``Cryptex1,GenericVolume``.
+    GTGV = 11
+    CX1P = 12
+
+
+#: ``client-version`` Xcode sends on install, captured from a ``devicectl`` install. It equals the
+#: ``ServiceVersion`` cryptexd's launchd plist advertises for the remote service.
 CLIENT_VERSION = 3
-DDI_IMAGE_TYPE_INDEX = 10
+
+#: ``persistence`` and ``nonce-persistence`` Xcode sends when installing the DDI cryptex.
+#:
+#: Xcode's ``CryptexKitHost.framework`` (761.1.1) derives both from one install option in
+#: ``OS_cryptex_attr.from(Cryptex.InstallOptions)``: set, it sends 0 and 0; clear, 2 and 1, which
+#: is the DDI's case. The option is read from the first byte of ``InstallOptions``, where
+#: ``ephemeral`` is the first field, so it is most likely that flag. The same framework's
+#: ``CryptexNonceSpec.isEphemeral`` treats ``CryptexPersistence.untilReboot`` as ephemeral and
+#: ``.untilSoftwareUpdate`` as not, which makes 0 "until reboot" and 2 / 1 "until software update".
+#:
+#: Checked on a virtual iPhone17,3 26.4 by installing the DDI and rebooting: a ``persistence`` of
+#: 0 is gone after the reboot, 1 and 2 both survive it, and ``nonce-persistence`` 0 or 1 makes no
+#: difference to that. Nothing here shows what ends a ``persistence`` of 2, or how 1 differs.
 DDI_PERSISTENCE = 2
 DDI_NONCE_PERSISTENCE = 1
 
@@ -46,7 +172,7 @@ DDI_NONCE_PERSISTENCE = 1
 #:   image but the kernel denies it mounting one at ``/System/Developer``, the DDI's
 #:   ``RequiredMountPath`` ("deny(1) file-mount /System/Developer" on 26.0.1).
 #: - The asset type table, whose ``root`` entry iOS 26.4 split into ``asset_root`` and
-#:   ``content_root``. Below it `DDI_IMAGE_TYPE_INDEX` names Cryptex1,GenericVolume (``gtgv``)
+#:   ``content_root``. Below it `CryptexAssetType.GDMG` names Cryptex1,GenericVolume (``gtgv``)
 #:   instead, and cryptexd crashes on the volume hash that follows: "asset already present:
 #:   Cryptex1,GenericVolume".
 DDI_CRYPTEX_MIN_VERSION = Version("26.4")
@@ -307,7 +433,7 @@ class CryptexdService(RemoteService):
         info: bytes,
         volumehash: bytes,
         cryptex1_properties: dict[str, Any],
-        image_type_index: int = DDI_IMAGE_TYPE_INDEX,
+        image_type_index: int = CryptexAssetType.GDMG,
         persistence: int = DDI_PERSISTENCE,
         nonce_persistence: int = DDI_NONCE_PERSISTENCE,
         auth: int = 0,
@@ -338,7 +464,7 @@ class CryptexdService(RemoteService):
         :param volumehash: ``Cryptex1,GenericVolume`` root hash; without it the daemon reports
             "AuthAPFS will not be supported".
         :param cryptex1_properties: the ``Cryptex1,*`` parameters from the build identity.
-        :param image_type_index: index of the image type within the cryptex.
+        :param image_type_index: the image's `CryptexAssetType`.
         :param persistence: cryptex persistence mode.
         :param nonce_persistence: nonce persistence mode.
         :param auth: authentication mode.
@@ -393,7 +519,7 @@ class CryptexdService(RemoteService):
             raise ValueError("pass either nonce_domain or nonce_domain_handle, not both")
         if nonce_domain_handle is not None:
             return {"nonce-domain-handle": XpcUInt64Type(nonce_domain_handle)}
-        domain = NONCE_DOMAIN_CRYPTEX if nonce_domain is None else nonce_domain
+        domain = NonceDomain.PDI if nonce_domain is None else nonce_domain
         return {"nonce-domain": XpcUInt64Type(domain)}
 
     async def cryptex_nonce(self, nonce_domain_handle: int) -> bytes:
@@ -515,7 +641,7 @@ class CryptexdService(RemoteService):
         returns those 48 bytes alone.
 
         :param nonce_domain: index into the daemon's nonce-domain table; defaults to
-                             `NONCE_DOMAIN_CRYPTEX` when neither selector is given.
+                             `NonceDomain.PDI` when neither selector is given.
         :param nonce_domain_handle: handle of the nonce domain, as an alternative to `nonce_domain`.
         :raises ValueError: if both selectors are given.
         :raises CryptexdError: if the domain does not exist or has no nonce.
@@ -539,7 +665,7 @@ class CryptexdService(RemoteService):
             ``xpc_dictionary_get_uint64``, so the type is right and only the location is wrong.
 
         :param nonce_domain: index into the daemon's nonce-domain table; defaults to
-                             `NONCE_DOMAIN_CRYPTEX` when neither selector is given.
+                             `NonceDomain.PDI` when neither selector is given.
         :param nonce_domain_handle: handle of the nonce domain, as an alternative to `nonce_domain`.
         :raises ValueError: if both selectors are given.
         :raises CryptexdError: if the domain does not exist or the roll failed.

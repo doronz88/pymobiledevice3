@@ -16,9 +16,9 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 from pymobiledevice3.services import cryptexd
 from pymobiledevice3.services.cryptexd import (
     DDI_CRYPTEX_IDENTIFIER,
-    NONCE_DOMAIN_CRYPTEX,
     CryptexdService,
     InstalledCryptex,
+    NonceDomain,
     load_cryptex1_assets,
     unwrap_nonce,
 )
@@ -134,7 +134,7 @@ async def test_roll_nonce_sends_roll_routine() -> None:
     await service.roll_nonce()
 
     assert sent[0]["routine"] == "roll-nonce"
-    assert int(sent[0]["argv"]["nonce-domain"]) == NONCE_DOMAIN_CRYPTEX
+    assert int(sent[0]["argv"]["nonce-domain"]) == NonceDomain.PDI
 
 
 @pytest.mark.asyncio
@@ -204,7 +204,7 @@ async def test_get_nonce_sends_domain_and_returns_nonce() -> None:
 
     assert await service.get_nonce() == b"\x01\x02"
     assert sent[0]["routine"] == "get-nonce"
-    assert int(sent[0]["argv"]["nonce-domain"]) == NONCE_DOMAIN_CRYPTEX
+    assert int(sent[0]["argv"]["nonce-domain"]) == NonceDomain.PDI
 
 
 @pytest.mark.asyncio
@@ -596,7 +596,7 @@ def test_unwrap_nonce_extracts_the_nonce_from_the_daemon_structure() -> None:
 def test_the_ddi_cryptex_needs_ios_26_4(product_version: str) -> None:
     # Regression (#1991): below iOS 26.4 cryptexd imports a Cryptex1 image but may not mount it at
     # /System/Developer ("deny(1) file-mount /System/Developer"), and its asset type table is laid
-    # out differently: DDI_IMAGE_TYPE_INDEX named the image Cryptex1,GenericVolume there and
+    # out differently: CryptexAssetType.GDMG named the image Cryptex1,GenericVolume there and
     # crashed cryptexd with "asset already present: Cryptex1,GenericVolume"
     with pytest.raises(DeviceFeatureNotSupportedError, match="DeveloperDiskImage cryptex"):
         cryptexd.require_ddi_cryptex_support(product_version, "udid")

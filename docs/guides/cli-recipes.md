@@ -127,7 +127,7 @@ cryptex, so it does not appear there -- `mounter list` shows both.
 pymobiledevice3 cryptex list
 pymobiledevice3 cryptex personalization-identifiers
 pymobiledevice3 cryptex nonce
-pymobiledevice3 cryptex nonce --nonce-domain-handle 7
+pymobiledevice3 cryptex nonce --nonce-domain-handle 4
 ```
 
 State-changing. Rolling a nonce invalidates anything personalized against it, so a mounted
