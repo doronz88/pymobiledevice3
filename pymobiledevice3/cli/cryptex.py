@@ -27,7 +27,7 @@ cli = InjectingTyper(
 
 NonceDomainOption = Annotated[
     Optional[int],
-    typer.Option("--nonce-domain", help="Nonce domain index (defaults to the cryptex domain)."),
+    typer.Option("--nonce-domain", help="Nonce domain index (defaults to the PDI domain)."),
 ]
 NonceDomainHandleOption = Annotated[
     Optional[int],

@@ -16,9 +16,9 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 from pymobiledevice3.services import cryptexd
 from pymobiledevice3.services.cryptexd import (
     DDI_CRYPTEX_IDENTIFIER,
-    NONCE_DOMAIN_CRYPTEX,
     CryptexdService,
     InstalledCryptex,
+    NonceDomain,
     load_cryptex1_assets,
     unwrap_nonce,
 )
@@ -134,7 +134,7 @@ async def test_roll_nonce_sends_roll_routine() -> None:
     await service.roll_nonce()
 
     assert sent[0]["routine"] == "roll-nonce"
-    assert int(sent[0]["argv"]["nonce-domain"]) == NONCE_DOMAIN_CRYPTEX
+    assert int(sent[0]["argv"]["nonce-domain"]) == NonceDomain.PDI
 
 
 @pytest.mark.asyncio
@@ -204,7 +204,7 @@ async def test_get_nonce_sends_domain_and_returns_nonce() -> None:
 
     assert await service.get_nonce() == b"\x01\x02"
     assert sent[0]["routine"] == "get-nonce"
-    assert int(sent[0]["argv"]["nonce-domain"]) == NONCE_DOMAIN_CRYPTEX
+    assert int(sent[0]["argv"]["nonce-domain"]) == NonceDomain.PDI
 
 
 @pytest.mark.asyncio
