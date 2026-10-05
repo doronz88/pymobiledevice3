@@ -112,11 +112,49 @@ class NonceDomainHandle(enum.IntEnum):
 #: Identifier the mounted personalized DeveloperDiskImage is installed under.
 DDI_CRYPTEX_IDENTIFIER = "com.apple.MobileAsset.DDI"
 
-#: Values Xcode sends when installing the DDI cryptex, captured from a ``devicectl`` install.
-#: ``image-type-index`` names the image's asset type by its index in the device's
-#: ``cryptex_asset_types`` table (libcryptex_core): 10 is Cryptex1,GenericDmg (``gdmg``).
+
+class CryptexAssetType(enum.IntEnum):
+    """
+    ``image-type-index``: an asset type, by its index in the device's ``cryptex_asset_types`` table.
+
+    The numbering is only valid from iOS 26.4 (see `DDI_CRYPTEX_MIN_VERSION`): that release split
+    ``root`` into ``asset_root`` and ``content_root``, shifting every entry after it.
+
+    Source, to re-verify against a new build: the ``cryptex_asset_types`` array in
+    ``/usr/lib/libcryptex_core.dylib``, whose entries point at the ``_cryptex_asset_type_*``
+    symbols, read from iPhone18,4 27.0 (24A5370h). The manifest keys noted below sit next to their
+    tags in the same library's strings.
+    """
+
+    CPXD = 0
+    LTRS = 1
+    C411 = 2
+    IM4M = 3
+    ASSET_ROOT = 4
+    CONTENT_ROOT = 5
+    PDMG = 6
+    ROOTHASH = 7
+    #: ``Cryptex1,GenericTrustCache``.
+    GTCD = 8
+    #: ``Cryptex1,CryptexInfoPlist``.
+    GINF = 9
+    #: ``Cryptex1,GenericDmg``; the DDI cryptex's image.
+    GDMG = 10
+    #: ``Cryptex1,GenericVolume``.
+    GTGV = 11
+    CX1P = 12
+
+
+#: ``client-version`` Xcode sends on install, captured from a ``devicectl`` install. It equals the
+#: ``ServiceVersion`` cryptexd's launchd plist advertises for the remote service.
 CLIENT_VERSION = 3
-DDI_IMAGE_TYPE_INDEX = 10
+
+#: ``persistence`` and ``nonce-persistence`` Xcode sends when installing the DDI cryptex. Xcode's
+#: ``CryptexKitHost.framework`` (761.1.1) derives both from one install option in
+#: ``OS_cryptex_attr.from(Cryptex.InstallOptions)``: set, it sends 0 and 0; clear, 2 and 1, which
+#: is the DDI's case. The option is read from the first byte of ``InstallOptions``, where
+#: ``ephemeral`` is the first field, so it is most likely that flag. The binaries name none of the
+#: values, and no meaning was found for a ``persistence`` of 1.
 DDI_PERSISTENCE = 2
 DDI_NONCE_PERSISTENCE = 1
 
@@ -128,7 +166,7 @@ DDI_NONCE_PERSISTENCE = 1
 #:   image but the kernel denies it mounting one at ``/System/Developer``, the DDI's
 #:   ``RequiredMountPath`` ("deny(1) file-mount /System/Developer" on 26.0.1).
 #: - The asset type table, whose ``root`` entry iOS 26.4 split into ``asset_root`` and
-#:   ``content_root``. Below it `DDI_IMAGE_TYPE_INDEX` names Cryptex1,GenericVolume (``gtgv``)
+#:   ``content_root``. Below it `CryptexAssetType.GDMG` names Cryptex1,GenericVolume (``gtgv``)
 #:   instead, and cryptexd crashes on the volume hash that follows: "asset already present:
 #:   Cryptex1,GenericVolume".
 DDI_CRYPTEX_MIN_VERSION = Version("26.4")
@@ -389,7 +427,7 @@ class CryptexdService(RemoteService):
         info: bytes,
         volumehash: bytes,
         cryptex1_properties: dict[str, Any],
-        image_type_index: int = DDI_IMAGE_TYPE_INDEX,
+        image_type_index: int = CryptexAssetType.GDMG,
         persistence: int = DDI_PERSISTENCE,
         nonce_persistence: int = DDI_NONCE_PERSISTENCE,
         auth: int = 0,
@@ -420,7 +458,7 @@ class CryptexdService(RemoteService):
         :param volumehash: ``Cryptex1,GenericVolume`` root hash; without it the daemon reports
             "AuthAPFS will not be supported".
         :param cryptex1_properties: the ``Cryptex1,*`` parameters from the build identity.
-        :param image_type_index: index of the image type within the cryptex.
+        :param image_type_index: the image's `CryptexAssetType`.
         :param persistence: cryptex persistence mode.
         :param nonce_persistence: nonce persistence mode.
         :param auth: authentication mode.

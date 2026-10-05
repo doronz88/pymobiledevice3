@@ -596,7 +596,7 @@ def test_unwrap_nonce_extracts_the_nonce_from_the_daemon_structure() -> None:
 def test_the_ddi_cryptex_needs_ios_26_4(product_version: str) -> None:
     # Regression (#1991): below iOS 26.4 cryptexd imports a Cryptex1 image but may not mount it at
     # /System/Developer ("deny(1) file-mount /System/Developer"), and its asset type table is laid
-    # out differently: DDI_IMAGE_TYPE_INDEX named the image Cryptex1,GenericVolume there and
+    # out differently: CryptexAssetType.GDMG named the image Cryptex1,GenericVolume there and
     # crashed cryptexd with "asset already present: Cryptex1,GenericVolume"
     with pytest.raises(DeviceFeatureNotSupportedError, match="DeveloperDiskImage cryptex"):
         cryptexd.require_ddi_cryptex_support(product_version, "udid")
