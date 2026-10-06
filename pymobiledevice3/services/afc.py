@@ -50,6 +50,7 @@ from pymobiledevice3.construct_compat import const_field
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError, ConnectionTerminatedError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.safe_paths import device_file_path
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.utils import get_asyncio_loop, try_decode
 
@@ -500,14 +501,13 @@ class AfcService(LockdownService):
 
             for filename in await self.listdir(src):
                 src_filename = posixpath.join(src, filename)
-                dst_filename = dst_path / filename
-
                 src_filename = await self.resolve_path(src_filename)
 
                 if match is not None and not match.search(posixpath.basename(src_filename)):
                     continue
 
                 try:
+                    dst_filename = device_file_path(dst_path, filename)
                     if await self.isdir(src_filename):
                         dst_filename.mkdir(exist_ok=True)
                         await self.pull(
