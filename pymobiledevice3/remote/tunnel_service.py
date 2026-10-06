@@ -197,6 +197,11 @@ class PairConsentResult(NamedTuple):
 
 CDTUNNEL_MAGIC = b"CDTunnel"
 
+# Model identifiers of devices that display a pairing PIN to be typed on the host, rather than accepting the
+# fixed "000000" PIN that iOS and iPadOS use after a Trust prompt: tvOS ("AppleTV5,3") and visionOS
+# ("RealityDevice17,1").
+PIN_PAIRING_MODELS = ("AppleTV", "RealityDevice")
+
 
 @dataclasses.dataclass
 class CDTunnelPacketData(DataclassMixin):
@@ -882,8 +887,8 @@ class RemotePairingProtocol(StartTcpTunnel):
         else:
             # On tvOS no consent is needed and pairing data is returned immediately.
             pairing_data = self._decode_bytes_if_needed(response["pairingData"]["_0"]["data"])
-            # On tvOS we need pin to setup pairing.
-            ask_pin = "AppleTV" in self.remote_device_model
+            # On tvOS and visionOS we need pin to setup pairing.
+            ask_pin = any(model in self.remote_device_model for model in PIN_PAIRING_MODELS)
 
         data = self.decode_tlv(PairingDataComponentTLVBuf.parse(pairing_data))
         if PairingDataComponentType.ERROR in data:
