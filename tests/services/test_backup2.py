@@ -668,3 +668,25 @@ async def test_device_link_download_files_reports_dropped_link(tmp_path: Path) -
         device.close()
         await connection.close()
 
+
+@pytest.mark.asyncio
+async def test_device_link_exit_keeps_the_error_that_ended_the_session(monkeypatch, tmp_path: Path) -> None:
+    """The closing DLMessageDisconnect fails on a dead link; that must not replace the real error."""
+    host, device = socket.socketpair()
+    connection = ServiceConnection(host)
+    service = Mobilebackup2Service(Mock(udid="device"))
+    service._service = connection
+    service.version_exchange = AsyncMock()
+    monkeypatch.setattr(DeviceLink, "version_exchange", AsyncMock())
+
+    try:
+        await connection.start()
+        with pytest.raises(ConnectionTerminatedError) as exc_info:
+            async with service.device_link(tmp_path) as dl:
+                device.close()
+                await dl.dl_loop()
+        # raised by the read in dl_loop, not by the send in disconnect()
+        assert isinstance(exc_info.value.__cause__, asyncio.IncompleteReadError)
+    finally:
+        device.close()
+        await connection.close()
