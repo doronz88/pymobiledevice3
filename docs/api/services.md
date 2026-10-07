@@ -18,6 +18,8 @@ otherwise, they derive from `LockdownService`.
 
 ::: pymobiledevice3.services.installation_proxy.InstallationProxyService
 
+::: pymobiledevice3.services.streaming_zip_conduit.StreamingZipConduitService
+
 ::: pymobiledevice3.services.afc.AfcService
 
 ::: pymobiledevice3.services.diagnostics.DiagnosticsService

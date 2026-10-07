@@ -21,6 +21,7 @@ from pymobiledevice3.cli.cli_common import (
 from pymobiledevice3.services.house_arrest import HouseArrestService
 from pymobiledevice3.services.install_coordination_proxy import InstallCoordinationProxyService
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
+from pymobiledevice3.services.streaming_zip_conduit import StreamingZipConduitService
 
 cli = InjectingTyper(
     name="apps",
@@ -97,9 +98,22 @@ async def install(
         bool,
         typer.Option(help="Install developer package"),
     ] = False,
+    streaming: Annotated[
+        bool,
+        typer.Option(
+            help="Stream the app through streaming_zip_conduit, as Xcode does: the device extracts it "
+            "while it arrives instead of unpacking an uploaded .ipa. Not for .ipcc packages."
+        ),
+    ] = False,
 ) -> None:
     """Install a local .ipa/.app/.ipcc package."""
-    await InstallationProxyService(lockdown=service_provider).install_from_local(package, developer=developer)
+    if not streaming:
+        await InstallationProxyService(lockdown=service_provider).install_from_local(package, developer=developer)
+        return
+    if package.suffix == ".ipcc":
+        raise typer.BadParameter("--streaming cannot install .ipcc packages")
+    async with StreamingZipConduitService(service_provider) as conduit:
+        await conduit.install(package, developer=developer)
 
 
 @cli.command("afc")

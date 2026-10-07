@@ -40,7 +40,7 @@ Use these for observability, troubleshooting, and health checks.
 
 ## Apps, Profiles, Provisioning, And Activation
 
-- `apps`: install, uninstall, query.
+- `apps`: install (`--streaming` extracts on the device while uploading), uninstall, query.
 - `profile`: configuration profile management.
 - `provision`: provisioning profile helpers.
 - `activation`: activation-related actions.

@@ -187,6 +187,15 @@ pymobiledevice3 cryptex auto-install --restore-dir /Library/Developer/DeveloperD
     `mounter` still wins when you have no tunnel: it works over plain USB, while every `cryptex`
     command needs RSD.
 
+## Streaming app install
+
+```shell
+# Stream the app the way Xcode does: the device extracts it while it arrives,
+# instead of unpacking an .ipa uploaded over AFC
+pymobiledevice3 apps install --streaming MyApp.ipa
+pymobiledevice3 apps install --streaming --developer build/MyApp.app
+```
+
 ## App console output (iOS 17+, RSD tunnel)
 
 ```shell
