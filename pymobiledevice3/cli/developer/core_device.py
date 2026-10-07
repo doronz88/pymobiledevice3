@@ -3,6 +3,7 @@ import logging
 import posixpath
 import sys
 import time
+from contextlib import AsyncExitStack
 from enum import Enum
 from pathlib import Path
 from typing import IO, Annotated, Optional
@@ -34,6 +35,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
 )
 from pymobiledevice3.remote.core_device.icon_service import IconService
 from pymobiledevice3.remote.core_device.location_service import LocationService
+from pymobiledevice3.remote.core_device.open_stdio_socket import OpenStdioSocketService
 from pymobiledevice3.remote.core_device.orientation_service import OrientationService
 from pymobiledevice3.remote.core_device.pasteboard_service import (
     GENERAL_PASTEBOARD,
@@ -155,18 +157,30 @@ async def core_device_launch_application(
             help="Environment variable to pass to process given as key=value (can be specified multiple times)"
         ),
     ] = None,
+    console: Annotated[
+        bool,
+        typer.Option(help="Attach to the app's stdout and stderr and print them until it exits"),
+    ] = False,
 ) -> None:
-    """Launch an app; optionally kill existing, wait for debugger, or set env vars."""
-    async with AppServiceService(service_provider) as app_service:
-        print_json(
-            await app_service.launch_application(
-                bundle_identifier,
-                list(argument or ()),
-                kill_existing,
-                suspended,
-                dict(var.split("=", 1) for var in env or ()),
-            )
+    """Launch an app; optionally kill existing, wait for debugger, set env vars, or attach its console."""
+    environment = dict(var.split("=", 1) for var in env or ())
+    async with AsyncExitStack() as stack:
+        app_service = await stack.enter_async_context(AppServiceService(service_provider))
+        stdio = await stack.enter_async_context(OpenStdioSocketService(service_provider)) if console else None
+        result = await app_service.launch_application(
+            bundle_identifier,
+            list(argument or ()),
+            kill_existing,
+            suspended,
+            environment,
+            stdio_identifier=stdio.identifier if stdio is not None else None,
         )
+        if stdio is None:
+            print_json(result)
+            return
+        while chunk := await stdio.read():
+            sys.stdout.buffer.write(chunk)
+            sys.stdout.buffer.flush()
 
 
 @cli.command("list-processes")

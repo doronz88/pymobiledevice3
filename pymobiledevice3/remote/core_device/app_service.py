@@ -1,4 +1,5 @@
 import plistlib
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Optional
 
@@ -62,8 +63,19 @@ class AppServiceService(CoreDeviceService):
         start_suspended: bool = False,
         environment: Optional[dict[str, str]] = None,
         extra_options: Optional[dict[str, Any]] = None,
+        stdio_identifier: Optional[uuid.UUID] = None,
     ) -> list[dict[str, Any]]:
-        """launch application"""
+        """
+        Launch an application.
+
+        :param stdio_identifier: identifier of an `OpenStdioSocketService` socket to attach as the
+            process's stdin, stdout and stderr. ``None`` leaves them unattached.
+        """
+        standard_io_identifiers: dict[str, Any] = {}
+        if stdio_identifier is not None:
+            standard_io_identifiers = dict.fromkeys(
+                ("standardInput", "standardOutput", "standardError"), stdio_identifier
+            )
         return await self.invoke(
             "com.apple.coredevice.feature.launchapplication",
             {
@@ -79,7 +91,7 @@ class AppServiceService(CoreDeviceService):
                     "user": {"shortName": "mobile"},
                     "platformSpecificOptions": plistlib.dumps(extra_options if extra_options is not None else {}),
                 },
-                "standardIOIdentifiers": {},
+                "standardIOIdentifiers": standard_io_identifiers,
             },
         )
 

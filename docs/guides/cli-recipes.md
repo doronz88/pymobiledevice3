@@ -187,6 +187,13 @@ pymobiledevice3 cryptex auto-install --restore-dir /Library/Developer/DeveloperD
     `mounter` still wins when you have no tunnel: it works over plain USB, while every `cryptex`
     command needs RSD.
 
+## App console output (iOS 17+, RSD tunnel)
+
+```shell
+# Launch an app and print its stdout/stderr until it exits
+pymobiledevice3 developer core-device launch-application com.example.app --console
+```
+
 ## App install records (iOS 17+, RSD tunnel)
 
 ```shell

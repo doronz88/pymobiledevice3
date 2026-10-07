@@ -73,7 +73,7 @@ Use WebInspector for Safari/WebView automation and WDA for device UI automation.
   list, auto-install a DDI from unpacked Restore assets, personalization identifiers,
   nonce inspection/rolling, uninstall.
 - `developer dvt`: screenshot, sysmon, process control, oslog, device info, netstat, HAR, energy, location simulation, xcuitest, profiling.
-- `developer core-device`: file/process/app/device-info operations through CoreDevice flows.
+- `developer core-device`: file/process/app/device-info operations through CoreDevice flows; `launch-application --console` prints the app's stdout/stderr.
 - `developer debugserver`: debugserver launch and LLDB bridging.
 - `developer fetch-symbols`: symbol acquisition.
 - `developer accessibility`: audits, settings, notifications, item listing.
