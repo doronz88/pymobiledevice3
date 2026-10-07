@@ -1,3 +1,4 @@
+import dataclasses
 import socket
 from collections.abc import AsyncGenerator
 from typing import Any, Optional, Union
@@ -8,6 +9,31 @@ from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.lockdown_service import LockdownService
+
+
+@dataclasses.dataclass(eq=False, repr=False)
+class NotificationEvent(dict[str, Any]):
+    """
+    A message relayed by the notification proxy.
+
+    It is still the message the device sent, so ``event["Name"]``, ``event.get("State")``,
+    comparison with a plain dict and JSON serialization keep working; the fields are typed
+    accessors for the same values.
+    """
+
+    #: ``RelayNotification`` for an observed notification, ``ProxyDeath`` when the proxy shuts down.
+    command: str
+    #: Name of the notification, when the message carries one.
+    name: Optional[str] = None
+    #: The notification's 64-bit ``notify_get_state()`` value. Sent by the secure service since
+    #: iOS 27.2; ``None`` otherwise.
+    state: Optional[int] = None
+
+    @classmethod
+    def from_message(cls, message: dict[str, Any]) -> "NotificationEvent":
+        event = cls(command=message.get("Command", ""), name=message.get("Name"), state=message.get("State"))
+        event.update(message)
+        return event
 
 
 class NotificationProxyService(LockdownService):
@@ -75,19 +101,19 @@ class NotificationProxyService(LockdownService):
         self.logger.debug(f"Observing {name}")
         await self.service.send_plist({"Command": "ObserveNotification", "Name": name})
 
-    async def receive_notification(self) -> AsyncGenerator[dict[str, Any], None]:
+    async def receive_notification(self) -> AsyncGenerator[NotificationEvent, None]:
         """
         Yield notifications relayed from the device for previously observed names.
 
         Continuously reads from the service and yields each received message until the connection
         is closed.
 
-        :returns: an async generator of the received notification plists.
+        :returns: an async generator of the received notifications.
         :raises NotificationTimeoutError: if no notification arrives within the configured socket timeout.
         """
         while True:
             try:
-                yield await self.service.recv_plist()
+                yield NotificationEvent.from_message(await self.service.recv_plist())
             except socket.timeout as e:
                 raise NotificationTimeoutError from e
 
@@ -134,15 +160,15 @@ class RemoteNotificationProxyService(RemoteService):
         self.logger.debug(f"Observing {name}")
         await self.service.send_request({"Command": "ObserveNotification", "Name": name})
 
-    async def receive_notification(self) -> AsyncGenerator[dict[str, Any], None]:
+    async def receive_notification(self) -> AsyncGenerator[NotificationEvent, None]:
         """
         Yield notifications relayed from the device for previously observed names.
 
-        Each yielded message is a dict of the form
+        Each yielded message is of the form
         ``{"Command": "RelayNotification", "Name": <notification name>}``. Since iOS 27.2 the secure
         service also includes ``"State"``, the notification's 64-bit ``notify_get_state()`` value.
 
-        :returns: an async generator of the relayed notification messages.
+        :returns: an async generator of the relayed notifications.
         """
         while True:
-            yield await self.service.receive_response()
+            yield NotificationEvent.from_message(await self.service.receive_response())
