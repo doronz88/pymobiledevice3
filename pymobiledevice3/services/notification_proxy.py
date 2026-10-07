@@ -139,7 +139,8 @@ class RemoteNotificationProxyService(RemoteService):
         Yield notifications relayed from the device for previously observed names.
 
         Each yielded message is a dict of the form
-        ``{"Command": "RelayNotification", "Name": <notification name>}``.
+        ``{"Command": "RelayNotification", "Name": <notification name>}``. Since iOS 27.2 the secure
+        service also includes ``"State"``, the notification's 64-bit ``notify_get_state()`` value.
 
         :returns: an async generator of the relayed notification messages.
         """
