@@ -6,7 +6,7 @@ from typing import Any, ClassVar, cast
 import pytest
 import pytest_asyncio
 
-from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ConnectionTerminatedError
+from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ConnectionTerminatedError, DevicePathError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.service_connection import ServiceConnection
@@ -428,6 +428,87 @@ async def test_dirlist_does_not_read_beyond_depth(
     afc = _FakeTreeAfc(readable=listed)
     assert [x async for x in afc.dirlist(root, depth)] == expected
     assert afc.listed == listed
+
+
+class _MaliciousPullAfc(AfcService):
+    """A device whose directory listing surfaces ``..`` entries to climb the local destination."""
+
+    TREE: ClassVar[dict[str, list[str]]] = {
+        "exfil": [".."],
+        "exfil/..": [".."],
+        "exfil/../..": ["escaped"],
+    }
+
+    def __init__(self) -> None:
+        super().__init__(cast(LockdownServiceProvider, object()), service_name="com.apple.afc")
+
+    async def resolve_path(self, filename: str) -> str:
+        return filename
+
+    async def isdir(self, filename: str) -> bool:
+        return filename in self.TREE
+
+    async def listdir(self, filename: str) -> list[str]:
+        return self.TREE[filename]
+
+    async def stat(self, filename: str) -> dict[str, Any]:
+        is_dir = filename in self.TREE
+        return {"st_ifmt": "S_IFDIR" if is_dir else "S_IFREG", "st_size": 4, "st_mtime": datetime(2020, 1, 1)}
+
+    async def get_file_contents(self, filename: str) -> bytes:
+        return b"pwnd"
+
+
+async def test_pull_rejects_parent_traversal_entry(tmp_path: pathlib.Path) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    with pytest.raises(DevicePathError):
+        await _MaliciousPullAfc().pull("exfil", str(out), progress_bar=False)
+    assert not (tmp_path / "escaped").exists()
+
+
+async def test_pull_skips_parent_traversal_entry_when_ignoring_errors(tmp_path: pathlib.Path) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    await _MaliciousPullAfc().pull("exfil", str(out), ignore_errors=True, progress_bar=False)
+    assert not (tmp_path / "escaped").exists()
+
+
+class _LinkPullAfc(AfcService):
+    """A device whose listing is clean, but one entry is a symlink whose target ends in ``..``."""
+
+    TREE: ClassVar[dict[str, list[str]]] = {
+        "exfil": ["link"],
+        "exfil/../payload/x/..": ["escaped"],
+    }
+
+    def __init__(self) -> None:
+        super().__init__(cast(LockdownServiceProvider, object()), service_name="com.apple.afc")
+
+    async def isdir(self, filename: str) -> bool:
+        return filename in self.TREE
+
+    async def listdir(self, filename: str) -> list[str]:
+        return self.TREE[filename]
+
+    async def stat(self, filename: str) -> dict[str, Any]:
+        info: dict[str, Any] = {"st_ifmt": "S_IFREG", "st_size": 4, "st_mtime": datetime(2020, 1, 1)}
+        if filename == "exfil/link":
+            info.update(st_ifmt="S_IFLNK", LinkTarget="../payload/x/..")
+        elif filename in self.TREE:
+            info["st_ifmt"] = "S_IFDIR"
+        return info
+
+    async def get_file_contents(self, filename: str) -> bytes:
+        return b"pwnd"
+
+
+async def test_pull_rejects_link_target_ending_in_parent(tmp_path: pathlib.Path) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    with pytest.raises(DevicePathError):
+        await _LinkPullAfc().pull("exfil", str(out), progress_bar=False)
+    assert not (out / "escaped").exists()
 
 
 async def test_push_pull_bigger_than_max_chunk(afc: AfcService) -> None:
