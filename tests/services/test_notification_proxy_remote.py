@@ -1,11 +1,12 @@
 import asyncio
+import json
 from typing import Any, Optional, cast
 
 import pytest
 
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
-from pymobiledevice3.services.notification_proxy import RemoteNotificationProxyService
+from pymobiledevice3.services.notification_proxy import NotificationEvent, RemoteNotificationProxyService
 
 PROBE_NOTIFICATION = "com.apple.pymobiledevice3.test.notification"
 
@@ -80,6 +81,33 @@ async def test_receive_notification_yields_relayed_messages() -> None:
 
 
 @pytest.mark.asyncio
+async def test_receive_notification_yields_typed_events() -> None:
+    service, _ = _service([{"Command": "RelayNotification", "Name": PROBE_NOTIFICATION, "State": 7}])
+
+    async for event in service.receive_notification():
+        assert isinstance(event, NotificationEvent)
+        assert (event.command, event.name, event.state) == ("RelayNotification", PROBE_NOTIFICATION, 7)
+        break
+
+
+def test_notification_event_is_still_the_message() -> None:
+    message = {"Command": "RelayNotification", "Name": PROBE_NOTIFICATION}
+
+    event = NotificationEvent.from_message(message)
+
+    assert event == message and event["Name"] == PROBE_NOTIFICATION and event.get("State") is None
+    assert event.state is None
+    assert json.loads(json.dumps(event)) == message
+    assert repr(event) == repr(message)
+
+
+def test_notification_event_without_a_name() -> None:
+    event = NotificationEvent.from_message({"Command": "ProxyDeath"})
+
+    assert event.command == "ProxyDeath" and event.name is None
+
+
+@pytest.mark.asyncio
 async def test_observe_post_relay_round_trip_on_device(service_provider) -> None:
     """Observe a notification, post it, and confirm the device relays it back."""
     if not isinstance(service_provider, RemoteServiceDiscoveryService):
@@ -91,13 +119,13 @@ async def test_observe_post_relay_round_trip_on_device(service_provider) -> None
             await asyncio.sleep(1)
             await poster.notify_post(PROBE_NOTIFICATION)
 
-            async def first_relay() -> dict[str, Any]:
+            async def first_relay() -> NotificationEvent:
                 async for event in observer.receive_notification():
                     return event
                 raise AssertionError("stream ended without a relay")
 
             event = await asyncio.wait_for(first_relay(), 15)
 
-    # iOS 27.2 added the notification's "State" to the relay.
-    event.pop("State", None)
-    assert event == {"Command": "RelayNotification", "Name": PROBE_NOTIFICATION}
+    assert (event.command, event.name) == ("RelayNotification", PROBE_NOTIFICATION)
+    # iOS 27.2 added the notification's state to the relay.
+    assert event.state is None or isinstance(event.state, int)
