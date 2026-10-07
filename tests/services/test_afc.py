@@ -474,6 +474,43 @@ async def test_pull_skips_parent_traversal_entry_when_ignoring_errors(tmp_path: 
     assert not (tmp_path / "escaped").exists()
 
 
+class _LinkPullAfc(AfcService):
+    """A device whose listing is clean, but one entry is a symlink whose target ends in ``..``."""
+
+    TREE: ClassVar[dict[str, list[str]]] = {
+        "exfil": ["link"],
+        "exfil/../payload/x/..": ["escaped"],
+    }
+
+    def __init__(self) -> None:
+        super().__init__(cast(LockdownServiceProvider, object()), service_name="com.apple.afc")
+
+    async def isdir(self, filename: str) -> bool:
+        return filename in self.TREE
+
+    async def listdir(self, filename: str) -> list[str]:
+        return self.TREE[filename]
+
+    async def stat(self, filename: str) -> dict[str, Any]:
+        info: dict[str, Any] = {"st_ifmt": "S_IFREG", "st_size": 4, "st_mtime": datetime(2020, 1, 1)}
+        if filename == "exfil/link":
+            info.update(st_ifmt="S_IFLNK", LinkTarget="../payload/x/..")
+        elif filename in self.TREE:
+            info["st_ifmt"] = "S_IFDIR"
+        return info
+
+    async def get_file_contents(self, filename: str) -> bytes:
+        return b"pwnd"
+
+
+async def test_pull_rejects_link_target_ending_in_parent(tmp_path: pathlib.Path) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    with pytest.raises(DevicePathError):
+        await _LinkPullAfc().pull("exfil", str(out), progress_bar=False)
+    assert not (out / "escaped").exists()
+
+
 async def test_push_pull_bigger_than_max_chunk(afc: AfcService) -> None:
     contents = b"x" * MAXIMUM_READ_SIZE * 2
     await afc.set_file_contents("test", contents)
