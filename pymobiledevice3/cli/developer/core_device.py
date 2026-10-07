@@ -143,7 +143,7 @@ async def core_device_propose_empty_file(
 async def core_device_launch_application(
     service_provider: RSDServiceProviderDep,
     bundle_identifier: str,
-    argument: list[str],
+    argument: Annotated[Optional[list[str]], typer.Argument(help="Arguments to pass to the app")] = None,
     kill_existing: Annotated[
         bool,
         typer.Option(help="Whether to kill an existing instance of this process"),
@@ -161,7 +161,7 @@ async def core_device_launch_application(
         print_json(
             await app_service.launch_application(
                 bundle_identifier,
-                list(argument),
+                list(argument or ()),
                 kill_existing,
                 suspended,
                 dict(var.split("=", 1) for var in env or ()),
