@@ -209,7 +209,6 @@ async def test_get_nonce_sends_domain_and_returns_nonce() -> None:
 
 @pytest.mark.asyncio
 async def test_each_invoke_uses_a_fresh_closed_connection() -> None:
-    # cryptexd serves one routine per connection; reusing one fails with an incomplete read.
     service, sent = _service({"error": 0, "argv": {}})
     rsd = cast(FakeRsd, service.rsd)
 
