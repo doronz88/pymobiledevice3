@@ -17,11 +17,7 @@ frameworks on macOS:
   PasteboardSnapshot}``, data inline) for every pasteboard change -- on-device
   copies, a SET from another connection, and a SET from the subscribing
   connection itself (that PUSH arrives *instead of* a ``SET_REPLY``).
-* ``dtpasteboardd`` aborts ("Attempted to send non-reply msg on the reply
-  channel") on the second reply-wanting request of one connection. PULL needs
-  the reply flag to be answered at all, so :meth:`PasteboardService.get` /
-  :meth:`PasteboardService.set` are good for one call per connection; only
-  flag-less messages can repeat freely.
+* PULL needs the reply flag to be answered at all.
 * A ``PasteboardSnapshot`` carries ``items: [{types: [String], data: {UTI:
   PasteboardItemData}}]`` plus optional ``metadata`` / ``sourceMetadata``.
   ``PasteboardItemData`` on the wire is ``{data: Data}`` for immediate
@@ -339,17 +335,16 @@ async def read_pasteboard(
     """
     async with PasteboardService(rsd) as service:
         snapshot = await service.get(pasteboard_name, POLICY_PROMISE_SECONDARY)
-    content = PasteboardContent.from_snapshot(snapshot)
-    if content.image is None and not (content.text or "").strip("\ufffc \t\r\n") and _promises_an_image(snapshot):
-        if not allow_full_pull:
-            logger.info(
-                "device copy holds a picture only inside a rich representation; not read (it stalls the device)"
-            )
-            return snapshot, PasteboardContent()
-        logger.debug("pasteboard: nothing shareable in the primary types; pulling every representation")
-        async with PasteboardService(rsd) as service:
-            snapshot = await asyncio.wait_for(service.get(pasteboard_name), _FULL_PULL_TIMEOUT_SECONDS)
         content = PasteboardContent.from_snapshot(snapshot)
+        if content.image is None and not (content.text or "").strip("\ufffc \t\r\n") and _promises_an_image(snapshot):
+            if not allow_full_pull:
+                logger.info(
+                    "device copy holds a picture only inside a rich representation; not read (it stalls the device)"
+                )
+                return snapshot, PasteboardContent()
+            logger.debug("pasteboard: nothing shareable in the primary types; pulling every representation")
+            snapshot = await asyncio.wait_for(service.get(pasteboard_name), _FULL_PULL_TIMEOUT_SECONDS)
+            content = PasteboardContent.from_snapshot(snapshot)
     return snapshot, content
 
 
@@ -364,8 +359,8 @@ class PasteboardMonitor:
     read with :func:`read_pasteboard`, not through the service's own ``AUTONOTIFY`` subscription:
     that one makes the daemon resolve every representation before it says anything, which takes a
     minute for a copy made in Notes (see the module docstring). Every pasteboard request uses a
-    connection of its own, as the daemon allows one reply per connection. The notification
-    connection is re-established whenever it drops. ``allow_full_pull`` is passed on to
+    connection of its own, so a reply the daemon is slow to send never holds up another request.
+    The notification connection is re-established whenever it drops. ``allow_full_pull`` is passed on to
     :func:`read_pasteboard`.
     """
 
