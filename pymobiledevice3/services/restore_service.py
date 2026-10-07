@@ -27,9 +27,6 @@ class RestoreService(RemoteService):
     used during the restore/recovery flow such as entering recovery, rebooting, and reading nonces
     and preflight information. This is a remote service reached over RSD and is used as an async
     context manager.
-
-    Use one connection per command: on iOS 27.0 the daemon aborts ("Attempted to send non-reply msg
-    on the reply channel") when it answers a second request on the same connection.
     """
 
     SERVICE_NAME = "com.apple.RestoreRemoteServices.restoreserviced"

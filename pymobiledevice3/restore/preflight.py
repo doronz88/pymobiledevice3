@@ -75,14 +75,13 @@ async def collect_device_side_preflight(
         "DeviceInfoRequests": {},
         "DeviceInfoFailures": {},
     }
-    for updater in updaters:
-        payload = build_tethered_preflight_payload(ipsw, build_identity, updater)
-        # one connection per command: restoreserviced aborts on a second request over the same one
-        async with RestoreService(rsd) as service:
+    async with RestoreService(rsd) as service:
+        for updater in updaters:
+            payload = build_tethered_preflight_payload(ipsw, build_identity, updater)
             info = await service.get_device_side_preflightinfo(payload)
-        for key in ("DeviceInfo", "DeviceInfoTags", "DeviceInfoRequests"):
-            if updater in info.get(key, {}):
-                merged[key][updater] = info[key][updater]
-        merged["DeviceInfoFailures"].update(info.get("DeviceInfoFailures", {}))
-        merged["ApParameters"] = info.get("ApParameters")
+            for key in ("DeviceInfo", "DeviceInfoTags", "DeviceInfoRequests"):
+                if updater in info.get(key, {}):
+                    merged[key][updater] = info[key][updater]
+            merged["DeviceInfoFailures"].update(info.get("DeviceInfoFailures", {}))
+            merged["ApParameters"] = info.get("ApParameters")
     return merged
