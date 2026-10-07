@@ -28,6 +28,8 @@ otherwise, they derive from `LockdownService`.
 
 ::: pymobiledevice3.services.mobile_image_mounter.MobileImageMounterService
 
+::: pymobiledevice3.services.storage_mounter_bridge.StorageMounterBridgeService
+
 ## DDI over cryptexd (iOS 17+)
 
 `CryptexdService` installs the DeveloperDiskImage as a cryptex without the image mounter. It is a
