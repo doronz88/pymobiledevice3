@@ -322,7 +322,7 @@ class RemotePairingTunnel(ABC):
                     packet = await self.tun.async_read()
                     if packet and (packet[0] >> 4) == 6:
                         await self.send_packet_to_device(packet)
-        except ConnectionResetError:
+        except (ConnectionResetError, ConnectionTerminatedError):
             self._logger.warning(f"got connection reset in {_current_task_name()}")
         except OSError:
             self._logger.warning(f"got oserror in {_current_task_name()}")

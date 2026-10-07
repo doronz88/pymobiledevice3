@@ -1,6 +1,7 @@
 import asyncio
 import socket
 import ssl
+import struct
 from typing import cast
 
 import pytest
@@ -88,3 +89,41 @@ def test_ssl_start_sync_failure_raises_connection_terminated(monkeypatch):
 
     with pytest.raises(ConnectionTerminatedError):
         conn.ssl_start_sync("unused-certfile")
+
+
+@pytest.mark.asyncio
+async def test_sendall_after_peer_closed_raises_connection_terminated():
+    # Once the peer is gone asyncio fails a send with ConnectionResetError("Connection lost"), then with
+    # the stored socket error (BrokenPipeError). Both mean the device dropped us. On Windows socketpair()
+    # is TCP, so sends are still accepted until the peer's RST comes back; keep sending until one fails.
+    host, device = socket.socketpair()
+    connection = ServiceConnection(host)
+    try:
+        await connection.start()
+        device.close()
+        for _ in range(2):
+            with pytest.raises(ConnectionTerminatedError):
+                for _ in range(200):
+                    await connection.sendall(b"\x00" * 1024)
+                    await asyncio.sleep(0.01)
+    finally:
+        device.close()
+        await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_recvall_after_peer_reset_raises_connection_terminated():
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        host = socket.create_connection(server.getsockname())
+        device, _ = server.accept()
+    connection = ServiceConnection(host)
+    try:
+        await connection.start()
+        # Linger 0 makes close() send RST instead of FIN, like a device dropping off the bus.
+        device.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        device.close()
+        with pytest.raises(ConnectionTerminatedError):
+            await connection.recvall(4)
+    finally:
+        device.close()
+        await connection.close()

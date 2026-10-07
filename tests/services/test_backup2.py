@@ -1,4 +1,6 @@
+import asyncio
 import ctypes
+import socket
 import sqlite3
 import struct
 import time
@@ -17,6 +19,7 @@ from pymobiledevice3.exceptions import (
     NotEnoughDiskSpaceError,
 )
 from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.device_link import (
     PURGE_DISK_SPACE_ERROR,
     PURGE_DISK_SPACE_ERROR_STRING,
@@ -637,3 +640,31 @@ def test_device_link_does_not_remove_directory_tracked_as_discarded_file(tmp_pat
         device_link.cleanup_discarded_files()
 
     assert kept_file.read_text() == "data"
+
+
+@pytest.mark.asyncio
+async def test_device_link_download_files_reports_dropped_link(tmp_path: Path) -> None:
+    """A device that drops the link mid-file ends the transfer with ConnectionTerminatedError.
+
+    The raw send error used to land in download_files' handler for local file errors and came out
+    as an AssertionError (no errno) or a KeyError (an errno with no device error code).
+    """
+    (tmp_path / "Manifest.db").write_bytes(b"\x00" * (8 * 1024 * 1024))
+    host, device = socket.socketpair()
+    device.setblocking(False)
+    connection = ServiceConnection(host)
+
+    async def drop_after_first_read() -> None:
+        await asyncio.get_running_loop().sock_recv(device, 1024)
+        device.close()
+
+    try:
+        await connection.start()
+        dropper = asyncio.create_task(drop_after_first_read())
+        with pytest.raises(ConnectionTerminatedError):
+            await DeviceLink(connection, tmp_path).download_files(["DLMessageDownloadFiles", ["Manifest.db"]])
+        await dropper
+    finally:
+        device.close()
+        await connection.close()
+
