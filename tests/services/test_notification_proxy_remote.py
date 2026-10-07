@@ -6,7 +6,12 @@ import pytest
 
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
-from pymobiledevice3.services.notification_proxy import NotificationEvent, RemoteNotificationProxyService
+from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
+from pymobiledevice3.services.notification_proxy import (
+    NotificationEvent,
+    NotificationStateError,
+    RemoteNotificationProxyService,
+)
 
 PROBE_NOTIFICATION = "com.apple.pymobiledevice3.test.notification"
 
@@ -16,7 +21,7 @@ class FakeConnection:
         self.sent: list[dict[str, Any]] = []
         self._inbound = list(inbound)
 
-    async def send_request(self, request: dict[str, Any]) -> None:
+    async def send_request(self, request: dict[str, Any], wanting_reply: bool = False) -> None:
         self.sent.append(request)
 
     async def receive_response(self) -> dict[str, Any]:
@@ -88,6 +93,56 @@ async def test_receive_notification_yields_typed_events() -> None:
         assert isinstance(event, NotificationEvent)
         assert (event.command, event.name, event.state) == ("RelayNotification", PROBE_NOTIFICATION, 7)
         break
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("state", "wire_type"), [(5, XpcInt64Type), (-2, XpcInt64Type), (2**64 - 1, XpcUInt64Type)])
+async def test_notify_set_state_sends_a_64_bit_integer(state: int, wire_type: type) -> None:
+    service, connection = _service()
+
+    await service.notify_set_state(PROBE_NOTIFICATION, state)
+
+    (request,) = connection.sent
+    assert request == {"Command": "SetNotificationState", "Name": PROBE_NOTIFICATION, "State": state}
+    assert type(request["State"]) is wire_type
+
+
+@pytest.mark.asyncio
+async def test_notify_get_state_returns_the_state_of_the_requested_name() -> None:
+    service, connection = _service([
+        {"Command": "RelayNotification", "Name": "other", "State": 1},
+        {"Command": "RelayNotificationState", "Name": PROBE_NOTIFICATION, "State": 42, "Status": 0},
+    ])
+
+    assert await service.notify_get_state(PROBE_NOTIFICATION) == 42
+    assert connection.sent == [{"Command": "GetNotificationState", "Name": PROBE_NOTIFICATION}]
+
+
+@pytest.mark.asyncio
+async def test_notify_get_state_raises_on_a_failure_status() -> None:
+    service, _ = _service([{"Command": "RelayNotificationState", "Name": PROBE_NOTIFICATION, "State": 0, "Status": 7}])
+
+    with pytest.raises(NotificationStateError) as error:
+        await service.notify_get_state(PROBE_NOTIFICATION)
+
+    assert error.value.status == 7
+
+
+@pytest.mark.asyncio
+async def test_state_is_held_while_the_setter_is_connected_on_device(service_provider) -> None:
+    if not isinstance(service_provider, RemoteServiceDiscoveryService):
+        pytest.skip("the native notification proxy requires an RSD tunnel")
+    if tuple(int(part) for part in service_provider.product_version.split(".")[:2]) < (27, 2):
+        pytest.skip("notification state requires iOS 27.2")
+    name = f"{PROBE_NOTIFICATION}.state"
+
+    async with RemoteNotificationProxyService(service_provider) as reader:
+        async with RemoteNotificationProxyService(service_provider) as setter:
+            await setter.notify_set_state(name, 1234)
+            await asyncio.sleep(0.5)
+            assert await reader.notify_get_state(name) == 1234
+        await asyncio.sleep(1)
+        assert await reader.notify_get_state(name) == 0
 
 
 def test_notification_event_is_still_the_message() -> None:

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import AsyncExitStack
 from typing import Annotated, Union
@@ -5,7 +6,13 @@ from typing import Annotated, Union
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json_line
+from pymobiledevice3.cli.cli_common import (
+    RSDServiceProviderDep,
+    ServiceProviderDep,
+    async_command,
+    print_json,
+    print_json_line,
+)
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.resources.firmware_notifications import get_notifications
@@ -96,3 +103,31 @@ async def observe_all(
 
         async for event in service.receive_notification():
             print_json_line(event)
+
+
+@cli.command("get-state")
+@async_command
+async def get_state(service_provider: RSDServiceProviderDep, names: list[str]) -> None:
+    """Read the 64-bit state of one or more Darwin notifications (notify_get_state). iOS 27.2+."""
+    async with RemoteNotificationProxyService(service_provider) as service:
+        print_json({name: await service.notify_get_state(name) for name in names})
+
+
+@cli.command("set-state")
+@async_command
+async def set_state(
+    service_provider: RSDServiceProviderDep,
+    name: str,
+    state: int,
+    post: Annotated[bool, typer.Option(help="Also post the notification, so observers pick the new state up.")] = True,
+) -> None:
+    """Set the 64-bit state of a Darwin notification (notify_set_state) and hold it. iOS 27.2+.
+
+    The device keeps the state only while this command runs, and resets it to 0 afterwards.
+    """
+    async with RemoteNotificationProxyService(service_provider) as service:
+        await service.notify_set_state(name, state)
+        if post:
+            await service.notify_post(name)
+        print("> Hit Ctrl+C to release the state")
+        await asyncio.Event().wait()

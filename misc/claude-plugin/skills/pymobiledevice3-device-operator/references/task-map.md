@@ -30,7 +30,7 @@ Use these for browsing files, copying artifacts, or handling app containers.
 
 - `syslog`: live logs and collection.
 - `diagnostics`: restart, shutdown, info, battery-related flows under `pymobiledevice3/cli/diagnostics/`.
-- `notification`: observe or post Darwin notifications.
+- `notification`: observe or post Darwin notifications; `get-state` / `set-state` read and hold a notification's 64-bit state (iOS 27.2+, RSD tunnel).
 - `pcap`: capture network traffic.
 - `btlogger`: capture Bluetooth HCI packet logs (pcap/pcapng).
 - `power-assertion`: keep the device awake for a task.

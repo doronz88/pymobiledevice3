@@ -212,6 +212,18 @@ pymobiledevice3 notification observe --remotexpc com.example.notification --user
 pymobiledevice3 notification post --remotexpc com.example.notification --userspace
 ```
 
+Since iOS 27.2 a notification also carries a 64-bit state, which system daemons use to publish
+a current value (lock state, orientation, low power mode...). Reading and setting it needs an RSD
+tunnel:
+
+```shell
+# Read the current value
+pymobiledevice3 notification get-state com.apple.springboard.lockstate com.apple.backboardd.orientation
+
+# Set a value and post the notification; the device keeps the value until you hit Ctrl+C
+pymobiledevice3 notification set-state com.example.notification 1
+```
+
 ## SpringBoard UI
 
 ```shell
