@@ -1695,12 +1695,9 @@ class VncStreamServer:
             logger.debug("shutdown: closing device stream connection")
             with contextlib.suppress(Exception):
                 await svc.close()
-            # Release the device-side session on a FRESH connection: the stop
-            # must be the sole reply-bearing request on its RemoteXPC channel, or
-            # the device daemon crashes before it clears remote-observation state
-            # and frees the camera/microphone (see DisplayService.stop_all_streams).
-            # Reusing the start connections above (svc / self._audio_svc) is
-            # exactly the fatal second request.
+            # Release the device-side session, so the device clears its
+            # remote-observation state and frees the camera/microphone (see
+            # DisplayService.stop_all_streams).
             logger.debug("shutdown: releasing device media session")
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(DisplayService.stop_all_streams(self._rsd), timeout=6.0)

@@ -74,9 +74,7 @@ async def test_stop_media_stream_with_identifiers() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stop_all_streams_uses_a_fresh_connection(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The stop MUST be the sole reply-bearing request on its RemoteXPC connection, so
-    # stop_all_streams opens a brand-new connection and closes it — it never reuses one.
+async def test_stop_all_streams_uses_a_connection_of_its_own(monkeypatch: pytest.MonkeyPatch) -> None:
     rsd = _make_rsd()
     connection = FakeConnection()
     monkeypatch.setattr(rsd, "start_remote_service", lambda name: cast(RemoteXPCConnection, connection))

@@ -619,13 +619,9 @@ async def touch_session(
             drain_task.cancel()
             with contextlib.suppress(BaseException):
                 await drain_task
-            # Best-effort teardown on a FRESH connection: the stop must be the
-            # sole reply-bearing request on its RemoteXPC channel, or the device
-            # daemon crashes before releasing the session (see
-            # DisplayService.stop_all_streams). Reusing ``display`` — which
-            # issued the stream start — is exactly that fatal second request.
+            # Best-effort teardown, so the device releases the session.
             with contextlib.suppress(Exception):
-                await DisplayService.stop_all_streams(rsd)
+                await display.stop_media_stream(stop_all=True)
             transport.close()
     finally:
         with contextlib.suppress(BaseException):
