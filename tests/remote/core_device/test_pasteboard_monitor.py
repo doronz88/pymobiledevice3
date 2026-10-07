@@ -65,7 +65,7 @@ class FakeDevice:
 
 
 class FakeConnection:
-    """One pasteboard-service connection; like dtpasteboardd, good for a single reply."""
+    """One pasteboard-service connection."""
 
     def __init__(self, device: FakeDevice) -> None:
         self.device = device
@@ -76,7 +76,6 @@ class FakeConnection:
         pass
 
     async def send_request(self, data: dict[str, Any], wanting_reply: bool = False) -> None:
-        assert not (wanting_reply and self.sent), "a second reply-wanting request aborts dtpasteboardd"
         self.sent.append(data)
 
     async def receive_response(self) -> dict[str, Any]:

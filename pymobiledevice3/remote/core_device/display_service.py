@@ -227,11 +227,6 @@ class DisplayService(CoreDeviceService):
         ``{avcMediaStreamOptionClientSessionID: <uuid>}`` payload never decoded
         to a ``StopRequest``, so the daemon rejected it outright.
 
-        This request MUST be the only reply-bearing request on its RemoteXPC
-        connection — see :meth:`stop_all_streams` for why a second one is fatal.
-        Prefer that classmethod; call this instance method directly only on a
-        connection that has issued no earlier ``send_receive_request``.
-
         :param stop_all: Stop every session (the whole media-stream server).
         :param identifiers: Stop only these stream tokens; ignored when empty.
         """
@@ -253,18 +248,13 @@ class DisplayService(CoreDeviceService):
 
     @classmethod
     async def stop_all_streams(cls, rsd: RemoteServiceDiscoveryService) -> dict[str, Any]:
-        """Tear down every media-stream session, on a FRESH connection.
+        """Tear down every media-stream session, on a connection of its own.
 
-        The stop MUST be the only reply-bearing request on its RemoteXPC
-        connection. A second reply-bearing request on any single connection
-        makes the device's ``dtremotedisplayd`` fatally assert (``Attempted to
-        send non-reply msg N on the reply channel``) and ``SIGABRT`` *before* it
-        runs its teardown — ``stopRemoteObservation``, releasing the audit
-        activity assertion, and stopping the screen-sharing indicator. That
-        leaves the device "observed remotely" with its camera and microphone
-        blocked until it reboots. Reusing the connection that issued the stream
-        ``start`` is exactly that fatal second request, so the stop always runs
-        on a brand-new connection whose sole request is the stop itself.
+        For callers that no longer hold the connection a stream was started on.
+        The stop makes ``dtremotedisplayd`` run its teardown —
+        ``stopRemoteObservation``, releasing the audit activity assertion, and
+        stopping the screen-sharing indicator. Without it the device stays
+        "observed remotely" with its camera and microphone blocked.
         """
         async with cls(rsd) as svc:
             return await svc.stop_media_stream(stop_all=True)

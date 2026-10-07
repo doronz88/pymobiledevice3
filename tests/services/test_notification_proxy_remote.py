@@ -98,4 +98,6 @@ async def test_observe_post_relay_round_trip_on_device(service_provider) -> None
 
             event = await asyncio.wait_for(first_relay(), 15)
 
+    # iOS 27.2 added the notification's "State" to the relay.
+    event.pop("State", None)
     assert event == {"Command": "RelayNotification", "Name": PROBE_NOTIFICATION}

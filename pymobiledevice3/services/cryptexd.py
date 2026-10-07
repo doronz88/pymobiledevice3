@@ -375,9 +375,8 @@ class CryptexdService(RemoteService):
     delivers its payloads as out-of-band XPC file transfers, so unlike the others it keeps one
     connection open across the request and the transfers.
 
-    The daemon serves exactly one routine per connection and then closes it — a second request on
-    the same connection fails with an incomplete read, whether or not the first one succeeded. Each
-    call therefore opens and closes its own connection, and instances are freely reusable.
+    Each call opens and closes its own connection, so instances need no ``connect()`` and are
+    freely reusable.
 
     Requires an iOS 17+ RSD tunnel.
     """
@@ -388,7 +387,7 @@ class CryptexdService(RemoteService):
         super().__init__(rsd, self.SERVICE_NAME)
 
     async def connect(self) -> None:
-        """No-op: cryptexd is one-routine-per-connection, so `invoke` manages its own connection."""
+        """No-op: `invoke` manages its own connection."""
 
     async def close(self) -> None:
         """No-op: `invoke` closes the connection it opened."""

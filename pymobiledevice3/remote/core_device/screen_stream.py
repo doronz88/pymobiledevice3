@@ -441,10 +441,8 @@ async def capture_rtp_to_file(
                     fp.write(len(data).to_bytes(4, "big") + data)
                     captured += 1
             logger.info(f"Captured {captured} packets to {output_path}")
-            # Stop on a fresh connection: the stop must be the sole reply-bearing
-            # request on its RemoteXPC channel (see DisplayService.stop_all_streams).
             with contextlib.suppress(Exception):
-                await DisplayService.stop_all_streams(rsd)
+                await service.stop_media_stream(stop_all=True)
         finally:
             transport.close()
     return captured
@@ -496,10 +494,8 @@ async def capture_audio_rtp_to_file(
                     fp.write(len(data).to_bytes(4, "big") + data)
                     captured += 1
             logger.info(f"Captured {captured} audio packets to {output_path}")
-            # Stop on a fresh connection: the stop must be the sole reply-bearing
-            # request on its RemoteXPC channel (see DisplayService.stop_all_streams).
             with contextlib.suppress(Exception):
-                await DisplayService.stop_all_streams(rsd)
+                await service.stop_media_stream(stop_all=True)
         finally:
             transport.close()
     return captured
@@ -1512,10 +1508,7 @@ class ScreenStreamServer:
             # Only local cleanup here: closing the RemoteXPC connection that
             # started the stream. The device-side session is reclaimed either by
             # the daemon's duplicate-stream detection when the next audio
-            # ``start`` arrives, or by the ``stop_all_streams`` at shutdown. We
-            # must NOT issue a stop on this connection — it already carried the
-            # ``start`` request, and a second reply-bearing request would crash
-            # the device daemon (see DisplayService.stop_all_streams).
+            # ``start`` arrives, or by the ``stop_all_streams`` at shutdown.
             with contextlib.suppress(asyncio.TimeoutError, Exception):
                 await asyncio.wait_for(svc.close(), timeout=2.0)
 
@@ -1605,11 +1598,8 @@ class ScreenStreamServer:
             # started the stream. The device-side session is reclaimed either by
             # the daemon's duplicate-stream detection when the next video
             # ``start`` arrives (the stall watchdog / motion restart path), or by
-            # the ``stop_all_streams`` at shutdown. We must NOT issue a stop on
-            # this connection — it already carried the ``start`` request, and a
-            # second reply-bearing request would crash the device daemon before
-            # it releases the session (see DisplayService.stop_all_streams). The
-            # bounded close still protects _stream_lock from a wedged daemon.
+            # the ``stop_all_streams`` at shutdown. The bounded close still
+            # protects _stream_lock from a wedged daemon.
             with contextlib.suppress(asyncio.TimeoutError, Exception):
                 await asyncio.wait_for(svc.close(), timeout=2.0)
 
@@ -3212,12 +3202,11 @@ class ScreenStreamServer:
             await _bounded(_stop_video(), "_stop_active_stream")
             logger.debug("shutdown: stopping audio stream")
             await _bounded(_stop_audio(), "_stop_audio_stream")
-            # Release the device-side session on a FRESH connection. This is the
-            # one place we tell the daemon to stop: it runs stopRemoteObservation,
-            # releases the audit assertion, and clears the screen-sharing
-            # indicator, so the device is no longer "observed remotely" and its
-            # camera/microphone are freed. Doing it on a fresh connection is
-            # mandatory — see DisplayService.stop_all_streams.
+            # Release the device-side session. This is the one place we tell the
+            # daemon to stop: it runs stopRemoteObservation, releases the audit
+            # assertion, and clears the screen-sharing indicator, so the device
+            # is no longer "observed remotely" and its camera/microphone are
+            # freed.
             logger.debug("shutdown: releasing device media session")
             await _bounded(DisplayService.stop_all_streams(self._rsd), "stop_all_streams", timeout=6.0)
             # Close the accessibility audit BEFORE cancelling stragglers --

@@ -302,7 +302,11 @@ class RemoteXPCConnection:
         offset = 0
         while offset < len(xpc_wrapper):
             offset += await self._send_flow_controlled(ROOT_CHANNEL, xpc_wrapper, offset, len(xpc_wrapper))
-        self.next_message_id[ROOT_CHANNEL] += 1
+        # RemoteXPC numbers each side's messages with its own parity, stepping by two: the
+        # initiator's are odd, the listener's even. A listener asked to reply to an even id
+        # aborts ("Attempted to send non-reply msg on the reply channel"), taking the daemon
+        # down. Only the empty handshake message is 0.
+        self.next_message_id[ROOT_CHANNEL] = (self.next_message_id[ROOT_CHANNEL] + 1) | 1
 
     async def iter_file_chunks(self, total_size: int, file_idx: int = 0) -> AsyncIterable[bytes]:
         stream_id = (file_idx + 1) * 2
@@ -369,7 +373,6 @@ class RemoteXPCConnection:
                 continue
             if xpc_message.payload.obj.data.entries is None:
                 continue
-            self.next_message_id[frame.stream_id] = xpc_message.message_id + 1
             return decode_xpc_object(xpc_message.payload.obj)
 
     async def send_receive_request(self, data: dict[str, Any]) -> dict[str, Any]:
