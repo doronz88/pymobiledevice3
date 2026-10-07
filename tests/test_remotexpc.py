@@ -340,6 +340,19 @@ async def test_send_request_keeps_small_messages_in_one_frame():
     assert len(writer.writes) == 1 and writer.drain_calls == 1
 
 
+@pytest.mark.asyncio
+async def test_send_request_uses_odd_message_ids_after_the_handshake_message():
+    connection = RemoteXPCConnection(("localhost", 0))
+    writer = FakeWriter()
+    connection._writer = cast(asyncio.StreamWriter, writer)
+
+    for wanting_reply in (False, True, False, True):
+        await connection.send_request({"command": "x"}, wanting_reply=wanting_reply)
+
+    message_ids = [XpcWrapper.parse(w[FRAME_HEADER_SIZE:]).message.message_id for w in writer.writes]
+    assert message_ids == [0, 1, 3, 5]
+
+
 def _handshake_uuids(writer: FakeWriter) -> list[uuid.UUID]:
     return [
         decode_xpc_object(XpcWrapper.parse(frame.data).message.payload.obj)["UUID"]
