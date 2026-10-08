@@ -57,6 +57,7 @@ from pymobiledevice3.exceptions import (
     DeviceHasPasscodeSetError,
     DeviceNotFoundError,
     DevicePathError,
+    DvtException,
     FeatureNotSupportedError,
     InstallCoordinationError,
     InternalError,
@@ -353,6 +354,8 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
     except ConnectionTerminatedError:
         logger.error("Connection was terminated abruptly")
         reconnectable = True
+    except DvtException as e:
+        logger.error(str(e))
     except RemoteXPCHandshakeTimeoutError as e:
         logger.error(
             f"{e.args[0].capitalize()}. The service either refuses this host or its daemon is stuck; "

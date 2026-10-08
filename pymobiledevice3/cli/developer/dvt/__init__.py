@@ -1,11 +1,14 @@
+import asyncio
 import contextlib
+import dataclasses
 import logging
 import os
 import posixpath
 import shlex
+import time
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
-from enum import IntEnum
+from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Annotated, Any, NamedTuple, Optional, cast
 
@@ -26,17 +29,29 @@ from pymobiledevice3.cli.cli_common import (
 from pymobiledevice3.cli.developer.dvt import core_profile_session, simulate_location, sysmon
 from pymobiledevice3.exceptions import DvtDirListError, UnrecognizedSelectorError
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
+from pymobiledevice3.services.dvt.instruments.allocations import (
+    MALLOC_EVENTS_MASK,
+    REFERENCE_COUNT_EVENTS_MASK,
+    VM_EVENTS_MASK,
+    ZOMBIE_EVENTS_MASK,
+    AllocationEventType,
+    Allocations,
+    AllocationStatistics,
+)
 from pymobiledevice3.services.dvt.instruments.application_listing import ApplicationListing
 from pymobiledevice3.services.dvt.instruments.condition_inducer import ConditionInducer
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
+from pymobiledevice3.services.dvt.instruments.dyld_metrics import DyldMetrics
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
 from pymobiledevice3.services.dvt.instruments.graphics import Graphics
+from pymobiledevice3.services.dvt.instruments.leaks import Leaks
 from pymobiledevice3.services.dvt.instruments.network_monitor import ConnectionDetectionEvent, NetworkMonitor
 from pymobiledevice3.services.dvt.instruments.network_statistics import NetworkStatistics
 from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.screenshot import Screenshot
+from pymobiledevice3.services.dvt.instruments.vm_tracking import VMSnapshot, VMTracking
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import (
     TestConfig,
     XCTestCaseResult,
@@ -420,6 +435,160 @@ async def dvt_screenshot(service_provider: ServiceProviderDep, out: Path) -> Non
     """Take device screenshot"""
     async with DvtProvider(service_provider) as dvt, Screenshot(dvt) as screenshot:
         out.write_bytes(await screenshot.get_screenshot())
+
+
+@cli.command("vm-regions")
+@async_command
+async def dvt_vm_regions(service_provider: ServiceProviderDep, pid: int) -> None:
+    """List the virtual memory regions of a debuggable (development-signed) app's process"""
+    async with DvtProvider(service_provider) as dvt, VMTracking(dvt) as vm_tracking:
+        snapshot = await vm_tracking.snapshot(pid)
+    print_json([dataclasses.asdict(region) for region in snapshot.regions])
+
+
+@cli.command("memgraph")
+@async_command
+async def dvt_memgraph(
+    service_provider: ServiceProviderDep,
+    pid: int,
+    out: Path,
+    leaked_only: Annotated[
+        bool, typer.Option("--leaked-only", help="Keep only the leaked allocations in the graph.")
+    ] = False,
+) -> None:
+    """
+    Save the memory graph of a running debuggable (development-signed) app's process
+
+    Prints the leak count and addresses as JSON. The .memgraph file can be inspected on macOS
+    with leaks(1), heap(1) or vmmap(1). With --leaked-only, no file is written when nothing leaked.
+    """
+    async with DvtProvider(service_provider) as dvt, Leaks(dvt) as leaks:
+        graph = await leaks.memory_graph(pid, leaked_only=leaked_only)
+    if graph.data is None:
+        logger.warning(f"No leaks were found, so there is no graph to write to {out}")
+    else:
+        out.write_bytes(graph.data)
+    print_json({"leaked_count": graph.leaked_count, "leaked_addresses": graph.leaked_addresses})
+
+
+@cli.command("dyld-metrics")
+@async_command
+async def dvt_dyld_metrics(
+    service_provider: ServiceProviderDep,
+    pid: int,
+    at_main: Annotated[
+        bool, typer.Option("--at-main", help="Wait for the process to reach main before capturing.")
+    ] = False,
+) -> None:
+    """Print the dynamic loader's launch metrics of a debuggable (development-signed) app's process"""
+    async with DvtProvider(service_provider) as dvt, DyldMetrics(dvt) as dyld_metrics:
+        print_json(await dyld_metrics.capture(pid, at_main=at_main))
+
+
+class AllocationKind(str, Enum):
+    HEAP = "heap"
+    REFERENCE_COUNTS = "reference-counts"
+    VM = "vm"
+    ZOMBIES = "zombies"
+
+
+ALLOCATION_KIND_MASKS = {
+    AllocationKind.HEAP: MALLOC_EVENTS_MASK,
+    AllocationKind.REFERENCE_COUNTS: REFERENCE_COUNT_EVENTS_MASK,
+    AllocationKind.VM: VM_EVENTS_MASK,
+    AllocationKind.ZOMBIES: ZOMBIE_EVENTS_MASK,
+}
+#: How often, in seconds, the loaded images are looked up again for an address that matches none.
+ALLOCATION_IMAGES_REFRESH_INTERVAL = 2
+
+
+class AllocationBacktraceFormatter:
+    """Format the frames of a recorded process as ``image+offset``."""
+
+    def __init__(self, vm_tracking: VMTracking, pid: int) -> None:
+        self._vm_tracking = vm_tracking
+        self._pid = pid
+        self._snapshot: Optional[VMSnapshot] = None
+        self._refreshed_at = float("-inf")
+
+    async def format(self, backtrace: tuple[int, ...]) -> list[str]:
+        if any(self._locate(address) is None for address in backtrace):
+            await self._refresh()
+        return [self._locate(address) or hex(address) for address in backtrace]
+
+    def _locate(self, address: int) -> Optional[str]:
+        image = self._snapshot.image_for_address(address) if self._snapshot is not None else None
+        return None if image is None else f"{posixpath.basename(image[0])}+{image[1]:#x}"
+
+    async def _refresh(self) -> None:
+        # Images are loaded while the process runs, but not every address belongs to one.
+        if time.monotonic() - self._refreshed_at < ALLOCATION_IMAGES_REFRESH_INTERVAL:
+            return
+        self._snapshot = await self._vm_tracking.snapshot(self._pid)
+        self._refreshed_at = time.monotonic()
+
+
+@cli.command("allocations")
+@async_command
+async def dvt_allocations(
+    service_provider: ServiceProviderDep,
+    bundle_id: str,
+    duration: Annotated[
+        Optional[float], typer.Option(help="Seconds to record for. Records until interrupted by default.")
+    ] = None,
+    kinds: Annotated[
+        Optional[list[AllocationKind]],
+        typer.Option("--kind", help="Kind of events to record; can be repeated. Heap events by default."),
+    ] = None,
+    events: Annotated[
+        bool,
+        typer.Option(
+            "--events",
+            help="Print every event with its backtrace as a JSON line, instead of the summary. "
+            "Frames are printed as image+offset.",
+        ),
+    ] = False,
+) -> None:
+    """
+    Launch a debuggable (development-signed) app and record its memory allocations
+
+    Prints a summary of the heap allocations by category when the recording ends.
+    """
+    events_mask = 0
+    for kind in kinds or [AllocationKind.HEAP]:
+        events_mask |= ALLOCATION_KIND_MASKS[kind]
+    statistics = AllocationStatistics()
+
+    async def record(allocations: Allocations, formatter: AllocationBacktraceFormatter) -> None:
+        async for event in allocations:
+            if not events:
+                statistics.add(event)
+                continue
+            try:
+                event_type = AllocationEventType(event.type).name
+            except ValueError:
+                event_type = str(event.type)
+            print_json_line({
+                **dataclasses.asdict(event),
+                "type": event_type,
+                "backtrace": await formatter.format(event.backtrace),
+            })
+
+    async with (
+        DvtProvider(service_provider) as dvt,
+        ProcessControl(dvt) as process_control,
+        Allocations(dvt) as allocations,
+        VMTracking(dvt) as vm_tracking,
+    ):
+        environment = await allocations.launch_environment(events_mask=events_mask)
+        pid = await process_control.launch(bundle_id, environment=environment, kill_existing=True)
+        await allocations.attach(pid, events_mask)
+        try:
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(record(allocations, AllocationBacktraceFormatter(vm_tracking, pid)), duration)
+        finally:
+            if not events:
+                print_json([dataclasses.asdict(category) for category in statistics.categories()])
 
 
 @cli.command("xcuitest")

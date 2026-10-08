@@ -357,6 +357,32 @@ pymobiledevice3 developer dvt oslog
 # Kill a process
 pymobiledevice3 developer dvt kill PID
 
+# Memory of a debuggable (development-signed) app. The device refuses any other process.
+# Regions of its address space
+pymobiledevice3 developer dvt vm-regions PID
+
+# Save the memory graph of a running app; prints the leak count and addresses as JSON
+pymobiledevice3 developer dvt memgraph PID app.memgraph
+
+# Inspect it on macOS with leaks(1), heap(1) or vmmap(1)
+leaks app.memgraph
+
+# To see where each allocation was made, launch the app with malloc stack logging first;
+# the memory graph then carries the backtraces
+pymobiledevice3 developer dvt launch --env MallocStackLogging=1 com.example.app
+pymobiledevice3 developer dvt memgraph PID app.memgraph
+malloc_history app.memgraph --fullStacks ADDRESS
+
+# Launch timing, image and dlopen counts as the dynamic loader recorded them
+pymobiledevice3 developer dvt dyld-metrics PID
+
+# Launch an app and summarize its heap allocations by class once interrupted (or after --duration)
+pymobiledevice3 developer dvt allocations com.example.app --duration 10
+
+# Print every event instead, one JSON record each, with its backtrace as image+offset frames;
+# --kind adds reference-counts, vm or zombies events to the default heap ones
+pymobiledevice3 developer dvt allocations com.example.app --events --kind heap --kind reference-counts
+
 # Disable the jetsam memory limit for a process (stop it being killed for
 # exceeding its memory allowance)
 pymobiledevice3 developer dvt memlimitoff PID
