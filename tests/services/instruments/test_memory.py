@@ -9,6 +9,7 @@ from pymobiledevice3.dtx import NSError, PInt64
 from pymobiledevice3.dtx.exceptions import DTXNsError
 from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
+    DvtException,
     ProcessInspectionError,
     PyMobileDevice3Exception,
 )
@@ -19,6 +20,7 @@ from pymobiledevice3.services.dvt.instruments.allocations import (
     Allocations,
     AllocationStatistics,
 )
+from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.dyld_metrics import DyldMetrics
 from pymobiledevice3.services.dvt.instruments.leaks import Leaks
@@ -389,10 +391,29 @@ async def debuggable_app(service_provider) -> str:
     pytest.skip("no development-signed app is installed on the device")
 
 
+async def suspend_count(dvt, pid: int) -> int:
+    """How many times the kernel has the process's task suspended."""
+    for _ in range(10):
+        try:
+            async with CoreProfileSessionTap(dvt, await CoreProfileSessionTap.get_time_config(dvt)) as tap:
+                stackshot = await tap.get_stackshot()
+            break
+        except DvtException:
+            # The device still holds the previous stackshot session for a moment.
+            await asyncio.sleep(1)
+    else:
+        raise AssertionError("the device did not take a stackshot")
+    for task in stackshot["task_snapshots"].values():
+        if task["task_snapshot"]["ts_pid"] == pid:
+            return task["task_snapshot"]["ts_suspend_count"]
+    raise AssertionError(f"pid {pid} is not in the stackshot")
+
+
 @pytest.mark.asyncio
 async def test_memory_channels_refuse_a_system_app(dvt) -> None:
     async with ProcessControl(dvt) as process_control:
         pid = await process_control.launch(SYSTEM_APP)
+        assert not await process_control.is_debuggable(pid)
         async with VMTracking(dvt) as vm_tracking:
             with pytest.raises(ProcessInspectionError, match="must be debuggable"):
                 await vm_tracking.snapshot(pid)
@@ -444,6 +465,12 @@ async def test_memory_of_a_debuggable_app(dvt, service_provider) -> None:
             assert sum(snapshot.image_for_address(frame) is not None for frame in frames) > len(frames) / 2
             assert 0 < snapshot.total_size <= sum(region.size for region in snapshot.regions)
             assert any(region.type == "__TEXT" for region in snapshot.regions)
+
+            assert await process_control.is_debuggable(pid)
+            await process_control.suspend(pid)
+            assert await suspend_count(dvt, pid) == 1
+            await process_control.resume(pid)
+            assert await suspend_count(dvt, pid) == 0
 
             async with DyldMetrics(dvt) as dyld_metrics:
                 metrics = await dyld_metrics.capture(pid)

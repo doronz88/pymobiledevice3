@@ -59,6 +59,15 @@ class ProcessControlService(DTXService):
     @dtx_method("killPid:", expects_reply=False)
     async def kill_pid_(self, pid: int) -> None: ...
 
+    @dtx_method("isPidDebuggable:")
+    async def is_pid_debuggable_(self, pid: int) -> bool: ...
+
+    @dtx_method("suspendPid:")
+    async def suspend_pid_(self, pid: int) -> None: ...
+
+    @dtx_method("resumePid:")
+    async def resume_pid_(self, pid: int) -> None: ...
+
     @dtx_method("processIdentifierForBundleIdentifier:")
     async def process_identifier_for_bundle_identifier_(self, app_bundle_identifier: str) -> int: ...
 
@@ -139,6 +148,33 @@ class ProcessControl(DtxService[ProcessControlService]):
         :param pid: PID of the process to kill.
         """
         await self.signal(pid, SIGKILL)
+
+    async def is_debuggable(self, pid: int) -> bool:
+        """
+        Tell whether the device lets developer tools inspect a process.
+
+        That is the case for development-signed apps (those with ``get-task-allow``), which the
+        memory instruments are limited to on a production device.
+
+        :param pid: PID of the process to check.
+        """
+        return await self.service.is_pid_debuggable_(pid)
+
+    async def suspend(self, pid: int) -> None:
+        """
+        Suspend a process until `resume` is called for it.
+
+        :param pid: PID of the process to suspend.
+        """
+        await self.service.suspend_pid_(pid)
+
+    async def resume(self, pid: int) -> None:
+        """
+        Resume a process that was suspended with `suspend` or launched suspended.
+
+        :param pid: PID of the process to resume.
+        """
+        await self.service.resume_pid_(pid)
 
     async def process_identifier_for_bundle_identifier(self, app_bundle_identifier: str) -> int:
         """
