@@ -199,6 +199,21 @@ class _AsyncPytcpSocket(Protocol):
 
     def close(self) -> None: ...
 
+    @property
+    def state(self) -> Any: ...
+
+
+#: How long teardown waits for the stack to emit the FINs of closed relay connections.
+_FIN_EMIT_TIMEOUT = 0.25
+#: Once emitted, how long the FINs get to travel through the tunnel transport before it closes.
+_FIN_EGRESS_GRACE = 0.02
+#: Session states in which the stack has not yet sent our FIN.
+_FIN_UNSENT_STATES = frozenset({"SYN_RCVD", "ESTABLISHED", "CLOSE_WAIT"})
+
+
+def _fin_unsent(psock: _AsyncPytcpSocket) -> bool:
+    return getattr(getattr(psock, "state", None), "name", None) in _FIN_UNSENT_STATES
+
 
 def _mac_to_bytes(mac: str) -> bytes:
     return bytes(int(x, 16) for x in mac.split(":"))
@@ -431,6 +446,7 @@ class UserspaceDialPlane:
         self._relay_tasks: set[asyncio.Task[None]] = set()  # in-flight handlers, cancelled on exit
         self._socket_dir: Optional[str] = None  # holds the relay unix socket, removed on exit
         self._closing = False  # teardown began; late-spawning handlers must bail out
+        self._closed_socks: set[_AsyncPytcpSocket] = set()  # closed, FIN not yet acknowledged
         self._inflight_dials = 0  # connects in progress; __aexit__ lets them land pre-close
 
     async def __aenter__(self) -> UserspaceDialPlane:
@@ -498,6 +514,19 @@ class UserspaceDialPlane:
             for task in list(self._relay_tasks):
                 task.cancel()
             await asyncio.gather(*list(self._relay_tasks), return_exceptions=True)
+        # close() only queues the FIN. The caller stops the stack right after this returns, so
+        # without this wait the FIN of every connection closed just before teardown (a CLI
+        # command's last service connection) never left, and the device kept the connection:
+        # notification_proxy went on holding a notification state for a client long gone.
+        # The device's ACK cannot be awaited: nothing is received any more at this point.
+        if self._closed_socks:
+            deadline = asyncio.get_running_loop().time() + _FIN_EMIT_TIMEOUT
+            while any(_fin_unsent(psock) for psock in self._closed_socks):
+                if asyncio.get_running_loop().time() > deadline:
+                    break
+                await asyncio.sleep(0.001)
+            await asyncio.sleep(_FIN_EGRESS_GRACE)
+        self._closed_socks.clear()
         if self._server is not None:
             with suppress(Exception):
                 await self._server.wait_closed()
@@ -620,6 +649,8 @@ class UserspaceDialPlane:
                 psock.shutdown(SHUT_RDWR)
             with suppress(Exception):
                 psock.close()
+            self._closed_socks = {sock for sock in self._closed_socks if _fin_unsent(sock)}
+            self._closed_socks.add(psock)
 
     async def dial(self, host: Optional[str] = None, port: Optional[int] = None, **kwargs: Any):
         """``asyncio.open_connection``-compatible dialer passed to the RSD via ``open_connection=``.

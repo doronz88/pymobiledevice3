@@ -1021,6 +1021,10 @@ class DiagnosticsService(LockdownService):
         """
         Restart the device by sending the ``Restart`` request.
 
+        The device goes down once this service's connection is closed, not when the request is
+        acknowledged: close the service (or leave its ``async with`` block) before waiting for the
+        device to come back.
+
         :raises PyMobileDevice3Exception: If the request did not complete successfully.
         """
         await self.action("Restart")

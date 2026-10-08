@@ -336,6 +336,35 @@ async def test_transport_watcher_tears_down_on_transport_death():
     assert tunnel._exit_stack is None  # aclose() ran
 
 
+async def test_teardown_waits_for_closed_connections_to_emit_their_fin():
+    # close() only queues the FIN, and the stack stops right after the dial plane exits: teardown
+    # must hold on until the stack has sent it, or the device keeps the connection open.
+    class State:
+        name = "ESTABLISHED"
+
+    tun = FakeTun()
+    dial_plane = UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR)
+    await dial_plane.__aenter__()
+    _, writer = await dial_plane.dial(DEVICE_ADDR, 1234)
+    psock = (await _poll_until(lambda: tun.socks))[0]
+    psock.state = State()
+    writer.close()
+    await asyncio.wait_for(psock.closed.wait(), timeout=5)
+    await _poll_until(lambda: not dial_plane._relay_tasks)
+
+    def emit_fin() -> None:
+        psock.state.name = "FIN_WAIT_1"
+
+    loop = asyncio.get_running_loop()
+    loop.call_later(0.05, emit_fin)
+    started = loop.time()
+    await asyncio.wait_for(dial_plane.__aexit__(None, None, None), timeout=5)
+
+    assert psock.state.name == "FIN_WAIT_1"
+    assert loop.time() - started >= 0.05
+    await close_stream_writer(writer)
+
+
 async def test_stray_connection_without_header_is_shed(monkeypatch):
     # Only dial() speaks the 2-byte port-header protocol; a stray local connection that
     # sends nothing (trivial on the TCP fallback, where any local process can connect) must

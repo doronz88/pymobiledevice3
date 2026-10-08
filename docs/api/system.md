@@ -15,6 +15,8 @@ Services for device state, activation, notifications, power, and recovery.
 
 ::: pymobiledevice3.services.notification_proxy.NotificationEvent
 
+::: pymobiledevice3.services.notification_proxy.RemoteNotificationProxyService
+
 ::: pymobiledevice3.services.timesync.TimeSyncService
 
 ::: pymobiledevice3.services.power_assertion.PowerAssertionService

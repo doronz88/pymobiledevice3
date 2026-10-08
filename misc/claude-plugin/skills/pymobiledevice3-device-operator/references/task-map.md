@@ -30,7 +30,7 @@ Use these for browsing files, copying artifacts, or handling app containers.
 
 - `syslog`: live logs and collection.
 - `diagnostics`: restart, shutdown, info, battery-related flows under `pymobiledevice3/cli/diagnostics/`.
-- `notification`: observe or post Darwin notifications.
+- `notification`: observe or post Darwin notifications; `get-state` / `set-state` read and hold a notification's 64-bit state (iOS 27.2+, RSD tunnel).
 - `pcap`: capture network traffic.
 - `btlogger`: capture Bluetooth HCI packet logs (pcap/pcapng).
 - `power-assertion`: keep the device awake for a task.
@@ -40,7 +40,7 @@ Use these for observability, troubleshooting, and health checks.
 
 ## Apps, Profiles, Provisioning, And Activation
 
-- `apps`: install, uninstall, query.
+- `apps`: install (`--streaming` extracts on the device while uploading), uninstall, query.
 - `profile`: configuration profile management.
 - `provision`: provisioning profile helpers.
 - `activation`: activation-related actions.
@@ -73,7 +73,7 @@ Use WebInspector for Safari/WebView automation and WDA for device UI automation.
   list, auto-install a DDI from unpacked Restore assets, personalization identifiers,
   nonce inspection/rolling, uninstall.
 - `developer dvt`: screenshot, sysmon, process control, oslog, device info, netstat, HAR, energy, location simulation, xcuitest, profiling.
-- `developer core-device`: file/process/app/device-info operations through CoreDevice flows.
+- `developer core-device`: file/process/app/device-info operations through CoreDevice flows; `launch-application --console` prints the app's stdout/stderr.
 - `developer debugserver`: debugserver launch and LLDB bridging.
 - `developer fetch-symbols`: symbol acquisition.
 - `developer accessibility`: audits, settings, notifications, item listing.

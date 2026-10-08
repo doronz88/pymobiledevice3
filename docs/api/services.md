@@ -18,6 +18,8 @@ otherwise, they derive from `LockdownService`.
 
 ::: pymobiledevice3.services.installation_proxy.InstallationProxyService
 
+::: pymobiledevice3.services.streaming_zip_conduit.StreamingZipConduitService
+
 ::: pymobiledevice3.services.afc.AfcService
 
 ::: pymobiledevice3.services.diagnostics.DiagnosticsService
@@ -27,6 +29,8 @@ otherwise, they derive from `LockdownService`.
 ::: pymobiledevice3.services.crash_reports.CrashReportsManager
 
 ::: pymobiledevice3.services.mobile_image_mounter.MobileImageMounterService
+
+::: pymobiledevice3.services.storage_mounter_bridge.StorageMounterBridgeService
 
 ## DDI over cryptexd (iOS 17+)
 

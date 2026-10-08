@@ -187,6 +187,22 @@ pymobiledevice3 cryptex auto-install --restore-dir /Library/Developer/DeveloperD
     `mounter` still wins when you have no tunnel: it works over plain USB, while every `cryptex`
     command needs RSD.
 
+## Streaming app install
+
+```shell
+# Stream the app the way Xcode does: the device extracts it while it arrives,
+# instead of unpacking an .ipa uploaded over AFC
+pymobiledevice3 apps install --streaming MyApp.ipa
+pymobiledevice3 apps install --streaming --developer build/MyApp.app
+```
+
+## App console output (iOS 17+, RSD tunnel)
+
+```shell
+# Launch an app and print its stdout/stderr until it exits
+pymobiledevice3 developer core-device launch-application com.example.app --console
+```
+
 ## App install records (iOS 17+, RSD tunnel)
 
 ```shell
@@ -210,6 +226,18 @@ RemoteXPC instead of tunnelling the lockdown service through its `.shim.remote` 
 ```shell
 pymobiledevice3 notification observe --remotexpc com.example.notification --userspace
 pymobiledevice3 notification post --remotexpc com.example.notification --userspace
+```
+
+Since iOS 27.2 a notification also carries a 64-bit state, which system daemons use to publish
+a current value (lock state, orientation, low power mode...). Reading and setting it needs an RSD
+tunnel:
+
+```shell
+# Read the current value
+pymobiledevice3 notification get-state com.apple.springboard.lockstate com.apple.backboardd.orientation
+
+# Set a value and post the notification; the device keeps the value until you hit Ctrl+C
+pymobiledevice3 notification set-state com.example.notification 1
 ```
 
 ## SpringBoard UI

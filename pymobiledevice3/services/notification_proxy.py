@@ -3,10 +3,11 @@ import socket
 from collections.abc import AsyncGenerator
 from typing import Any, Optional, Union
 
-from pymobiledevice3.exceptions import NotificationTimeoutError
+from pymobiledevice3.exceptions import NotificationTimeoutError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.lockdown_service import LockdownService
 
@@ -34,6 +35,16 @@ class NotificationEvent(dict[str, Any]):
         event = cls(command=message.get("Command", ""), name=message.get("Name"), state=message.get("State"))
         event.update(message)
         return event
+
+
+class NotificationStateError(PyMobileDevice3Exception):
+    """The device could not read a notification's state."""
+
+    def __init__(self, name: str, status: int) -> None:
+        super().__init__(f"failed to get the state of {name!r}: notify status {status}")
+        self.name = name
+        #: The ``notify(3)`` status code, e.g. 7 (``NOTIFY_STATUS_NOT_AUTHORIZED``) on the insecure service.
+        self.status = status
 
 
 class NotificationProxyService(LockdownService):
@@ -101,6 +112,20 @@ class NotificationProxyService(LockdownService):
         self.logger.debug(f"Observing {name}")
         await self.service.send_plist({"Command": "ObserveNotification", "Name": name})
 
+    async def notify_set_state(self, name: str, state: int) -> None:
+        """
+        Set the 64-bit state of a notification (``notify_set_state``). Requires iOS 27.2+.
+
+        The device holds the state only while this connection stays open, and resets it to 0 when
+        it closes. Setting the state does not post the notification; call `notify_post` for that.
+        The insecure service ignores the request. Reading a state back needs
+        `RemoteNotificationProxyService.notify_get_state`.
+
+        :param name: notification name.
+        :param state: the state, as a signed or unsigned 64-bit integer.
+        """
+        await self.service.send_plist({"Command": "SetNotificationState", "Name": name, "State": state})
+
     async def receive_notification(self) -> AsyncGenerator[NotificationEvent, None]:
         """
         Yield notifications relayed from the device for previously observed names.
@@ -159,6 +184,42 @@ class RemoteNotificationProxyService(RemoteService):
         """
         self.logger.debug(f"Observing {name}")
         await self.service.send_request({"Command": "ObserveNotification", "Name": name})
+
+    async def notify_set_state(self, name: str, state: int) -> None:
+        """
+        Set the 64-bit state of a notification (``notify_set_state``). Requires iOS 27.2+.
+
+        The device holds the state only while this connection stays open, and resets it to 0 when
+        it closes. Setting the state does not post the notification; call `notify_post` for that.
+        The insecure service ignores the request.
+
+        :param name: notification name.
+        :param state: the state, as a signed or unsigned 64-bit integer.
+        """
+        typed_state = XpcInt64Type(state) if state < (1 << 63) else XpcUInt64Type(state)
+        await self.service.send_request({"Command": "SetNotificationState", "Name": name, "State": typed_state})
+
+    async def notify_get_state(self, name: str) -> int:
+        """
+        Read the 64-bit state of a notification (``notify_get_state``). Requires iOS 27.2+.
+
+        System daemons publish a current value this way, e.g. ``com.apple.springboard.lockstate``.
+        A name nobody set reads as 0. Use a connection that observes nothing: a notification
+        relayed while the reply is awaited is discarded.
+
+        :param name: notification name.
+        :returns: the state, as a signed 64-bit integer.
+        :raises NotificationStateError: if the device reports a failure (always, on the insecure service).
+        """
+        await self.service.send_request({"Command": "GetNotificationState", "Name": name}, wanting_reply=True)
+        while True:
+            response = await self.service.receive_response()
+            if response.get("Command") == "RelayNotificationState" and response.get("Name") == name:
+                break
+        status = response.get("Status", 0)
+        if status:
+            raise NotificationStateError(name, status)
+        return int(response["State"])
 
     async def receive_notification(self) -> AsyncGenerator[NotificationEvent, None]:
         """
