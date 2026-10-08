@@ -196,6 +196,20 @@ pymobiledevice3 apps install --streaming MyApp.ipa
 pymobiledevice3 apps install --streaming --developer build/MyApp.app
 ```
 
+## Files in an app container (iOS 17+, RSD tunnel)
+
+```shell
+# Create, inspect, rename and remove files in an app's data container
+pymobiledevice3 developer core-device write-file appDataContainer Documents/note.txt ./note.txt --identifier com.example.app
+pymobiledevice3 developer core-device stat appDataContainer Documents/note.txt --identifier com.example.app
+pymobiledevice3 developer core-device rename appDataContainer Documents/note.txt Documents/old.txt --identifier com.example.app
+pymobiledevice3 developer core-device create-symlink appDataContainer Documents/latest.txt old.txt --identifier com.example.app
+pymobiledevice3 developer core-device remove-file appDataContainer Documents/old.txt --identifier com.example.app
+
+# Print changes as they happen, one JSON record per change (iOS 27+)
+pymobiledevice3 developer core-device watch appDataContainer --identifier com.example.app
+```
+
 ## App console output (iOS 17+, RSD tunnel)
 
 ```shell
