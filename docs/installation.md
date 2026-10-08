@@ -50,6 +50,9 @@ pymobiledevice3 --install-completion
 === "Linux"
 
     - Install `usbmuxd`: <https://github.com/libimobiledevice/usbmuxd>
+    - Install from PyPI (`pip`, `pipx` or `uv tool install pymobiledevice3`). Distribution packages
+      such as the AUR's `python-pymobiledevice3` are not maintained by this project and may be
+      outdated.
 
 === "macOS"
 
