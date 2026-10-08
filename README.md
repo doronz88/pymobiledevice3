@@ -23,6 +23,9 @@ developer tooling (iOS 17+ over a tunnel).
 python3 -m pip install -U pymobiledevice3
 ```
 
+PyPI is the only official distribution channel. Third-party packages (for example the AUR's
+`python-pymobiledevice3`) are not maintained by this project and may be outdated.
+
 Then verify connectivity:
 
 ```shell
