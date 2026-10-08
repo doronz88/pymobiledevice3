@@ -463,6 +463,25 @@ async def list_devices(usbmux_address: Optional[str] = None) -> list[MuxDevice]:
     return devices
 
 
+async def wait_for_device_detach(
+    serial: str, timeout: Optional[float] = None, usbmux_address: Optional[str] = None
+) -> bool:
+    """
+    Wait until a device is no longer listed by usbmuxd.
+
+    :param serial: UDID of the device to wait for.
+    :param timeout: maximum time to wait in seconds, or ``None`` to wait indefinitely.
+    :param usbmux_address: address of the usbmuxd daemon; the platform default if omitted.
+    :returns: ``True`` once the device is gone, ``False`` if it was still listed when the timeout elapsed.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
+    while any(device.matches_udid(serial) for device in await list_devices(usbmux_address=usbmux_address)):
+        if deadline is not None and time.monotonic() >= deadline:
+            return False
+        await asyncio.sleep(0.5)
+    return True
+
+
 async def select_device(
     udid: Optional[str] = None, connection_type: Optional[str] = None, usbmux_address: Optional[str] = None
 ) -> Optional[MuxDevice]:
