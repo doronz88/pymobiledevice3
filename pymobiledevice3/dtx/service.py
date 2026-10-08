@@ -31,9 +31,9 @@ import inspect
 import logging
 import re
 import sys
-from collections.abc import Awaitable, Sequence
+from collections.abc import Awaitable, Mapping, Sequence
 from functools import partial, wraps
-from typing import Any, Callable, ClassVar, Optional, Protocol, TypeVar, cast, get_type_hints, overload
+from typing import Any, Callable, ClassVar, Optional, Protocol, TypeVar, Union, cast, get_type_hints, overload
 
 from .channel import DTXChannel
 from .context import DTX_GLOBAL_CTX, DTXContext  # noqa: F401 — re-exported for back-compat
@@ -460,6 +460,10 @@ class DTXService:
     async def send_data(self, data: bytes, *aux_args: Any, expects_reply: bool = False) -> Any:
         """Send a DATA frame and optionally await the reply."""
         return await self._channel.send_data(data, *aux_args, expects_reply=expects_reply)
+
+    async def send_keyed_message(self, values: Mapping[str, Union[str, int]]) -> None:
+        """Send a message made of named strings and integers; any answer arrives as a DATA frame."""
+        await self._channel.send_keyed_message(values)
 
 
 class DTXDynamicService(DTXService):

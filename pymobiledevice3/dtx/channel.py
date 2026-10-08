@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Sequence
+from collections.abc import Awaitable, Mapping, Sequence
 from contextlib import suppress
 from functools import partial
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError, UnrecognizedSelectorError
 
@@ -101,6 +101,11 @@ class DTXChannel:
         if not expects_reply:
             return None
         return await self._unwrap_reply(msg_id, f"send_data(len={len(data)})")
+
+    async def send_keyed_message(self, values: Mapping[str, Union[str, int]]) -> None:
+        """Send a message made of named strings and integers; any answer arrives as a DATA frame."""
+        self._check_open()
+        await self._connection.send_keyed_message(self.code, values)
 
     # ------------------------------------------------------------------
     # Internal message handlers

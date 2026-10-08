@@ -1,12 +1,13 @@
 import io
 import logging
+from collections.abc import Mapping
 from typing import Any, Union, cast
 
 from bpylist2 import archiver
-from construct import Bytes, ConstructError, Peek
+from construct import Bytes, ConstructError, Container, Peek
 
 from . import ns_types as _ns_types
-from .primitives import PNULL, PBuf, PDict, _primitive_value_con, _PrimitiveBase
+from .primitives import PNULL, PBuf, PDict, PInt64, PStr, _primitive_value_con, _PrimitiveBase
 
 # Register the NSKeyedArchive proxy classes eagerly (see the identical call in dtx/message.py):
 # a bare side-effect import is unsafe under PEP 810 lazy imports, and archiver.unarchive() is
@@ -85,3 +86,14 @@ class MessageAux(list[Any]):
         stream = io.BytesIO()
         _primitive_value_con._build(pdict, stream, context, f"{path}.aux")
         return stream.getvalue()
+
+
+def build_keyed_aux(values: Mapping[str, Union[str, int]]) -> bytes:
+    """Serialise named strings and integers as the auxiliary data of a keyed message."""
+    pdict = PDict()
+    for key, value in values.items():
+        # The receiver reads keys and string values as C strings, so they carry their terminator.
+        pdict[PStr(f"{key}\0")] = [PStr(f"{value}\0") if isinstance(value, str) else PInt64(value)]
+    stream = io.BytesIO()
+    _primitive_value_con._build(pdict, stream, cast(Any, Container()), "aux")
+    return stream.getvalue()

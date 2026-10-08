@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Any, Union
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError
 
@@ -20,6 +20,7 @@ from .message import (
     DTXMessage,
     DTXMessageType,
 )
+from .message_aux import build_keyed_aux
 from .ns_types import NSError
 
 
@@ -130,6 +131,20 @@ class _DTXSenderMixin:
         )
         msg.payload = data
         msg.aux = aux_args
+        await self._send_message(msg)
+        return msg.identifier
+
+    async def send_keyed_message(self, channel_code: int, values: Mapping[str, Union[str, int]]) -> int:
+        """Send a message whose auxiliary data is a dictionary of named strings and integers.
+
+        This is the form ``-[DTXMessage setString:forMessageKey:]`` and
+        ``-[DTXMessage setInteger:forMessageKey:]`` build, read on the other side with
+        ``stringForMessageKey:`` / ``integerForMessageKey:``.
+
+        Returns the assigned message identifier.
+        """
+        msg = DTXMessage(type=DTXMessageType.DATA, channel_code=channel_code)
+        msg.aux_data = memoryview(build_keyed_aux(values))
         await self._send_message(msg)
         return msg.identifier
 
