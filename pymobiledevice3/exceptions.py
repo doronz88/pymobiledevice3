@@ -57,6 +57,7 @@ __all__ = [
     "PairingError",
     "PasscodeRequiredError",
     "PasswordRequiredError",
+    "ProcessInspectionError",
     "ProfileError",
     "PskCipherNotSupportedError",
     "PyMobileDevice3Exception",
@@ -64,6 +65,7 @@ __all__ = [
     "RSDRequiredError",
     "RemoteAutomationNotEnabledError",
     "RemotePairingCompletedError",
+    "RemoteXPCHandshakeTimeoutError",
     "ScreencastUnavailableError",
     "SessionActiveError",
     "SetProhibitedError",
@@ -80,6 +82,7 @@ __all__ = [
     "WirError",
 ]
 
+import asyncio
 from typing import Any, Optional
 
 
@@ -219,6 +222,25 @@ class DvtDirListError(DvtException):
     """Raise when directory listing fails."""
 
     pass
+
+
+class ProcessInspectionError(DvtException):
+    """
+    The device could not inspect a process through one of its Instruments services.
+
+    On a production device these services only accept debuggable apps (development-signed, with
+    ``get-task-allow``); any other process is refused.
+    """
+
+    def __init__(self, pid: int, operation: str, reason: Optional[str] = None) -> None:
+        super().__init__(
+            f"the device could not {operation} pid {pid}: "
+            f"{reason or 'the app must be debuggable (development-signed with get-task-allow)'}"
+        )
+        #: The process the device was asked to inspect.
+        self.pid = pid
+        #: The device's own explanation, when it gave one.
+        self.reason = reason
 
 
 class NotMountedError(PyMobileDevice3Exception):
@@ -411,6 +433,14 @@ class DeviceHasPasscodeSetError(AmfiError):
 
 class NotificationTimeoutError(PyMobileDevice3Exception, TimeoutError):
     pass
+
+
+class RemoteXPCHandshakeTimeoutError(PyMobileDevice3Exception, asyncio.TimeoutError):
+    """A RemoteXPC service accepted the connection but never answered the handshake.
+
+    Either the service refuses this host (it lacks the entitlement or device state the service
+    wants), or its daemon is stuck.
+    """
 
 
 class ProfileError(PyMobileDevice3Exception):

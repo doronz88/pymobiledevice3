@@ -11,7 +11,7 @@ from typing import IO, Annotated, Optional
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, async_command, print_json
+from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, async_command, print_json, print_json_line
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
@@ -138,6 +138,112 @@ async def core_device_propose_empty_file(
             creation_time if creation_time is not None else int(time.time()),
             last_modification_time if last_modification_time is not None else int(time.time()),
         )
+
+
+DomainArgument = Annotated[DomainName, typer.Argument()]
+IdentifierOption = Annotated[str, typer.Option(help="App or app group identifier, for the container domains")]
+
+
+@cli.command("create-directory")
+@async_command
+async def core_device_create_directory(
+    service_provider: RSDServiceProviderDep, domain: DomainArgument, path: str, identifier: IdentifierOption = ""
+) -> None:
+    """Create a directory at the given domain/path."""
+    async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
+        await file_service.create_directory(path)
+
+
+@cli.command("remove-directory")
+@async_command
+async def core_device_remove_directory(
+    service_provider: RSDServiceProviderDep, domain: DomainArgument, path: str, identifier: IdentifierOption = ""
+) -> None:
+    """Remove an empty directory at the given domain/path."""
+    async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
+        await file_service.remove_directory(path)
+
+
+@cli.command("remove-file")
+@async_command
+async def core_device_remove_file(
+    service_provider: RSDServiceProviderDep, domain: DomainArgument, path: str, identifier: IdentifierOption = ""
+) -> None:
+    """Remove a file or symbolic link at the given domain/path."""
+    async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
+        await file_service.remove_file(path)
+
+
+@cli.command("rename")
+@async_command
+async def core_device_rename(
+    service_provider: RSDServiceProviderDep,
+    domain: DomainArgument,
+    old_path: str,
+    new_path: str,
+    identifier: IdentifierOption = "",
+) -> None:
+    """Rename or move an item within a domain."""
+    async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
+        await file_service.rename(old_path, new_path)
+
+
+@cli.command("create-symlink")
+@async_command
+async def core_device_create_symlink(
+    service_provider: RSDServiceProviderDep,
+    domain: DomainArgument,
+    path: str,
+    target: Annotated[str, typer.Argument(help="What the link points to; stored as given")],
+    identifier: IdentifierOption = "",
+) -> None:
+    """Create a symbolic link at the given domain/path."""
+    async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
+        await file_service.create_symbolic_link(path, target)
+
+
+@cli.command("stat")
+@async_command
+async def core_device_stat(
+    service_provider: RSDServiceProviderDep,
+    domain: DomainArgument,
+    path: str,
+    identifier: IdentifierOption = "",
+    follow_symlinks: Annotated[bool, typer.Option(help="Report on a link's target rather than the link")] = True,
+) -> None:
+    """Show the attributes of an item at the given domain/path."""
+    async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
+        print_json(await file_service.get_attributes(path, follow_symlinks))
+
+
+@cli.command("write-file")
+@async_command
+async def core_device_write_file(
+    service_provider: RSDServiceProviderDep,
+    domain: DomainArgument,
+    path: str,
+    local_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    identifier: IdentifierOption = "",
+) -> None:
+    """Create or replace a file at the given domain/path with a local file's contents."""
+    async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
+        await file_service.set_file_contents(path, local_file.read_bytes())
+
+
+@cli.command("watch")
+@async_command
+async def core_device_watch(
+    service_provider: RSDServiceProviderDep,
+    domain: DomainArgument,
+    paths: Annotated[
+        Optional[list[str]], typer.Argument(help="Paths to watch, relative to the domain's root (default: all of it)")
+    ] = None,
+    identifier: IdentifierOption = "",
+) -> None:
+    """Print file changes under a domain as they happen, one JSON record per change (iOS 27+)."""
+    async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
+        async for event in file_service.monitor(paths):
+            print_json_line({"event": event.event_type, "path": event.relative_path})
 
 
 @cli.command("launch-application")

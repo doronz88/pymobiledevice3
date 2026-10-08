@@ -196,6 +196,20 @@ pymobiledevice3 apps install --streaming MyApp.ipa
 pymobiledevice3 apps install --streaming --developer build/MyApp.app
 ```
 
+## Files in an app container (iOS 17+, RSD tunnel)
+
+```shell
+# Create, inspect, rename and remove files in an app's data container
+pymobiledevice3 developer core-device write-file appDataContainer Documents/note.txt ./note.txt --identifier com.example.app
+pymobiledevice3 developer core-device stat appDataContainer Documents/note.txt --identifier com.example.app
+pymobiledevice3 developer core-device rename appDataContainer Documents/note.txt Documents/old.txt --identifier com.example.app
+pymobiledevice3 developer core-device create-symlink appDataContainer Documents/latest.txt old.txt --identifier com.example.app
+pymobiledevice3 developer core-device remove-file appDataContainer Documents/old.txt --identifier com.example.app
+
+# Print changes as they happen, one JSON record per change (iOS 27+)
+pymobiledevice3 developer core-device watch appDataContainer --identifier com.example.app
+```
+
 ## App console output (iOS 17+, RSD tunnel)
 
 ```shell
@@ -342,6 +356,32 @@ pymobiledevice3 developer dvt oslog
 
 # Kill a process
 pymobiledevice3 developer dvt kill PID
+
+# Memory of a debuggable (development-signed) app. The device refuses any other process.
+# Regions of its address space
+pymobiledevice3 developer dvt vm-regions PID
+
+# Save the memory graph of a running app; prints the leak count and addresses as JSON
+pymobiledevice3 developer dvt memgraph PID app.memgraph
+
+# Inspect it on macOS with leaks(1), heap(1) or vmmap(1)
+leaks app.memgraph
+
+# To see where each allocation was made, launch the app with malloc stack logging first;
+# the memory graph then carries the backtraces
+pymobiledevice3 developer dvt launch --env MallocStackLogging=1 com.example.app
+pymobiledevice3 developer dvt memgraph PID app.memgraph
+malloc_history app.memgraph --fullStacks ADDRESS
+
+# Launch timing, image and dlopen counts as the dynamic loader recorded them
+pymobiledevice3 developer dvt dyld-metrics PID
+
+# Launch an app and summarize its heap allocations by class once interrupted (or after --duration)
+pymobiledevice3 developer dvt allocations com.example.app --duration 10
+
+# Print every event instead, one JSON record each, with its backtrace as image+offset frames;
+# --kind adds reference-counts, vm or zombies events to the default heap ones
+pymobiledevice3 developer dvt allocations com.example.app --events --kind heap --kind reference-counts
 
 # Disable the jetsam memory limit for a process (stop it being killed for
 # exceeding its memory allowance)

@@ -470,6 +470,8 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
 
     async def _on_channel_cancelled(self, channel_code: int) -> None:
         self.logger.warning("Received channel cancellation for code %d", channel_code)
+        # The peer names the channel from its own side, where the sign is the opposite of ours.
+        channel_code = -channel_code
         async with self._channel_lock:
             self._services.pop(channel_code, None)
             ch = self._channels.pop(channel_code, None)

@@ -28,6 +28,7 @@ from pymobiledevice3.exceptions import (
     NotConnectedError,
     ProtocolError,
     PyMobileDevice3Exception,
+    RemoteXPCHandshakeTimeoutError,
     StreamClosedError,
 )
 from pymobiledevice3.pair_records import generate_host_id
@@ -212,6 +213,11 @@ class RemoteXPCConnection:
         self._reader, self._writer = await self._open_connection(self.address[0], self.address[1])
         try:
             await self._do_handshake()
+        except asyncio.TimeoutError as e:
+            await self.close()
+            raise RemoteXPCHandshakeTimeoutError(
+                f"the service at {self.address[0]}:{self.address[1]} did not answer the RemoteXPC handshake"
+            ) from e
         except Exception:
             await self.close()
             raise
