@@ -7,7 +7,7 @@ from typing import Any, cast
 import pytest
 from hyperframe.frame import DataFrame, Frame, HeadersFrame, RstStreamFrame, SettingsFrame, WindowUpdateFrame
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError, StreamClosedError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, RemoteXPCHandshakeTimeoutError, StreamClosedError
 from pymobiledevice3.pair_records import generate_host_id
 from pymobiledevice3.remote import remotexpc
 from pymobiledevice3.remote.remotexpc import (
@@ -351,6 +351,34 @@ async def test_send_request_uses_odd_message_ids_after_the_handshake_message():
 
     message_ids = [XpcWrapper.parse(w[FRAME_HEADER_SIZE:]).message.message_id for w in writer.writes]
     assert message_ids == [0, 1, 3, 5]
+
+
+@pytest.mark.asyncio
+async def test_connect_reports_an_unanswered_handshake(monkeypatch: pytest.MonkeyPatch) -> None:
+    class SilentReader:
+        async def readexactly(self, size: int) -> bytes:
+            await asyncio.sleep(3600)
+            return b""
+
+    class ClosableWriter(FakeWriter):
+        def close(self) -> None:
+            pass
+
+        async def wait_closed(self) -> None:
+            pass
+
+    async def open_connection(host: str, port: int) -> tuple[Any, Any]:
+        return SilentReader(), ClosableWriter()
+
+    monkeypatch.setattr(remotexpc, "FIRST_REPLY_TIMEOUT", 0.05)
+    connection = RemoteXPCConnection(("fd00::1", 1234), open_connection=open_connection)
+
+    # Still a timeout error for callers that probe services by catching one.
+    with pytest.raises(asyncio.TimeoutError) as error:
+        await connection.connect()
+
+    assert isinstance(error.value, RemoteXPCHandshakeTimeoutError)
+    assert "fd00::1:1234 did not answer the RemoteXPC handshake" in str(error.value)
 
 
 def _handshake_uuids(writer: FakeWriter) -> list[uuid.UUID]:

@@ -69,6 +69,7 @@ from pymobiledevice3.exceptions import (
     PairingDialogResponsePendingError,
     PasswordRequiredError,
     QuicProtocolNotSupportedError,
+    RemoteXPCHandshakeTimeoutError,
     RoutableTunnelRequiredError,
     RSDRequiredError,
     SetProhibitedError,
@@ -352,6 +353,11 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
     except ConnectionTerminatedError:
         logger.error("Connection was terminated abruptly")
         reconnectable = True
+    except RemoteXPCHandshakeTimeoutError as e:
+        logger.error(
+            f"{e.args[0].capitalize()}. The service either refuses this host or its daemon is stuck; "
+            "restarting the device clears a stuck daemon."
+        )
     except NotPairedError:
         logger.error("Device is not paired")
     except UserDeniedPairingError:

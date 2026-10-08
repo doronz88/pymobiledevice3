@@ -64,6 +64,7 @@ __all__ = [
     "RSDRequiredError",
     "RemoteAutomationNotEnabledError",
     "RemotePairingCompletedError",
+    "RemoteXPCHandshakeTimeoutError",
     "ScreencastUnavailableError",
     "SessionActiveError",
     "SetProhibitedError",
@@ -80,6 +81,7 @@ __all__ = [
     "WirError",
 ]
 
+import asyncio
 from typing import Any, Optional
 
 
@@ -411,6 +413,14 @@ class DeviceHasPasscodeSetError(AmfiError):
 
 class NotificationTimeoutError(PyMobileDevice3Exception, TimeoutError):
     pass
+
+
+class RemoteXPCHandshakeTimeoutError(PyMobileDevice3Exception, asyncio.TimeoutError):
+    """A RemoteXPC service accepted the connection but never answered the handshake.
+
+    Either the service refuses this host (it lacks the entitlement or device state the service
+    wants), or its daemon is stuck.
+    """
 
 
 class ProfileError(PyMobileDevice3Exception):
