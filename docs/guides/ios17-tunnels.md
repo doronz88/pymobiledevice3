@@ -86,8 +86,8 @@ below) when:
 ## Running `tunneld`
 
 ```shell
-# If the device supports remote pairing (for example, Corellium/Apple TV), pair first.
-# Standard iOS devices usually do not need this step.
+# If the device supports remote pairing (for example, Corellium/Apple TV/Apple Vision Pro), pair first.
+# Apple TV and Apple Vision Pro display a PIN to type in. Standard iOS devices usually do not need this step.
 python3 -m pymobiledevice3 remote pair
 
 # On Windows, run from a privileged shell.
