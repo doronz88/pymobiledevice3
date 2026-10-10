@@ -267,9 +267,14 @@ class ServiceConnection:
     async def recv_any(self, length: int = 4096) -> bytes:
         """
         Asynchronously receive up to ``length`` bytes from the socket/stream.
+
+        :raises ConnectionTerminatedError: If the connection failed. A clean close returns ``b""``.
         """
         reader, _ = await self._ensure_started()
-        return await reader.read(length)
+        try:
+            return await reader.read(length)
+        except OSError as e:
+            raise ConnectionTerminatedError() from e
 
     def sendall_sync(self, data: bytes) -> None:
         """
@@ -359,11 +364,12 @@ class ServiceConnection:
 
         :param size: The amount of data to receive.
         :return: The received data.
+        :raises ConnectionTerminatedError: If the peer closed the connection or it failed.
         """
         reader, _ = await self._ensure_started()
         try:
             return await reader.readexactly(size)
-        except asyncio.IncompleteReadError as e:
+        except (asyncio.IncompleteReadError, OSError) as e:
             raise ConnectionTerminatedError() from e
 
     async def recv_prefixed(self, endianity: str = ">") -> bytes:
@@ -421,12 +427,13 @@ class ServiceConnection:
         Asynchronously send data to the socket.
 
         :param payload: The data to send.
+        :raises ConnectionTerminatedError: If the peer closed the connection or it failed.
         """
         _, writer = await self._ensure_started()
         try:
             writer.write(payload)
             await writer.drain()
-        except ssl.SSLEOFError as e:
+        except OSError as e:
             raise ConnectionTerminatedError from e
 
     async def send_plist(

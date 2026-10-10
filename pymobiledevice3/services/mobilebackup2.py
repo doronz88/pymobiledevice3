@@ -25,6 +25,7 @@ from pymobiledevice3.exceptions import (
     AfcException,
     AfcFileNotFoundError,
     BackupFilterPasswordRequiredError,
+    ConnectionTerminatedError,
     LockdownError,
     NotConnectedError,
     PyMobileDevice3Exception,
@@ -977,4 +978,7 @@ class Mobilebackup2Service(LockdownService):
         try:
             yield dl
         finally:
-            await dl.disconnect()
+            # The device may already have dropped the link (often the reason we are exiting), and
+            # a failed DLMessageDisconnect must not replace the error that ended the session.
+            with suppress(ConnectionTerminatedError):
+                await dl.disconnect()

@@ -1,8 +1,11 @@
 import asyncio
+import logging
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from pymobiledevice3.exceptions import MuxException
+from pymobiledevice3.exceptions import ConnectionTerminatedError, MuxException
 from pymobiledevice3.tunneld import server as tunneld_server
 
 
@@ -57,3 +60,26 @@ async def test_monitor_usbmux_task_reconnects_after_socket_broken(monkeypatch):
     await core.monitor_usbmux_task()
 
     assert create_calls >= 2, "monitor task did not reconnect after socket connection broken"
+
+
+@pytest.mark.asyncio
+async def test_start_tunnel_task_reports_dropped_device_quietly(monkeypatch, caplog):
+    """A device that drops the link while the tunnel is being established is routine for a
+    long-running tunneld; it must not be logged as an unexpected exception with a traceback."""
+
+    @asynccontextmanager
+    async def fake_start_tunnel(protocol_handler, protocol=None):
+        raise ConnectionTerminatedError()
+        yield
+
+    monkeypatch.setattr(tunneld_server, "start_tunnel", fake_start_tunnel)
+    core = tunneld_server.TunneldCore(
+        wifi_monitor=False, usb_monitor=False, usbmux_monitor=False, mobdev2_monitor=False
+    )
+    protocol_handler = Mock(remote_identifier="device", close=AsyncMock())
+
+    with caplog.at_level(logging.DEBUG, logger=tunneld_server.logger.name):
+        await core.start_tunnel_task("usbmux-device-USB", protocol_handler)
+
+    assert [record for record in caplog.records if record.levelno >= logging.ERROR] == []
+    protocol_handler.close.assert_awaited_once()

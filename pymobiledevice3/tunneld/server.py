@@ -481,6 +481,7 @@ class TunneldCore:
             TimeoutError,
             OSError,
             ConnectionResetError,
+            ConnectionTerminatedError,
             StreamError,
             InvalidServiceError,
         ) as e:
