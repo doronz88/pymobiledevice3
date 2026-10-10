@@ -1,4 +1,5 @@
 import asyncio
+import errno
 import socket
 import ssl
 import struct
@@ -124,6 +125,51 @@ async def test_recvall_after_peer_reset_raises_connection_terminated():
         device.close()
         with pytest.raises(ConnectionTerminatedError):
             await connection.recvall(4)
+    finally:
+        device.close()
+        await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_recv_any_after_peer_reset_raises_connection_terminated():
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        host = socket.create_connection(server.getsockname())
+        device, _ = server.accept()
+    connection = ServiceConnection(host)
+    try:
+        await connection.start()
+        device.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        device.close()
+        with pytest.raises(ConnectionTerminatedError):
+            await connection.recv_any()
+    finally:
+        device.close()
+        await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_socket_error_other_than_reset_raises_connection_terminated(monkeypatch):
+    # A link that goes silent (Wi-Fi, keep-alive expiry) fails with ETIMEDOUT, an unreachable one with
+    # EHOSTUNREACH. Neither is a ConnectionError, yet both mean the device is gone.
+    host, device = socket.socketpair()
+    connection = ServiceConnection(host)
+    error = TimeoutError(errno.ETIMEDOUT, "Operation timed out")
+
+    async def failing_drain() -> None:
+        raise error
+
+    try:
+        await connection.start()
+        assert connection.reader is not None and connection.writer is not None
+        monkeypatch.setattr(connection.writer, "drain", failing_drain)
+        with pytest.raises(ConnectionTerminatedError):
+            await connection.sendall(b"\x00")
+        # what asyncio does to the reader once the transport fails
+        connection.reader.set_exception(error)
+        with pytest.raises(ConnectionTerminatedError):
+            await connection.recvall(4)
+        with pytest.raises(ConnectionTerminatedError):
+            await connection.recv_any()
     finally:
         device.close()
         await connection.close()
