@@ -27,7 +27,7 @@ from pymobiledevice3.cli.cli_common import (
     user_requested_colored_output,
 )
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import AccessDeniedError, NoDeviceConnectedError
+from pymobiledevice3.exceptions import AccessDeniedError, NoDeviceConnectedError, RemotePairingCompletedError
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, get_remote_pairing_record_filename
 from pymobiledevice3.remote.common import ConnectionType, TunnelProtocol
 from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_tunnel, verify_tunnel_imports
@@ -473,7 +473,11 @@ async def cli_pair(
         return
 
     async with RemotePairingManualPairingService(device.identifier, device.ip, device.port) as service:
-        await service.connect(autopair=True)
+        try:
+            await service.connect(autopair=True)
+        except RemotePairingCompletedError:
+            # The device closes the connection once pairing is done, and the pairing record is already saved.
+            logger.info("Pairing completed")
 
 
 @cli.command("pair-host")

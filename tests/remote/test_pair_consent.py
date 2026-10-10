@@ -85,6 +85,13 @@ async def test_pair_consent_asks_apple_tv_for_pin(monkeypatch):
     assert await protocol._request_pair_consent() == PairConsentResult(public_key=PUBLIC_KEY, salt=SALT, pin="123456")
 
 
+async def test_pair_consent_asks_vision_pro_for_pin(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda prompt="": "123456")
+    protocol = _ScriptedProtocol("RealityDevice17,1", [_pairing_data(VALID_M2)])
+
+    assert await protocol._request_pair_consent() == PairConsentResult(public_key=PUBLIC_KEY, salt=SALT, pin="123456")
+
+
 @pytest.mark.parametrize(
     ("error", "expected"),
     [

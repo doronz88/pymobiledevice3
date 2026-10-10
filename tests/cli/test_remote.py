@@ -1,11 +1,14 @@
 import asyncio
+import logging
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 import typer
 
 from pymobiledevice3.cli import remote
-from pymobiledevice3.exceptions import NoDeviceConnectedError
+from pymobiledevice3.exceptions import NoDeviceConnectedError, RemotePairingCompletedError
 from pymobiledevice3.remote import native_tunnel
 from pymobiledevice3.remote.common import ConnectionType, TunnelProtocol
 
@@ -235,3 +238,37 @@ def test_cli_browse_defaults_to_remotepairingd_on_macos(monkeypatch):
     remote.browse()
 
     assert calls == ["native", "bonjour", "bonjour", "bonjour"]
+
+
+@pytest.mark.asyncio
+async def test_pair_reports_completion_instead_of_raising(monkeypatch, caplog):
+    class _PairedService:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return None
+
+        async def connect(self, autopair=True):
+            # what RemotePairingProtocol.connect() raises once the pair record is saved
+            raise RemotePairingCompletedError()
+
+    async def browse():
+        return [
+            SimpleNamespace(
+                properties={"name": "Vision Pro", "identifier": "IDENTIFIER"},
+                addresses=[SimpleNamespace(full_ip="fe80::1%en0")],
+                port=49152,
+            )
+        ]
+
+    monkeypatch.setattr(remote, "start_tunnel", object())
+    monkeypatch.setattr(remote, "browse_remotepairing_manual_pairing", browse)
+    monkeypatch.setattr(remote, "prompt_device_list", lambda devices: devices[0])
+    monkeypatch.setattr(remote, "RemotePairingManualPairingService", lambda *args: _PairedService())
+
+    # `cli_pair` is the sync wrapper Typer registers; `__wrapped__` is the coroutine underneath.
+    with caplog.at_level(logging.INFO, logger=remote.logger.name):
+        await cast(Any, remote.cli_pair).__wrapped__(name=None)
+
+    assert "Pairing completed" in caplog.text
