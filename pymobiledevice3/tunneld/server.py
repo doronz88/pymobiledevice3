@@ -528,7 +528,7 @@ class TunneldCore:
                         # Could be on first try because of remoted race
                         if first_time:
                             retry = True
-                    except (ConnectionRefusedError, TimeoutError, OSError) as e:
+                    except (ConnectionRefusedError, TimeoutError, OSError, ConnectionTerminatedError) as e:
                         raise asyncio.CancelledError() from e
                     finally:
                         first_time = False

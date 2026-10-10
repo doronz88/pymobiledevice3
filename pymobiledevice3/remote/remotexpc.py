@@ -401,7 +401,7 @@ class RemoteXPCConnection:
     async def _do_handshake(self) -> None:
         writer = self.writer
         writer.write(HTTP2_MAGIC)
-        await writer.drain()
+        await self._drain(writer)
 
         # send h2 headers
         await self._send_frame(
@@ -564,7 +564,7 @@ class RemoteXPCConnection:
             self._consume_outbound(frame.stream_id, len(frame.data))
         writer = self.writer
         writer.write(frame.serialize())
-        await writer.drain()
+        await self._drain(writer)
 
     async def _receive_next_data_frame(self) -> DataFrame:
         while True:
@@ -599,7 +599,17 @@ class RemoteXPCConnection:
         writer = self.writer
         writer.write(WindowUpdateFrame(stream_id=0, window_increment=pending_increment).serialize())
         writer.write(WindowUpdateFrame(stream_id=stream_id, window_increment=pending_increment).serialize())
-        await writer.drain()
+        await self._drain(writer)
+
+    async def _drain(self, writer: asyncio.StreamWriter) -> None:
+        """Flush what was written to the peer.
+
+        :raises ConnectionTerminatedError: If the peer closed the connection or it failed.
+        """
+        try:
+            await writer.drain()
+        except OSError as e:
+            raise ConnectionTerminatedError() from e
 
     async def _receive_frame(self) -> Frame:
         buf = await self._recvall(FRAME_HEADER_SIZE)
@@ -613,7 +623,7 @@ class RemoteXPCConnection:
         while len(data) < size:
             try:
                 chunk = await reader.readexactly(size - len(data))
-            except IncompleteReadError as e:
+            except (IncompleteReadError, OSError) as e:
                 raise ConnectionTerminatedError() from e
             data += chunk
         return data

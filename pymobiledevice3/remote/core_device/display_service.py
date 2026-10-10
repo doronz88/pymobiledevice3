@@ -2,7 +2,7 @@ import random
 import uuid
 from typing import Any, Optional
 
-from pymobiledevice3.exceptions import CoreDeviceError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, CoreDeviceError
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.core_device.media_stream_offer import (
     build_negotiator_offer_audio,
@@ -230,8 +230,6 @@ class DisplayService(CoreDeviceService):
         :param stop_all: Stop every session (the whole media-stream server).
         :param identifiers: Stop only these stream tokens; ignored when empty.
         """
-        from asyncio import IncompleteReadError
-
         request: dict[str, Any] = {"stopAll": stop_all}
         if identifiers:
             request["identifiers"] = [XpcUInt64Type(i) for i in identifiers]
@@ -241,7 +239,7 @@ class DisplayService(CoreDeviceService):
                 request,
                 action_identifier="com.apple.coredevice.action.mediastreamstop",
             )
-        except (IncompleteReadError, ConnectionResetError, BrokenPipeError):
+        except ConnectionTerminatedError:
             # Defensive: a device already tearing the tunnel down can close the
             # channel before replying. The stop itself still took effect.
             return {"stopped": True}
