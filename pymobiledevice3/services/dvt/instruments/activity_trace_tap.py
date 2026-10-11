@@ -55,7 +55,8 @@ def decode_message_format(message: Any) -> str:
             if data is None:
                 s += "<None>"
             else:
-                s += data.decode()
+                # the padding that rounds a push up to whole bytes can leave more than one NUL behind
+                s += decode_str(data)
         elif type_ == "private":
             s += "<private>"
         elif type_.startswith("uint64"):

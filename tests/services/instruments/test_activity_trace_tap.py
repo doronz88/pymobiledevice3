@@ -10,6 +10,7 @@ from pymobiledevice3.services.dvt.instruments.activity_trace_tap import (
     CMD_SENTINEL,
     CMD_STRUCT,
     ActivityTraceTap,
+    decode_message_format,
 )
 
 OS_LOG_COLUMNS = [
@@ -84,3 +85,18 @@ def test_thread_id_is_decoded_whatever_its_width(thread: int) -> None:
 
     assert message.thread == thread
     assert message.process == 42
+
+
+def text(value: str) -> bytes:
+    return message_item("narrative-text", push_str(value))
+
+
+def string(value: str) -> bytes:
+    return message_item("string", push_str(value))
+
+
+@pytest.mark.parametrize("value", ["", "a", "kernel", "limit on pid ", "Notes said "])
+def test_message_text_is_printed_without_padding(value: str) -> None:
+    (message,) = parse(os_log_stream("%s%s", text(value), string(value)))
+
+    assert decode_message_format(message.message) == value * 2
