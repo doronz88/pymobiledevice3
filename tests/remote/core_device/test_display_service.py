@@ -1,3 +1,6 @@
+import asyncio
+import socket
+import struct
 from typing import Any, cast
 
 import pytest
@@ -71,6 +74,34 @@ async def test_stop_media_stream_with_identifiers() -> None:
     assert payload["identifiers"] == [7, 9]
     # Identifiers must be typed UInt32/64 so they encode as XPC integers, not a nested dict.
     assert all(isinstance(i, XpcUInt64Type) for i in payload["identifiers"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reset", [False, True], ids=["close", "reset"])
+async def test_stop_media_stream_counts_a_dropped_connection_as_stopped(reset: bool) -> None:
+    # A device tearing the tunnel down can drop the channel after taking the request, before it replies.
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        host = socket.create_connection(server.getsockname())
+        device, _ = server.accept()
+    device.setblocking(False)
+    connection = RemoteXPCConnection(("127.0.0.1", 0))
+    connection._reader, connection._writer = await asyncio.open_connection(sock=host)
+    service = DisplayService(_make_rsd())
+    service._service = connection
+
+    async def drop_after_request() -> None:
+        await asyncio.get_running_loop().sock_recv(device, 65536)
+        if reset:
+            device.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        device.close()
+
+    try:
+        dropper = asyncio.create_task(drop_after_request())
+        assert await service.stop_media_stream() == {"stopped": True}
+        await dropper
+    finally:
+        device.close()
+        await connection.close()
 
 
 @pytest.mark.asyncio

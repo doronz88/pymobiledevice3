@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 import requests
 
-from pymobiledevice3.exceptions import TunneldConnectionError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, TunneldConnectionError
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.tunneld import ws_bridge
 
@@ -239,6 +239,6 @@ async def _create_rsds_from_tunnels(
             try:
                 await rsd.connect()
                 rsds.append(rsd)
-            except (TimeoutError, ConnectionError):
+            except (TimeoutError, ConnectionError, ConnectionTerminatedError):
                 continue
     return rsds

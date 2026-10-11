@@ -1,5 +1,7 @@
 import asyncio
 import platform
+import socket
+import struct
 import uuid
 from types import MethodType
 from typing import Any, cast
@@ -511,3 +513,45 @@ async def test_peer_closing_the_connection_is_a_terminated_connection(received: 
 
     with pytest.raises(ConnectionTerminatedError):
         await connection.receive_response()
+
+
+async def _loopback_connection() -> tuple[RemoteXPCConnection, socket.socket]:
+    with socket.create_server(("127.0.0.1", 0)) as server:
+        host = socket.create_connection(server.getsockname())
+        device, _ = server.accept()
+    connection = RemoteXPCConnection(("127.0.0.1", 0))
+    connection._reader, connection._writer = await asyncio.open_connection(sock=host)
+    return connection, device
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reset", [True, False], ids=["reset", "close"])
+async def test_receive_after_peer_dropped_raises_connection_terminated(reset: bool):
+    connection, device = await _loopback_connection()
+    try:
+        if reset:
+            # Linger 0 makes close() send RST instead of FIN, like a device dropping off the bus.
+            device.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        device.close()
+        with pytest.raises(ConnectionTerminatedError):
+            await connection.receive_response()
+    finally:
+        device.close()
+        await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_send_after_peer_reset_raises_connection_terminated():
+    # asyncio only notices the RST once it reads it, so the first sends may still be accepted; keep
+    # sending until one fails.
+    connection, device = await _loopback_connection()
+    try:
+        device.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        device.close()
+        with pytest.raises(ConnectionTerminatedError):
+            for _ in range(200):
+                await connection.send_request({"Command": "Ping"})
+                await asyncio.sleep(0.01)
+    finally:
+        device.close()
+        await connection.close()

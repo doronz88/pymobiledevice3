@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -83,3 +83,31 @@ async def test_start_tunnel_task_reports_dropped_device_quietly(monkeypatch, cap
 
     assert [record for record in caplog.records if record.levelno >= logging.ERROR] == []
     protocol_handler.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_usb_ncm_task_reports_device_dropping_rsd_handshake_quietly(monkeypatch, caplog):
+    """A reset during the RSD handshake on a new NCM interface is routine (remoted racing us for the
+    link, an unplug) and must not be logged as an unexpected exception with a traceback."""
+
+    class DroppingRsd:
+        def __init__(self, address, handshake_uuid=None) -> None:
+            pass
+
+        async def connect(self) -> None:
+            raise ConnectionTerminatedError()
+
+        async def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(tunneld_server, "RemoteServiceDiscoveryService", DroppingRsd)
+    monkeypatch.setattr(tunneld_server, "remoted_handshake_uuid", lambda: None)
+    monkeypatch.setattr(tunneld_server, "stop_remoted", nullcontext)
+    core = tunneld_server.TunneldCore(
+        wifi_monitor=False, usb_monitor=False, usbmux_monitor=False, mobdev2_monitor=False
+    )
+
+    with caplog.at_level(logging.DEBUG, logger=tunneld_server.logger.name):
+        await core.handle_new_potential_usb_cdc_ncm_interface_task("fe80::1")
+
+    assert [record for record in caplog.records if record.levelno >= logging.ERROR] == []
