@@ -1,10 +1,11 @@
 import dataclasses
 import math
 import os
+import re
 import struct
 from collections.abc import AsyncGenerator, Callable, Generator
 from io import BytesIO
-from typing import Any, cast
+from typing import Any, Optional, Union, cast
 
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.services.dvt.instruments.tap import Tap
@@ -18,6 +19,13 @@ CMD_SENTINEL = 0x68
 CMD_STRUCT = 0x69
 CMD_PLACEHOLDER_COUNT = 0x6A
 CMD_DEBUG = 0x6B
+
+# a printf conversion as os_log writes it, e.g. "%d", "%{public}llu", "%08x" or "%{private}@"
+FORMAT_SPECIFIER = re.compile(r"%(?:\{[^}]*\})?([-+ #0']*)(\d+|\*)?(?:\.(\d*|\*))?(hh|h|ll|l|q|j|z|t|L)?([a-zA-Z@%])")
+# bits in an integer argument by length modifier; l, ll, q, j, z and t are all 64-bit on arm64
+INTEGER_BITS: dict[Optional[str], int] = {"hh": 8, "h": 16, None: 32}
+# conversions for a signpost's begin and end time; iOS 16 sends an item for them, iOS 27 doesn't
+SIGNPOST_TIMES = ("signpost.description:begin_time", "signpost.description:end_time")
 
 
 @dataclasses.dataclass
@@ -41,12 +49,90 @@ def ignored_null(s: bytes) -> bytes:
     return s
 
 
-def decode_message_format(message: Any) -> str:
+def format_number(value: int, specifier: re.Match[str]) -> Optional[str]:
+    """
+    Print a message argument the way printf prints it for `specifier`.
+
+    :param value: The argument as the device sends it, widened to 64 bits.
+    :param specifier: The argument's conversion, matched by `FORMAT_SPECIFIER`.
+    :returns: The printed value, or None if the conversion does not print a number (%s, %@, %P, ...).
+    """
+    flags, width, precision, length, conversion = specifier.groups()
+    # a "*" width or precision is not sent as an item of its own, so its value is unknown here
+    width = None if width == "*" else width
+    precision = None if precision == "*" else precision
+    number: Union[int, float]
+    if conversion in "fFeEgG":
+        number = struct.unpack("<d", struct.pack("<Q", value))[0]
+        if not math.isfinite(number):
+            # C pads inf and nan with spaces even under "0"
+            flags = flags.replace("0", "")
+    elif conversion == "p":
+        number, flags, conversion = value, "#", "x"
+    elif conversion in "diouxX" or (conversion == "c" and length is None):
+        bits = 8 if conversion == "c" else INTEGER_BITS.get(length, 64)
+        number = value & ((1 << bits) - 1)
+        if conversion in "di" and number >> (bits - 1):
+            number -= 1 << bits
+        # where Python's % differs from C: unsigned conversions take no sign, "#" puts no 0x on a zero,
+        # a precision turns off "0" padding and prints a zero as nothing, and "#o" means a leading 0, not 0o
+        if conversion in "ouxX":
+            flags = flags.replace("+", "").replace(" ", "")
+        if conversion in "xX" and number == 0:
+            flags = flags.replace("#", "")
+        if precision is not None and conversion != "c":
+            flags = flags.replace("0", "")
+            if number == 0 and not int(precision or 0) and not (conversion == "o" and "#" in flags):
+                sign = "+" if "+" in flags else " " if " " in flags else ""
+                return ("%" + ("-" if "-" in flags else "") + (width or "") + "s") % sign
+        if conversion == "o" and "#" in flags:
+            flags = flags.replace("#", "")
+            precision = str(max(int(precision or 0), len(f"{number:o}") + (number != 0)))
+    else:
+        return None
+    spec = "%" + flags.replace("'", "")
+    if width is not None:
+        spec += width
+    if precision is not None:
+        spec += "." + precision
+    return (spec + conversion) % number
+
+
+def item_fits(type_: str, conversion: str) -> bool:
+    """Whether a message item of `type_` can be the argument of a `conversion`, e.g. not a hex item for %llu."""
+    if "decimal" in type_:
+        return conversion in "fFeEgG"
+    if "hex" in type_:
+        return conversion in "xXp"
+    return conversion not in "fFeEgG"
+
+
+def decode_message_format(message: Any, format_string: Optional[str] = None) -> str:
+    """
+    Join a row's message items into the logged line.
+
+    :param message: The row's `message` column: (type, data) items, one per piece of narrative text or argument.
+    :param format_string: The row's format string. When given, numbers are printed per their printf conversion
+        instead of as unsigned 64-bit integers.
+    """
+    # there is one item per conversion, in order (os_log keeps the first 48); with more items than conversions
+    # they cannot be paired up, so those numbers are printed by their type alone
+    specifiers = [m for m in FORMAT_SPECIFIER.finditer(format_string or "") if m.group(5) != "%"]
+    items = sum(decode_str(type_) != "narrative-text" for type_, _ in message)
+    if items < len(specifiers):
+        without_times = [m for m in specifiers if not any(time in m.group(0) for time in SIGNPOST_TIMES)]
+        if items == len(without_times):
+            specifiers = without_times
+    if items > len(specifiers):
+        specifiers = []
+    next_specifier = iter(specifiers)
+
     s = ""
     for type_, data in message:
         if data and isinstance(data, bytes):
             data = ignored_null(data)
         type_ = decode_str(type_)
+        specifier = None if type_ == "narrative-text" else next(next_specifier, None)
 
         if type_ == "address":
             type_ = "uint64-hex"
@@ -55,19 +141,22 @@ def decode_message_format(message: Any) -> str:
             if data is None:
                 s += "<None>"
             else:
-                s += data.decode()
+                # the padding that rounds a push up to whole bytes can leave more than one NUL behind
+                s += decode_str(data)
         elif type_ == "private":
             s += "<private>"
-        elif type_.startswith("uint64"):
+        elif type_.startswith("uint64") or "decimal" in type_:
             uint64 = struct.unpack("<Q", data.ljust(8, b"\x00"))[0]
-            if "hex" in type_:
-                uint64 = hex(uint64)[2:]
-                if "lowercase" in type_:
-                    uint64 = uint64.lower()
-            s += str(uint64)
-        elif "decimal" in type_:
-            uint64 = struct.unpack("<Q", data.ljust(8, b"\x00"))[0]
-            s += str(uint64)
+            number = None
+            # a pairing that doesn't fit the item's type means the items and conversions are out of step
+            if specifier is not None and item_fits(type_, specifier.group(5)):
+                number = format_number(uint64, specifier)
+            if number is not None:
+                s += number
+            elif "hex" in type_:
+                s += hex(uint64)[2:]
+            else:
+                s += str(uint64)
         elif type_ in ("data", "uuid"):
             if data is not None:
                 # for these types the payload is a list of bytes chunks, not a single bytes object
@@ -251,8 +340,10 @@ class ActivityTraceTap(Tap):
 
         Message = dataclasses.make_dataclass("message", [c.replace("-", "_") for c in columns])
         message = Message(*row)
-        message.process = 0 if message.process is None else struct.unpack("<I", message.process[0].ljust(4, b"\x00"))[0]
-        message.thread = struct.unpack("<I", message.thread[0].ljust(4, b"\x00"))[0]
+        # a pushed value loses its trailing zero bits and comes back padded to whole bytes, so an integer
+        # is 2 to 9 bytes long (a thread id of 0x1000000 or more decodes to 6 bytes or more)
+        message.process = 0 if message.process is None else int.from_bytes(message.process[0], "little")
+        message.thread = int.from_bytes(message.thread[0], "little")
 
         string_fields = (
             "message_type",

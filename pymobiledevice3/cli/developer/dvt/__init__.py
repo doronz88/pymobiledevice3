@@ -754,7 +754,11 @@ async def dvt_oslog(
             if pid is not None and message_pid != pid:
                 continue
 
-            formatted_message = decode_message_format(message.message) if message.message else message.name
+            formatted_message = (
+                decode_message_format(message.message, getattr(message, "format_string", None))
+                if message.message
+                else message.name
+            )
 
             if output_format is OutputFormat.JSON:
                 print_json_line({

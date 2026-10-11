@@ -193,3 +193,17 @@ def test_oslog_json_emits_ndjson_records(monkeypatch, capsys):
     assert record["image_name"] == "libfoo.dylib"
     assert record["message"] == "hello world"
     assert "timestamp" in record
+
+
+class _FakeOslogLimitMessage(_FakeOslogMessage):
+    format_string = "limit on pid %d"
+    message = ((b"narrative-text\x00", b"limit on pid \x00"), (b"uint64\x00", b"\xff" * 8 + b"\x00"))
+
+
+def test_oslog_prints_arguments_per_their_conversion(monkeypatch, capsys):
+    monkeypatch.setattr(dvt_module, "ActivityTraceTap", _fake_stream([_FakeOslogLimitMessage()]))
+
+    dvt_module.dvt_oslog(_FAKE_SERVICE_PROVIDER, output_format=OutputFormat.JSON)
+
+    (line,) = capsys.readouterr().out.strip().splitlines()
+    assert json.loads(line)["message"] == "limit on pid -1"
