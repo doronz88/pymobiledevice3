@@ -59,7 +59,9 @@ async def profile_install(
 
 @cli.command("cloud-configuration")
 @async_command
-async def profile_cloud_configuration(service_provider: ServiceProviderDep, config: Optional[Path] = None) -> None:
+async def profile_cloud_configuration(
+    service_provider: ServiceProviderDep, config: Annotated[Optional[Path], typer.Argument()] = None
+) -> None:
     """Get/Set cloud configuration"""
     if not config:
         print_json(await MobileConfigService(lockdown=service_provider).get_cloud_configuration())
@@ -90,7 +92,9 @@ async def profile_remove(service_provider: ServiceProviderDep, name: str) -> Non
 
 @cli.command("set-wifi-power")
 @async_command
-async def profile_set_wifi_power(service_provider: ServiceProviderDep, state: Literal["on", "off"] = "off") -> None:
+async def profile_set_wifi_power(
+    service_provider: ServiceProviderDep, state: Annotated[Literal["on", "off"], typer.Argument()] = "off"
+) -> None:
     """change Wi-Fi power state"""
     await MobileConfigService(lockdown=service_provider).set_wifi_power_state(state == "on")
 

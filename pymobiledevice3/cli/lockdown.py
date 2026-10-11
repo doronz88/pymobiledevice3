@@ -70,7 +70,9 @@ def lockdown_info(service_provider: ServiceProviderDep) -> None:
 @cli.command("get")
 @async_command
 async def lockdown_get(
-    service_provider: ServiceProviderDep, domain: Optional[str] = None, key: Optional[str] = None
+    service_provider: ServiceProviderDep,
+    domain: Annotated[Optional[str], typer.Argument()] = None,
+    key: Annotated[Optional[str], typer.Argument()] = None,
 ) -> None:
     """query lockdown values by their domain and key names"""
     print_json(await service_provider.get_value(domain=domain, key=key))
@@ -81,8 +83,8 @@ async def lockdown_get(
 async def lockdown_set(
     service_provider: ServiceProviderDep,
     value: str,
-    domain: Optional[str] = None,
-    key: Optional[str] = None,
+    domain: Annotated[Optional[str], typer.Argument()] = None,
+    key: Annotated[Optional[str], typer.Argument()] = None,
 ) -> None:
     """set a lockdown value using python's ast.literal_eval()"""
     print_json(await service_provider.set_value(value=ast.literal_eval(value), domain=domain, key=key))
@@ -97,7 +99,9 @@ async def lockdown_remove(service_provider: ServiceProviderDep, domain: str, key
 
 @cli.command("unpair")
 @async_command
-async def lockdown_unpair(service_provider: NoAutoPairLockdownClientDep, host_id: Optional[str] = None) -> None:
+async def lockdown_unpair(
+    service_provider: NoAutoPairLockdownClientDep, host_id: Annotated[Optional[str], typer.Argument()] = None
+) -> None:
     """unpair from connected device"""
     await service_provider.unpair(host_id=host_id)
 
@@ -170,7 +174,9 @@ async def lockdown_locale(
 
 @cli.command("device-name")
 @async_command
-async def lockdown_device_name(service_provider: ServiceProviderDep, new_name: Optional[str] = None) -> None:
+async def lockdown_device_name(
+    service_provider: ServiceProviderDep, new_name: Annotated[Optional[str], typer.Argument()] = None
+) -> None:
     """get/set current device name"""
     if new_name:
         await service_provider.set_value(new_name, key="DeviceName")

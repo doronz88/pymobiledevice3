@@ -348,7 +348,7 @@ async def shell(
 @async_command
 async def js_shell(
     service_provider: ServiceProviderDep,
-    url: str = "",
+    url: Annotated[str, typer.Argument()] = "",
     timeout: Annotated[
         float,
         typer.Option("--timeout", "-t", help="Seconds to wait for WebInspector to respond."),
