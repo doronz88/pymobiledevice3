@@ -4,10 +4,12 @@ from typing import Any, Optional, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import NotificationTimeoutError
+from pymobiledevice3.exceptions import NotificationTimeoutError, SysdiagnoseTimeoutError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.services import crash_reports
+from pymobiledevice3.services.crash_reports import CrashReportsManager
 from pymobiledevice3.services.notification_proxy import NotificationProxyService
 
 PROBE_NOTIFICATION = "com.apple.pymobiledevice3.test.notification"
@@ -70,6 +72,38 @@ async def test_receive_notification_yields_before_timeout() -> None:
         async for event in service.receive_notification():
             received.append(event)
     assert received == [relayed]
+
+
+@pytest.mark.asyncio
+async def test_sysdiagnose_wait_gets_the_remaining_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    timeouts: list[Optional[float]] = []
+
+    def notification_proxy(
+        lockdown: LockdownServiceProvider, timeout: Optional[float] = None
+    ) -> NotificationProxyService:
+        timeouts.append(timeout)
+        return _service(timeout=timeout)
+
+    async def get_new_sysdiagnose_filename(end_time: Optional[float] = None) -> str:
+        await asyncio.sleep(0.2)
+        return "/DiagnosticLogs/sysdiagnose/sysdiagnose_test.tar.gz"
+
+    async def pull(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("pulled an unfinished archive")
+
+    monkeypatch.setattr(crash_reports, "NotificationProxyService", notification_proxy)
+    manager = CrashReportsManager(cast(LockdownServiceProvider, object()))
+    monkeypatch.setattr(manager, "_get_new_sysdiagnose_filename", get_new_sysdiagnose_filename)
+    monkeypatch.setattr(manager, "pull", pull)
+
+    start = time.monotonic()
+    with pytest.raises(SysdiagnoseTimeoutError):
+        await manager.get_new_sysdiagnose("out.tar.gz", timeout=0.5)
+
+    # --timeout covers the whole wait, so finding the archive has already used part of it.
+    assert timeouts[0] is not None
+    assert 0 < timeouts[0] <= 0.35
+    assert time.monotonic() - start < 2
 
 
 @pytest.mark.asyncio
