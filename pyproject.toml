@@ -74,7 +74,6 @@ dependencies = [
     "prompt_toolkit",
     "sslpsk-pmd3>=1.0.3; python_version < '3.13'",
     "python-pcapng>=2.1.1",
-    "plumbum",
     "pyimg4>=0.8.8",
     "pyiosbackup>=0.2.4",
     "typer>=0.23.2,<0.24.0; python_version < '3.10'",
