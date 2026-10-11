@@ -186,6 +186,7 @@ def catch_errors(func: Callable[..., Any]) -> Callable[..., Any]:
                 return await func(*args, **kwargs)
             except tuple(errors) as e:
                 handle_error(e)
+                raise typer.Exit(1) from e
 
         catch_function = async_catch_function
     else:
@@ -195,6 +196,7 @@ def catch_errors(func: Callable[..., Any]) -> Callable[..., Any]:
                 return func(*args, **kwargs)
             except tuple(errors) as e:
                 handle_error(e)
+                raise typer.Exit(1) from e
 
         catch_function = sync_catch_function
 
@@ -704,7 +706,7 @@ class InspectorJsShell(JsShell):
                 inspector, bundle_identifier=SAFARI if open_safari else bundle_identifier
             )
             if application_page is None:
-                raise typer.Exit()
+                raise typer.Exit(1)
 
             inspector_session = await inspector.inspector_session(application_page.application, application_page.page)
             if console_enable:

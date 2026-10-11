@@ -6,7 +6,6 @@ import shutil
 import sqlite3
 import tempfile
 import uuid
-from asyncio import IncompleteReadError
 from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager, closing, suppress
 from dataclasses import dataclass
@@ -552,11 +551,14 @@ class Mobilebackup2Service(LockdownService):
         """
         Erase the device, restoring it to factory state.
 
+        The device drops the link once it starts erasing; that termination is suppressed so the
+        call returns cleanly.
+
         :param backup_directory: Path of the backup directory used for the device link channel.
         """
-        with suppress(IncompleteReadError):
-            async with self.device_link(Path(backup_directory)) as dl:
-                await dl.send_process_message({"MessageName": "EraseDevice", "TargetIdentifier": self.lockdown.udid})
+        async with self.device_link(Path(backup_directory)) as dl:
+            await dl.send_process_message({"MessageName": "EraseDevice", "TargetIdentifier": self.lockdown.udid})
+            with suppress(ConnectionTerminatedError):
                 await dl.dl_loop()
 
     async def version_exchange(self, dl: DeviceLink, local_versions: Optional[Sequence[float]] = None) -> None:

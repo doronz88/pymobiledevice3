@@ -339,7 +339,7 @@ async def change_password(
     async with Mobilebackup2Service(service_provider) as backup_client:
         if not await backup_client.get_will_encrypt():
             logger.error("Encryption is not turned on!")
-            return
+            raise typer.Exit(1)
         await backup_client.change_password(str(backup_directory), old=old_password, new=new_password)
 
 

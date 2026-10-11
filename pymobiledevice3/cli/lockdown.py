@@ -131,7 +131,7 @@ def lockdown_save_pair_record(service_provider: NoAutoPairLockdownClientDep, out
     """save pair record to specified location"""
     if service_provider.pair_record is None:
         logger.error("no pairing record was found")
-        return
+        raise typer.Exit(1)
     output.write_bytes(plistlib.dumps(service_provider.pair_record))
 
 

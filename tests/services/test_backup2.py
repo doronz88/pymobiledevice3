@@ -1,5 +1,6 @@
 import asyncio
 import ctypes
+import plistlib
 import socket
 import sqlite3
 import struct
@@ -687,6 +688,56 @@ async def test_device_link_exit_keeps_the_error_that_ended_the_session(monkeypat
                 await dl.dl_loop()
         # raised by the read in dl_loop, not by the send in disconnect()
         assert isinstance(exc_info.value.__cause__, asyncio.IncompleteReadError)
+    finally:
+        device.close()
+        await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_erase_device_returns_when_the_device_drops_the_link(monkeypatch, tmp_path: Path) -> None:
+    """The device closes the link once it starts erasing; that is the erase going through, not an error."""
+    host, device = socket.socketpair()
+    device.setblocking(False)
+    connection = ServiceConnection(host)
+    service = Mobilebackup2Service(Mock(udid="device"))
+    service._service = connection
+    service.version_exchange = AsyncMock()
+    monkeypatch.setattr(DeviceLink, "version_exchange", AsyncMock())
+    requests = []
+
+    async def drop_after_erase_request() -> None:
+        loop = asyncio.get_running_loop()
+        frame = b""
+        while len(frame) < 4 or len(frame) < 4 + struct.unpack(">L", frame[:4])[0]:
+            frame += await loop.sock_recv(device, 4096)
+        requests.append(plistlib.loads(frame[4:]))
+        device.close()
+
+    try:
+        await connection.start()
+        dropper = asyncio.create_task(drop_after_erase_request())
+        await service.erase_device(tmp_path)
+        await dropper
+    finally:
+        device.close()
+        await connection.close()
+
+    assert requests == [["DLMessageProcessMessage", {"MessageName": "EraseDevice", "TargetIdentifier": "device"}]]
+
+
+@pytest.mark.asyncio
+async def test_erase_device_fails_when_the_link_drops_before_the_request(tmp_path: Path) -> None:
+    """Only a drop after EraseDevice went out means the erase started; an earlier one is still an error."""
+    host, device = socket.socketpair()
+    connection = ServiceConnection(host)
+    service = Mobilebackup2Service(Mock(udid="device"))
+    service._service = connection
+
+    try:
+        await connection.start()
+        device.close()
+        with pytest.raises(ConnectionTerminatedError):
+            await service.erase_device(tmp_path)
     finally:
         device.close()
         await connection.close()

@@ -43,6 +43,7 @@ async def check_in(
             OSUTILS.wait_return()
         except DeviceAlreadyInUseError as e:
             logger.error(e.message)
+            raise typer.Exit(1) from e
 
 
 @cli.command("check-out")
