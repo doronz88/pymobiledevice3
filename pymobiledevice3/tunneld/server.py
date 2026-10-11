@@ -12,7 +12,6 @@ from contextlib import asynccontextmanager, suppress
 from ssl import SSLEOFError
 from typing import Any, Optional, Union
 
-import pydantic
 import requests
 
 from pymobiledevice3.bonjour import browse_remoted
@@ -714,17 +713,14 @@ class TunneldRunner:
                             merged.append({**entry, "origin": url})
             return tunnels
 
-        class _UpstreamBody(pydantic.BaseModel):
-            url: str
-
         @self._app.get("/upstream")
         async def list_upstreams() -> list[str]:
             return sorted(self._tunneld_core.upstream_urls)
 
         @self._app.post("/upstream")
-        async def add_upstream(body: _UpstreamBody) -> fastapi.Response:
+        async def add_upstream(url: str = fastapi.Body(embed=True)) -> fastapi.Response:
             try:
-                url = normalize_upstream_url(body.url)
+                url = normalize_upstream_url(url)
             except ValueError as e:
                 return fastapi.Response(status_code=400, content=json.dumps({"error": str(e)}))
             self._tunneld_core.upstream_urls.add(url)
@@ -737,16 +733,16 @@ class TunneldRunner:
             return generate_http_response(data)
 
         @self._app.delete("/upstream")
-        async def remove_upstream(body: _UpstreamBody) -> fastapi.Response:
+        async def remove_upstream(url: str = fastapi.Body(embed=True)) -> fastapi.Response:
             # normalized on the way in, so the caller may spell it either way
             with suppress(ValueError):
-                self._tunneld_core.upstream_urls.discard(normalize_upstream_url(body.url))
-            self._tunneld_core.upstream_urls.discard(body.url)
+                self._tunneld_core.upstream_urls.discard(normalize_upstream_url(url))
+            self._tunneld_core.upstream_urls.discard(url)
             data: dict[str, Any] = {
                 "operation": "remove_upstream",
-                "url": body.url,
+                "url": url,
                 "data": True,
-                "message": f"upstream {body.url} removed",
+                "message": f"upstream {url} removed",
             }
             return generate_http_response(data)
 

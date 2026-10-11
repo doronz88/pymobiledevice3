@@ -5,7 +5,6 @@
 #     "click",
 #     "coloredlogs",
 #     "construct",
-#     "hexdump",
 #     "hyperframe",
 #     "pymobiledevice3",
 #     "scapy",
@@ -18,7 +17,6 @@ from typing import Optional
 import click
 import coloredlogs
 from construct import ConstError, StreamError
-from hexdump import hexdump
 from hyperframe.frame import DataFrame, Frame, GoAwayFrame, HeadersFrame
 from scapy.layers.inet import IP, TCP
 from scapy.layers.inet6 import IPv6
@@ -28,6 +26,7 @@ from scapy.sendrecv import sniff
 from pymobiledevice3.remote.remotexpc import HTTP2_MAGIC
 from pymobiledevice3.remote.tunnel_service import PairingDataComponentTLVBuf
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type, XpcWrapper, decode_xpc_object
+from pymobiledevice3.utils import hexdump
 
 # Preserve XPC int subtypes in pformat output — both XpcInt64Type and XpcUInt64Type
 # subclass `int` and otherwise display as plain ints, losing the wire-type distinction
@@ -157,7 +156,7 @@ class RemoteXPCSniffer:
             logger.debug(
                 f"New Data frame {stream.src}->{stream.dst} on HTTP/2 stream {frame.stream_id} TCP port {stream.dport}"
             )
-            hexdump(frame.data[:64])
+            print(hexdump(frame.data[:64]))
             if len(frame.data) > 64:
                 logger.debug(f"... {len(frame.data)} bytes")
             return
