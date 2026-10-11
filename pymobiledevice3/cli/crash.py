@@ -109,7 +109,7 @@ async def crash_pull(
         Path,
         typer.Argument(file_okay=False),
     ],
-    remote_file: str = "/",
+    remote_file: Annotated[str, typer.Argument()] = "/",
     erase: Annotated[
         bool,
         typer.Option("--erase", "-e"),
@@ -156,7 +156,7 @@ async def crash_webdav(
 @async_command
 async def crash_ls(
     service_provider: ServiceProviderDep,
-    remote_file: str = "/",
+    remote_file: Annotated[str, typer.Argument()] = "/",
     depth: Annotated[
         int,
         typer.Option("--depth", "-d"),
@@ -180,7 +180,7 @@ async def crash_mover_flush(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def crash_watch(
     service_provider: ServiceProviderDep,
-    name: Optional[str] = None,
+    name: Annotated[Optional[str], typer.Argument()] = None,
     raw: Annotated[
         bool,
         typer.Option("--raw", "-r"),

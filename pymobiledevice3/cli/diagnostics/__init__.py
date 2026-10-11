@@ -96,6 +96,8 @@ async def diagnostics_ioregistry(
 
 @cli.command("mg")
 @async_command
-async def diagnostics_mg(service_provider: ServiceProviderDep, keys: Optional[list[str]] = None) -> None:
+async def diagnostics_mg(
+    service_provider: ServiceProviderDep, keys: Annotated[Optional[list[str]], typer.Argument()] = None
+) -> None:
     """Get MobileGestalt key values from given list. If empty, return all known."""
     print_json(await DiagnosticsService(lockdown=service_provider).mobilegestalt(keys=keys))

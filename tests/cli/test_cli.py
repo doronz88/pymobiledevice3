@@ -471,17 +471,188 @@ def test_service_provider_dependency_records_resolved_udid(monkeypatch):
     assert cli_common.resolved_udid() == "RESOLVED-UDID"
 
 
-@pytest.mark.parametrize("command", ["wifi-connections", "assistive-touch"])
-def test_lockdown_on_off_state_is_a_positional_argument(command):
-    """Regression: the Typer migration turned these `on`/`off` arguments into a `--state` option."""
+@pytest.mark.parametrize(
+    "command,option",
+    [
+        ("lockdown wifi-connections", "--state"),
+        ("lockdown assistive-touch", "--state"),
+        ("lockdown get", "--domain"),
+        ("lockdown get", "--key"),
+        ("lockdown set", "--domain"),
+        ("lockdown set", "--key"),
+        ("lockdown unpair", "--host-id"),
+        ("lockdown device-name", "--new-name"),
+        ("diagnostics mg", "--keys"),
+        ("power-assertion", "--details"),
+        ("crash pull", "--remote-file"),
+        ("crash ls", "--remote-file"),
+        ("crash watch", "--name"),
+        ("developer dvt simulate-location play", "--timing-randomness-range"),
+        ("webinspector js-shell", "--url"),
+        ("profile cloud-configuration", "--config"),
+        ("profile set-wifi-power", "--state"),
+    ],
+)
+def test_optional_argument_is_positional(command, option):
+    """Regression: the Typer migration turned optional click arguments into options (e.g. `--state`)."""
     runner = CliRunner()
-    result = runner.invoke(__main__.app, ["lockdown", command, "--help"])
+    # Wide enough that rich does not truncate a long option name like `--timing-randomness-range`
+    result = runner.invoke(__main__.app, [*command.split(), "--help"], env={"COLUMNS": "200"})
 
     assert result.exit_code == 0
     # Rich interleaves ANSI codes inside option names and wraps text in panel borders
     output = " ".join(ANSI_ESCAPE.sub("", result.output).replace("│", " ").split())
     assert "Arguments" in output
-    assert "--state" not in output
+    assert option not in output
+
+
+class _FakeLockdown:
+    udid = "FAKE-UDID"
+
+    def __init__(self):
+        self.calls = []
+
+    async def get_value(self, domain=None, key=None):
+        self.calls.append(("get_value", domain, key))
+        return 87
+
+    async def set_value(self, value, domain=None, key=None):
+        self.calls.append(("set_value", value, domain, key))
+        return {}
+
+
+@pytest.fixture
+def no_transport_env(monkeypatch):
+    """Keep a tunnel or userspace setting from the developer's shell from routing these tests to a real device."""
+    from pymobiledevice3.cli import cli_common
+
+    for var in (
+        cli_common.TUNNEL_ENV_VAR,
+        cli_common.USERSPACE_ENV_VAR,
+        cli_common.NATIVE_ENV_VAR,
+        cli_common.FORCE_TUNNEL_ENV_VAR,
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+
+@pytest.fixture
+def fake_lockdown(monkeypatch, no_transport_env):
+    """Resolve the device dependency of a command run with `--udid FAKE-UDID` to a fake."""
+    from pymobiledevice3.cli import cli_common
+
+    provider = _FakeLockdown()
+
+    async def fake_create_using_usbmux(*args, **kwargs):
+        return provider
+
+    monkeypatch.setattr(cli_common, "create_using_usbmux", fake_create_using_usbmux)
+    monkeypatch.setattr(cli_common, "_resolved_udid", None)
+    return provider
+
+
+def test_lockdown_get_takes_domain_and_key_positionally(fake_lockdown):
+    result = CliRunner().invoke(
+        __main__.app,
+        ["lockdown", "get", "com.apple.mobile.battery", "BatteryCurrentCapacity", "--udid", "FAKE-UDID"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert fake_lockdown.calls == [("get_value", "com.apple.mobile.battery", "BatteryCurrentCapacity")]
+    assert result.stdout.strip() == "87"
+
+
+def test_lockdown_set_keeps_the_click_argument_order(fake_lockdown):
+    result = CliRunner().invoke(
+        __main__.app,
+        ["lockdown", "set", "True", "com.apple.mobile.wireless_lockdown", "EnableWifiDebugging", "--udid", "FAKE-UDID"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert fake_lockdown.calls == [("set_value", True, "com.apple.mobile.wireless_lockdown", "EnableWifiDebugging")]
+
+
+@pytest.mark.parametrize(
+    "keys,expected",
+    [([], None), (["ProductType", "BuildVersion"], ["ProductType", "BuildVersion"])],
+)
+def test_diagnostics_mg_takes_keys_positionally(monkeypatch, fake_lockdown, keys, expected):
+    from pymobiledevice3.cli import diagnostics
+
+    queried = []
+
+    class _FakeDiagnosticsService:
+        def __init__(self, lockdown):
+            pass
+
+        async def mobilegestalt(self, keys=None):
+            queried.append(keys)
+            return {}
+
+    monkeypatch.setattr(diagnostics, "DiagnosticsService", _FakeDiagnosticsService)
+
+    result = CliRunner().invoke(__main__.app, ["diagnostics", "mg", *keys, "--udid", "FAKE-UDID"])
+
+    assert result.exit_code == 0, result.output
+    assert queried == [expected]
+
+
+def test_mounter_query_nonce_does_not_require_an_image_type(monkeypatch, fake_lockdown):
+    from pymobiledevice3.cli import mounter
+
+    queried = []
+
+    class _FakeMobileImageMounterService:
+        def __init__(self, lockdown):
+            pass
+
+        async def query_nonce(self, personalized_image_type=None):
+            queried.append(personalized_image_type)
+            return b"\x01\x02"
+
+    monkeypatch.setattr(mounter, "MobileImageMounterService", _FakeMobileImageMounterService)
+
+    result = CliRunner().invoke(__main__.app, ["mounter", "query-nonce", "--udid", "FAKE-UDID"])
+
+    assert result.exit_code == 0, result.output
+    assert queried == [None]
+
+
+def test_core_device_read_file_prints_to_stdout_without_output(monkeypatch, no_transport_env):
+    from pymobiledevice3.cli import cli_common
+    from pymobiledevice3.cli.developer import core_device
+
+    class _FakeRsd:
+        udid = "FAKE-UDID"
+
+        def __init__(self, address):
+            pass
+
+        async def connect(self):
+            pass
+
+    class _FakeFileServiceService:
+        def __init__(self, rsd, domain, identifier=""):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def retrieve_file(self, path):
+            return b"file contents"
+
+    monkeypatch.setattr(cli_common, "RemoteServiceDiscoveryService", _FakeRsd)
+    monkeypatch.setattr(core_device, "FileServiceService", _FakeFileServiceService)
+
+    result = CliRunner().invoke(
+        __main__.app,
+        ["developer", "core-device", "read-file", "temporary", "hello.txt", "--rsd", "127.0.0.1", "1"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip() == "file contents"
 
 
 def test_main_escapes_characters_the_console_encoding_cannot_represent(monkeypatch):

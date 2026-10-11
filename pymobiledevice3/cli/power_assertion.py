@@ -1,6 +1,7 @@
 import asyncio
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
+import typer
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
@@ -19,7 +20,7 @@ async def power_assertion(
     assertion_type: Literal["AMDPowerAssertionTypeWirelessSync", "PreventUserIdleSystemSleep", "PreventSystemSleep"],
     name: str,
     timeout: int,
-    details: Optional[str] = None,
+    details: Annotated[Optional[str], typer.Argument()] = None,
 ) -> None:
     """Create a power assertion"""
     async with PowerAssertionService(service_provider).create_power_assertion(assertion_type, name, timeout, details):

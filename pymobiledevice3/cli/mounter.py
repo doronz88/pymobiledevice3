@@ -224,7 +224,9 @@ async def mounter_query_developer_mode_status(service_provider: ServiceProviderD
 
 @cli.command("query-nonce")
 @async_command
-async def mounter_query_nonce(service_provider: ServiceProviderDep, image_type: Annotated[str, typer.Option()]) -> None:
+async def mounter_query_nonce(
+    service_provider: ServiceProviderDep, image_type: Annotated[Optional[str], typer.Option()] = None
+) -> None:
     """Query nonce"""
     print_json(await MobileImageMounterService(lockdown=service_provider).query_nonce(image_type))
 

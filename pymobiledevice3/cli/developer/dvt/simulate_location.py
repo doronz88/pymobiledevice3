@@ -46,7 +46,7 @@ async def dvt_simulate_location_play(
         Path,
         typer.Argument(exists=True, file_okay=True, dir_okay=False),
     ],
-    timing_randomness_range: int = 0,
+    timing_randomness_range: Annotated[int, typer.Argument()] = 0,
     disable_sleep: Annotated[bool, typer.Option()] = False,
 ) -> None:
     """Replay a GPX route through DVT on iOS 17 and newer."""

@@ -3,7 +3,7 @@ import logging
 import posixpath
 import sys
 import time
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, nullcontext
 from enum import Enum
 from pathlib import Path
 from typing import IO, Annotated, Optional
@@ -106,12 +106,12 @@ async def core_device_read_file(
     *,
     identifier: Annotated[str, typer.Option()] = "",
     output: Annotated[
-        Path,
+        Optional[Path],
         typer.Option("--output", "-o"),
-    ],
+    ] = None,
 ) -> None:
     """Read a file from a domain/path to stdout or --output."""
-    with output.open("wb") as output_file:
+    with output.open("wb") if output is not None else nullcontext() as output_file:
         await core_device_read_file_task(service_provider, domain, path, identifier, output_file)
 
 
