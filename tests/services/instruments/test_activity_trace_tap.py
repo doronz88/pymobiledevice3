@@ -100,3 +100,117 @@ def test_message_text_is_printed_without_padding(value: str) -> None:
     (message,) = parse(os_log_stream("%s%s", text(value), string(value)))
 
     assert decode_message_format(message.message) == value * 2
+
+
+def integer(value: int, type_: str = "uint64") -> bytes:
+    return message_item(type_, push_int(value))
+
+
+def double(value: float) -> bytes:
+    return message_item("fixed-decimal", push(struct.pack("<d", value)))
+
+
+def formatted(format_string: str, *items: bytes) -> str:
+    (message,) = parse(os_log_stream(format_string, *items))
+    return decode_message_format(message.message, message.format_string)
+
+
+@pytest.mark.parametrize(
+    ("format_string", "items", "expected"),
+    [
+        ("limit on pid %d", [text("limit on pid "), integer(-1)], "limit on pid -1"),
+        ("%d", [integer(0xFFFFFFFF)], "-1"),
+        ("%{public}hhd", [integer(0xFF)], "-1"),
+        ("%lld", [integer(-5)], "-5"),
+        ("%i", [integer(1233)], "1233"),
+        ("%u", [integer(-1)], "4294967295"),
+        ("%lu", [integer(-1)], "18446744073709551615"),
+        ("%hu", [integer(0x12345)], "9029"),
+        ("%x", [integer(-1, "uint64-hex-lowercase")], "ffffffff"),
+        ("0x%08x", [text("0x"), integer(0x1F, "uint64-hex-lowercase")], "0x0000001f"),
+        ("%llX", [integer(0xABCDEF0123, "uint64-hex-lowercase")], "ABCDEF0123"),
+        ("%p", [integer(0x16FDEB000, "address")], "0x16fdeb000"),
+        ("%c", [integer(ord("="))], "="),
+        ("%f", [double(2.9523653102880343)], "2.952365"),
+        ("%{public}.2f", [double(2.9523653102880343)], "2.95"),
+        ("%lf", [double(-1.0)], "-1.000000"),
+        ("%f", [double(0.0)], "0.000000"),
+        ("%g", [double(0.25)], "0.25"),
+        ("100%% at %d", [text("100% at "), integer(7)], "100% at 7"),
+        ("%+u", [integer(5)], "5"),
+        ("% x", [integer(0xFF, "uint64-hex-lowercase")], "ff"),
+        ("%#x", [integer(0, "uint64-hex-lowercase")], "0"),
+        ("%#o", [integer(8)], "010"),
+        ("%#5o", [integer(8)], "  010"),
+        ("%.0d", [integer(0)], ""),
+        ("%+.0d", [integer(0)], "+"),
+        ("%05.3d", [integer(5)], "  005"),
+        ("%05f", [double(float("inf"))], "  inf"),
+    ],
+)
+def test_numbers_are_printed_per_their_conversion(format_string: str, items: list[bytes], expected: str) -> None:
+    assert formatted(format_string, *items) == expected
+
+
+def test_strings_are_printed_as_sent() -> None:
+    items = [string("Notes"), text(" said "), string("%d"), text(" for "), integer(-1)]
+
+    assert formatted("%{public}s said %@ for %d", *items) == "Notes said %d for -1"
+
+
+def test_arguments_past_the_last_one_sent_keep_their_conversions() -> None:
+    # os_log sends at most 48 arguments; the rest of the format string comes as plain text
+    items = [item for _ in range(48) for item in (integer(-1), text(" "))]
+
+    assert formatted("%d " * 50, *items, text("%d %d ")) == "-1 " * 48 + "%d %d "
+
+
+def test_numbers_without_a_matching_conversion_are_printed_by_type() -> None:
+    assert formatted("%s", integer(-1), text(" "), integer(16, "uint64-hex-lowercase")) == "18446744073709551615 10"
+
+
+@pytest.mark.parametrize(
+    ("format_string", "items", "expected"),
+    [
+        (
+            "%{public, signpost.description:begin_time}llu seed=%{public, name=transaction_seed}#x",
+            [text(" seed="), integer(0x6CB, "uint64-hex-lowercase")],
+            " seed=0x6cb",
+        ),
+        (
+            "%{public, signpost.description:end_time}llu Result=%{public, signpost.telemetry:number1,name=Result}lld",
+            [text(" Result="), integer(-2)],
+            " Result=-2",
+        ),
+        (
+            "client-%i %{public, signpost.description:begin_time}llu %{public, signpost.description:end_time}llu",
+            [text("client-"), integer(-3), text(" "), text(" ")],
+            "client--3  ",
+        ),
+    ],
+)
+def test_signpost_times_without_an_item(format_string: str, items: list[bytes], expected: str) -> None:
+    # iOS 27 sends no item for a signpost's begin and end time
+    assert formatted(format_string, *items) == expected
+
+
+def test_signpost_times_with_an_item() -> None:
+    # iOS 16 sends the begin time as an item like any other argument
+    format_string = "%{public, signpost.description:begin_time}llu seed=%{public, name=transaction_seed}#x"
+    items = [integer(8399240568563), text(" seed="), integer(0x451A, "uint64-hex-lowercase")]
+
+    assert formatted(format_string, *items) == "8399240568563 seed=0x451a"
+
+
+def test_signpost_attributes_send_their_item() -> None:
+    items = [text("pid="), integer(-1)]
+
+    assert formatted("%{public, signpost.description:attribute}d", *items[1:]) == "-1"
+    assert formatted("pid=%{public, signpost.description:attribute}d", *items) == "pid=-1"
+
+
+def test_items_that_do_not_fit_their_conversion_are_printed_by_type() -> None:
+    # out of step: the hex item lands on %llu and the double on %x
+    items = [integer(0x6CB, "uint64-hex-lowercase"), text(" "), double(0.25)]
+
+    assert formatted("%llu %x", *items) == "6cb 4598175219545276416"
