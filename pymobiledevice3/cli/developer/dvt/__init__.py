@@ -749,7 +749,7 @@ async def dvt_oslog(
             image_name = os.path.basename(sender_image_path)
             subsystem = message.subsystem
             category = message.category
-            timestamp = datetime.now()
+            timestamp = message.device_time or datetime.now()
 
             if pid is not None and message_pid != pid:
                 continue

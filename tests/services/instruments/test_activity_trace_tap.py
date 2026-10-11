@@ -1,7 +1,11 @@
+import plistlib
 import struct
-from typing import Any, cast
+from collections.abc import AsyncIterator
+from datetime import datetime
+from typing import Any, Optional, cast
 
 import pytest
+from bpylist2 import archiver
 
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.services.dvt.instruments.activity_trace_tap import (
@@ -12,7 +16,10 @@ from pymobiledevice3.services.dvt.instruments.activity_trace_tap import (
     ActivityTraceTap,
     decode_message_format,
 )
+from pymobiledevice3.services.dvt.instruments.tap import TapMessageChannel
 
+# mach continuous time of the synthetic row, in ticks of the 24 MHz timebase
+ROW_TIME = 0x48AA682F9282
 OS_LOG_COLUMNS = [
     "time",
     "process",
@@ -62,12 +69,12 @@ def message_item(type_: str, value: bytes) -> bytes:
     return push_struct(push_str(type_), value)
 
 
-def os_log_stream(format_string: str, *items: bytes, thread: int = 0x2149) -> bytes:
+def os_log_stream(format_string: str, *items: bytes, thread: int = 0x2149, time: Optional[int] = ROW_TIME) -> bytes:
     """Define the os-log table and send one row of it, with `items` as its message."""
     table = op(CMD_SENTINEL) + op(CMD_SENTINEL) + push_str("os-log")
     table += push_struct(*(push_str(column) for column in OS_LOG_COLUMNS)) + op(CMD_DEFINE_TABLE)
     process = push_struct(push_int(42), push_str("launchd"))
-    row = push_int(0x48AA682F9282) + process + push_struct(push_int(thread), process)
+    row = (op(CMD_SENTINEL) if time is None else push_int(time)) + process + push_struct(push_int(thread), process)
     row += push_str("Default") + push_str(format_string) + op(CMD_SENTINEL) + push_str("kernel") + push_str("")
     row += push_str("/usr/lib/libfoo.dylib") + push_struct(*items)
     return table + row + op(CMD_END_ROW, 0)
@@ -214,3 +221,123 @@ def test_items_that_do_not_fit_their_conversion_are_printed_by_type() -> None:
     items = [integer(0x6CB, "uint64-hex-lowercase"), text(" "), double(0.25)]
 
     assert formatted("%llu %x", *items) == "6cb 4598175219545276416"
+
+
+class FakeTapChannel:
+    def __init__(self, *messages: bytes) -> None:
+        self.messages = list(messages)
+
+    async def receive_message(self) -> bytes:
+        return self.messages.pop(0)
+
+
+async def first_message(tap: ActivityTraceTap) -> Any:
+    async for message in cast(AsyncIterator[Any], tap):
+        return message
+    raise AssertionError("the tap stopped without yielding")
+
+
+def tap_reading(*messages: bytes) -> ActivityTraceTap:
+    tap = ActivityTraceTap(cast(DtxServiceProvider, None))
+    tap._message_channel = cast(TapMessageChannel, FakeTapChannel(*messages))
+    return tap
+
+
+TIME_MAPPING = {
+    # one second before the row: 24,000,000 ticks of 125/3 ns
+    "DTActivityTraceTapDeviceMachContinuousTimeKey": ROW_TIME - 24_000_000,
+    "DTActivityTraceTapDeviceTimeIntervalSince1970Key": 1791734188.5,
+    "DTActivityTraceTapDeviceMachTimebaseNumeratorKey": 125,
+    "DTActivityTraceTapDeviceMachTimebaseDenominatorKey": 3,
+}
+
+
+def time_mapping_notice(**fields: Any) -> bytes:
+    return archiver.archive({"notice": "Time Mapping", **fields})
+
+
+async def test_rows_are_stamped_with_the_device_clock() -> None:
+    heartbeat = archiver.archive({"k": 8, "heart": ROW_TIME})
+    tap = tap_reading(time_mapping_notice(info=TIME_MAPPING), heartbeat, os_log_stream("hello", text("hello")))
+
+    message = await first_message(tap)
+
+    assert message.device_time == datetime.fromtimestamp(1791734189.5)
+    assert int.from_bytes(message.time, "little") == ROW_TIME
+
+
+UNKNOWN_CLASS_ARCHIVE = plistlib.dumps(
+    {
+        "$archiver": "NSKeyedArchiver",
+        "$version": 100000,
+        "$top": {"root": plistlib.UID(1)},
+        "$objects": [
+            "$null",
+            {"$class": plistlib.UID(2)},
+            {"$classname": "DTFutureNotice", "$classes": ["DTFutureNotice", "NSObject"]},
+        ],
+    },
+    fmt=plistlib.FMT_BINARY,
+)
+
+
+@pytest.mark.parametrize(
+    ("notices", "row_time"),
+    [
+        pytest.param([], ROW_TIME, id="no notice"),
+        pytest.param([time_mapping_notice()], ROW_TIME, id="no info"),
+        pytest.param([time_mapping_notice(info=None)], ROW_TIME, id="info is None"),
+        pytest.param([time_mapping_notice(info=["x"])], ROW_TIME, id="info is a list"),
+        pytest.param(
+            [time_mapping_notice(info={k.replace("TraceTap", ""): v for k, v in TIME_MAPPING.items()})],
+            ROW_TIME,
+            id="renamed keys",
+        ),
+        pytest.param(
+            [time_mapping_notice(info={k: v for k, v in TIME_MAPPING.items() if "Numerator" not in k})],
+            ROW_TIME,
+            id="no numerator",
+        ),
+        pytest.param(
+            [time_mapping_notice(info={**TIME_MAPPING, "DTActivityTraceTapDeviceMachTimebaseDenominatorKey": 0})],
+            ROW_TIME,
+            id="zero denominator",
+        ),
+        pytest.param(
+            [time_mapping_notice(info={**TIME_MAPPING, "DTActivityTraceTapDeviceMachTimebaseNumeratorKey": 0})],
+            ROW_TIME,
+            id="zero numerator",
+        ),
+        pytest.param(
+            [time_mapping_notice(info={**TIME_MAPPING, "DTActivityTraceTapDeviceMachTimebaseDenominatorKey": -3})],
+            ROW_TIME,
+            id="negative denominator",
+        ),
+        pytest.param(
+            [time_mapping_notice(info={**TIME_MAPPING, "DTActivityTraceTapDeviceTimeIntervalSince1970Key": "soon"})],
+            ROW_TIME,
+            id="wall clock not a number",
+        ),
+        pytest.param(
+            [time_mapping_notice(info={**TIME_MAPPING, "DTActivityTraceTapDeviceTimeIntervalSince1970Key": 1e20})],
+            ROW_TIME,
+            id="wall clock out of range",
+        ),
+        pytest.param(
+            [time_mapping_notice(info={**TIME_MAPPING, "DTActivityTraceTapDeviceMachContinuousTimeKey": float("inf")})],
+            ROW_TIME,
+            id="continuous time not finite",
+        ),
+        pytest.param([plistlib.dumps({"a": 1}, fmt=plistlib.FMT_BINARY)], ROW_TIME, id="plain plist"),
+        pytest.param([b"bplist00\x00\x01garbage"], ROW_TIME, id="corrupt plist"),
+        pytest.param([UNKNOWN_CLASS_ARCHIVE], ROW_TIME, id="unknown archived class"),
+        pytest.param([archiver.archive(["Time Mapping"])], ROW_TIME, id="archive of a list"),
+        pytest.param([time_mapping_notice(info=TIME_MAPPING)], None, id="row without a time"),
+    ],
+)
+async def test_rows_have_no_device_time_without_a_usable_time_mapping(
+    notices: list[bytes], row_time: Optional[int]
+) -> None:
+    message = await first_message(tap_reading(*notices, os_log_stream("hello", text("hello"), time=row_time)))
+
+    assert message.device_time is None
