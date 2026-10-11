@@ -12,7 +12,6 @@ import questionary
 import requests
 from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
 from tqdm import tqdm
-from traitlets.config import Config
 
 _F = TypeVar("_F", bound=Callable[..., Any])
 
@@ -192,6 +191,7 @@ def start_ipython_shell(*, user_ns: Optional[dict[str, Any]] = None, header: Opt
     # every library consumer that opens a lockdown connection was paying to
     # import a REPL it never starts.
     import IPython
+    from traitlets.config import Config  # IPython's own configuration system
 
     # Keep IPython autoawait on the same loop used by CLI async wrappers.
     config = Config()
