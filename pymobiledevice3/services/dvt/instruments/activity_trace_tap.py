@@ -251,8 +251,10 @@ class ActivityTraceTap(Tap):
 
         Message = dataclasses.make_dataclass("message", [c.replace("-", "_") for c in columns])
         message = Message(*row)
-        message.process = 0 if message.process is None else struct.unpack("<I", message.process[0].ljust(4, b"\x00"))[0]
-        message.thread = struct.unpack("<I", message.thread[0].ljust(4, b"\x00"))[0]
+        # a pushed value loses its trailing zero bits and comes back padded to whole bytes, so an integer
+        # is 2 to 9 bytes long (a thread id of 0x1000000 or more decodes to 6 bytes or more)
+        message.process = 0 if message.process is None else int.from_bytes(message.process[0], "little")
+        message.thread = int.from_bytes(message.thread[0], "little")
 
         string_fields = (
             "message_type",
