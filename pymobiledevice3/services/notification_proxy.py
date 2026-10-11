@@ -1,5 +1,5 @@
+import asyncio
 import dataclasses
-import socket
 from collections.abc import AsyncGenerator
 from typing import Any, Optional, Union
 
@@ -8,7 +8,6 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
-from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 
@@ -70,7 +69,7 @@ class NotificationProxyService(LockdownService):
         """
         :param lockdown: service provider used to start the service and reach the device.
         :param insecure: when True, use the insecure notification proxy service instead of the secure one.
-        :param timeout: optional socket receive timeout in seconds applied to the service connection.
+        :param timeout: optional time in seconds `receive_notification` waits for each notification.
         """
         if isinstance(lockdown, RemoteServiceDiscoveryService):
             secure_service_name = self.RSD_SERVICE_NAME
@@ -84,11 +83,7 @@ class NotificationProxyService(LockdownService):
         else:
             super().__init__(lockdown, secure_service_name)
 
-        if timeout is not None:
-            service = self.service
-            assert isinstance(service, ServiceConnection)
-            assert service.socket is not None
-            service.socket.settimeout(timeout)
+        self.timeout = timeout
 
     async def notify_post(self, name: str) -> None:
         """
@@ -134,13 +129,14 @@ class NotificationProxyService(LockdownService):
         is closed.
 
         :returns: an async generator of the received notifications.
-        :raises NotificationTimeoutError: if no notification arrives within the configured socket timeout.
+        :raises NotificationTimeoutError: if no notification arrives within the configured timeout.
         """
         while True:
             try:
-                yield NotificationEvent.from_message(await self.service.recv_plist())
-            except socket.timeout as e:
+                message = await asyncio.wait_for(self.service.recv_plist(), self.timeout)
+            except asyncio.TimeoutError as e:
                 raise NotificationTimeoutError from e
+            yield NotificationEvent.from_message(message)
 
 
 class RemoteNotificationProxyService(RemoteService):
