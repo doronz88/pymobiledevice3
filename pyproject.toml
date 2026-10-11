@@ -107,6 +107,9 @@ dependencies = [
     # unconditionally — no capability probing — so the floor IS the compatibility contract.
     # (0.1.0 introduced the pure-asyncio stack the module is written against.)
     "pmd-pytcp>=0.3.7; python_version >= '3.9'",
+    # pmd-pytcp's address types, which userspace_tunnel.py imports directly. pmd-pytcp pins the
+    # version it was built against.
+    "pmd-net-addr",
     # WebDAV mounting of AFC services (`<group> webdav`). ASGIWebDAV requires Python >= 3.10, so it
     # is gated accordingly; the CLI surfaces a clear message on 3.9. backports.zstd supplies the zstd
     # module ASGIWebDAV imports on 3.10-3.13 (stdlib on 3.14+); uvicorn is already a dependency above.
