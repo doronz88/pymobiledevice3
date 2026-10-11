@@ -15,7 +15,6 @@ from textwrap import dedent
 from typing import Annotated, Any, Callable, Optional, TypeVar, cast
 
 import coloredlogs
-import hexdump
 import questionary
 import typer
 from pygments import formatters, highlight, lexers
@@ -34,7 +33,7 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, TunneldAddress, get_tunneld_devices
-from pymobiledevice3.utils import ask_prompt, get_asyncio_loop
+from pymobiledevice3.utils import ask_prompt, get_asyncio_loop, hexdump
 
 UDID_ENV_VAR = "PYMOBILEDEVICE3_UDID"
 # With `--reconnect`: accept the first available device on reconnect, even when its UDID differs
@@ -124,8 +123,7 @@ def print_json(buf: Any, colored: Optional[bool] = None, default: Callable[[Any]
 
 
 def print_hex(data: bytes, colored: bool = True) -> None:
-    hex_dump = cast(Any, hexdump).hexdump(data, result="return")
-    assert isinstance(hex_dump, str)  # result='return' always yields a str
+    hex_dump = hexdump(data)
     if colored:
         print(
             highlight(

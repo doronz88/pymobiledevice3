@@ -45,15 +45,12 @@ dependencies = [
     "IPython",
     "bpylist2>=4.0.1",
     "pygments",
-    "hexdump",
     "daemonize",
-    "gpxpy<1.7.0,!=1.6.0",
     "pykdebugparser>=1.2.7",
     "pyusb>=1.2.1",
     "tqdm",
     "requests",
     "xonsh",
-    "parameter_decorators",
     "packaging",
     "typing_extensions>=4.1.0",
     "pygnuutils>=0.0.7",
@@ -76,7 +73,6 @@ dependencies = [
     "prompt_toolkit",
     "sslpsk-pmd3>=1.0.3; python_version < '3.13'",
     "python-pcapng>=2.1.1",
-    "plumbum",
     "pyimg4>=0.8.8",
     "pyiosbackup>=0.2.4",
     "typer>=0.23.2,<0.24.0; python_version < '3.10'",
@@ -111,6 +107,9 @@ dependencies = [
     # unconditionally — no capability probing — so the floor IS the compatibility contract.
     # (0.1.0 introduced the pure-asyncio stack the module is written against.)
     "pmd-pytcp>=0.3.7; python_version >= '3.9'",
+    # pmd-pytcp's address types, which userspace_tunnel.py imports directly. pmd-pytcp pins the
+    # version it was built against.
+    "pmd-net-addr",
     # WebDAV mounting of AFC services (`<group> webdav`). ASGIWebDAV requires Python >= 3.10, so it
     # is gated accordingly; the CLI surfaces a clear message on 3.9. backports.zstd supplies the zstd
     # module ASGIWebDAV imports on 3.10-3.13 (stdlib on 3.14+); uvicorn is already a dependency above.

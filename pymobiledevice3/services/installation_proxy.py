@@ -4,16 +4,8 @@ from enum import Enum
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar, cast
+from typing import Any, Callable, Optional, cast
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
-
-if TYPE_CHECKING:
-    _F = TypeVar("_F", bound=Callable[..., Any])
-
-    def str_to_path(*params: str, reannotate: bool = True) -> Callable[[_F], _F]: ...
-
-else:
-    from parameter_decorators import str_to_path
 
 from pymobiledevice3.exceptions import AppInstallError
 from pymobiledevice3.lockdown import LockdownClient
@@ -21,6 +13,7 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.plist_types import PlistSendable
 from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.lockdown_service import LockdownService
+from pymobiledevice3.utils import str_to_path
 
 GET_APPS_ADDITIONAL_INFO = {"ReturnAttributes": ["CFBundleIdentifier", "StaticDiskUsage", "DynamicDiskUsage"]}
 

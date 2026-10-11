@@ -13,7 +13,6 @@ from zipfile import ZipFile
 
 import typer
 from packaging.version import Version
-from plumbum import local
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, ServiceProviderDep, async_command, print_json
@@ -170,16 +169,21 @@ async def debugserver_lldb(
         if not target_path.exists():
             logger.error(f"xcodeproj not found: {target_path}")
             return
-        with local.cwd(target_path.parent):
-            logger.info(f"Building {target_path} for {configuration} configuration")
-            local["xcodebuild"]["-project", str(target_path), "-configuration", configuration, "build"]()
-            app_candidates = [app for app in Path("build").rglob("*.app") if (app / "Info.plist").exists()]
-            if not app_candidates:
-                logger.error("No built .app with Info.plist found under build/.")
-                return
-            app_candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-            local_app = app_candidates[0].absolute()
-            install_source = local_app
+        project_dir = target_path.absolute().parent
+        logger.info(f"Building {target_path} for {configuration} configuration")
+        subprocess.run(
+            ["xcodebuild", "-project", str(target_path.absolute()), "-configuration", configuration, "build"],
+            cwd=project_dir,
+            check=True,
+            capture_output=True,
+        )
+        app_candidates = [app for app in (project_dir / "build").rglob("*.app") if (app / "Info.plist").exists()]
+        if not app_candidates:
+            logger.error("No built .app with Info.plist found under build/.")
+            return
+        app_candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        local_app = app_candidates[0]
+        install_source = local_app
     elif target_path.suffix == ".ipa":
         if not target_path.exists():
             logger.error(f"IPA not found: {target_path}")
