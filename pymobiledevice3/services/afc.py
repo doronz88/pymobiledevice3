@@ -26,10 +26,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from re import Pattern
 from types import TracebackType
-from typing import Any, Callable, NamedTuple, Optional, TextIO, TypeVar, Union, cast
+from typing import Any, Callable, NamedTuple, Optional, TextIO, Union, cast
 
-import hexdump
-import parameter_decorators
 import xonsh.cli_utils
 import xonsh.main
 import xonsh.tools
@@ -52,18 +50,10 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.safe_paths import device_file_path, validate_device_filename
 from pymobiledevice3.services.lockdown_service import LockdownService
-from pymobiledevice3.utils import get_asyncio_loop, try_decode
+from pymobiledevice3.utils import get_asyncio_loop, hexdump, path_to_str, try_decode
 
 # These symbols come from untyped third-party modules; re-bind them with explicit types so their
 # uses type-check without leaking Unknown into this module.
-_F = TypeVar("_F", bound=Callable[..., Any])
-
-
-def path_to_str(*args: Any, **kwargs: Any) -> Callable[[_F], _F]:
-    """Signature-preserving wrapper over the untyped ``parameter_decorators.path_to_str``."""
-    return cast(Callable[[_F], _F], cast(Any, parameter_decorators).path_to_str(*args, **kwargs))
-
-
 Arg = cast(Callable[..., Any], cast(Any, xonsh.cli_utils).Arg)
 xonsh_main = cast(Callable[..., Any], cast(Any, xonsh.main).main)
 print_color = cast(Callable[..., Any], cast(Any, xonsh.tools).print_color)
@@ -1885,7 +1875,7 @@ class AfcShell:
 
         :param filename: Path to the file
         """
-        print(cast(Any, hexdump).hexdump(self.afc.get_file_contents(self.relative_path(filename)), result="return"))
+        print(hexdump(self.afc.get_file_contents(self.relative_path(filename))))
 
     def _do_mkdir(self, filename: Annotated[str, Arg(completer=_path_arg_completer)]):
         """

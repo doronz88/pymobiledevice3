@@ -1,16 +1,20 @@
 import asyncio
+import inspect
+import os
 import sys
 import traceback
 from collections.abc import Coroutine
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional, Union, cast, overload
+from typing import Any, Callable, Optional, TypeVar, Union, cast, overload
 
 import questionary
 import requests
 from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
 from tqdm import tqdm
 from traitlets.config import Config
+
+_F = TypeVar("_F", bound=Callable[..., Any])
 
 
 def plist_access_path(d: Any, path: tuple[Any, ...], type_: Optional[type] = None, required: bool = False):
@@ -65,6 +69,69 @@ def try_decode(s: bytes, *, errors: Optional[str] = None) -> Union[str, bytes]:
         return s.decode("utf8")
     except UnicodeDecodeError:
         return s
+
+
+def hexdump(data: bytes) -> str:
+    """Format ``data`` as a hex dump, 16 bytes a line:
+
+    ``00000000: 48 65 6C 6C 6F 20 77 6F  72 6C 64 21              Hello world!``
+    """
+    lines: list[str] = []
+    for offset in range(0, len(data), 16):
+        chunk = data[offset : offset + 16]
+        halves = [" ".join(f"{byte:02X}" for byte in chunk[i : i + 8]) for i in (0, 8)]
+        text = "".join(chr(byte) if 0x20 <= byte <= 0x7E else "." for byte in chunk)
+        lines.append(f"{offset:08X}: {halves[0]:<23}  {halves[1]:<23}  {text}")
+    return "\n".join(lines)
+
+
+def _convert_annotated_params(
+    annotation: Any, accepted: type, convert: Callable[[Any], Any], advertised: Any, names: tuple[str, ...]
+) -> Callable[[_F], _F]:
+    """Decorator converting the ``accepted`` arguments passed for parameters annotated ``annotation``.
+
+    ``names`` selects the parameters by name instead, converting whatever they are passed. The
+    decorated function's signature shows ``advertised`` for the converted parameters."""
+
+    def decorate(f: _F) -> _F:
+        signature = inspect.signature(f)
+        converted = [
+            name
+            for name, param in signature.parameters.items()
+            if (name in names if names else param.annotation == annotation)
+        ]
+
+        @wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                bound = signature.bind(*args, **kwargs)
+            except TypeError:
+                # Let the function itself report the bad call
+                return f(*args, **kwargs)
+            for name in converted:
+                if name in bound.arguments and (names or isinstance(bound.arguments[name], accepted)):
+                    bound.arguments[name] = convert(bound.arguments[name])
+            return f(*bound.args, **bound.kwargs)
+
+        cast(Any, wrapper).__signature__ = signature.replace(
+            parameters=[
+                param.replace(annotation=advertised) if name in converted else param
+                for name, param in signature.parameters.items()
+            ]
+        )
+        return cast(_F, wrapper)
+
+    return decorate
+
+
+def path_to_str(*names: str) -> Callable[[_F], _F]:
+    """Decorator letting the ``str`` parameters of a function (or just ``names``) take a ``Path`` too."""
+    return _convert_annotated_params(str, Path, str, os.PathLike, names)
+
+
+def str_to_path(*names: str) -> Callable[[_F], _F]:
+    """Decorator letting the ``Path`` parameters of a function (or just ``names``) take a ``str`` too."""
+    return _convert_annotated_params(Path, str, Path, str, names)
 
 
 def asyncio_print_traceback(f: Callable[..., Any]):
