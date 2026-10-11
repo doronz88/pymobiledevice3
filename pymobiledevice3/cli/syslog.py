@@ -16,7 +16,6 @@ from typing_extensions import assert_never
 from pymobiledevice3.cli.cli_common import (
     ServiceProviderDep,
     async_command,
-    get_last_used_terminal_formatting,
     user_requested_colored_output,
 )
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -77,7 +76,10 @@ async def syslog_live_old(service_provider: ServiceProviderDep) -> None:
             print(line)
 
 
-def format_line(syslog_entry: SyslogEntry, *, include_label: bool, image_offset: bool, color: bool) -> str:
+def _format_line_fields(
+    syslog_entry: SyslogEntry, *, include_label: bool, image_offset: bool
+) -> list[tuple[str, Optional[str]]]:
+    """Split the rendered line into ``(text, color)`` fields; the separators between them have no color."""
     log_level_colors = {
         SyslogLogLevel.NOTICE.name: "white",
         SyslogLogLevel.INFO.name: "white",
@@ -87,49 +89,63 @@ def format_line(syslog_entry: SyslogEntry, *, include_label: bool, image_offset:
         SyslogLogLevel.USER_ACTION.name: "white",
     }
 
-    syslog_pid = syslog_entry.pid
-    timestamp = syslog_entry.timestamp
     level = syslog_entry.level.name
-    filename = syslog_entry.filename
+    log_level_color = log_level_colors[level]
     image_name = posixpath.basename(syslog_entry.image_name)
-    message = syslog_entry.message
-    process_name = posixpath.basename(filename)
+    process_name = posixpath.basename(syslog_entry.filename)
     image_offset_str = f"+0x{syslog_entry.image_offset:x}" if image_offset and image_name else ""
-    label = ""
 
-    if syslog_entry.label is not None:
-        label = f"[{syslog_entry.label.subsystem}][{syslog_entry.label.category}]"
-
-    if color:
-        timestamp = typer.style(str(timestamp), "green")
-        process_name = typer.style(process_name, "magenta")
-        if len(image_name) > 0:
-            image_name = typer.style(image_name, "magenta")
-        if image_offset:
-            image_offset_str = typer.style(image_offset_str, "blue")
-        syslog_pid = typer.style(syslog_pid, "cyan")
-        log_level_color = log_level_colors[level]
-        level = typer.style(level, log_level_color)
-        label = typer.style(label, "cyan")
-        message = typer.style(message, log_level_color)
-
-    line_format = "{timestamp} {process_name}{{{image_name}{image_offset_str}}}[{pid}] <{level}>: {message}"
+    fields: list[tuple[str, Optional[str]]] = [
+        (str(syslog_entry.timestamp), "green"),
+        (" ", None),
+        (process_name, "magenta"),
+        ("{", None),
+        (image_name, "magenta"),
+        (image_offset_str, "blue"),
+        ("}[", None),
+        (str(syslog_entry.pid), "cyan"),
+        ("] <", None),
+        (level, log_level_color),
+        (">: ", None),
+        (syslog_entry.message, log_level_color),
+    ]
 
     if include_label:
-        line_format += " {label}"
+        label = ""
+        if syslog_entry.label is not None:
+            label = f"[{syslog_entry.label.subsystem}][{syslog_entry.label.category}]"
+        fields += [(" ", None), (label, "cyan")]
 
-    line = line_format.format(
-        timestamp=timestamp,
-        process_name=process_name,
-        image_name=image_name,
-        pid=syslog_pid,
-        level=level,
-        message=message,
-        image_offset_str=image_offset_str,
-        label=label,
-    )
+    return fields
 
-    return line
+
+def _style_text(text: str, fg: Optional[str]) -> str:
+    return typer.style(text, fg) if fg is not None and text else text
+
+
+def _style_fields(fields: list[tuple[str, Optional[str]]], highlights: list[tuple[int, int]]) -> str:
+    """Color each field, making the ``highlights`` (``(start, end)`` in the plain line, sorted) bold and underlined."""
+    chunks: list[str] = []
+    offset = 0
+    for text, fg in fields:
+        # Everything in the field before ``pos`` has been emitted.
+        pos = 0
+        for span_start, span_end in highlights:
+            start, end = max(span_start - offset, pos), min(span_end - offset, len(text))
+            if start < end:
+                chunks.append(_style_text(text[pos:start], fg))
+                chunks.append(typer.style(text[start:end], fg, bold=True, underline=True))
+                pos = end
+        chunks.append(_style_text(text[pos:], fg))
+        offset += len(text)
+    return "".join(chunks)
+
+
+def format_line(syslog_entry: SyslogEntry, *, include_label: bool, image_offset: bool, color: bool) -> str:
+    fields = _format_line_fields(syslog_entry, include_label=include_label, image_offset=image_offset)
+    if color:
+        return _style_fields(fields, highlights=[])
+    return "".join(text for text, _ in fields)
 
 
 def _should_skip_line(line: str, invert_match: list[str], invert_match_insensitive: list[str]) -> bool:
@@ -180,36 +196,14 @@ def _should_keep_line(
     return any(regex.search(line) for regex in match_regex)
 
 
-def _highlight_match_filters(styled_line: str, match: list[str], match_insensitive: list[str]) -> str:
-    for m in match:
-        styled_line = styled_line.replace(m, typer.style(m, bold=True, underline=True))
-
-    for m in match_insensitive:
-        m = m.lower()
-        start = styled_line.lower().index(m)
-        end = start + len(m)
-        last_color_formatting = get_last_used_terminal_formatting(styled_line[:start])
-        styled_line = (
-            styled_line[:start]
-            + typer.style(styled_line[start:end], bold=True, underline=True)
-            + last_color_formatting
-            + styled_line[end:]
-        )
-
-    return styled_line
-
-
-def _highlight_regex_filters(styled_line: str, match_regex: list[re.Pattern[str]]) -> str:
-    def replace(m: re.Match[str]) -> str:
-        if len(m.groups()):
-            return styled_line.replace(m.group(1), typer.style(m.group(1), bold=True, underline=True))
-        return ""
-
-    for regex in match_regex:
-        if regex.search(styled_line):
-            styled_line = re.sub(regex, replace, styled_line)
-
-    return styled_line
+def _highlight_spans(
+    line: str, match: list[str], match_insensitive: list[str], match_regex: list[re.Pattern[str]]
+) -> list[tuple[int, int]]:
+    """``(start, end)`` of every hit of the match filters in the plain ``line``, sorted by start."""
+    hits = [hit for m in match for hit in re.finditer(re.escape(m), line)]
+    hits += [hit for m in match_insensitive for hit in re.finditer(re.escape(m), line, re.IGNORECASE)]
+    hits += [hit for regex in match_regex for hit in regex.finditer(line)]
+    return sorted(hit.span() for hit in hits if hit.end() > hit.start())
 
 
 def _emit_line(line: str, out: Optional[TextIO]) -> None:
@@ -238,8 +232,8 @@ async def syslog_live(
     start_after: Optional[str] = None,
     output_format: SyslogFormat = SyslogFormat.TEXT,
 ) -> None:
-    match_regex = [re.compile(f".*({r}).*", re.DOTALL) for r in regex]
-    match_regex += [re.compile(f".*({r}).*", re.IGNORECASE | re.DOTALL) for r in insensitive_regex]
+    match_regex = [re.compile(r, re.DOTALL) for r in regex]
+    match_regex += [re.compile(r, re.IGNORECASE | re.DOTALL) for r in insensitive_regex]
     started = start_after is None
 
     if start_after is not None and output_format is SyslogFormat.TEXT:
@@ -296,14 +290,11 @@ async def syslog_live(
 
         elif output_format is SyslogFormat.TEXT:
             if should_color_output:
-                styled_line = format_line(
-                    syslog_entry,
-                    include_label=include_label,
-                    image_offset=image_offset,
-                    color=True,
+                # Highlights are found on the plain line, where the offsets line up with the fields.
+                styled_line = _style_fields(
+                    _format_line_fields(syslog_entry, include_label=include_label, image_offset=image_offset),
+                    _highlight_spans(line, match, match_insensitive, match_regex),
                 )
-                styled_line = _highlight_match_filters(styled_line, match, match_insensitive)
-                styled_line = _highlight_regex_filters(styled_line, match_regex)
             else:
                 styled_line = line
 

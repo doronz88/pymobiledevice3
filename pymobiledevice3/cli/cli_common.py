@@ -161,10 +161,6 @@ def user_requested_colored_output() -> bool:
     return COLORED_OUTPUT and isatty()
 
 
-def get_last_used_terminal_formatting(buf: str) -> str:
-    return "\x1b" + buf.rsplit("\x1b", 1)[1].split("m")[0] + "m"
-
-
 def sudo_required(func: Callable[..., Any]) -> Callable[..., Any]:
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> None:
