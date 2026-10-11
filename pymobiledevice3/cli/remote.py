@@ -470,7 +470,7 @@ async def cli_pair(
         device = prompt_device_list(devices)
     else:
         logger.error("No devices were found during bonjour browse")
-        return
+        raise typer.Exit(1)
 
     async with RemotePairingManualPairingService(device.identifier, device.ip, device.port) as service:
         try:

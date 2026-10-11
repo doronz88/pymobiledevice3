@@ -358,18 +358,20 @@ def dvt_shell(service_provider: ServiceProviderDep) -> None:
         run_in_loop(dvt.close())
 
 
-async def show_dirlist(device_info: DeviceInfo, dirname: str, recursive: bool = False) -> None:
+async def show_dirlist(device_info: DeviceInfo, dirname: str, recursive: bool = False) -> bool:
+    """Returns False when ``dirname`` itself could not be listed; entries below it are only logged."""
     try:
         filenames = await device_info.ls(dirname)
     except DvtDirListError:
         logging.error(f"Failed to list directory: {dirname}")
-        return
+        return False
 
     for filename in filenames:
         child = posixpath.join(dirname, filename)
         print(child)
         if recursive:
             await show_dirlist(device_info, child, recursive=recursive)
+    return True
 
 
 @cli.command("ls")
@@ -384,7 +386,8 @@ async def ls(
 ) -> None:
     """List directory"""
     async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
-        await show_dirlist(device_info, path, recursive=recursive)
+        if not await show_dirlist(device_info, path, recursive=recursive):
+            raise typer.Exit(1)
 
 
 @cli.command("device-information")

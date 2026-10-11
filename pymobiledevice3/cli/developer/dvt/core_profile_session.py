@@ -259,10 +259,10 @@ async def stackshot(
                     await asyncio.sleep(retry_delay_sec)
                     continue
                 logger.error(f"Extracting stackshot failed: {e}")
-                return
+                raise typer.Exit(1) from e
             except ExtractingStackshotError as e:
                 logger.error(f"Extracting stackshot failed: {e}")
-                return
+                raise typer.Exit(1) from e
         else:
             # All retries were exhausted without capturing a stackshot; the loop
             # only reaches here if every attempt failed non-fatally.
