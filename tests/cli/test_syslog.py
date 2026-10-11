@@ -59,10 +59,10 @@ def _create_syslog_entries(messages: list[str]) -> list[SyslogEntry]:
 
 
 async def _run_syslog_live(
-    monkeypatch, capsys, entries: list[SyslogEntry], **syslog_live_kwargs
+    monkeypatch, capsys, entries: list[SyslogEntry], color: bool = False, **syslog_live_kwargs
 ) -> tuple[list[str], str]:
     monkeypatch.setattr(syslog_module, "OsTraceService", lambda lockdown: _FakeOsTraceService(entries))
-    monkeypatch.setattr(syslog_module, "user_requested_colored_output", lambda: False)
+    monkeypatch.setattr(syslog_module, "user_requested_colored_output", lambda: color)
 
     out = syslog_live_kwargs.pop("out", None)
     kwargs = {
@@ -321,6 +321,79 @@ def test_format_line_label_with_braces(color: bool) -> None:
     entry.label = SyslogLabel(subsystem="com.foo.{34}", category="{bad} {")
     line = syslog_module.format_line(entry, include_label=True, image_offset=False, color=color)
     assert "[com.foo.{34}][{bad} {]" in line
+
+
+_ANSI_SGR = re.compile(r"\x1b\[[0-9;]*m")
+_HIGHLIGHTED = re.compile(r"\x1b\[1m\x1b\[4m([^\x1b]*)\x1b\[0m")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "filters",
+    [
+        {"match": ["1"]},
+        {"match": ["["]},
+        {"match_insensitive": ["<error>"]},
+        {"match_insensitive": ["FAILED"]},
+        {"regex": [r"\d+"]},
+        {"insensitive_regex": [r"BUNDLE \d"]},
+        {"match": ["load"], "match_insensitive": ["TEST-process"], "regex": [r"\d+"]},
+    ],
+)
+async def test_syslog_live_highlight_only_adds_escape_codes(monkeypatch, capsys, filters):
+    # Highlighting must leave the text alone: with the escape codes stripped, the colored
+    # line is the plain line, whatever the match filters hit (digits and "[" also appear
+    # inside the escape codes themselves).
+    entry = _create_syslog_entry_with_level("failed to load bundle 1, retry 1", SyslogLogLevel.ERROR)
+    entry.image_offset = 0x1F
+    entry.label = SyslogLabel(subsystem="com.apple.foo", category="net")
+    options = {"include_label": True, "image_offset": True, **filters}
+
+    plain_lines, _ = await _run_syslog_live(monkeypatch, capsys, [entry], **options)
+    styled_lines, _ = await _run_syslog_live(monkeypatch, capsys, [entry], color=True, **options)
+
+    assert len(plain_lines) == 1
+    assert [_ANSI_SGR.sub("", line) for line in styled_lines] == plain_lines
+    assert _HIGHLIGHTED.findall(styled_lines[0])
+
+
+@pytest.mark.asyncio
+async def test_syslog_live_match_insensitive_highlight_across_fields(monkeypatch, capsys):
+    # "<error>" spans the plain "<" and the colored level, so it is not a substring of the
+    # colored line. Highlighting it used to raise ValueError and end the stream.
+    styled_lines, _ = await _run_syslog_live(
+        monkeypatch,
+        capsys,
+        [_create_syslog_entry_with_level("failed", SyslogLogLevel.ERROR)],
+        color=True,
+        match_insensitive=["<error>"],
+    )
+    assert len(styled_lines) == 1
+    assert "".join(_HIGHLIGHTED.findall(styled_lines[0])) == "<ERROR>"
+
+
+@pytest.mark.asyncio
+async def test_syslog_live_match_insensitive_highlights_every_hit(monkeypatch, capsys):
+    styled_lines, _ = await _run_syslog_live(
+        monkeypatch,
+        capsys,
+        _create_syslog_entries(["Ready, still READY"]),
+        color=True,
+        match_insensitive=["ready"],
+    )
+    assert _HIGHLIGHTED.findall(styled_lines[0]) == ["Ready", "READY"]
+
+
+@pytest.mark.asyncio
+async def test_syslog_live_regex_highlights_every_match(monkeypatch, capsys):
+    styled_lines, _ = await _run_syslog_live(
+        monkeypatch,
+        capsys,
+        _create_syslog_entries(["retry 10 of 12"]),
+        color=True,
+        regex=[r"\d+"],
+    )
+    assert _HIGHLIGHTED.findall(styled_lines[0]) == ["2024", "01", "01", "00", "00", "00", "123", "10", "12"]
 
 
 def test_format_json_line_with_label():
