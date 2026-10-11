@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator
 from enum import Enum, IntEnum
 from typing import Any, Optional, Union
 
-from pymobiledevice3.exceptions import CoreDeviceError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, CoreDeviceError
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
@@ -111,9 +111,12 @@ class FileServiceService(CoreDeviceService):
         open_connection = self.rsd.open_connection or asyncio.open_connection
         reader, writer = await open_connection(self.service.address[0], data_service)
         writer.write(b"rwb!FILE" + struct.pack(">QQQQ", response["Response"], 0, response["NewFileID"], 0))
-        await writer.drain()
-        await reader.readexactly(0x24)
-        return await reader.readexactly(struct.unpack(">I", await reader.readexactly(4))[0])
+        try:
+            await writer.drain()
+            await reader.readexactly(0x24)
+            return await reader.readexactly(struct.unpack(">I", await reader.readexactly(4))[0])
+        except (asyncio.IncompleteReadError, OSError) as e:
+            raise ConnectionTerminatedError() from e
 
     async def propose_empty_file(
         self,
