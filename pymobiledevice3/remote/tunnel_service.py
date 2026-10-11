@@ -541,8 +541,14 @@ class RemotePairingTcpTunnel(RemotePairingTunnel):
         payload = self._encode_cdtunnel_packet({"type": "clientHandshakeRequest", "mtu": self.REQUESTED_MTU})
         if self._writer is not None and self._reader is not None:
             self._writer.write(payload)
-            await self._writer.drain()
-            return json.loads(CDTunnelPacket.parse(await self._reader.read(self.REQUESTED_MTU)).body)
+            try:
+                await self._writer.drain()
+                response = await self._reader.read(self.REQUESTED_MTU)
+            except OSError as e:
+                raise ConnectionTerminatedError() from e
+            if not response:
+                raise ConnectionTerminatedError()
+            return json.loads(CDTunnelPacket.parse(response).body)
         if self._service is None:
             raise ConnectionError("missing writer/service for tcp tunnel")
         await self._service.sendall(payload)
@@ -1310,16 +1316,21 @@ class RemotePairingTunnelService(RemotePairingProtocol):
         if self._writer is None:
             return
         self._writer.close()
-        with suppress(ssl.SSLError):
+        # wait_closed() raises what broke the connection again, the TLS and socket errors alike
+        with suppress(OSError):
             await self._writer.wait_closed()
         self._writer = None
         self._reader = None
 
     async def receive_response(self) -> dict[str, Any]:
         reader = self.reader
-        await reader.readexactly(len(REPAIRING_PACKET_MAGIC))
-        size = struct.unpack(">H", await reader.readexactly(2))[0]
-        return json.loads(await reader.readexactly(size))
+        try:
+            await reader.readexactly(len(REPAIRING_PACKET_MAGIC))
+            size = struct.unpack(">H", await reader.readexactly(2))[0]
+            body = await reader.readexactly(size)
+        except (asyncio.IncompleteReadError, OSError) as e:
+            raise ConnectionTerminatedError() from e
+        return json.loads(body)
 
     async def send_request(self, data: dict[str, Any]) -> None:
         writer = self.writer
@@ -1328,7 +1339,10 @@ class RemotePairingTunnelService(RemotePairingProtocol):
                 RPPairingPacketData(body=json.dumps(data, default=self._default_json_encoder).encode())
             )
         )
-        await writer.drain()
+        try:
+            await writer.drain()
+        except OSError as e:
+            raise ConnectionTerminatedError() from e
 
     @staticmethod
     def _default_json_encoder(obj: Any) -> str:
@@ -2058,13 +2072,20 @@ class PairableHost:
         self._writer.write(
             RPPairingPacket.build(RPPairingPacketData(body=json.dumps(envelope, default=self._json_default).encode()))
         )
-        await self._writer.drain()
+        try:
+            await self._writer.drain()
+        except OSError as e:
+            raise ConnectionTerminatedError() from e
         self._sequence_number += 1
 
     async def _receive_plain(self) -> dict[str, Any]:
-        await self._reader.readexactly(len(REPAIRING_PACKET_MAGIC))
-        size = struct.unpack(">H", await self._reader.readexactly(2))[0]
-        envelope = json.loads(await self._reader.readexactly(size))
+        try:
+            await self._reader.readexactly(len(REPAIRING_PACKET_MAGIC))
+            size = struct.unpack(">H", await self._reader.readexactly(2))[0]
+            body = await self._reader.readexactly(size)
+        except (asyncio.IncompleteReadError, OSError) as e:
+            raise ConnectionTerminatedError() from e
+        envelope = json.loads(body)
         return envelope["message"]["plain"]["_0"]
 
     @staticmethod
@@ -2075,7 +2096,7 @@ class PairableHost:
 
     async def close(self) -> None:
         self._writer.close()
-        with suppress(ssl.SSLError, ConnectionError):
+        with suppress(OSError):
             await self._writer.wait_closed()
 
 
