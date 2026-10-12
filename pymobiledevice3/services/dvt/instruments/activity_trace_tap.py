@@ -422,17 +422,11 @@ class ActivityTraceTap(Tap):
     def _seek_relative(self, offset: int):
         self._message.seek(offset, os.SEEK_CUR)
 
-    def _peek_word(self) -> int:
+    def _read_word(self) -> int:
         buf = self._message.read(2)
         if len(buf) != 2:
             raise EOFError()
         (word,) = struct.unpack("<H", buf)
-        self._message.seek(-2, os.SEEK_CUR)
-        return word
-
-    def _read_word(self):
-        word = self._peek_word()
-        self._message.seek(2, os.SEEK_CUR)
         return word
 
     def _handle_push(self, word: int):
