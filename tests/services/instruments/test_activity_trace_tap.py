@@ -341,3 +341,14 @@ async def test_rows_have_no_device_time_without_a_usable_time_mapping(
     message = await first_message(tap_reading(*notices, os_log_stream("hello", text("hello"), time=row_time)))
 
     assert message.device_time is None
+
+
+async def test_rows_of_a_table_share_one_class() -> None:
+    # the second frame's row also ends with table 0
+    tap = tap_reading(os_log_stream("one", text("one")), os_log_stream("two", text("two")))
+
+    messages = cast(AsyncIterator[Any], tap).__aiter__()
+    first, second = await messages.__anext__(), await messages.__anext__()
+
+    assert decode_message_format(second.message, second.format_string) == "two"
+    assert type(first) is type(second)
