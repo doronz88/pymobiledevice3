@@ -123,7 +123,7 @@ class SyslogEntry:
     image_uuid: typing.Optional[uuid.UUID] = None
     # UUID of the process' main executable (the one named by `filename`)
     process_image_uuid: typing.Optional[uuid.UUID] = None
-    # raw high-resolution device timestamp in mach ticks (monotonic; clock domain unverified)
+    # when the entry was logged, in mach ticks: the same value as the row's `time` in `ActivityTraceTap`
     mach_timestamp: typing.Optional[int] = None
 
 
@@ -171,8 +171,8 @@ def parse_syslog_entry(data: bytes) -> SyslogEntry:
     level = data[offset]
     offset += 1
 
-    # The next 38 bytes hold the raw mach timestamp at +4, the thread id at +14, and the sender image UUID at +22
-    mach_timestamp = struct.unpack("<Q", data[offset + 4 : offset + 12])[0]
+    # The next 38 bytes hold the raw mach timestamp at +6, the thread id at +14, and the sender image UUID at +22
+    mach_timestamp = struct.unpack("<Q", data[offset + 6 : offset + 14])[0]
     thread_id = struct.unpack("<Q", data[offset + 14 : offset + 22])[0]
     image_uuid = uuid.UUID(bytes=data[offset + 22 : offset + 38])
 
