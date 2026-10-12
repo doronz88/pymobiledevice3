@@ -75,7 +75,7 @@ Use WebInspector for Safari/WebView automation and WDA for device UI automation.
 - `developer dvt`: screenshot, sysmon, process control, oslog, device info, netstat, HAR, energy, location simulation, xcuitest, profiling. For a development-signed app only: `vm-regions PID`, `dyld-metrics PID` (launch timing and image counts), `memgraph PID OUT` (leaks; launch with `--env MallocStackLogging=1` for allocation backtraces) and `allocations BUNDLE_ID` (heap summary, or `--events` for every event with backtraces; relaunches the app).
 - `developer core-device`: file/process/app/device-info operations through CoreDevice flows; `launch-application --console` prints the app's stdout/stderr; `write-file` / `stat` / `rename` / `remove-file` / `create-directory` / `create-symlink` edit a file-service domain and `watch` streams its file changes (iOS 27+).
 - `developer debugserver`: debugserver launch and LLDB bridging.
-- `developer fetch-symbols`: symbol acquisition.
+- `developer fetch-symbols`: symbol acquisition; `download` keeps symbols it already downloaded unless given `--force`.
 - `developer accessibility`: audits, settings, notifications, item listing.
 - `developer simulate-location`: DVT-based location simulation.
 - `developer arbitration`: device arbitration (check-in/check-out for exclusive use).

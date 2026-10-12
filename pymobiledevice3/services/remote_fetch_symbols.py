@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import logging
 import uuid
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,8 @@ from tqdm import tqdm
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.safe_paths import resolve_device_path
+
+logger = logging.getLogger(__name__)
 
 MAX_CONCURRENT_DOWNLOADS = 4
 
@@ -66,7 +69,7 @@ class RemoteFetchSymbolsService(RemoteService):
             files.append(DSCFile(file_path=file_path, file_size=expected_length))
         return files
 
-    async def download(self, out: Path) -> None:
+    async def download(self, out: Path, force: bool = True) -> None:
         """
         Download all DSC files into a local directory, reproducing their device paths.
 
@@ -74,14 +77,25 @@ class RemoteFetchSymbolsService(RemoteService):
         stripped), and progress is shown via a tqdm bar.
 
         :param out: Destination directory; intermediate parent directories are created as needed.
+        :param force: Download files which already exist in `out` with the size the device reports,
+            instead of keeping them.
         """
         files = await self.get_dsc_file_list()
         file_indexes: asyncio.Queue[int] = asyncio.Queue()
-        for i in range(len(files)):
+        total = 0
+        for i, file in enumerate(files):
+            if not force:
+                out_file = resolve_device_path(out, file.file_path.removeprefix("/"))
+                if out_file.is_file() and out_file.stat().st_size == file.file_size:
+                    logger.info(f"Keeping the already downloaded {out_file}")
+                    continue
             file_indexes.put_nowait(i)
+            total += file.file_size
+        if file_indexes.empty():
+            return
 
         with tqdm(
-            total=sum(file.file_size for file in files),
+            total=total,
             unit="B",
             unit_scale=True,
             dynamic_ncols=True,
