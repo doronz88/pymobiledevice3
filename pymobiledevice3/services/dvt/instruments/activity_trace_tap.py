@@ -197,7 +197,8 @@ def decode_message_format(message: Any, format_string: Optional[str] = None) -> 
         else:
             # by default, make sure the data can be concatenated
             s += str(data)
-    return s
+    # the device's own rendering of a line ends at its last visible character
+    return s.rstrip()
 
 
 class ActivityTraceTap(Tap):

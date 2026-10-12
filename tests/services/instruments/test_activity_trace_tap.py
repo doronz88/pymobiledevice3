@@ -104,9 +104,9 @@ def string(value: str) -> bytes:
 
 @pytest.mark.parametrize("value", ["", "a", "kernel", "limit on pid ", "Notes said "])
 def test_message_text_is_printed_without_padding(value: str) -> None:
-    (message,) = parse(os_log_stream("%s%s", text(value), string(value)))
+    (message,) = parse(os_log_stream("%s%s.", text(value), string(value), text(".")))
 
-    assert decode_message_format(message.message) == value * 2
+    assert decode_message_format(message.message) == value * 2 + "."
 
 
 def integer(value: int, type_: str = "uint64") -> bytes:
@@ -169,7 +169,7 @@ def test_arguments_past_the_last_one_sent_keep_their_conversions() -> None:
     # os_log sends at most 48 arguments; the rest of the format string comes as plain text
     items = [item for _ in range(48) for item in (integer(-1), text(" "))]
 
-    assert formatted("%d " * 50, *items, text("%d %d ")) == "-1 " * 48 + "%d %d "
+    assert formatted("%d " * 50, *items, text("%d %d ")) == "-1 " * 48 + "%d %d"
 
 
 def test_numbers_without_a_matching_conversion_are_printed_by_type() -> None:
@@ -192,7 +192,7 @@ def test_numbers_without_a_matching_conversion_are_printed_by_type() -> None:
         (
             "client-%i %{public, signpost.description:begin_time}llu %{public, signpost.description:end_time}llu",
             [text("client-"), integer(-3), text(" "), text(" ")],
-            "client--3  ",
+            "client--3",
         ),
     ],
 )
@@ -356,3 +356,7 @@ async def test_rows_of_a_table_share_one_class() -> None:
 
 def test_a_literal_percent_is_printed_once() -> None:
     assert formatted("%u%% of %u%%", integer(8), text("%% of "), integer(9), text("%%")) == "8% of 9%"
+
+
+def test_a_line_ends_at_its_last_visible_character() -> None:
+    assert formatted("flush %s \n", text("flush "), string("done"), text(" \n")) == "flush done"
