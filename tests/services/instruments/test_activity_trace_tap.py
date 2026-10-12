@@ -360,3 +360,24 @@ def test_a_literal_percent_is_printed_once() -> None:
 
 def test_a_line_ends_at_its_last_visible_character() -> None:
     assert formatted("flush %s \n", text("flush "), string("done"), text(" \n")) == "flush done"
+
+
+def test_a_nil_object_is_printed_as_null() -> None:
+    assert formatted("result=%@, error=%{public}@", text("result="), string(""), text(", error="), string("x")) == (
+        "result=(null), error=x"
+    )
+
+
+@pytest.mark.parametrize(
+    ("conversion", "value", "expected"),
+    [
+        ("%s", "", "[]"),
+        ("%-8s", "ab", "[ab      ]"),
+        ("%8s", "ab", "[      ab]"),
+        ("%{public}.0s", "", "[]"),
+        ("%.1s", "ab", "[a]"),
+        ("%*s", "ab", "[ab]"),
+    ],
+)
+def test_strings_are_padded_and_cut_per_their_conversion(conversion: str, value: str, expected: str) -> None:
+    assert formatted(f"[{conversion}]", text("["), string(value), text("]")) == expected

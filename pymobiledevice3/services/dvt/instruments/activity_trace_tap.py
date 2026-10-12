@@ -175,7 +175,16 @@ def decode_message_format(message: Any, format_string: Optional[str] = None) -> 
             s += decode_str(data).replace("%%", "%")
         elif type_ == "string":
             # the padding that rounds a push up to whole bytes can leave more than one NUL behind
-            s += decode_str(data)
+            string = decode_str(data)
+            if specifier is not None:
+                flags, width, precision, _, conversion = specifier.groups()
+                if conversion == "@" and not string:
+                    # a nil object and an empty description are sent alike; nil is by far the commoner
+                    string = "(null)"
+                elif conversion == "s" and (width or precision) and "*" not in (width, precision):
+                    spec = "%" + ("-" if "-" in flags else "") + (width or "")
+                    string = (spec + ("." + precision if precision is not None else "") + "s") % string
+            s += string
         elif type_ == "private":
             s += "<private>"
         elif type_.startswith("uint64") or "decimal" in type_:
