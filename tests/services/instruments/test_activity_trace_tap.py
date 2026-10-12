@@ -425,3 +425,29 @@ def test_uuids_and_data_are_put_back_together(format_string: str, item: bytes, e
 )
 def test_integers_are_printed_per_their_value_type(conversion: str, item: bytes, expected: str) -> None:
     assert formatted(f"is {conversion}", text("is "), item) == f"is {expected}"
+
+
+@pytest.mark.parametrize(
+    ("conversion", "item", "expected"),
+    [
+        ("%{network:tcp_flags}x", integer(0xC2, "uint64-hex-lowercase"), "[SEC]"),
+        ("%{network:tcp_flags}x", integer(0x11, "uint64-hex-lowercase"), "[F.]"),
+        ("%{network:tcp_flags}x", integer(0x52, "uint64-hex-lowercase"), "[S.E]"),
+        ("%{network:tcp_state}x", integer(2, "uint64-hex-lowercase"), "SYN_SENT"),
+        ("%{network:tcp_state}x", integer(8, "uint64-hex-lowercase"), "LAST_ACK"),
+        ("%{network:tcp_state}x", integer(0x2A, "uint64-hex-lowercase"), "2a"),
+        ("%{mdns:dn_hash}u", integer(3287482886), "<dn:w/MCBg>"),
+        ("%{mdns:rrtype}d", integer(28), "AAAA"),
+        ("%{mdns:rrtype}d", integer(65), "HTTPS"),
+        ("%{mdns:rrtype}d", integer(999), "999"),
+        ("%{mdns:addrmv}d", integer(1), "add"),
+        ("%{mdns:nreason}d", integer(3), "query-suppressed"),
+        ("%{mdns:yesno}d", integer(0), "no"),
+        ("%{public, location:escape_only}s", string('a/b "c"'), '"a\\/b \\"c\\""'),
+        ("%{public, location:escape_only}@", string(""), '""'),
+    ],
+)
+def test_arguments_of_a_framework_value_type_are_printed_like_the_device(
+    conversion: str, item: bytes, expected: str
+) -> None:
+    assert formatted(f"is {conversion}", text("is "), item) == f"is {expected}"

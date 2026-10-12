@@ -1,4 +1,6 @@
+import base64
 import dataclasses
+import json
 import math
 import os
 import re
@@ -33,6 +35,40 @@ INTEGER_BITS: dict[Optional[str], int] = {"hh": 8, "h": 16, None: 32}
 SIGNPOST_TIMES = ("signpost.description:begin_time", "signpost.description:end_time")
 # the options between a conversion's braces that say who may read the argument, not how to print it
 PRIVACY_OPTIONS = ("public", "private", "sensitive")
+# TCP header flags in the order %{network:tcp_flags}x prints them, and connection states by number
+TCP_FLAGS = ((0x01, "F"), (0x02, "S"), (0x04, "R"), (0x08, "P"), (0x10, "."), (0x20, "U"), (0x40, "E"), (0x80, "C"))
+TCP_STATES = (
+    "CLOSED",
+    "LISTEN",
+    "SYN_SENT",
+    "SYN_RECEIVED",
+    "ESTABLISHED",
+    "CLOSE_WAIT",
+    "FIN_WAIT_1",
+    "CLOSING",
+    "LAST_ACK",
+    "FIN_WAIT_2",
+    "TIME_WAIT",
+)
+# the names of the integer value types that are enumerations, by value; a value not listed prints as its number
+ENUMERATIONS: dict[str, dict[int, str]] = {
+    "mdns:yesno": {0: "no", 1: "yes"},
+    "mdns:addrmv": {1: "add"},
+    "mdns:nreason": {1: "no-data", 3: "query-suppressed"},
+    "mdns:rrtype": {
+        1: "A",
+        2: "NS",
+        5: "CNAME",
+        6: "SOA",
+        12: "PTR",
+        15: "MX",
+        16: "TXT",
+        28: "AAAA",
+        33: "SRV",
+        64: "SVCB",
+        65: "HTTPS",
+    },
+}
 
 
 def _parse_time_mapping(message: bytes) -> Optional[tuple[int, float, int, int]]:
@@ -154,7 +190,13 @@ def format_typed_number(value: int, type_: Optional[str]) -> Optional[str]:
         return "YES" if value else "NO"
     if type_ in ("errno", "darwin.errno"):
         return f"[{value}: {DARWIN_ERRNO_MESSAGES.get(value, f'Unknown error: {value}')}]"
-    return None
+    if type_ == "network:tcp_flags":
+        return "[" + "".join(letter for bit, letter in TCP_FLAGS if value & bit) + "]"
+    if type_ == "network:tcp_state" and value < len(TCP_STATES):
+        return TCP_STATES[value]
+    if type_ == "mdns:dn_hash":
+        return "<dn:" + base64.b64encode(struct.pack(">I", value & 0xFFFFFFFF)).decode().rstrip("=") + ">"
+    return ENUMERATIONS.get(type_ or "", {}).get(value)
 
 
 def join_chunks(chunks: list[bytes]) -> list[bytes]:
@@ -213,7 +255,10 @@ def decode_message_format(message: Any, format_string: Optional[str] = None) -> 
             string = decode_str(data)
             if specifier is not None:
                 flags, width, precision, _, conversion = specifier.groups()
-                if conversion == "@" and not string:
+                if value_type(specifier) == "location:escape_only":
+                    # as a JSON string, with the "/" escaped too
+                    string = json.dumps(string, ensure_ascii=False).replace("/", "\\/")
+                elif conversion == "@" and not string:
                     # a nil object and an empty description are sent alike; nil is by far the commoner
                     string = "(null)"
                 elif conversion == "s" and (width or precision) and "*" not in (width, precision):
