@@ -33,6 +33,7 @@ LC_SYMTAB = 0x2
 LC_SEGMENT_64 = 0x19
 LC_UUID = 0x1B
 LC_FUNCTION_STARTS = 0x26
+LC_FILESET_ENTRY = 0x80000035
 
 N_STAB = 0xE0
 N_TYPE = 0x0E
@@ -43,6 +44,7 @@ LOAD_COMMAND = struct.Struct("<2I")
 SEGMENT_COMMAND_64 = struct.Struct("<16s4Q")
 SYMTAB_COMMAND = struct.Struct("<4I")
 LINKEDIT_DATA_COMMAND = struct.Struct("<2I")
+FILESET_ENTRY_COMMAND = struct.Struct("<2QI")
 NLIST_64 = struct.Struct("<IBBHQ")
 
 # Longest symbol name read from the string table; Swift manglings go well past the usual C lengths
@@ -64,19 +66,30 @@ class SymbolImage:
 
 
 @dataclass
-class _MachO:
+class MachO:
+    """The load commands of a Mach-O which symbolication needs."""
+
     uuid: Optional[str] = None
+    # `__TEXT`
     vmaddr: Optional[int] = None
     vmsize: int = 0
+    text_exec_vmaddr: Optional[int] = None
     symoff: int = 0
     nsyms: int = 0
     stroff: int = 0
     function_starts_offset: int = 0
     function_starts_size: int = 0
+    # Name and file offset of the Mach-O files a fileset (a kernelcache) holds
+    fileset_entries: list[tuple[str, int]] = field(default_factory=list[tuple[str, int]])
 
 
-def _parse_macho(fd: BinaryIO) -> Optional[_MachO]:
-    """Parse the load commands of a thin 64-bit little-endian Mach-O, or `None` for anything else."""
+def parse_macho(fd: BinaryIO, offset: int = 0) -> Optional[MachO]:
+    """
+    Parse the load commands of a thin 64-bit little-endian Mach-O, or `None` for anything else.
+
+    :param offset: Where the Mach-O starts in the file, for one held by a fileset.
+    """
+    fd.seek(offset)
     header = fd.read(MACH_HEADER_64.size)
     if len(header) < MACH_HEADER_64.size:
         return None
@@ -84,7 +97,7 @@ def _parse_macho(fd: BinaryIO) -> Optional[_MachO]:
     if magic != MH_MAGIC_64:
         return None
     commands = fd.read(sizeofcmds)
-    macho = _MachO()
+    macho = MachO()
     offset = 0
     for _ in range(ncmds):
         if offset + LOAD_COMMAND.size > len(commands):
@@ -98,17 +111,43 @@ def _parse_macho(fd: BinaryIO) -> Optional[_MachO]:
             if segname.rstrip(b"\x00") == b"__TEXT":
                 macho.vmaddr = vmaddr
                 macho.vmsize = vmsize
+            elif segname.rstrip(b"\x00") == b"__TEXT_EXEC":
+                macho.text_exec_vmaddr = vmaddr
         elif cmd == LC_UUID:
             macho.uuid = str(uuid.UUID(bytes=commands[body : body + 16]))
         elif cmd == LC_SYMTAB:
             macho.symoff, macho.nsyms, macho.stroff, _strsize = SYMTAB_COMMAND.unpack_from(commands, body)
         elif cmd == LC_FUNCTION_STARTS:
             macho.function_starts_offset, macho.function_starts_size = LINKEDIT_DATA_COMMAND.unpack_from(commands, body)
+        elif cmd == LC_FILESET_ENTRY:
+            _vmaddr, fileoff, entry_id_offset = FILESET_ENTRY_COMMAND.unpack_from(commands, body)
+            entry_id = commands[offset + entry_id_offset : offset + cmdsize].split(b"\x00", 1)[0]
+            macho.fileset_entries.append((entry_id.decode(errors="replace"), fileoff))
         offset += cmdsize
     return macho
 
 
-def _parse_function_starts(data: bytes, base: int) -> list[int]:
+def read_symbols(fd: BinaryIO, macho: MachO, start: int, end: int) -> list[tuple[int, int]]:
+    """Get the address and string table offset of every symbol of `macho` within [start, end), sorted."""
+    fd.seek(macho.symoff)
+    data = fd.read(macho.nsyms * NLIST_64.size)
+    data = data[: len(data) - len(data) % NLIST_64.size]
+    return sorted(
+        (n_value, n_strx)
+        for n_strx, n_type, _n_sect, _n_desc, n_value in NLIST_64.iter_unpack(data)
+        if not n_type & N_STAB and n_type & N_TYPE == N_SECT and start <= n_value < end
+    )
+
+
+def read_symbol_name(fd: BinaryIO, offset: int) -> str:
+    """Read the symbol name at the given file offset of a string table."""
+    fd.seek(offset)
+    name = fd.read(MAX_SYMBOL_LENGTH).split(b"\x00", 1)[0].decode(errors="replace")
+    # C symbols carry a leading underscore in the symbol table
+    return name[1:] if name.startswith("_") else name
+
+
+def parse_function_starts(data: bytes, base: int) -> list[int]:
     """Decode `LC_FUNCTION_STARTS`: ULEB128 deltas between consecutive functions, starting at `__TEXT`."""
     starts: list[int] = []
     address = base
@@ -143,7 +182,7 @@ def _scan(root: Path) -> list[SymbolImage]:
             file = Path(dirpath) / filename
             try:
                 with open(file, "rb") as fd:
-                    macho = _parse_macho(fd)
+                    macho = parse_macho(fd)
             except (OSError, struct.error):
                 continue
             if macho is None or macho.uuid is None or macho.vmaddr is None:
@@ -159,7 +198,7 @@ def _scan(root: Path) -> list[SymbolImage]:
     return images
 
 
-def _fingerprint(root: Path) -> list[int]:
+def fingerprint(root: Path) -> list[int]:
     """
     Get a value which changes whenever a file is added to or removed from the tree.
 
@@ -197,10 +236,14 @@ class DeviceSupportSymbols:
         if index_dir is None:
             index_dir = get_home_folder() / INDEX_DIRNAME
         index_file = index_dir / f"{hashlib.sha256(str(root).encode()).hexdigest()[:16]}.json"
-        fingerprint = _fingerprint(root)
+        tree_fingerprint = fingerprint(root)
         try:
             index = json.loads(index_file.read_text())
-            if index["version"] == INDEX_VERSION and index["root"] == str(root) and index["fingerprint"] == fingerprint:
+            if (
+                index["version"] == INDEX_VERSION
+                and index["root"] == str(root)
+                and index["fingerprint"] == tree_fingerprint
+            ):
                 return cls(root, [SymbolImage(*image) for image in index["images"]])
         except (OSError, ValueError, KeyError, TypeError):
             pass
@@ -213,7 +256,7 @@ class DeviceSupportSymbols:
                 json.dumps({
                     "version": INDEX_VERSION,
                     "root": str(root),
-                    "fingerprint": fingerprint,
+                    "fingerprint": tree_fingerprint,
                     "images": [[image.path, image.uuid, image.vmaddr, image.vmsize] for image in images],
                 })
             )
@@ -244,23 +287,15 @@ class DeviceSupportSymbols:
         symtab = _SymbolTable()
         try:
             with open(self.root / image.path.lstrip("/"), "rb") as fd:
-                macho = _parse_macho(fd)
+                macho = parse_macho(fd)
                 if macho is not None and macho.nsyms:
-                    fd.seek(macho.symoff)
-                    data = fd.read(macho.nsyms * NLIST_64.size)
-                    data = data[: len(data) - len(data) % NLIST_64.size]
-                    end = image.vmaddr + image.vmsize
-                    symbols = sorted(
-                        (n_value, n_strx)
-                        for n_strx, n_type, _n_sect, _n_desc, n_value in NLIST_64.iter_unpack(data)
-                        if not n_type & N_STAB and n_type & N_TYPE == N_SECT and image.vmaddr <= n_value < end
-                    )
+                    symbols = read_symbols(fd, macho, image.vmaddr, image.vmaddr + image.vmsize)
                     symtab.addresses = [address for address, _ in symbols]
                     symtab.string_offsets = [strx for _, strx in symbols]
                     symtab.stroff = macho.stroff
                 if macho is not None and macho.function_starts_size:
                     fd.seek(macho.function_starts_offset)
-                    symtab.function_starts = _parse_function_starts(fd.read(macho.function_starts_size), image.vmaddr)
+                    symtab.function_starts = parse_function_starts(fd.read(macho.function_starts_size), image.vmaddr)
         except (OSError, struct.error) as e:
             logger.debug(f"Could not read the symbols of {image.path}: {e}")
         self._symtabs[image.path] = symtab
@@ -271,10 +306,7 @@ class DeviceSupportSymbols:
         name = self._names.get(key)
         if name is None:
             with open(self.root / image.path.lstrip("/"), "rb") as fd:
-                fd.seek(offset)
-                name = fd.read(MAX_SYMBOL_LENGTH).split(b"\x00", 1)[0].decode(errors="replace")
-            # C symbols carry a leading underscore in the symbol table
-            name = name[1:] if name.startswith("_") else name
+                name = read_symbol_name(fd, offset)
             self._names[key] = name
         return name
 

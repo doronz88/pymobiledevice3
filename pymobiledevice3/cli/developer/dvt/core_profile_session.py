@@ -4,6 +4,7 @@ import importlib.resources
 import json
 import logging
 import queue
+from collections.abc import Mapping
 from enum import Enum
 from itertools import islice
 from pathlib import Path
@@ -30,7 +31,13 @@ from pymobiledevice3.services.dvt.instruments.device_support_symbols import (
     find_device_support_symbols,
 )
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
-from pymobiledevice3.services.dvt.instruments.stackshot import StackshotFrame, StackshotProcess, resolve_stackshot
+from pymobiledevice3.services.dvt.instruments.kernel_symbols import KernelSymbols
+from pymobiledevice3.services.dvt.instruments.stackshot import (
+    StackshotFrame,
+    StackshotProcess,
+    kernel_image_uuids,
+    resolve_stackshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +301,8 @@ def format_stackshot(processes: list[StackshotProcess], colored: bool = False) -
                 title.append(f"cpu {thread.user_usec / 1e6:.3f}s user, {thread.system_usec / 1e6:.3f}s sys")
             if thread.wait_event:
                 title.append(f"wait 0x{thread.wait_event:x}")
+            if thread.continuation is not None:
+                title.append(f"continuation {thread.continuation}")
             lines.append("  " + "  ".join(title))
 
             image_width = max((len(frame.image) for frame in thread.frames if frame.image is not None), default=0)
@@ -325,6 +334,30 @@ def _load_stackshot_symbols(
     return loaded_symbols
 
 
+def _load_stackshot_kernel_symbols(
+    kernelcache: Optional[Path], signatures: Optional[Path], stackshot: Mapping[str, Any]
+) -> Optional[KernelSymbols]:
+    if kernelcache is None:
+        return None
+    try:
+        kernel_symbols = KernelSymbols.load(kernelcache, signatures)
+    except OSError as e:
+        logger.error(f"Reading the kernel symbols of {kernelcache} failed: {e}")
+        raise typer.Exit(1) from e
+
+    if not any(kernel_symbols.image_by_uuid(image_uuid) is not None for image_uuid in kernel_image_uuids(stackshot)):
+        logger.warning(
+            f"{kernelcache} is not the kernelcache the device runs, so kernel frames are not symbolicated. "
+            f"Use the one of the firmware the device has installed."
+        )
+    elif not kernel_symbols.has_symbols:
+        logger.warning(
+            f"{kernelcache} holds no symbols, so kernel frames only get the name of their image. "
+            f"Pass --kernel-signatures to symbolicate them."
+        )
+    return kernel_symbols
+
+
 @cli.command("stackshot")
 @async_command
 async def stackshot(
@@ -350,13 +383,36 @@ async def stackshot(
             "the Xcode device support of the device.",
         ),
     ] = None,
+    kernelcache: Annotated[
+        Optional[Path],
+        typer.Option(
+            exists=True,
+            dir_okay=False,
+            help="Kernelcache of the firmware the device runs (as found in its IPSW), to name the kernel "
+            "images of kernel frames. Requires `ipsw` unless it is already decompressed.",
+        ),
+    ] = None,
+    kernel_signatures: Annotated[
+        Optional[Path],
+        typer.Option(
+            exists=True,
+            file_okay=False,
+            help="Directory of `ipsw` kernel symbolication signatures (the `kernel` directory of "
+            "https://github.com/blacktop/symbolicator), to symbolicate kernel frames of --kernelcache. "
+            "Requires `ipsw`.",
+        ),
+    ] = None,
 ) -> None:
     """
     Print the call stacks of all threads of all processes.
 
     The call stacks are symbolicated using the Xcode device support of the device, which
-    `developer fetch-symbols download` creates.
+    `developer fetch-symbols download` creates. Kernel frames are symbolicated when given
+    --kernelcache and --kernel-signatures.
     """
+    if kernel_signatures is not None and kernelcache is None:
+        raise typer.BadParameter("--kernel-signatures requires --kernelcache")
+
     max_retries = 5
     retry_delay_sec = 0.5
     async with DvtProvider(service_provider) as dvt:
@@ -393,7 +449,11 @@ async def stackshot(
         print_json(data)
         return
 
-    processes = resolve_stackshot(data, _load_stackshot_symbols(service_provider, symbols))
+    processes = resolve_stackshot(
+        data,
+        _load_stackshot_symbols(service_provider, symbols),
+        _load_stackshot_kernel_symbols(kernelcache, kernel_signatures, data),
+    )
     if process is not None:
         processes = [p for p in processes if process in (str(p.pid), p.name)]
     print(format_stackshot(processes, colored=user_requested_colored_output()))
