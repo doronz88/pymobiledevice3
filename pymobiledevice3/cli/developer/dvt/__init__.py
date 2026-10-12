@@ -28,7 +28,11 @@ from pymobiledevice3.cli.cli_common import (
 )
 from pymobiledevice3.cli.developer.dvt import core_profile_session, simulate_location, sysmon
 from pymobiledevice3.exceptions import DvtDirListError, UnrecognizedSelectorError
-from pymobiledevice3.services.dvt.instruments.activity_trace_tap import ActivityTraceTap, decode_message_format
+from pymobiledevice3.services.dvt.instruments.activity_trace_tap import (
+    ActivityTraceTap,
+    decode_message_arguments,
+    decode_message_format,
+)
 from pymobiledevice3.services.dvt.instruments.allocations import (
     MALLOC_EVENTS_MASK,
     REFERENCE_COUNT_EVENTS_MASK,
@@ -769,6 +773,8 @@ async def dvt_oslog(
                     "category": category,
                     "image_name": image_name,
                     "message": formatted_message,
+                    "format_string": getattr(message, "format_string", None),
+                    "arguments": decode_message_arguments(message.message),
                 })
                 continue
 

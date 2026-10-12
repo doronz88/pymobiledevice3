@@ -1,8 +1,11 @@
+import base64
 import dataclasses
+import json
 import math
 import os
 import re
 import struct
+import uuid
 from collections.abc import AsyncGenerator, Callable, Generator
 from datetime import datetime
 from io import BytesIO
@@ -10,6 +13,7 @@ from typing import Any, Optional, Union, cast
 
 from bpylist2 import archiver
 
+from pymobiledevice3.darwin_errno import DARWIN_ERRNO_MESSAGES
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.services.dvt.instruments.tap import Tap
 
@@ -29,6 +33,42 @@ FORMAT_SPECIFIER = re.compile(r"%(?:\{[^}]*\})?([-+ #0']*)(\d+|\*)?(?:\.(\d*|\*)
 INTEGER_BITS: dict[Optional[str], int] = {"hh": 8, "h": 16, None: 32}
 # conversions for a signpost's begin and end time; iOS 16 sends an item for them, iOS 27 doesn't
 SIGNPOST_TIMES = ("signpost.description:begin_time", "signpost.description:end_time")
+# the options between a conversion's braces that say who may read the argument, not how to print it
+PRIVACY_OPTIONS = ("public", "private", "sensitive")
+# TCP header flags in the order %{network:tcp_flags}x prints them, and connection states by number
+TCP_FLAGS = ((0x01, "F"), (0x02, "S"), (0x04, "R"), (0x08, "P"), (0x10, "."), (0x20, "U"), (0x40, "E"), (0x80, "C"))
+TCP_STATES = (
+    "CLOSED",
+    "LISTEN",
+    "SYN_SENT",
+    "SYN_RECEIVED",
+    "ESTABLISHED",
+    "CLOSE_WAIT",
+    "FIN_WAIT_1",
+    "CLOSING",
+    "LAST_ACK",
+    "FIN_WAIT_2",
+    "TIME_WAIT",
+)
+# the names of the integer value types that are enumerations, by value; a value not listed prints as its number
+ENUMERATIONS: dict[str, dict[int, str]] = {
+    "mdns:yesno": {0: "no", 1: "yes"},
+    "mdns:addrmv": {1: "add"},
+    "mdns:nreason": {1: "no-data", 3: "query-suppressed"},
+    "mdns:rrtype": {
+        1: "A",
+        2: "NS",
+        5: "CNAME",
+        6: "SOA",
+        12: "PTR",
+        15: "MX",
+        16: "TXT",
+        28: "AAAA",
+        33: "SRV",
+        64: "SVCB",
+        65: "HTTPS",
+    },
+}
 
 
 def _parse_time_mapping(message: bytes) -> Optional[tuple[int, float, int, int]]:
@@ -129,6 +169,41 @@ def format_number(value: int, specifier: re.Match[str]) -> Optional[str]:
     return (spec + conversion) % number
 
 
+def value_type(specifier: re.Match[str]) -> Optional[str]:
+    """The value type a conversion names between its braces, e.g. "bool" for "%{public, bool}d"."""
+    options = re.match(r"%\{([^}]*)\}", specifier.group(0))
+    if options is None:
+        return None
+    types = [o.strip() for o in options.group(1).split(",") if o.strip() not in PRIVACY_OPTIONS]
+    return types[-1] if types else None
+
+
+def format_typed_number(value: int, type_: Optional[str]) -> Optional[str]:
+    """
+    Print an integer argument the way os_log prints it for the value type of its conversion.
+
+    :returns: The printed value, or None for a type that prints as the plain number.
+    """
+    if type_ == "bool":
+        return "true" if value else "false"
+    if type_ == "BOOL":
+        return "YES" if value else "NO"
+    if type_ in ("errno", "darwin.errno"):
+        return f"[{value}: {DARWIN_ERRNO_MESSAGES.get(value, f'Unknown error: {value}')}]"
+    if type_ == "network:tcp_flags":
+        return "[" + "".join(letter for bit, letter in TCP_FLAGS if value & bit) + "]"
+    if type_ == "network:tcp_state" and value < len(TCP_STATES):
+        return TCP_STATES[value]
+    if type_ == "mdns:dn_hash":
+        return "<dn:" + base64.b64encode(struct.pack(">I", value & 0xFFFFFFFF)).decode().rstrip("=") + ">"
+    return ENUMERATIONS.get(type_ or "", {}).get(value)
+
+
+def join_chunks(chunks: list[bytes]) -> list[bytes]:
+    """The 8-byte chunks a uuid or data item is sent in, each a push of its own, restored to 8 bytes."""
+    return [chunk[:8].ljust(8, b"\x00") for chunk in chunks]
+
+
 def item_fits(type_: str, conversion: str) -> bool:
     """Whether a message item of `type_` can be the argument of a `conversion`, e.g. not a hex item for %llu."""
     if "decimal" in type_:
@@ -167,13 +242,29 @@ def decode_message_format(message: Any, format_string: Optional[str] = None) -> 
 
         if type_ == "address":
             type_ = "uint64-hex"
+        elif type_ == "errno-value":
+            type_ = "uint64"
 
-        if type_ in ("narrative-text", "string"):
-            if data is None:
-                s += "<None>"
-            else:
-                # the padding that rounds a push up to whole bytes can leave more than one NUL behind
-                s += decode_str(data)
+        if type_ in ("narrative-text", "string") and data is None:
+            s += "<None>"
+        elif type_ == "narrative-text":
+            # the text between the conversions is the format string's own, with its "%%" still doubled
+            s += decode_str(data).replace("%%", "%")
+        elif type_ == "string":
+            # the padding that rounds a push up to whole bytes can leave more than one NUL behind
+            string = decode_str(data)
+            if specifier is not None:
+                flags, width, precision, _, conversion = specifier.groups()
+                if value_type(specifier) == "location:escape_only":
+                    # as a JSON string, with the "/" escaped too
+                    string = json.dumps(string, ensure_ascii=False).replace("/", "\\/")
+                elif conversion == "@" and not string:
+                    # a nil object and an empty description are sent alike; nil is by far the commoner
+                    string = "(null)"
+                elif conversion == "s" and (width or precision) and "*" not in (width, precision):
+                    spec = "%" + ("-" if "-" in flags else "") + (width or "")
+                    string = (spec + ("." + precision if precision is not None else "") + "s") % string
+            s += string
         elif type_ == "private":
             s += "<private>"
         elif type_.startswith("uint64") or "decimal" in type_:
@@ -181,21 +272,75 @@ def decode_message_format(message: Any, format_string: Optional[str] = None) -> 
             number = None
             # a pairing that doesn't fit the item's type means the items and conversions are out of step
             if specifier is not None and item_fits(type_, specifier.group(5)):
-                number = format_number(uint64, specifier)
+                number = format_typed_number(uint64, value_type(specifier))
+                if number is None:
+                    number = format_number(uint64, specifier)
             if number is not None:
                 s += number
             elif "hex" in type_:
                 s += hex(uint64)[2:]
             else:
                 s += str(uint64)
-        elif type_ in ("data", "uuid"):
+        elif type_ == "uuid":
             if data is not None:
-                # for these types the payload is a list of bytes chunks, not a single bytes object
-                s += b"".join(cast(list[bytes], data)).hex()
+                # the two halves of the uuid, each as a little-endian integer
+                halves = join_chunks(cast(list[bytes], data))[:2]
+                s += str(uuid.UUID(bytes=b"".join(half[::-1] for half in halves).ljust(16, b"\x00"))).upper()
+        elif type_ == "data":
+            if data is not None:
+                # the first chunk is the length of the rest
+                length, *chunks = join_chunks(cast(list[bytes], data))
+                raw = b"".join(chunks)[: int.from_bytes(length, "little")]
+                if specifier is not None and value_type(specifier) in ("uuid", "uuid_t") and len(raw) == 16:
+                    s += str(uuid.UUID(bytes=raw)).upper()
+                else:
+                    s += raw.hex()
         else:
             # by default, make sure the data can be concatenated
             s += str(data)
-    return s
+    # the device's own rendering of a line ends at its last visible character
+    return s.rstrip()
+
+
+def decode_message_arguments(message: Any) -> list[dict[str, Any]]:
+    """
+    List the arguments of a row's message, without the narrative text between them.
+
+    :param message: The row's `message` column, as for `decode_message_format`.
+    :returns: One `{"type": ..., "value": ...}` per argument, in the order of the format string's conversions.
+        `type` is the device's name for it. `value` is a str for a string, an int for an integer or address
+        (unsigned 64-bit, whatever the conversion's signedness), a float for a decimal ("nan", "inf" or
+        "-inf" when it isn't finite), a hex str for data, a hyphenated str for a uuid and None for a private or
+        missing one.
+    """
+    arguments: list[dict[str, Any]] = []
+    for type_, data in message or ():
+        type_ = decode_str(type_)
+        if type_ == "narrative-text":
+            continue
+        value: Any
+        if data is None or type_ == "private":
+            value = None
+        elif type_ == "string":
+            value = decode_str(data)
+        elif type_ == "uuid":
+            halves = join_chunks(cast(list[bytes], data))[:2]
+            value = str(uuid.UUID(bytes=b"".join(half[::-1] for half in halves).ljust(16, b"\x00")))
+        elif type_ == "data":
+            length, *chunks = join_chunks(cast(list[bytes], data))
+            value = b"".join(chunks)[: int.from_bytes(length, "little")].hex()
+        elif not isinstance(data, bytes):
+            value = str(data)
+        elif "decimal" in type_:
+            value = struct.unpack("<d", data[:8].ljust(8, b"\x00"))[0]
+            if not math.isfinite(value):
+                # not a JSON number
+                value = str(value)
+        else:
+            # uint64 and its hex variants, address, errno-value, ...
+            value = int.from_bytes(data[:8], "little")
+        arguments.append({"type": type_, "value": value})
+    return arguments
 
 
 class ActivityTraceTap(Tap):

@@ -194,6 +194,29 @@ def test_oslog_json_emits_ndjson_records(monkeypatch, capsys):
     assert record["image_name"] == "libfoo.dylib"
     assert record["message"] == "hello world"
     assert record["timestamp"] == "2026-10-11T21:27:00.803022"
+    assert record["format_string"] is None
+    assert record["arguments"] == []
+
+
+class _FakeOslogFormattedMessage(_FakeOslogMessage):
+    format_string = "pid %d of %s"
+    message = (
+        (b"narrative-text\x00", b"pid \x00"),
+        (b"uint64\x00\x00", b"\x2a\x00"),
+        (b"narrative-text\x00", b" of \x00"),
+        (b"string\x00\x00", b"launchd\x00\x00"),
+    )
+
+
+def test_oslog_json_carries_the_format_string_and_its_arguments(monkeypatch, capsys):
+    monkeypatch.setattr(dvt_module, "ActivityTraceTap", _fake_stream([_FakeOslogFormattedMessage()]))
+
+    dvt_module.dvt_oslog(_FAKE_SERVICE_PROVIDER, output_format=OutputFormat.JSON)
+
+    record = json.loads(capsys.readouterr().out)
+    assert record["message"] == "pid 42 of launchd"
+    assert record["format_string"] == "pid %d of %s"
+    assert record["arguments"] == [{"type": "uint64", "value": 42}, {"type": "string", "value": "launchd"}]
 
 
 class _FakeOslogMessageWithoutDeviceTime(_FakeOslogMessage):
