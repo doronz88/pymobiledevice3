@@ -121,6 +121,13 @@ DIGITIZER_SURFACE_TOUCHSCREEN_GESTURE = 1281  # 0x501 — trackpad-style pointer
 # bit-32 marks it as session-specific, matching the convention macOS
 # Universal Control uses for its mirrored peripherals.
 KEYBOARD_SURFACE_DEFAULT_SERVICE_ID = 0x100002001
+# How long iOS is given to attach a new virtual keyboard after createService
+# replies. A Shift pressed while it is still attaching stays latched after its
+# release: text starting with a capital came out all upper-case until the next
+# shifted key. Nothing signals the attach (the keyboard is listed by
+# ``list_connected_services`` right away and its entry does not change), so
+# this is a pause; 0.1 s was already enough on the device it was measured on.
+KEYBOARD_ATTACH_SETTLE_SECONDS = 0.3
 
 # HID Keyboard usage codes (page 0x07) -- the bits that go into the
 # 240-bit bitmap of :func:`build_keyboard_report`. Only the keys we
@@ -452,6 +459,8 @@ class UniversalHIDServiceService(RemoteService):
 
         Returns the ``_ServiceID`` ``dtuhidd`` ends up using -- usually the
         one we requested. Subsequent reports must be addressed to that ID.
+        Returns only after :data:`KEYBOARD_ATTACH_SETTLE_SECONDS`, so the
+        caller's first report finds the keyboard attached.
 
         Same auth gate as touch: a media stream must be running, otherwise
         backboardd publishes the new surface as ``externalAccessory`` and
@@ -525,7 +534,9 @@ class UniversalHIDServiceService(RemoteService):
                 }
             },
         })
-        return int(response.get("serviceID", service_id))
+        service_id = int(response.get("serviceID", service_id))
+        await asyncio.sleep(KEYBOARD_ATTACH_SETTLE_SECONDS)
+        return service_id
 
     async def send_keyboard(
         self,

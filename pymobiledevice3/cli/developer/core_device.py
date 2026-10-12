@@ -901,8 +901,6 @@ async def core_device_universal_hid_service_type(
     """
     async with touch_session(service_provider) as service:
         kb_service_id = await service.create_keyboard_service()
-        # A Shift pressed while iOS is still attaching the new keyboard stays latched after its release.
-        await asyncio.sleep(0.3)
         for ch in text:
             mapping = ASCII_TO_HID.get(ch)
             if mapping is None:
