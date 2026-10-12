@@ -352,3 +352,7 @@ async def test_rows_of_a_table_share_one_class() -> None:
 
     assert decode_message_format(second.message, second.format_string) == "two"
     assert type(first) is type(second)
+
+
+def test_a_literal_percent_is_printed_once() -> None:
+    assert formatted("%u%% of %u%%", integer(8), text("%% of "), integer(9), text("%%")) == "8% of 9%"

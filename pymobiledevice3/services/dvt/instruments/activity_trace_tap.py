@@ -168,12 +168,14 @@ def decode_message_format(message: Any, format_string: Optional[str] = None) -> 
         if type_ == "address":
             type_ = "uint64-hex"
 
-        if type_ in ("narrative-text", "string"):
-            if data is None:
-                s += "<None>"
-            else:
-                # the padding that rounds a push up to whole bytes can leave more than one NUL behind
-                s += decode_str(data)
+        if type_ in ("narrative-text", "string") and data is None:
+            s += "<None>"
+        elif type_ == "narrative-text":
+            # the text between the conversions is the format string's own, with its "%%" still doubled
+            s += decode_str(data).replace("%%", "%")
+        elif type_ == "string":
+            # the padding that rounds a push up to whole bytes can leave more than one NUL behind
+            s += decode_str(data)
         elif type_ == "private":
             s += "<private>"
         elif type_.startswith("uint64") or "decimal" in type_:
