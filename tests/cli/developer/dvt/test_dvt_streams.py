@@ -169,6 +169,7 @@ def test_netstat_text_prints_connection_line_to_stdout(monkeypatch, capsys):
 
 
 class _FakeOslogMessage:
+    device_time = datetime.datetime(2026, 10, 11, 21, 27, 0, 803022)
     process = 42
     message_type = "Default"
     sender_image_path = "/usr/lib/libfoo.dylib"
@@ -192,7 +193,21 @@ def test_oslog_json_emits_ndjson_records(monkeypatch, capsys):
     assert record["category"] == "general"
     assert record["image_name"] == "libfoo.dylib"
     assert record["message"] == "hello world"
-    assert "timestamp" in record
+    assert record["timestamp"] == "2026-10-11T21:27:00.803022"
+
+
+class _FakeOslogMessageWithoutDeviceTime(_FakeOslogMessage):
+    device_time = None
+
+
+def test_oslog_falls_back_to_the_host_clock(monkeypatch, capsys):
+    monkeypatch.setattr(dvt_module, "ActivityTraceTap", _fake_stream([_FakeOslogMessageWithoutDeviceTime()]))
+    before = datetime.datetime.now()
+
+    dvt_module.dvt_oslog(_FAKE_SERVICE_PROVIDER, output_format=OutputFormat.JSON)
+
+    (line,) = capsys.readouterr().out.strip().splitlines()
+    assert before <= datetime.datetime.fromisoformat(json.loads(line)["timestamp"]) <= datetime.datetime.now()
 
 
 class _FakeOslogLimitMessage(_FakeOslogMessage):

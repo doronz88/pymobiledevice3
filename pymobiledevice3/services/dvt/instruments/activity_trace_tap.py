@@ -4,8 +4,11 @@ import os
 import re
 import struct
 from collections.abc import AsyncGenerator, Callable, Generator
+from datetime import datetime
 from io import BytesIO
 from typing import Any, Optional, Union, cast
+
+from bpylist2 import archiver
 
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.services.dvt.instruments.tap import Tap
@@ -26,6 +29,32 @@ FORMAT_SPECIFIER = re.compile(r"%(?:\{[^}]*\})?([-+ #0']*)(\d+|\*)?(?:\.(\d*|\*)
 INTEGER_BITS: dict[Optional[str], int] = {"hh": 8, "h": 16, None: 32}
 # conversions for a signpost's begin and end time; iOS 16 sends an item for them, iOS 27 doesn't
 SIGNPOST_TIMES = ("signpost.description:begin_time", "signpost.description:end_time")
+
+
+def _parse_time_mapping(message: bytes) -> Optional[tuple[int, float, int, int]]:
+    """
+    Read the device's clock from a "Time Mapping" notice.
+
+    :returns: (mach continuous time, seconds since 1970 at that time, timebase numerator, timebase denominator),
+        or None for any other message or a notice of an unexpected shape.
+    """
+    try:
+        notice: Any = archiver.unarchive(message)
+    except Exception:
+        return None
+    if not isinstance(notice, dict) or cast(dict[str, Any], notice).get("notice") != "Time Mapping":
+        return None
+    try:
+        info = cast(dict[str, Any], notice)["info"]
+        continuous = int(info["DTActivityTraceTapDeviceMachContinuousTimeKey"])
+        since1970 = float(info["DTActivityTraceTapDeviceTimeIntervalSince1970Key"])
+        numerator = int(info["DTActivityTraceTapDeviceMachTimebaseNumeratorKey"])
+        denominator = int(info["DTActivityTraceTapDeviceMachTimebaseDenominatorKey"])
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+    if numerator <= 0 or denominator <= 0:
+        return None
+    return continuous, since1970, numerator, denominator
 
 
 @dataclasses.dataclass
@@ -173,9 +202,10 @@ class ActivityTraceTap(Tap):
 
     Constructed with a `DvtProvider`. It is an async-iterable `Tap`: iterating yields decoded
     log entries (signposts and os_log messages) as `message` dataclass instances whose fields
-    follow the table columns advertised by the device. The underlying wire format is a
-    stack-based opcode stream parsed incrementally; opcodes split across DTX frames are carried
-    over and reassembled.
+    follow the table columns advertised by the device, plus `device_time`: the row's `time` on the
+    device's clock as a `datetime`, or None if the device has not sent its time mapping (it does so
+    before the first row). The underlying wire format is a stack-based opcode stream parsed
+    incrementally; opcodes split across DTX frames are carried over and reassembled.
     """
 
     IDENTIFIER = "com.apple.instruments.server.services.activitytracetap"
@@ -215,15 +245,29 @@ class ActivityTraceTap(Tap):
         self.tables: list[Table] = []
         # trailing bytes of an opcode that was split across two DTX frames
         self._carry = b""
+        # the device's wall clock at one mach continuous time, from the "Time Mapping" notice
+        self._time_mapping: Optional[tuple[int, float, int, int]] = None
 
     async def _get_next_message(self):
         message = b""
         while message.startswith(b"bplist") or len(message) == 0:
-            # ignore heartbeat messages
+            # skip heartbeats, but keep the time mapping to stamp the rows with
             message = await self.channel.receive_message()
+            if message.startswith(b"bplist"):
+                self._time_mapping = _parse_time_mapping(message) or self._time_mapping
         # an opcode (and its immediate words) may be split across frames; prepend the leftover
         self._set_current_message(self._carry + message)
         self._carry = b""
+
+    def _device_time(self, mach_continuous_time: Any) -> Optional[datetime]:
+        if self._time_mapping is None or not isinstance(mach_continuous_time, bytes):
+            return None
+        continuous, since1970, numerator, denominator = self._time_mapping
+        try:
+            seconds = (int.from_bytes(mach_continuous_time, "little") - continuous) * numerator / denominator / 1e9
+            return datetime.fromtimestamp(since1970 + seconds)
+        except (OverflowError, OSError, ValueError):
+            return None
 
     def _set_current_message(self, message: bytes):
         self._message = BytesIO(message)
@@ -338,7 +382,11 @@ class ActivityTraceTap(Tap):
         row = self.stack[-len(columns) :]
         self.stack = self.stack[: -len(columns)]
 
-        Message = dataclasses.make_dataclass("message", [c.replace("-", "_") for c in columns])
+        Message = dataclasses.make_dataclass(
+            "message",
+            [c.replace("-", "_") for c in columns]
+            + [("device_time", Optional[datetime], dataclasses.field(default=None))],
+        )
         message = Message(*row)
         # a pushed value loses its trailing zero bits and comes back padded to whole bytes, so an integer
         # is 2 to 9 bytes long (a thread id of 0x1000000 or more decodes to 6 bytes or more)
@@ -360,6 +408,7 @@ class ActivityTraceTap(Tap):
                 setattr(message, f, decode_str(v) if v else v)
 
         if hasattr(message, "message"):
+            message.device_time = self._device_time(message.time)
             return message
 
     def _handle_placeholder_count(self, word: int):
