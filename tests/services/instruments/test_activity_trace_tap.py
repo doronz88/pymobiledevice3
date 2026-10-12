@@ -381,3 +381,29 @@ def test_a_nil_object_is_printed_as_null() -> None:
 )
 def test_strings_are_padded_and_cut_per_their_conversion(conversion: str, value: str, expected: str) -> None:
     assert formatted(f"[{conversion}]", text("["), string(value), text("]")) == expected
+
+
+# a uuid as an iOS 27.0 device sends it: its halves in a push each, as bytes for data and as integers for a uuid
+UUID_HALVES = (bytes.fromhex("15353e6d9b264ea2"), bytes.fromhex("aa0a52ee4bd1fcf6"))
+
+
+def uuid_item(*halves: bytes) -> bytes:
+    return message_item("uuid", push_struct(*(push(half[::-1]) for half in halves)))
+
+
+def data_item(length: int, *chunks: bytes) -> bytes:
+    return message_item("data", push_struct(push(bytes([length])), *(push(chunk) for chunk in chunks)))
+
+
+@pytest.mark.parametrize(
+    ("format_string", "item", "expected"),
+    [
+        ("%{public,uuid_t}.16P", uuid_item(*UUID_HALVES), "15353E6D-9B26-4EA2-AA0A-52EE4BD1FCF6"),
+        ("%{public,uuid_t}.16P", uuid_item(b"\x00", b"\x00"), "00000000-0000-0000-0000-000000000000"),
+        ("%{public,uuid}.16P", data_item(16, *UUID_HALVES), "15353E6D-9B26-4EA2-AA0A-52EE4BD1FCF6"),
+        ("%.*P", data_item(10, *UUID_HALVES), "15353e6d9b264ea2aa0a"),
+        ("%.*P", data_item(0), ""),
+    ],
+)
+def test_uuids_and_data_are_put_back_together(format_string: str, item: bytes, expected: str) -> None:
+    assert formatted(format_string, item) == expected

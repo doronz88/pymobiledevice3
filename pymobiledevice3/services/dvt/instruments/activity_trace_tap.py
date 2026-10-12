@@ -3,6 +3,7 @@ import math
 import os
 import re
 import struct
+import uuid
 from collections.abc import AsyncGenerator, Callable, Generator
 from datetime import datetime
 from io import BytesIO
@@ -29,6 +30,8 @@ FORMAT_SPECIFIER = re.compile(r"%(?:\{[^}]*\})?([-+ #0']*)(\d+|\*)?(?:\.(\d*|\*)
 INTEGER_BITS: dict[Optional[str], int] = {"hh": 8, "h": 16, None: 32}
 # conversions for a signpost's begin and end time; iOS 16 sends an item for them, iOS 27 doesn't
 SIGNPOST_TIMES = ("signpost.description:begin_time", "signpost.description:end_time")
+# the options between a conversion's braces that say who may read the argument, not how to print it
+PRIVACY_OPTIONS = ("public", "private", "sensitive")
 
 
 def _parse_time_mapping(message: bytes) -> Optional[tuple[int, float, int, int]]:
@@ -129,6 +132,20 @@ def format_number(value: int, specifier: re.Match[str]) -> Optional[str]:
     return (spec + conversion) % number
 
 
+def value_type(specifier: re.Match[str]) -> Optional[str]:
+    """The value type a conversion names between its braces, e.g. "bool" for "%{public, bool}d"."""
+    options = re.match(r"%\{([^}]*)\}", specifier.group(0))
+    if options is None:
+        return None
+    types = [o.strip() for o in options.group(1).split(",") if o.strip() not in PRIVACY_OPTIONS]
+    return types[-1] if types else None
+
+
+def join_chunks(chunks: list[bytes]) -> list[bytes]:
+    """The 8-byte chunks a uuid or data item is sent in, each a push of its own, restored to 8 bytes."""
+    return [chunk[:8].ljust(8, b"\x00") for chunk in chunks]
+
+
 def item_fits(type_: str, conversion: str) -> bool:
     """Whether a message item of `type_` can be the argument of a `conversion`, e.g. not a hex item for %llu."""
     if "decimal" in type_:
@@ -199,10 +216,20 @@ def decode_message_format(message: Any, format_string: Optional[str] = None) -> 
                 s += hex(uint64)[2:]
             else:
                 s += str(uint64)
-        elif type_ in ("data", "uuid"):
+        elif type_ == "uuid":
             if data is not None:
-                # for these types the payload is a list of bytes chunks, not a single bytes object
-                s += b"".join(cast(list[bytes], data)).hex()
+                # the two halves of the uuid, each as a little-endian integer
+                halves = join_chunks(cast(list[bytes], data))[:2]
+                s += str(uuid.UUID(bytes=b"".join(half[::-1] for half in halves).ljust(16, b"\x00"))).upper()
+        elif type_ == "data":
+            if data is not None:
+                # the first chunk is the length of the rest
+                length, *chunks = join_chunks(cast(list[bytes], data))
+                raw = b"".join(chunks)[: int.from_bytes(length, "little")]
+                if specifier is not None and value_type(specifier) in ("uuid", "uuid_t") and len(raw) == 16:
+                    s += str(uuid.UUID(bytes=raw)).upper()
+                else:
+                    s += raw.hex()
         else:
             # by default, make sure the data can be concatenated
             s += str(data)
