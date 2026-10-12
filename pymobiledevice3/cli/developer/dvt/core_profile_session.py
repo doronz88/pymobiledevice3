@@ -262,7 +262,7 @@ def _format_stackshot_frame(index: int, frame: StackshotFrame, image_width: int,
         location = style(f"0x{frame.address:x}", fg="bright_blue")
     else:
         if frame.symbol is not None:
-            position = f"{style(frame.symbol, fg='green')} + {frame.symbol_offset}"
+            position = f"{style(frame.symbol, fg='green')} + 0x{frame.symbol_offset:x}"
         else:
             position = style(f"0x{frame.image_offset:x}", fg="bright_blue")
         location = f"{style(frame.image.ljust(image_width), fg='cyan')}  {position}"
