@@ -185,7 +185,7 @@ class _Resolver:
         frame = self.kernel_frame(address, innermost=True)
         if frame.symbol is None:
             return None
-        return frame.symbol if not frame.symbol_offset else f"{frame.symbol} + {frame.symbol_offset}"
+        return frame.symbol if not frame.symbol_offset else f"{frame.symbol} + 0x{frame.symbol_offset:x}"
 
     def thread(
         self, thread_id: int, snapshot: Mapping[str, Any], images: _LoadedImages, shared_cache: Any

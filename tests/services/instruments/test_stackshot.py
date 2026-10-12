@@ -366,3 +366,13 @@ async def test_resolve_device_stackshot(dvt) -> None:
     launchd = next(process for process in processes if process.pid == 1)
     assert launchd.name == "launchd"
     assert any(thread.frames for thread in launchd.threads)
+
+
+def test_resolve_stackshot_continuation_inside_a_function(kernelcache: Path, tmp_path: Path) -> None:
+    kernel_symbols = KernelSymbols.load(kernelcache, index_dir=tmp_path / "index")
+    stackshot = _stackshot(0)
+    stackshot["task_snapshots"][0]["thread_snapshots"][100]["thread_snapshot"]["ths_continuation"] += 0x1C
+
+    kernel_task, _process = resolve_stackshot(stackshot, kernel_symbols=kernel_symbols)
+
+    assert kernel_task.threads[0].continuation == "vm_pageout_continue + 0x1c"

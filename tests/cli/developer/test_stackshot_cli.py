@@ -85,7 +85,7 @@ def test_format_stackshot() -> None:
                         image="libfoo.dylib",
                         image_offset=0x208,
                         symbol="bar",
-                        symbol_offset=8,
+                        symbol_offset=0x1A8,
                     ),
                     StackshotFrame(address=0x100004A38, image="app-uuid", image_offset=0x4A38),
                     StackshotFrame(address=0x1234),
@@ -100,7 +100,7 @@ def test_format_stackshot() -> None:
         "  Thread 514  worker  com.apple.main-thread  waiting  user-interactive  pri 47"
         "  cpu 1.500s user, 0.250s sys  wait 0x1234  continuation kqueue_scan_continue",
         "      0  kernel-uuid   0x20  (kernel)",
-        "      1  libfoo.dylib  bar + 8",
+        "      1  libfoo.dylib  bar + 0x1a8",
         "      2  app-uuid      0x4a38",
         "      3  0x1234",
         "  Thread 515",
