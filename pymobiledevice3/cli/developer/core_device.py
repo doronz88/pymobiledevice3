@@ -906,6 +906,11 @@ async def core_device_universal_hid_service_type(
             if mapping is None:
                 raise typer.BadParameter(f"unsupported character: {ch!r}")
             usage, needs_shift = mapping
+            if needs_shift:
+                # iOS can ignore Shift when it first arrives with the character key.
+                # Establish the modifier in an earlier report before pressing the key.
+                await service.send_keyboard(kb_service_id, (KEY_LEFT_SHIFT,))
+                await asyncio.sleep(char_delay)
             usages = (KEY_LEFT_SHIFT, usage) if needs_shift else (usage,)
             await service.send_keyboard(kb_service_id, usages)
             await asyncio.sleep(char_delay)
