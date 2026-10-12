@@ -791,6 +791,8 @@ class ScreenStreamServer:
         # PLI tasks in flight -- keep a reference so the GC doesn't drop
         # them while awaiting the sendto (and ruff is happy with create_task).
         self._pli_tasks: set[asyncio.Task[None]] = set()
+        # Connection handlers in flight, for serve() to cancel at shutdown.
+        self._http_tasks: set[asyncio.Task[None]] = set()
         # Timestamp of the last PLI we sent. The refresh loop paces its
         # triggers on it, and the recovery paths rate-limit on it so a
         # loss burst / slow subscriber / stuck client can't turn into a
@@ -2107,6 +2109,18 @@ class ScreenStreamServer:
 
     # ----- HTTP request handler ---------------------------------------------
     async def _handle_http(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        task = asyncio.current_task()
+        assert task is not None
+        self._http_tasks.add(task)
+        task.add_done_callback(self._http_tasks.discard)
+        try:
+            await self._serve_connection(reader, writer)
+        finally:
+            # also when serve() cancels us at shutdown: before Python 3.12 nothing
+            # else closes the connection of a cancelled handler
+            writer.close()
+
+    async def _serve_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         # POSTs to /touch /button /key support keep-alive: one TCP carries
         # many requests, which is what the browser uses for pointermove.
         # Everything else (/, /codec, /stream.bin) is one-and-done.
@@ -3176,6 +3190,20 @@ class ScreenStreamServer:
             # while we tear the device-side streams down.
             logger.debug("shutdown: closing HTTP server")
             http_server.close()
+            # Stop the connection handlers before tearing the device side down. A
+            # live one (an idle keep-alive /touch connection, a /stream.bin blocked
+            # in queue.get()) could otherwise bring back what the steps below stop,
+            # such as the HID worker through _ensure_hid(), with nothing left to
+            # stop it again. One loop tick first, so a connection accepted just
+            # before the close has registered its handler.
+            await asyncio.sleep(0)
+            handlers = [t for t in self._http_tasks if not t.done()]
+            if handlers:
+                logger.debug("shutdown: cancelling %d connection handler(s)", len(handlers))
+                for t in handlers:
+                    t.cancel()
+                with contextlib.suppress(Exception):
+                    await asyncio.wait(handlers, timeout=2.0)
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(http_server.wait_closed(), timeout=2.0)
             logger.debug("shutdown: stopping HID")
@@ -3209,25 +3237,20 @@ class ScreenStreamServer:
             # freed.
             logger.debug("shutdown: releasing device media session")
             await _bounded(DisplayService.stop_all_streams(self._rsd), "stop_all_streams", timeout=6.0)
-            # Close the accessibility audit BEFORE cancelling stragglers --
-            # otherwise its DTX reader task is one of the stragglers and
-            # its cancellation logs a 'Channel reader loop cancelled'
-            # ERROR-with-traceback. Closing first sets _closed=True on
-            # the channel so the reader exits silently. Any in-flight
-            # /accessibility request gets an exception out of its
-            # await audit.* call and falls through to its try/except.
+            # Close the accessibility audit rather than leaving its DTX reader
+            # task to be cancelled, which logs a 'Channel reader loop cancelled'
+            # ERROR-with-traceback. Closing sets _closed=True on the channel
+            # so the reader exits silently.
             logger.debug("shutdown: stopping clipboard monitor")
             await _bounded(self._stop_clipboard_monitor(), "_stop_clipboard_monitor")
             logger.debug("shutdown: closing accessibility audit")
             await _bounded(self._stop_accessibility(), "_stop_accessibility")
-            # Cancel any lingering connection-handler tasks that the
-            # HTTP server's wait_closed couldn't drain (e.g. a
-            # /stream.bin or /audio.bin handler blocked in queue.get()
-            # because the listener was closed before they finished
-            # writing). Without this they hold the asyncio loop alive
-            # and the process never exits.
-            current = asyncio.current_task()
-            stragglers = [t for t in asyncio.all_tasks(loop) if t is not current and not t.done()]
+            # Cancel what is left of this server: serve_forever(), PLIs in
+            # flight, and any handler the pass above did not get to finish.
+            # Left alone they hold the asyncio loop alive and the process
+            # never exits. Only this server's tasks: the loop also runs the
+            # caller's, such as its device tunnel.
+            stragglers = [t for t in (serve_task, *self._http_tasks, *self._pli_tasks) if not t.done()]
             if stragglers:
                 logger.debug("shutdown: cancelling %d straggler task(s)", len(stragglers))
                 for t in stragglers:
