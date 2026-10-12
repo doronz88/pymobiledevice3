@@ -50,7 +50,6 @@ dependencies = [
     "pyusb>=1.2.1",
     "tqdm",
     "requests",
-    "xonsh",
     "packaging",
     "typing_extensions>=4.1.0",
     "pygnuutils>=0.0.7",

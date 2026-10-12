@@ -8,6 +8,7 @@ from pymobiledevice3.cli.cli_common import (
     OutputFormat,
     OutputFormatOption,
     ServiceProviderDep,
+    ShellHostToolsOption,
     WebDavBindPortOption,
     WebDavHostOption,
     WebDavMountOption,
@@ -129,9 +130,11 @@ async def crash_pull(
 
 
 @cli.command("shell")
-def crash_shell(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def crash_shell(service_provider: ServiceProviderDep, tool: ShellHostToolsOption = None) -> None:
     """start an afc shell"""
-    CrashReportsShell.create(service_provider)
+    async with CrashReportsManager(service_provider) as crash_manager:
+        await CrashReportsShell(crash_manager, host_tools=tool or []).interact()
 
 
 @cli.command("webdav")

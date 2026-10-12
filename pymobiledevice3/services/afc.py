@@ -10,30 +10,23 @@ interactive shell for navigating the device's file system rooted at /var/mobile/
 import asyncio
 import contextlib
 import inspect
-import logging
 import os
 import pathlib
 import posixpath
-import shlex
 import shutil
 import stat as stat_module
 import struct
 import sys
-import threading
-import warnings
-from collections.abc import AsyncIterator, Iterator, MutableMapping, MutableSequence
+from collections.abc import AsyncIterator, Coroutine, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from re import Pattern
 from types import TracebackType
-from typing import Any, Callable, NamedTuple, Optional, TextIO, Union, cast
+from typing import Annotated, Any, Callable, NamedTuple, Optional, TextIO, TypeVar, cast
 
-import xonsh.cli_utils
-import xonsh.main
-import xonsh.tools
 from construct import Bytes, CString, GreedyRange, Int64sl, Int64ul, Tell
 from construct_typed import DataclassMixin, EnumBase, TEnum, TStruct, csfield
-from pygments import formatters, highlight, lexers
+from prompt_toolkit import HTML, print_formatted_text
 
 # `ls_cli` is a real-click command; the click it raises exceptions from is pygnuutils' own
 # dependency, so resolve it through pygnuutils instead of importing click directly.
@@ -41,28 +34,18 @@ from pygnuutils.cli.ls import click as _ls_cli_click
 from pygnuutils.cli.ls import ls as ls_cli
 from pygnuutils.ls import Ls, LsStub
 from tqdm.auto import tqdm
-from xonsh.built_ins import XSH
-from xonsh.cli_utils import Annotated, ArgParserAlias
 
+from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.construct_compat import const_field
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError, ConnectionTerminatedError
+from pymobiledevice3.interactive_shell import Arg, CompletionContext, InteractiveShell, shell_command
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.safe_paths import device_file_path, validate_device_filename
 from pymobiledevice3.services.lockdown_service import LockdownService
-from pymobiledevice3.utils import get_asyncio_loop, hexdump, path_to_str, try_decode
+from pymobiledevice3.utils import get_asyncio_loop, hexdump, path_to_str
 
-# These symbols come from untyped third-party modules; re-bind them with explicit types so their
-# uses type-check without leaking Unknown into this module.
-Arg = cast(Callable[..., Any], cast(Any, xonsh.cli_utils).Arg)
-xonsh_main = cast(Callable[..., Any], cast(Any, xonsh.main).main)
-print_color = cast(Callable[..., Any], cast(Any, xonsh.tools).print_color)
-
-
-def _xsh_ctx() -> dict[str, Any]:
-    """Typed accessor for the untyped ``XSH.ctx`` mapping."""
-    return cast(dict[str, Any], cast(Any, XSH).ctx)
-
+_T = TypeVar("_T")
 
 MAXIMUM_READ_SIZE = 4 * 1024**2  # 4 MB
 MODE_MASK = 0o0000777
@@ -1269,21 +1252,26 @@ class AfcService(LockdownService):
 
 class AfcLsStub(LsStub):
     """
-    Adapter class to make AfcShell compatible with pygnuutils ls implementation.
+    Adapter that lets the pygnuutils ls implementation list an AFC file system.
 
-    This stub provides an interface between the pygnuutils Ls class and the AFC
-    file system, translating calls to work with remote device paths.
+    pygnuutils is blocking, so ``Ls`` runs on a worker thread and every device access made
+    through this adapter is handed to the event loop the AFC service lives on.
     """
 
-    def __init__(self, afc_shell: "AfcShell", stdout: Optional[TextIO] = sys.stdout):
+    def __init__(self, afc: "AfcService", loop: asyncio.AbstractEventLoop, stdout: TextIO):
         """
         Initialize the ls stub.
 
-        :param afc_shell: AfcShell instance providing device access
+        :param afc: AFC service to list
+        :param loop: Event loop the AFC service lives on
         :param stdout: Output stream for ls results
         """
-        self.afc_shell = afc_shell
+        self.afc = afc
         self.stdout = stdout
+        self._loop = loop
+
+    def _wait(self, coro: Coroutine[Any, Any, _T]) -> _T:
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
 
     @property
     def sep(self):
@@ -1295,13 +1283,14 @@ class AfcLsStub(LsStub):
     def abspath(self, path: str):
         return posixpath.normpath(path)
 
-    def stat(self, path: str, dir_fd: Optional[int] = None, follow_symlinks: bool = True):
+    def stat(self, path: str, dir_fd: Optional[int] = None, follow_symlinks: bool = True) -> Any:
+        # AFC's StatResult stands in for os.stat_result: it carries the fields ls reads
         if follow_symlinks:
-            path = self.afc_shell.afc.resolve_path(path)
-        return self.afc_shell.afc.os_stat(path)
+            path = self._wait(self.afc.resolve_path(path))
+        return self._wait(self.afc.os_stat(path))
 
     def readlink(self, path: str, dir_fd: Optional[int] = None):
-        return self.afc_shell.afc.resolve_path(path)
+        return self._wait(self.afc.resolve_path(path))
 
     def isabs(self, path: str):
         return posixpath.isabs(path)
@@ -1319,11 +1308,11 @@ class AfcLsStub(LsStub):
         return "-"
 
     def now(self):
-        timestamp = self.afc_shell.lockdown.all_values.get("TimeIntervalSince1970", 0)
+        timestamp = self.afc.lockdown.all_values.get("TimeIntervalSince1970", 0)
         return datetime.fromtimestamp(timestamp)
 
     def listdir(self, path: str = "."):
-        return self.afc_shell.afc.listdir(path)
+        return self._wait(self.afc.listdir(path))
 
     def system(self):
         return "Darwin"
@@ -1337,192 +1326,79 @@ class AfcLsStub(LsStub):
 
         The fourth argument is accepted only for compatibility with Python's
         ``print(file=...)`` style calls used by ``pygnuutils``. It is ignored.
-        Output is suppressed when ``self.stdout`` is ``None``.
         """
-        if self.stdout is None:
-            return
         print(*objects, sep=sep, end=end, file=self.stdout, flush=flush)
 
     def get_tty_width(self):
-        return os.get_terminal_size().columns
+        return shutil.get_terminal_size().columns
 
 
-class _AsyncRunner:
-    """Run async coroutines on the shared CLI event loop."""
+async def _complete_remote_path(context: CompletionContext, directories_only: bool) -> list[str]:
+    shell = cast(AfcShell, context.shell)
+    prefix = context.prefix
+    dirpath = posixpath.join(shell.cwd, prefix)
+    is_dir = False
+    with contextlib.suppress(AfcException):
+        is_dir = await shell.afc.isdir(dirpath)
+    if not is_dir:
+        dirpath = posixpath.dirname(dirpath)
 
-    def __init__(self) -> None:
-        self._loop = get_asyncio_loop()
-        self._lock = threading.Lock()
-
-    def run(self, coro: Any):
-        with self._lock:
-            if self._loop.is_running():
-                loop_thread_id = getattr(self._loop, "_thread_id", None)
-                if loop_thread_id == threading.get_ident():
-                    raise RuntimeError("Cannot run blocking AFC shell command inside the running event loop thread")
-                fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
-                return fut.result()
-            return self._loop.run_until_complete(coro)
-
-    def stop(self) -> None:
-        # The CLI event loop is process-global and managed elsewhere.
-        return
-
-
-class _SyncAsyncGenIterator:
-    """Bridge an async generator into a blocking iterator for xonsh handlers."""
-
-    def __init__(self, agen: Any, lock: threading.Lock, runner: _AsyncRunner):
-        self._agen = agen
-        self._lock = lock
-        self._runner = runner
-
-    def __iter__(self) -> "_SyncAsyncGenIterator":
-        return self
-
-    def __next__(self):
-        with self._lock:
-            try:
-                return self._runner.run(self._agen.__anext__())
-            except StopAsyncIteration as e:
-                raise StopIteration from e
+    result: list[str] = []
+    for name, is_dir in await shell.list_directory(dirpath):
+        if directories_only and not is_dir:
+            continue
+        option = posixpath.join(dirpath, name)
+        if not prefix.startswith("/"):
+            option = posixpath.relpath(option, shell.cwd)
+        result.append(f"{option}/" if is_dir else option)
+    return result
 
 
-class _SyncAfcProxy:
-    """Expose AfcService async methods as blocking calls for legacy shell handlers."""
-
-    def __init__(self, afc: AfcService):
-        self._afc = afc
-        self._lock = threading.Lock()
-        self._runner = _AsyncRunner()
-
-    def __getattr__(self, name: str) -> Any:
-        attr = getattr(self._afc, name)
-        if not callable(attr):
-            return attr
-
-        def sync_call(*args: Any, **kwargs: Any):
-            result = attr(*args, **kwargs)
-            if inspect.isasyncgen(result):
-                return _SyncAsyncGenIterator(result, self._lock, self._runner)
-            if inspect.isawaitable(result):
-                with self._lock:
-                    try:
-                        return self._runner.run(result)
-                    except Exception:
-                        # Avoid "coroutine was never awaited" warnings when execution
-                        # is rejected (e.g. completion from a running event loop thread).
-                        if asyncio.iscoroutine(result):
-                            result.close()
-                        raise
-            return result
-
-        return sync_call
-
-
-def path_completer(xsh: Any, action: Any, completer: Any, alias: Any, command: Any) -> list[str]:
+async def path_completer(context: CompletionContext) -> list[str]:
     """
-    Provide path completion for xonsh shell commands.
+    Provide path completion for shell commands.
 
     Generates completion suggestions based on the current working directory
     and available files/directories on the device.
 
-    :param xsh: Xonsh shell instance
-    :param action: Completion action
-    :param completer: Completer instance
-    :param alias: Command alias
-    :param command: Command being completed
     :return: List of completion suggestions
     """
-    shell = cast(AfcShell, _xsh_ctx()["_shell"])
-    pwd = shell.cwd
-    is_absolute = command.prefix.startswith("/")
-    dirpath = posixpath.join(pwd, command.prefix)
-    try:
-        if not shell.afc.exists(dirpath):
-            dirpath = posixpath.dirname(dirpath)
-        shell._refresh_completion_cache_sync(dirpath)
-    except RuntimeError:
-        # prompt_toolkit completion runs inside an active loop thread where we
-        # cannot block for device I/O. Use cached entries and refresh in background.
-        shell._schedule_completion_cache_refresh(dirpath)
-        if not shell._get_completion_cache(dirpath):
-            dirpath = posixpath.dirname(dirpath)
-            shell._schedule_completion_cache_refresh(dirpath)
-
-    result: list[str] = []
-    for f, is_dir in shell._get_completion_cache(dirpath):
-        if is_absolute:
-            completion_option = posixpath.join(dirpath, f)
-        else:
-            completion_option = posixpath.relpath(posixpath.join(dirpath, f), pwd)
-        if is_dir:
-            result.append(f"{completion_option}/")
-        else:
-            result.append(completion_option)
-    return result
+    return await _complete_remote_path(context, directories_only=False)
 
 
-def dir_completer(xsh: Any, action: Any, completer: Any, alias: Any, command: Any):
+async def dir_completer(context: CompletionContext) -> list[str]:
     """
-    Provide directory-only completion for xonsh shell commands.
+    Provide directory-only completion for shell commands.
 
     Similar to path_completer but only suggests directories, not files.
 
-    :param xsh: Xonsh shell instance
-    :param action: Completion action
-    :param completer: Completer instance
-    :param alias: Command alias
-    :param command: Command being completed
     :return: List of directory completion suggestions
     """
-    shell = cast(AfcShell, _xsh_ctx()["_shell"])
-    pwd = shell.cwd
-    is_absolute = command.prefix.startswith("/")
-    dirpath = posixpath.join(pwd, command.prefix)
-    try:
-        if not shell.afc.exists(dirpath):
-            dirpath = posixpath.dirname(dirpath)
-        shell._refresh_completion_cache_sync(dirpath)
-    except RuntimeError:
-        # prompt_toolkit completion runs inside an active loop thread where we
-        # cannot block for device I/O. Use cached entries and refresh in background.
-        shell._schedule_completion_cache_refresh(dirpath)
-        if not shell._get_completion_cache(dirpath):
-            dirpath = posixpath.dirname(dirpath)
-            shell._schedule_completion_cache_refresh(dirpath)
-
-    result: list[str] = []
-    for f, is_dir in shell._get_completion_cache(dirpath):
-        if not is_dir:
-            continue
-        if is_absolute:
-            completion_option = posixpath.join(dirpath, f)
-        else:
-            completion_option = posixpath.relpath(posixpath.join(dirpath, f), pwd)
-        result.append(f"{completion_option}/")
-    return result
+    return await _complete_remote_path(context, directories_only=True)
 
 
-# xonsh declares Arg(completer=...) as returning Iterator[str], but any iterable works at
-# runtime; adapt the list-returning completers' declared type once here instead of per call site.
-_path_arg_completer = cast(Callable[..., Iterator[str]], path_completer)
-_dir_arg_completer = cast(Callable[..., Iterator[str]], dir_completer)
+#: A path on the device, completed against its file system.
+RemotePath = Annotated[str, Arg(completer=path_completer)]
+#: A directory on the device, completed against its file system.
+RemoteDir = Annotated[str, Arg(completer=dir_completer)]
 
 
-class AfcShell:
+class AfcShell(InteractiveShell):
     """
-    Interactive xonsh-based shell for navigating an iOS device's file system via AFC.
+    Interactive shell for navigating an iOS device's file system via AFC.
 
     Provides a familiar shell environment with common commands (ls, cd, cat, etc.)
-    that operate on the remote device's file system. The shell is powered by xonsh
-    and includes features like tab completion, history, and command aliases.
+    that operate on the remote device's file system, with tab completion, history,
+    pipes into a few host tools (``cat file | grep foo``) and redirection into local
+    files (``cat file > copy``).
 
     Attributes:
-        lockdown: Lockdown service provider for device communication
         afc: AfcService instance for file operations
         cwd: Current working directory on the device
     """
+
+    #: Host text utilities that device commands can be piped into. Deliberately few.
+    HOST_COMMANDS = ("grep", "egrep", "sed", "awk", "sort", "uniq", "cut", "tr", "tail", "wc", "less", "yes")
 
     @classmethod
     def create(
@@ -1531,245 +1407,101 @@ class AfcShell:
         service_name: Optional[str] = None,
         service: Optional[LockdownService] = None,
         auto_cd: Optional[str] = "/",
-    ):
+    ) -> None:
         """
-        Create and launch an AFC shell session.
+        Create and launch an AFC shell session, blocking until the user leaves it.
 
-        This class method sets up the xonsh environment and starts an interactive
-        shell session for navigating the device's file system.
+        The shell runs on the CLI event loop. From a coroutine, construct the shell and await
+        :meth:`interact` instead.
 
         :param service_provider: Lockdown service provider for device connection
         :param service_name: Optional AFC service name override
         :param service: Optional pre-initialized AFC service instance
         :param auto_cd: Initial working directory (default: "/")
         """
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-        args = ["--rc", str(pathlib.Path(__file__).absolute())]
-        os.environ["XONSH_COLOR_STYLE"] = "default"
-        _xsh_ctx()["_class"] = cls
-        _xsh_ctx()["_lockdown"] = service_provider
-        _xsh_ctx()["_auto_cd"] = auto_cd
-        if service is not None:
-            _xsh_ctx()["_service"] = service
-        else:
-            _xsh_ctx()["_service"] = AfcService(service_provider, service_name=service_name)
+        afc = cast(AfcService, service) if service is not None else AfcService(service_provider, service_name)
+        get_asyncio_loop().run_until_complete(cls(afc, cwd=auto_cd or "/").interact())
 
-        try:
-            logging.getLogger("parso").setLevel(logging.CRITICAL + 1)
-            xonsh_main(args)
-        except SystemExit:
-            pass
-
-    def __init__(self, lockdown: LockdownServiceProvider, service: AfcService):
+    def __init__(self, afc: AfcService, cwd: str = "/", host_tools: Iterable[str] = ()):
         """
-        Initialize the AFC shell.
-
-        Sets up the shell environment, registers commands, and configures the prompt.
-        This is called internally by the create() class method.
-
-        :param lockdown: Lockdown service provider for device communication
-        :param service: AFC service instance for file operations
+        :param afc: AFC service instance for file operations
+        :param cwd: Initial working directory
+        :param host_tools: Names of more host executables to offer as commands
         """
-        self.lockdown = lockdown
-        self.afc = _SyncAfcProxy(service)
-        _xsh_ctx()["_shell"] = self
-        self.cwd: str = _xsh_ctx().get("_auto_cd", "/")
-        self._commands: dict[str, Any] = {}
-        self._orig_aliases: dict[str, Any] = {}
-        assert cast(Any, XSH).env is not None
-        self._orig_prompt = cast(Any, XSH).env["PROMPT"]
-        self._completion_cache: dict[str, list[tuple[str, bool]]] = {}
-        self._completion_refreshing: set[str] = set()
-        self._completion_cache_lock = threading.Lock()
-        self._setup_shell_commands()
-        self._schedule_completion_cache_refresh(self.cwd)
+        super().__init__(host_tools)
+        self.afc = afc
+        self.cwd = cwd
+        self._directory_cache: dict[str, list[tuple[str, bool]]] = {}
 
-        print_color("""
-        {BOLD_WHITE}Welcome to xonsh-afc shell! 👋{RESET}
-        Use {CYAN}show-help{RESET} to view a list of all available special commands.
-            These special commands will replace all already existing commands.
-        """)
+    async def interact(self) -> None:
+        print_formatted_text(
+            HTML(
+                "\n<b>Welcome to the AFC shell!</b> 👋\n"
+                "Type <ansicyan>help</ansicyan> to list the commands, <ansicyan>exit</ansicyan> or Ctrl-D to leave.\n"
+            )
+        )
+        await super().interact()
 
-    def _set_completion_cache(self, directory: str, entries: list[tuple[str, bool]]) -> None:
-        with self._completion_cache_lock:
-            self._completion_cache[directory] = entries
-            self._completion_refreshing.discard(directory)
+    async def run_line(self, line: str) -> int:
+        # a command may change what is on the device
+        self._directory_cache.clear()
+        return await super().run_line(line)
 
-    def _get_completion_cache(self, directory: str) -> list[tuple[str, bool]]:
-        with self._completion_cache_lock:
-            return list(self._completion_cache.get(directory, []))
+    async def list_directory(self, directory: str) -> list[tuple[str, bool]]:
+        """
+        List a device directory as ``(name, is_directory)`` pairs, for completion.
 
-    def _refresh_completion_cache_sync(self, directory: str) -> None:
+        Remembered until the next command runs, so completing in a large directory asks the
+        device once.
+        """
+        cached = self._directory_cache.get(directory)
+        if cached is not None:
+            return cached
         entries: list[tuple[str, bool]] = []
-        for name in self.afc.listdir(directory):
+        for name in await self.afc.listdir(directory):
             is_dir = False
             with contextlib.suppress(AfcException):
-                is_dir = self.afc.isdir(posixpath.join(directory, name))
+                is_dir = await self.afc.isdir(posixpath.join(directory, name))
             entries.append((name, is_dir))
-        self._set_completion_cache(directory, entries)
+        self._directory_cache[directory] = entries
+        return entries
 
-    def _schedule_completion_cache_refresh(self, directory: str) -> None:
-        """
-        Schedules a refresh of the completion cache for a given directory in a separate thread.
+    def _history_path(self) -> pathlib.Path:
+        return get_home_folder() / "afc_shell_history"
 
-        This method ensures that completion cache updates for the specified directory are
-        processed without blocking the main thread. It uses a lock to avoid concurrent
-        cache updates for the same directory. Threads are created in a daemon mode,
-        allowing them to terminate when the main program exits.
+    def _prompt_label(self) -> str:
+        return f"{self.afc.service_name}:{self.cwd}"
 
-        Parameters:
-        directory : str
-            The path of the directory for which the completion cache should be refreshed.
-        """
-        with self._completion_cache_lock:
-            if directory in self._completion_refreshing:
-                return
-            self._completion_refreshing.add(directory)
-
-        def _refresh() -> None:
-            try:
-                self._refresh_completion_cache_sync(directory)
-            except Exception:
-                with self._completion_cache_lock:
-                    self._completion_refreshing.discard(directory)
-
-        threading.Thread(target=_refresh, daemon=True).start()
-
-    def _register_arg_parse_alias(self, name: str, handler: Union[Callable[..., Any], str]):
-        """
-        Register a command with argument parsing support.
-
-        :param name: Command name
-        :param handler: Command handler function or string
-        """
-        handler = ArgParserAlias(func=handler, has_args=True, prog=name)
-        self._commands[name] = handler
-        aliases = cast(Any, XSH).aliases
-        assert aliases is not None
-        if aliases.get(name):
-            self._orig_aliases[name] = aliases[name]
-        aliases[name] = handler
-
-    def _register_rpc_command(self, name: str, handler: Union[Callable[..., Any], str]):
-        """
-        Register a simple command without argument parsing.
-
-        :param name: Command name
-        :param handler: Command handler function or executable path
-        """
-        self._commands[name] = handler
-        aliases = cast(Any, XSH).aliases
-        assert aliases is not None
-        if aliases.get(name):
-            self._orig_aliases[name] = aliases[name]
-        aliases[name] = handler
-
-    def _setup_shell_commands(self):
-        """
-        Initialize all shell commands and configure the shell environment.
-
-        Clears the PATH to prevent host command execution (except for specific
-        utilities), registers AFC-specific commands, and sets up the custom prompt.
-        """
-        # clear all host commands except for some useful ones
-        env = cast(Any, XSH).env
-        assert env is not None
-        # Env.__getitem__ is untyped; $PATH is an EnvPath (mutable sequence) at runtime
-        cast(MutableSequence[str], env["PATH"]).clear()
-        # adding "file" just to fix xonsh errors
-        for cmd in ["wc", "grep", "egrep", "sed", "awk", "print", "yes", "cat"]:
-            executable = shutil.which(cmd)
-            if executable is not None:
-                self._register_rpc_command(cmd, executable)
-
-        self._register_rpc_command("ls", self.do_ls)
-        self._register_arg_parse_alias("pwd", self._do_pwd)
-        self._register_arg_parse_alias("link", self._do_link)
-        self._register_arg_parse_alias("cd", self._do_cd)
-        self._register_arg_parse_alias("cat", self._do_cat)
-        self._register_arg_parse_alias("rm", self._do_rm)
-        self._register_arg_parse_alias("pull", self._do_pull)
-        self._register_arg_parse_alias("push", self._do_push)
-        self._register_arg_parse_alias("walk", self._do_walk)
-        self._register_arg_parse_alias("head", self._do_head)
-        self._register_arg_parse_alias("hexdump", self._do_hexdump)
-        self._register_arg_parse_alias("mkdir", self._do_mkdir)
-        self._register_arg_parse_alias("info", self._do_info)
-        self._register_arg_parse_alias("mv", self._do_mv)
-        self._register_arg_parse_alias("stat", self._do_stat)
-        self._register_arg_parse_alias("show-help", self._do_show_help)
-
-        env["PROMPT"] = f"[{{BOLD_CYAN}}{self.afc.service_name}:{{afc_cwd}}{{RESET}}]{{prompt_end}} "
-        # Env.__getitem__ is untyped; $PROMPT_FIELDS is a PromptFields (mutable mapping) at runtime
-        prompt_fields = cast(MutableMapping[str, Any], env["PROMPT_FIELDS"])
-        prompt_fields["afc_cwd"] = self._afc_cwd
-        prompt_fields["prompt_end"] = self._prompt
-
-    def _prompt(self) -> str:
-        """
-        Generate the prompt suffix based on the last command's exit status.
-
-        :return: Green '$' for success, red '$' for failure
-        """
-        history = XSH.history
-        assert history is not None
-        if len(history) == 0 or history[-1].rtn == 0:
-            return "{BOLD_GREEN}${RESET}"
-        return "{BOLD_RED}${RESET}"
-
-    def _afc_cwd(self) -> str:
-        """
-        Get the current working directory for prompt display.
-
-        :return: Current working directory path
-        """
-        return self.cwd
-
-    def _relative_path(self, filename: str) -> str:
-        """
-        Convert a relative path to an absolute path based on cwd.
-
-        :param filename: Relative or absolute path
-        :return: Absolute path
-        """
-        return posixpath.join(self.cwd, filename)
-
-    def _do_show_help(self):
-        """Display a list of all available shell commands."""
-        buf = ""
-        for k, _v in self._commands.items():
-            buf += f"👾 {k}\n"
-        print(buf)
-
+    @shell_command
     def _do_pwd(self) -> None:
         """Print the current working directory."""
         print(self.cwd)
 
-    def _do_link(self, target: str, source: str) -> None:
+    @shell_command
+    async def _do_link(self, target: str, source: str) -> None:
         """
         Create a symbolic link on the device.
 
         :param target: Target path that the link will point to
         :param source: Path where the link will be created
         """
-        self.afc.link(self.relative_path(target), self.relative_path(source), AfcLinkType.SYMLINK)
+        await self.afc.link(self.relative_path(target), self.relative_path(source), AfcLinkType.SYMLINK)
 
-    def _do_cd(self, directory: Annotated[str, Arg(completer=_dir_arg_completer)]) -> None:
+    @shell_command
+    async def _do_cd(self, directory: RemoteDir = "/") -> None:
         """
         Change the current working directory.
 
-        :param directory: Directory path to change to (relative or absolute)
+        :param directory: Directory path to change to (relative or absolute). The root when omitted
         """
         directory = self.relative_path(directory)
         directory = posixpath.normpath(directory)
-        if self.afc.exists(directory):
-            self.cwd = directory
-            self._update_prompt()
-            self._schedule_completion_cache_refresh(self.cwd)
-        else:
-            print(f"[ERROR] {directory} does not exist")
+        if not await self.afc.exists(directory):
+            raise ArgumentError(f"{directory} does not exist")
+        self.cwd = directory
 
-    def do_ls(self, args: list[str], stdin: Optional[TextIO], stdout: Optional[TextIO], stderr: Optional[TextIO]):
+    @shell_command(raw=True, completer=path_completer)
+    async def _do_ls(self, args: list[str]):
         """
         List directory contents with Unix ls-like formatting.
 
@@ -1777,69 +1509,67 @@ class AfcShell:
         """
         try:
             with ls_cli.make_context("ls", args) as ctx:
-                files = list(map(self._relative_path, ctx.params.pop("files")))
+                files = list(map(self.relative_path, ctx.params.pop("files")))
                 files = files if files else [self.cwd]
-                Ls(AfcLsStub(self, stdout))(*files, **ctx.params)
+                ls = Ls(AfcLsStub(self.afc, asyncio.get_running_loop(), sys.stdout))
+                await asyncio.to_thread(ls, *files, **ctx.params)
         except _ls_cli_click.exceptions.Exit:
             pass
 
-    def _do_walk(self, directory: Annotated[str, Arg(completer=_dir_arg_completer)]):
+    @shell_command
+    async def _do_walk(self, directory: RemoteDir):
         """
         Recursively walk a directory tree and print all paths.
 
         :param directory: Root directory to walk
         """
-        for root, dirs, files in cast(
-            Iterator[tuple[str, list[str], list[str]]], self.afc.walk(self.relative_path(directory))
-        ):
+        async for root, dirs, files in self.afc.walk(self.relative_path(directory)):
             for name in files:
                 print(posixpath.join(root, name))
             for name in dirs:
                 print(posixpath.join(root, name))
 
-    def _do_cat(self, filename: Annotated[str, Arg(completer=_path_arg_completer)]):
+    @shell_command
+    async def _do_cat(self, filename: RemotePath):
         """
-        Display the contents of a file.
+        Write the contents of a file to the output, byte for byte.
 
         :param filename: Path to the file to display
         """
-        print(try_decode(self.afc.get_file_contents(self.relative_path(filename))))
+        self._write(await self.afc.get_file_contents(self.relative_path(filename)))
 
-    def _do_rm(self, file: Annotated[list[str], Arg(nargs="+", completer=_path_arg_completer)]):
+    @shell_command
+    async def _do_rm(self, files: list[RemotePath]):
         """
         Remove one or more files or directories.
 
-        :param file: List of file/directory paths to remove
+        :param files: List of file/directory paths to remove
         """
-        for filename in file:
-            self.afc.rm(self.relative_path(filename))
+        for filename in files:
+            await self.afc.rm(self.relative_path(filename))
 
-    def _do_pull(
+    @shell_command
+    async def _do_pull(
         self,
-        remote_path: Annotated[str, Arg(completer=_path_arg_completer)],
+        remote_path: RemotePath,
         local_path: str,
-        ignore_errors: Annotated[bool, Arg("--ignore-errors", action="store_true")] = False,
-        progress_bar: Annotated[bool, Arg("--progress-bar", action="store_true")] = False,
+        *,
+        ignore_errors: bool = False,
+        progress_bar: bool = False,
     ) -> None:
         """
         Pull a file or directory from device to local machine.
 
-        Parameters
-        ----------
-        remote_path : str
-            Path on the device to pull from
-        local_path : str
-            Local destination path
-        ignore_errors : bool, optional
-            Ignore errors and continue (--ignore-errors flag)
-        progress_bar : bool, optional
-            Show progress bar for large files (--progress_bar flag)
+        :param remote_path: Path on the device to pull from
+        :param local_path: Local destination path
+        :param ignore_errors: Ignore errors and continue
+        :param progress_bar: Show a progress bar for large files
         """
 
         def log(src: str, dst: str):
             print(f"{src} --> {dst}")
 
-        self.afc.pull(
+        await self.afc.pull(
             remote_path,
             local_path,
             callback=log,
@@ -1848,7 +1578,8 @@ class AfcShell:
             progress_bar=progress_bar,
         )
 
-    def _do_push(self, local_path: str, remote_path: Annotated[str, Arg(completer=_path_arg_completer)]):
+    @shell_command
+    async def _do_push(self, local_path: str, remote_path: RemotePath):
         """
         Push a file or directory from local machine to device.
 
@@ -1859,41 +1590,48 @@ class AfcShell:
         def log(src: str, dst: str):
             print(f"{src} --> {dst}")
 
-        self.afc.push(local_path, self.relative_path(remote_path), callback=log)
+        await self.afc.push(local_path, self.relative_path(remote_path), callback=log)
 
-    def _do_head(self, filename: Annotated[str, Arg(completer=_path_arg_completer)]):
+    @shell_command
+    async def _do_head(self, filename: RemotePath, *, lines: Annotated[int, Arg("-n")] = 10):
         """
-        Display the first 32 bytes of a file.
+        Display the first lines of a file.
 
         :param filename: Path to the file
+        :param lines: How many lines to display
         """
-        print(try_decode(self.afc.get_file_contents(self.relative_path(filename))[:32]))
+        data = await self.afc.get_file_contents(self.relative_path(filename))
+        self._write(b"".join(data.splitlines(keepends=True)[:lines]))
 
-    def _do_hexdump(self, filename: Annotated[str, Arg(completer=_path_arg_completer)]):
+    @shell_command
+    async def _do_hexdump(self, filename: RemotePath):
         """
         Display a hexadecimal dump of a file's contents.
 
         :param filename: Path to the file
         """
-        print(hexdump(self.afc.get_file_contents(self.relative_path(filename))))
+        print(hexdump(await self.afc.get_file_contents(self.relative_path(filename))))
 
-    def _do_mkdir(self, filename: Annotated[str, Arg(completer=_path_arg_completer)]):
+    @shell_command
+    async def _do_mkdir(self, filename: RemotePath):
         """
         Create a directory on the device.
 
         :param filename: Path of the directory to create
         """
-        self.afc.makedirs(self.relative_path(filename))
+        await self.afc.makedirs(self.relative_path(filename))
 
-    def _do_info(self):
+    @shell_command
+    async def _do_info(self):
         """Display device file system information."""
-        for k, v in self.afc.get_device_info().items():
+        for k, v in (await self.afc.get_device_info()).items():
             print(f"{k}: {v}")
 
-    def _do_mv(
+    @shell_command
+    async def _do_mv(
         self,
-        source: Annotated[str, Arg(completer=_path_arg_completer)],
-        dest: Annotated[str, Arg(completer=_path_arg_completer)],
+        source: RemotePath,
+        dest: RemotePath,
     ):
         """
         Move or rename a file or directory.
@@ -1901,16 +1639,24 @@ class AfcShell:
         :param source: Source path
         :param dest: Destination path
         """
-        return self.afc.rename(self.relative_path(source), self.relative_path(dest))
+        await self.afc.rename(self.relative_path(source), self.relative_path(dest))
 
-    def _do_stat(self, filename: Annotated[str, Arg(completer=_path_arg_completer)]):
+    @shell_command
+    async def _do_stat(self, filename: RemotePath):
         """
         Display detailed file or directory statistics.
 
         :param filename: Path to the file or directory
         """
-        for k, v in self.afc.stat(self.relative_path(filename)).items():
+        for k, v in (await self.afc.stat(self.relative_path(filename))).items():
             print(f"{k}: {v}")
+
+    @staticmethod
+    def _write(data: bytes) -> None:
+        """Write to the command's output as is, so a file piped or redirected arrives byte for byte."""
+        sys.stdout.flush()
+        sys.stdout.buffer.write(data)
+        sys.stdout.buffer.flush()
 
     def relative_path(self, filename: str) -> str:
         """
@@ -1920,112 +1666,3 @@ class AfcShell:
         :return: Absolute path
         """
         return posixpath.join(self.cwd, filename)
-
-    def _update_prompt(self) -> None:
-        """Update the shell prompt with syntax highlighting."""
-        self.prompt = cast(
-            str,
-            highlight(
-                f"[{self.afc.service_name}:{self.cwd}]$ ",
-                cast(Any, lexers).BashSessionLexer(),
-                cast(Any, formatters).Terminal256Formatter(style="solarized-dark"),
-            ),
-        ).strip()
-
-    def _complete(self, text: str, line: str, begidx: int, endidx: int):
-        """
-        Provide path completion for commands (internal method).
-
-        :param text: Current text being completed
-        :param line: Full command line
-        :param begidx: Beginning index of text
-        :param endidx: Ending index of text
-        :return: List of completion options
-        """
-        curdir_diff = posixpath.dirname(text)
-        dirname = posixpath.join(self.cwd, curdir_diff)
-        prefix = posixpath.basename(text)
-        return [
-            str(posixpath.join(curdir_diff, filename))
-            for filename in self.afc.listdir(dirname)
-            if filename.startswith(prefix)
-        ]
-
-    def _complete_first_arg(self, text: str, line: str, begidx: int, endidx: int) -> list[str]:
-        """
-        Complete only the first argument of a command.
-
-        :return: Completion options for first arg, empty list otherwise
-        """
-        if self._count_completion_parts(line, begidx) > 1:
-            return []
-        return self._complete(text, line, begidx, endidx)
-
-    def _complete_push_arg(self, text: str, line: str, begidx: int, endidx: int) -> list[str]:
-        """
-        Completion for push command (local path, then remote path).
-
-        :return: Local completions for first arg, remote for second
-        """
-        count = self._count_completion_parts(line, begidx)
-        if count == 1:
-            return self._complete_local(text)
-        elif count == 2:
-            return self._complete(text, line, begidx, endidx)
-        else:
-            return []
-
-    def _complete_pull_arg(self, text: str, line: str, begidx: int, endidx: int) -> list[str]:
-        """
-        Completion for pull command (remote path, then local path).
-
-        :return: Remote completions for first arg, local for second
-        """
-        count = self._count_completion_parts(line, begidx)
-        if count == 1:
-            return self._complete(text, line, begidx, endidx)
-        elif count == 2:
-            return self._complete_local(text)
-        else:
-            return []
-
-    @staticmethod
-    def _complete_local(text: str):
-        """
-        Provide local file system path completions.
-
-        :param text: Current text being completed
-        :return: List of local path completions
-        """
-        path = pathlib.Path(text)
-        path_iter = path.iterdir() if text.endswith(os.path.sep) else path.parent.iterdir()
-        return [str(p) for p in path_iter if str(p).startswith(text)]
-
-    @staticmethod
-    def _count_completion_parts(line: str, begidx: int):
-        """
-        Count the number of space-separated parts in a command line.
-
-        :param line: Command line text
-        :param begidx: Index to count parts up to
-        :return: Number of parts
-        """
-        # Strip the " for paths including spaces.
-        return len(shlex.split(line[:begidx].rstrip('"')))
-
-
-if __name__ == str(pathlib.Path(__file__).absolute()):
-    """
-    Entry point for xonsh RC script.
-
-    This block is executed when the file is loaded as an xonsh RC script,
-    initializing the AFC shell with the context provided by AfcShell.create().
-    """
-    rc = cast(AfcShell, _xsh_ctx()["_class"](_xsh_ctx()["_lockdown"], _xsh_ctx()["_service"]))
-    # fix fzf conflicts
-    _xsh_env = cast(Any, XSH).env
-    assert _xsh_env is not None
-    _xsh_env["fzf_history_binding"] = ""  # Ctrl+R
-    _xsh_env["fzf_ssh_binding"] = ""  # Ctrl+S
-    _xsh_env["fzf_file_binding"] = ""  # Ctrl+T
-    _xsh_env["fzf_dir_binding"] = ""  # Ctrl+G

@@ -1,7 +1,10 @@
+from collections.abc import Iterable
+
 from pymobiledevice3.exceptions import AppNotInstalledError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell
+from pymobiledevice3.utils import get_asyncio_loop
 
 VEND_CONTAINER = "VendContainer"
 VEND_DOCUMENTS = "VendDocuments"
@@ -81,11 +84,14 @@ class HouseArrestService(AfcService):
             else:
                 raise PyMobileDevice3Exception(error)
 
-    def shell(self) -> None:
+    def shell(self, host_tools: Iterable[str] = ()) -> None:
         """
         Launch an interactive AFC shell over the vended container.
 
         The shell starts in the container's ``Documents`` directory when the service was
         created with ``documents_only``, otherwise at the container root.
+
+        :param host_tools: Names of more host executables to offer as commands in the shell
         """
-        AfcShell.create(self.lockdown, service=self, auto_cd=DOCUMENTS_ROOT if self.documents_only else "/")
+        shell = AfcShell(self, cwd=DOCUMENTS_ROOT if self.documents_only else "/", host_tools=host_tools)
+        get_asyncio_loop().run_until_complete(shell.interact())

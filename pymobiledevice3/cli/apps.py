@@ -8,6 +8,7 @@ from typer_injector import InjectingTyper
 from pymobiledevice3.cli.cli_common import (
     RSDServiceProviderDep,
     ServiceProviderDep,
+    ShellHostToolsOption,
     WebDavBindPortOption,
     WebDavHostOption,
     WebDavMountOption,
@@ -118,14 +119,17 @@ async def install(
 
 @cli.command("afc")
 def afc(
-    service_provider: ServiceProviderDep, bundle_id: str, documents: Annotated[bool, typer.Option()] = False
+    service_provider: ServiceProviderDep,
+    bundle_id: str,
+    documents: Annotated[bool, typer.Option()] = False,
+    tool: ShellHostToolsOption = None,
 ) -> None:
     """Open an AFC shell into the app container; pass --documents for Documents-only."""
     service = cli_loop.run_until_complete(
         HouseArrestService.create(lockdown=service_provider, bundle_id=bundle_id, documents_only=documents)
     )
     try:
-        service.shell()
+        service.shell(host_tools=tool or [])
     finally:
         cli_loop.run_until_complete(service.close())
 

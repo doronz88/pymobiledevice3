@@ -3,15 +3,12 @@ import logging
 import posixpath
 import re
 import time
-from collections.abc import AsyncGenerator, Awaitable, Iterator
+from collections.abc import AsyncGenerator, Iterable
 from json import JSONDecodeError
 from types import TracebackType
-from typing import Any, Callable, ClassVar, Optional, Union, cast
+from typing import Annotated, Callable, ClassVar, Optional, Union
 
 from pycrashreport.crash_report import CrashReportBase, get_crash_report_from_buf
-from xonsh import cli_utils as _xonsh_cli_utils
-from xonsh.built_ins import XSH
-from xonsh.cli_utils import Annotated
 
 from pymobiledevice3.exceptions import (
     AfcException,
@@ -20,20 +17,14 @@ from pymobiledevice3.exceptions import (
     ProtocolError,
     SysdiagnoseTimeoutError,
 )
+from pymobiledevice3.interactive_shell import Arg, shell_command
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
-from pymobiledevice3.services.afc import AfcService, AfcShell, path_completer
+from pymobiledevice3.services.afc import AfcService, AfcShell, RemotePath
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.services.notification_proxy import NotificationProxyService
 from pymobiledevice3.services.os_trace import OsTraceService
-
-# xonsh's cli_utils has no py.typed, so Arg's signature is partially unknown; adapt it to a
-# typed callable once here instead of at every Annotated[...] use site.
-Arg = cast(Callable[..., Any], cast(Any, _xonsh_cli_utils).Arg)
-
-# xonsh declares Arg(completer=...) as returning Iterator[str], but any iterable works at
-# runtime; adapt the list-returning completer's declared type once here instead of per call site.
-_path_arg_completer = cast(Callable[..., Iterator[str]], path_completer)
+from pymobiledevice3.utils import get_asyncio_loop
 
 SYSDIAGNOSE_PROCESS_NAMES = ("sysdiagnose", "sysdiagnosed")
 SYSDIAGNOSE_DIR = "DiagnosticLogs/sysdiagnose"
@@ -381,6 +372,8 @@ class CrashReportsManager:
 
 
 class CrashReportsShell(AfcShell):
+    """AFC shell over the crash reports directory, with commands to parse and clear reports."""
+
     @classmethod
     def create(
         cls,
@@ -388,50 +381,59 @@ class CrashReportsShell(AfcShell):
         service_name: Optional[str] = None,
         service: Optional[LockdownService] = None,
         auto_cd: Optional[str] = "/",
-    ):
-        manager = CrashReportsManager(service_provider)
-        cast(Any, XSH).ctx["_manager"] = manager
-        super(CrashReportsShell, CrashReportsShell).create(service_provider, service=manager.afc)
+    ) -> None:
+        """
+        Create and launch a crash reports shell session, blocking until the user leaves it.
 
-    def _setup_shell_commands(self):
-        super()._setup_shell_commands()
-        self._register_arg_parse_alias("parse", self._do_parse)
-        self._register_arg_parse_alias("parse-latest", self._do_parse_latest)
-        self._register_arg_parse_alias("clear", self._do_clear)
+        The shell always browses the crash reports directory through its own
+        :class:`CrashReportsManager`, so only ``service_provider`` is used.
+        """
+        get_asyncio_loop().run_until_complete(cls(CrashReportsManager(service_provider)).interact())
 
-    def _run_manager(self, awaitable: Awaitable[Any]):
-        return self.afc._runner.run(awaitable)
+    def __init__(self, manager: CrashReportsManager, host_tools: Iterable[str] = ()):
+        super().__init__(manager.afc, host_tools=host_tools)
+        self._manager = manager
 
-    def _do_parse(self, filename: Annotated[str, Arg(completer=_path_arg_completer)]) -> None:
+    @shell_command
+    async def _do_parse(self, filename: RemotePath) -> None:
         """
         Parse and print a crash report by filename.
 
         :param filename: Path to the crash report file
         """
-        print(self._run_manager(cast(CrashReportsManager, cast(Any, XSH).ctx["_manager"]).parse(filename)))
+        print(await self._manager.parse(filename))
 
-    def _do_parse_latest(
+    @shell_command
+    async def _do_parse_latest(
         self,
-        path: Annotated[str, Arg(nargs="?", completer=_path_arg_completer)] = "/",
-        match: Annotated[Optional[list[str]], Arg("--match", "-m", action="append")] = None,
-        match_insensitive: Annotated[
-            Optional[list[str]],
-            Arg("--match-insensitive", "-mi", action="append"),
-        ] = None,
-        count: Annotated[int, Arg("--count", "-n")] = 1,
+        path: RemotePath = "/",
+        *,
+        match: Annotated[Optional[list[str]], Arg("-m")] = None,
+        match_insensitive: Annotated[Optional[list[str]], Arg("-mi")] = None,
+        count: Annotated[int, Arg("-n")] = 1,
     ) -> None:
-        """Parse latest top-level crash report(s) under a path, ordered by newest first"""
-        latest_reports = self._run_manager(
-            cast(CrashReportsManager, cast(Any, XSH).ctx["_manager"]).parse_latest(
-                path=path,
-                match=match or [],
-                match_insensitive=match_insensitive or [],
-                count=count,
-            )
+        """
+        Parse latest top-level crash report(s) under a path, ordered by newest first
+
+        :param path: Directory to look for reports in
+        :param match: Only reports whose name contains this text (repeatable)
+        :param match_insensitive: Same as --match, ignoring case (repeatable)
+        :param count: How many reports to parse
+        """
+        latest_reports = await self._manager.parse_latest(
+            path=path,
+            match=match or [],
+            match_insensitive=match_insensitive or [],
+            count=count,
         )
         for report in latest_reports:
             print(report)
 
-    def _do_clear(self, path: Annotated[str, Arg(nargs="?", completer=_path_arg_completer)] = "/") -> None:
-        """Clear crash reports from the device under a path."""
-        self._run_manager(cast(CrashReportsManager, cast(Any, XSH).ctx["_manager"]).clear(path))
+    @shell_command
+    async def _do_clear(self, path: RemotePath = "/") -> None:
+        """
+        Clear crash reports from the device under a path.
+
+        :param path: Directory to clear
+        """
+        await self._manager.clear(path)
