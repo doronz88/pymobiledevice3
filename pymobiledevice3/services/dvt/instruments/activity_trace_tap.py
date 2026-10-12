@@ -302,6 +302,47 @@ def decode_message_format(message: Any, format_string: Optional[str] = None) -> 
     return s.rstrip()
 
 
+def decode_message_arguments(message: Any) -> list[dict[str, Any]]:
+    """
+    List the arguments of a row's message, without the narrative text between them.
+
+    :param message: The row's `message` column, as for `decode_message_format`.
+    :returns: One `{"type": ..., "value": ...}` per argument, in the order of the format string's conversions.
+        `type` is the device's name for it. `value` is a str for a string, an int for an integer or address
+        (unsigned 64-bit, whatever the conversion's signedness), a float for a decimal ("nan", "inf" or
+        "-inf" when it isn't finite), a hex str for data, a hyphenated str for a uuid and None for a private or
+        missing one.
+    """
+    arguments: list[dict[str, Any]] = []
+    for type_, data in message or ():
+        type_ = decode_str(type_)
+        if type_ == "narrative-text":
+            continue
+        value: Any
+        if data is None or type_ == "private":
+            value = None
+        elif type_ == "string":
+            value = decode_str(data)
+        elif type_ == "uuid":
+            halves = join_chunks(cast(list[bytes], data))[:2]
+            value = str(uuid.UUID(bytes=b"".join(half[::-1] for half in halves).ljust(16, b"\x00")))
+        elif type_ == "data":
+            length, *chunks = join_chunks(cast(list[bytes], data))
+            value = b"".join(chunks)[: int.from_bytes(length, "little")].hex()
+        elif not isinstance(data, bytes):
+            value = str(data)
+        elif "decimal" in type_:
+            value = struct.unpack("<d", data[:8].ljust(8, b"\x00"))[0]
+            if not math.isfinite(value):
+                # not a JSON number
+                value = str(value)
+        else:
+            # uint64 and its hex variants, address, errno-value, ...
+            value = int.from_bytes(data[:8], "little")
+        arguments.append({"type": type_, "value": value})
+    return arguments
+
+
 class ActivityTraceTap(Tap):
     """
     Tap the device's unified-logging / activity-trace stream over the Instruments channel.

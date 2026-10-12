@@ -14,6 +14,7 @@ from pymobiledevice3.services.dvt.instruments.activity_trace_tap import (
     CMD_SENTINEL,
     CMD_STRUCT,
     ActivityTraceTap,
+    decode_message_arguments,
     decode_message_format,
 )
 from pymobiledevice3.services.dvt.instruments.tap import TapMessageChannel
@@ -451,3 +452,40 @@ def test_arguments_of_a_framework_value_type_are_printed_like_the_device(
     conversion: str, item: bytes, expected: str
 ) -> None:
     assert formatted(f"is {conversion}", text("is "), item) == f"is {expected}"
+
+
+def test_arguments_are_listed_by_type_without_the_narrative_text() -> None:
+    items = [
+        text("pid "),
+        integer(-1),
+        text(" at "),
+        integer(0x659290A00, "address"),
+        string("launchd"),
+        double(0.25),
+        double(float("inf")),
+        message_item("private", push(b"\x00")),
+        message_item("string", op(CMD_SENTINEL)),
+        integer(3, "errno-value"),
+        uuid_item(*UUID_HALVES),
+        uuid_item(b"\x00", b"\x00"),
+        data_item(10, *UUID_HALVES),
+    ]
+    (message,) = parse(os_log_stream("pid %d at %p %s %f %f %{private}@ %@ %{errno}d %.16P %.16P %.*P", *items))
+
+    assert decode_message_arguments(message.message) == [
+        {"type": "uint64", "value": 0xFFFF_FFFF_FFFF_FFFF},
+        {"type": "address", "value": 0x659290A00},
+        {"type": "string", "value": "launchd"},
+        {"type": "fixed-decimal", "value": 0.25},
+        {"type": "fixed-decimal", "value": "inf"},
+        {"type": "private", "value": None},
+        {"type": "string", "value": None},
+        {"type": "errno-value", "value": 3},
+        {"type": "uuid", "value": "15353e6d-9b26-4ea2-aa0a-52ee4bd1fcf6"},
+        {"type": "uuid", "value": "00000000-0000-0000-0000-000000000000"},
+        {"type": "data", "value": "15353e6d9b264ea2aa0a"},
+    ]
+
+
+def test_a_row_without_a_message_has_no_arguments() -> None:
+    assert decode_message_arguments(None) == []

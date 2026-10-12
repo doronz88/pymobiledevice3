@@ -354,6 +354,9 @@ pymobiledevice3 developer dvt sysmon process monitor process --filter name=MyApp
 # Stream oslog
 pymobiledevice3 developer dvt oslog
 
+# Stream oslog as NDJSON. Each record also carries the message's format string and its arguments
+pymobiledevice3 developer dvt oslog --format json
+
 # Kill a process
 pymobiledevice3 developer dvt kill PID
 
