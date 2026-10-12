@@ -11,6 +11,7 @@ from typing import Any, Optional, Union, cast
 
 from bpylist2 import archiver
 
+from pymobiledevice3.darwin_errno import DARWIN_ERRNO_MESSAGES
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 from pymobiledevice3.services.dvt.instruments.tap import Tap
 
@@ -141,6 +142,21 @@ def value_type(specifier: re.Match[str]) -> Optional[str]:
     return types[-1] if types else None
 
 
+def format_typed_number(value: int, type_: Optional[str]) -> Optional[str]:
+    """
+    Print an integer argument the way os_log prints it for the value type of its conversion.
+
+    :returns: The printed value, or None for a type that prints as the plain number.
+    """
+    if type_ == "bool":
+        return "true" if value else "false"
+    if type_ == "BOOL":
+        return "YES" if value else "NO"
+    if type_ in ("errno", "darwin.errno"):
+        return f"[{value}: {DARWIN_ERRNO_MESSAGES.get(value, f'Unknown error: {value}')}]"
+    return None
+
+
 def join_chunks(chunks: list[bytes]) -> list[bytes]:
     """The 8-byte chunks a uuid or data item is sent in, each a push of its own, restored to 8 bytes."""
     return [chunk[:8].ljust(8, b"\x00") for chunk in chunks]
@@ -184,6 +200,8 @@ def decode_message_format(message: Any, format_string: Optional[str] = None) -> 
 
         if type_ == "address":
             type_ = "uint64-hex"
+        elif type_ == "errno-value":
+            type_ = "uint64"
 
         if type_ in ("narrative-text", "string") and data is None:
             s += "<None>"
@@ -209,7 +227,9 @@ def decode_message_format(message: Any, format_string: Optional[str] = None) -> 
             number = None
             # a pairing that doesn't fit the item's type means the items and conversions are out of step
             if specifier is not None and item_fits(type_, specifier.group(5)):
-                number = format_number(uint64, specifier)
+                number = format_typed_number(uint64, value_type(specifier))
+                if number is None:
+                    number = format_number(uint64, specifier)
             if number is not None:
                 s += number
             elif "hex" in type_:

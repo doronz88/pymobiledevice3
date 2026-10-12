@@ -407,3 +407,21 @@ def data_item(length: int, *chunks: bytes) -> bytes:
 )
 def test_uuids_and_data_are_put_back_together(format_string: str, item: bytes, expected: str) -> None:
     assert formatted(format_string, item) == expected
+
+
+@pytest.mark.parametrize(
+    ("conversion", "item", "expected"),
+    [
+        ("%{bool}d", integer(1), "true"),
+        ("%{bool,public}d", integer(0), "false"),
+        ("%{BOOL}d", integer(1), "YES"),
+        ("%{public, BOOL}u", integer(0), "NO"),
+        ("%{darwin.errno}d", integer(2), "[2: No such file or directory]"),
+        ("%{errno}d", integer(3, "errno-value"), "[3: No such process]"),
+        ("%{errno}d", integer(4096, "errno-value"), "[4096: Unknown error: 4096]"),
+        ("%{public}d", integer(-1), "-1"),
+        ("%d", integer(3, "errno-value"), "3"),
+    ],
+)
+def test_integers_are_printed_per_their_value_type(conversion: str, item: bytes, expected: str) -> None:
+    assert formatted(f"is {conversion}", text("is "), item) == f"is {expected}"
