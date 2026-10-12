@@ -63,6 +63,8 @@ class Table:
     unknown2: str
     name: str
     columns: list[Any]
+    # the class of the table's rows, built once since `make_dataclass` costs far more than parsing a row
+    row_class: Optional[type] = None
 
 
 def decode_str(s: bytes):
@@ -331,7 +333,7 @@ class ActivityTraceTap(Tap):
 
         new_item = self.stack[-distance:]
 
-        self.stack = self.stack[:-distance]
+        del self.stack[-distance:]
         self.stack.append(new_item)
 
     def _handle_define_table(self, word: int):
@@ -346,8 +348,15 @@ class ActivityTraceTap(Tap):
             unknown0=table_raw.unknown0,
             unknown2=table_raw.unknown2,
         )
+        # only the tables with a message are yielded; the rest are signpost intervals
+        if "message" in table.columns:
+            table.row_class = dataclasses.make_dataclass(
+                "message",
+                [c.replace("-", "_") for c in table.columns]
+                + [("device_time", Optional[datetime], dataclasses.field(default=None))],
+            )
 
-        self.stack = self.stack[:-distance]
+        del self.stack[-distance:]
         self.tables.append(table)
 
     def _handle_debug(self, word: int):
@@ -360,7 +369,7 @@ class ActivityTraceTap(Tap):
         assert reference == len(self.stack) - 1, (
             f"assert debug {debug_id} got reference: {hex(reference)} instead of: {len(self.stack) - 1}  {item}"
         )
-        self.stack = self.stack[:-1]
+        del self.stack[-1]
 
     def _handle_copy(self, word: int):
         """copy item at distance from stack"""
@@ -372,22 +381,19 @@ class ActivityTraceTap(Tap):
             # long struct - pop distance from stack
             item = self.stack[-1]
             reference = int.from_bytes(item, byteorder="little") - 1
-            self.stack = self.stack[:-1]
+            del self.stack[-1]
             self.stack.append(self.stack[reference])
 
     def _handle_end_row(self, word: int):
         """flush current row"""
         generation = word & 0xFF
-        columns = self.tables[generation].columns
-        row = self.stack[-len(columns) :]
-        self.stack = self.stack[: -len(columns)]
+        table = self.tables[generation]
+        row = self.stack[-len(table.columns) :]
+        del self.stack[-len(table.columns) :]
 
-        Message = dataclasses.make_dataclass(
-            "message",
-            [c.replace("-", "_") for c in columns]
-            + [("device_time", Optional[datetime], dataclasses.field(default=None))],
-        )
-        message = Message(*row)
+        if table.row_class is None:
+            return None
+        message = table.row_class(*row)
         # a pushed value loses its trailing zero bits and comes back padded to whole bytes, so an integer
         # is 2 to 9 bytes long (a thread id of 0x1000000 or more decodes to 6 bytes or more)
         message.process = 0 if message.process is None else int.from_bytes(message.process[0], "little")
@@ -407,15 +413,14 @@ class ActivityTraceTap(Tap):
                 v = getattr(message, f)
                 setattr(message, f, decode_str(v) if v else v)
 
-        if hasattr(message, "message"):
-            message.device_time = self._device_time(message.time)
-            return message
+        message.device_time = self._device_time(message.time)
+        return message
 
     def _handle_placeholder_count(self, word: int):
         """remove `count` last items from stack"""
         count = word & 0xFF
         if count > 0:
-            self.stack = self.stack[:-count]
+            del self.stack[-count:]
 
     def _handle_convert_mach_continuous(self, word: int):
         """push an item and pop it. effectively do nothing"""
