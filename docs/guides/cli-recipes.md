@@ -402,6 +402,11 @@ pymobiledevice3 developer dvt core-profile-session parse-live
 # Save KDebug events to file
 pymobiledevice3 developer dvt core-profile-session save FILENAME
 
+# Print the call stacks of every thread of every process (or of one: --process PID/NAME).
+# They are symbolicated using the Xcode device support of the device, which
+# `developer fetch-symbols download` creates; --json prints the raw stackshot instead
+pymobiledevice3 developer dvt core-profile-session stackshot --process SpringBoard
+
 # Device information
 pymobiledevice3 developer dvt device-information
 

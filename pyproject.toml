@@ -61,7 +61,7 @@ dependencies = [
     "wsproto",
     "Pillow",
     "questionary>=2.0.0",
-    "ipsw_parser>=1.8.0",
+    "ipsw_parser>=1.8.2",
     "ifaddr",
     "hyperframe",
     "srptools",
