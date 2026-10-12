@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional, cast
 
 from pymobiledevice3.services.dvt.instruments.device_support_symbols import DeviceSupportSymbols, SymbolImage
+from pymobiledevice3.services.dvt.instruments.kernel_symbols import KernelSymbols
 
 SHARED_CACHE_IMAGE_NAME = "dyld_shared_cache"
 
@@ -56,6 +57,8 @@ class StackshotThread:
     user_usec: Optional[int] = None
     system_usec: Optional[int] = None
     wait_event: int = 0
+    # The kernel function a blocked thread resumes in, which tells what it is waiting for
+    continuation: Optional[str] = None
     frames: list[StackshotFrame] = field(default_factory=list[StackshotFrame])
 
 
@@ -85,15 +88,29 @@ class _LoadedImages:
         return (self._addresses[index], self._images[index]) if index >= 0 else None
 
 
+def _kernel_load_info(stackshot: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    tasks: Mapping[Any, Mapping[str, Any]] = stackshot.get("task_snapshots", {})
+    kernel_task = next((task for pid, task in tasks.items() if int(pid) == 0), None)
+    load_info = kernel_task.get("dyld_load_info_text_exec") if kernel_task is not None else None
+    return cast(list[Mapping[str, Any]], load_info) if isinstance(load_info, list) else []
+
+
+def kernel_image_uuids(stackshot: Mapping[str, Any]) -> list[str]:
+    """Get the UUID of the kernel and of every kernel extension a stackshot was taken with."""
+    return [str(image["imageUUID"]) for image in _kernel_load_info(stackshot)]
+
+
 class _Resolver:
-    def __init__(self, stackshot: Mapping[str, Any], symbols: Optional[DeviceSupportSymbols]) -> None:
+    def __init__(
+        self,
+        stackshot: Mapping[str, Any],
+        symbols: Optional[DeviceSupportSymbols],
+        kernel_symbols: Optional[KernelSymbols],
+    ) -> None:
         self.symbols = symbols
+        self.kernel_symbols = kernel_symbols
         self.shared_cache = stackshot.get("shared_cache_dyld_load_info")
-        tasks: Mapping[Any, Mapping[str, Any]] = stackshot.get("task_snapshots", {})
-        kernel_task = next((task for pid, task in tasks.items() if int(pid) == 0), None)
-        self.kernel_images = _LoadedImages(
-            kernel_task.get("dyld_load_info_text_exec") if kernel_task is not None else None
-        )
+        self.kernel_images = _LoadedImages(_kernel_load_info(stackshot))
 
     def _symbolicate(self, frame: StackshotFrame, image: SymbolImage, address: int, lookup_delta: int) -> None:
         assert self.symbols is not None
@@ -141,14 +158,34 @@ class _Resolver:
         frame.image_offset = address - load_address
         return frame
 
-    def kernel_frame(self, address: int) -> StackshotFrame:
+    def kernel_frame(self, address: int, innermost: bool) -> StackshotFrame:
         frame = StackshotFrame(address=address, kernel=True)
         loaded = self.kernel_images.find(address)
-        if loaded is not None:
-            load_address, info = loaded
-            frame.image = str(info["imageUUID"])
-            frame.image_offset = address - load_address
+        if loaded is None:
+            return frame
+        load_address, info = loaded
+        image_uuid = str(info["imageUUID"])
+        frame.image = image_uuid
+        frame.image_offset = address - load_address
+        image = self.kernel_symbols.image_by_uuid(image_uuid) if self.kernel_symbols is not None else None
+        if image is not None:
+            assert self.kernel_symbols is not None
+            frame.image = image.name
+            lookup_delta = 0 if innermost else 1
+            # The stackshot reports where `__TEXT_EXEC` of a kernel image got loaded
+            symbol = self.kernel_symbols.symbolicate(address - load_address + image.text_exec - lookup_delta)
+            if symbol is not None:
+                frame.symbol = symbol[0]
+                frame.symbol_offset = symbol[1] + lookup_delta
         return frame
+
+    def continuation(self, address: int) -> Optional[str]:
+        if not address:
+            return None
+        frame = self.kernel_frame(address, innermost=True)
+        if frame.symbol is None:
+            return None
+        return frame.symbol if not frame.symbol_offset else f"{frame.symbol} + {frame.symbol_offset}"
 
     def thread(
         self, thread_id: int, snapshot: Mapping[str, Any], images: _LoadedImages, shared_cache: Any
@@ -167,12 +204,13 @@ class _Resolver:
             user_usec=cpu_times.get("user_usec"),
             system_usec=cpu_times.get("system_usec"),
             wait_event=int(info.get("ths_wait_event", 0)),
+            continuation=self.continuation(int(info.get("ths_continuation", 0))),
         )
         # A thread caught in the kernel has its kernel stack on top of its user stack
         for raw_frame in snapshot.get("kernel_stack_frames", []):
             address = int(raw_frame["lr"])
             if address:
-                thread.frames.append(self.kernel_frame(address))
+                thread.frames.append(self.kernel_frame(address, innermost=not thread.frames))
         innermost = not thread.frames
         for raw_frame in snapshot.get("user_stack_frames", []):
             address = int(raw_frame["lr"])
@@ -200,7 +238,9 @@ class _Resolver:
 
 
 def resolve_stackshot(
-    stackshot: Mapping[str, Any], symbols: Optional[DeviceSupportSymbols] = None
+    stackshot: Mapping[str, Any],
+    symbols: Optional[DeviceSupportSymbols] = None,
+    kernel_symbols: Optional[KernelSymbols] = None,
 ) -> list[StackshotProcess]:
     """
     Get the call stacks of every thread of every process in a stackshot.
@@ -208,6 +248,8 @@ def resolve_stackshot(
     :param stackshot: A stackshot as returned by `CoreProfileSessionTap.get_stackshot()`.
     :param symbols: Symbols of the device the stackshot was taken on. Frames are left with just
         their image offset when omitted, or when their image is not part of the symbols.
+    :param kernel_symbols: Symbols of the kernelcache the device runs. Kernel frames are left with
+        just the UUID of their image and their offset in it when omitted.
     """
-    resolver = _Resolver(stackshot, symbols)
+    resolver = _Resolver(stackshot, symbols, kernel_symbols)
     return [resolver.process(int(pid), task) for pid, task in stackshot.get("task_snapshots", {}).items()]

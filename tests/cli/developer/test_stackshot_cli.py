@@ -4,9 +4,11 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+import typer
 
 from pymobiledevice3.cli.developer.dvt import core_profile_session
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.dvt.instruments.kernel_symbols import KernelSymbols
 from pymobiledevice3.services.dvt.instruments.stackshot import StackshotFrame, StackshotProcess, StackshotThread
 
 pytestmark = [pytest.mark.cli]
@@ -75,6 +77,7 @@ def test_format_stackshot() -> None:
                 user_usec=1500000,
                 system_usec=250000,
                 wait_event=0x1234,
+                continuation="kqueue_scan_continue",
                 frames=[
                     StackshotFrame(address=0xFFFFFE0007004020, kernel=True, image="kernel-uuid", image_offset=0x20),
                     StackshotFrame(
@@ -95,7 +98,7 @@ def test_format_stackshot() -> None:
     assert core_profile_session.format_stackshot([process]).splitlines() == [
         "SpringBoard [42]  size 5.0 MB  max rss 1.5 KB  suspended x1  2 threads",
         "  Thread 514  worker  com.apple.main-thread  waiting  user-interactive  pri 47"
-        "  cpu 1.500s user, 0.250s sys  wait 0x1234",
+        "  cpu 1.500s user, 0.250s sys  wait 0x1234  continuation kqueue_scan_continue",
         "      0  kernel-uuid   0x20  (kernel)",
         "      1  libfoo.dylib  bar + 8",
         "      2  app-uuid      0x4a38",
@@ -141,3 +144,38 @@ def test_stackshot_out_writes_the_raw_stackshot(capsys: pytest.CaptureFixture[st
 
     assert json.loads(out.read_text()) == json.loads(json.dumps(STACKSHOT))
     assert capsys.readouterr().out == ""
+
+
+def test_stackshot_kernel_signatures_require_a_kernelcache(tmp_path: Path) -> None:
+    with pytest.raises(typer.BadParameter):
+        core_profile_session.stackshot(service_provider=SERVICE_PROVIDER, kernel_signatures=tmp_path)
+
+
+def test_stackshot_warns_about_a_kernelcache_the_device_does_not_run(
+    capsys: pytest.CaptureFixture[str], caplog: Any, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    kernelcache = tmp_path / "kernelcache"
+    monkeypatch.setattr(
+        core_profile_session.KernelSymbols,
+        "load",
+        classmethod(lambda cls, kernelcache, signatures=None: KernelSymbols([], {}, [])),
+    )
+
+    core_profile_session.stackshot(service_provider=SERVICE_PROVIDER, kernelcache=kernelcache)
+
+    assert "is not the kernelcache the device runs" in caplog.text
+    assert capsys.readouterr().out.startswith("launchd [1]")
+
+
+def test_stackshot_exits_nonzero_when_the_kernelcache_cannot_be_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def load(cls: object, kernelcache: Path, signatures: object = None) -> KernelSymbols:
+        raise FileNotFoundError("ipsw")
+
+    monkeypatch.setattr(core_profile_session.KernelSymbols, "load", classmethod(load))
+
+    with pytest.raises(typer.Exit) as exc_info:
+        core_profile_session.stackshot(service_provider=SERVICE_PROVIDER, kernelcache=tmp_path / "kernelcache")
+
+    assert exc_info.value.exit_code == 1

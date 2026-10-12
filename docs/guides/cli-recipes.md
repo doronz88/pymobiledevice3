@@ -407,6 +407,12 @@ pymobiledevice3 developer dvt core-profile-session save FILENAME
 # `developer fetch-symbols download` creates; --json prints the raw stackshot instead
 pymobiledevice3 developer dvt core-profile-session stackshot --process SpringBoard
 
+# Also symbolicate the kernel frames, given the kernelcache of the firmware the device runs
+# (from its IPSW) and the `kernel` directory of https://github.com/blacktop/symbolicator.
+# Requires `ipsw`; --kernelcache alone names the kernel image of each frame
+pymobiledevice3 developer dvt core-profile-session stackshot \
+    --kernelcache kernelcache.release.iphone17 --kernel-signatures symbolicator/kernel
+
 # Device information
 pymobiledevice3 developer dvt device-information
 
