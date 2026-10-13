@@ -674,3 +674,15 @@ def test_main_escapes_characters_the_console_encoding_cannot_represent(monkeypat
     # Windows text streams write \r\n; the line ending is not what this test is about.
     assert stdout_bytes.getvalue().replace(b"\r\n", b"\n") == b"syslog \\U0001f600 line\n"
     assert stderr_bytes.getvalue().replace(b"\r\n", b"\n") == b"stderr \\u2705 line\n"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [["afc", "shell"], ["crash", "shell"], ["apps", "afc", "com.example.app"]],
+    ids=["afc-shell", "crash-shell", "apps-afc"],
+)
+def test_shell_tool_option_rejects_a_missing_host_tool_before_connecting(command: list[str]) -> None:
+    result = CliRunner().invoke(__main__.app, [*command, "--tool", "pymobiledevice3-no-such-tool"])
+    assert result.exit_code == 2, result.output
+    assert "pymobiledevice3-no-such-tool: no such host tool" in ANSI_ESCAPE.sub("", result.output)
+    assert "Traceback" not in result.output

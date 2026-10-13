@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import platform
+import shutil
 import sys
 import uuid
 from collections.abc import Coroutine
@@ -283,6 +284,23 @@ WebDavMountOption = Annotated[
 WebDavHostOption = Annotated[str, typer.Option("--host", help="local interface to bind")]
 WebDavBindPortOption = Annotated[int, typer.Option("--bind-port", help="local TCP port (0 picks a free port)")]
 WebDavReadonlyOption = Annotated[bool, typer.Option("--readonly", help="expose the path read-only")]
+
+
+def _validate_shell_host_tools(tools: Optional[list[str]]) -> list[str]:
+    for tool in tools or []:
+        if shutil.which(tool) is None:
+            raise typer.BadParameter(f"{tool}: no such host tool")
+    return tools or []
+
+
+ShellHostToolsOption = Annotated[
+    Optional[list[str]],
+    typer.Option(
+        "--tool",
+        callback=_validate_shell_host_tools,
+        help="also offer this host tool as a command inside the shell, e.g. --tool jq (repeatable)",
+    ),
+]
 
 
 async def get_mobdev2_devices(udid: Optional[str] = None) -> list[TcpLockdownClient]:

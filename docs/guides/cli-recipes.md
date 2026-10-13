@@ -67,8 +67,12 @@ pymobiledevice3 pcap -i en0
 ## Files, Apps, and Backup
 
 ```shell
-# Open AFC shell (media directory)
+# Open AFC shell (media directory). Inside it, device commands pipe into host tools and
+# redirect into local files: `cat notes.txt | grep todo`, `cat photo.heic > photo.heic`
 pymobiledevice3 afc shell
+
+# Offer more host tools inside the shell (any tool also works as `!tool` without the option)
+pymobiledevice3 afc shell --tool jq --tool plutil
 
 # List installed apps
 pymobiledevice3 apps list

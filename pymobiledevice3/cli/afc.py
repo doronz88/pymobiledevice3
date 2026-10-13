@@ -6,6 +6,7 @@ from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import (
     ServiceProviderDep,
+    ShellHostToolsOption,
     WebDavBindPortOption,
     WebDavHostOption,
     WebDavMountOption,
@@ -24,9 +25,11 @@ cli = InjectingTyper(
 
 
 @cli.command("shell")
-def afc_shell(service_provider: ServiceProviderDep) -> None:
+@async_command
+async def afc_shell(service_provider: ServiceProviderDep, tool: ShellHostToolsOption = None) -> None:
     """Open an interactive AFC shell rooted at /var/mobile/Media."""
-    AfcShell.create(service_provider)
+    async with AfcService(service_provider) as afc:
+        await AfcShell(afc, host_tools=tool or []).interact()
 
 
 @cli.command("webdav")
