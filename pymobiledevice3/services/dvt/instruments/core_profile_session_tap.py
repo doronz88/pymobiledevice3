@@ -748,6 +748,9 @@ class CoreProfileSessionTap:
             ],  # Triggers configs
             "rp": 100,  # Recording priority
             "bm": 0,  # Buffer mode.
+            # Update rate (ms): how often the device flushes buffered events. Without it the device flushes
+            # only every few seconds; lower values bottom out at about 200 ms of delivery latency.
+            "ur": 100,
         }
         self._config = config
 
