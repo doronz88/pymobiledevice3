@@ -505,6 +505,12 @@ pymobiledevice3 developer core-device universal-hid-service swipe -- 100 400 700
 # Recognised lines: tap, drag, swipe, move, sleep (and # comments).
 printf 'tap 32768 32768\nsleep 0.3\ndrag 32768 5000 32768 60000\n' | \
     pymobiledevice3 developer core-device universal-hid-service session
+
+# --- keyboard (a virtual keyboard registered for the command) ---
+
+# Type text (a newline presses Return), then remove the last two characters
+pymobiledevice3 developer core-device universal-hid-service type 'Hello'
+pymobiledevice3 developer core-device universal-hid-service key backspace --count 2
 ```
 
 ### Screen streaming (HEVC video)

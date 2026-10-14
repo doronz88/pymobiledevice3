@@ -5,7 +5,7 @@ import pytest
 
 from pymobiledevice3.cli.developer import core_device
 from pymobiledevice3.remote.core_device import hid_service
-from pymobiledevice3.remote.core_device.hid_service import ASCII_TO_HID, KEY_LEFT_SHIFT
+from pymobiledevice3.remote.core_device.hid_service import ASCII_TO_HID, KEY_BACKSPACE, KEY_LEFT, KEY_LEFT_SHIFT
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 
@@ -83,3 +83,27 @@ async def test_type_does_not_pause_on_its_own(monkeypatch):
     monkeypatch.setattr(core_device.asyncio, "sleep", sleep)
     await unwrap(core_device.core_device_universal_hid_service_type)(None, "a", char_delay=0.5, inter_delay=0.25)
     assert sleeps == [0.5, 0.25]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("name", "usage", "count"), [("backspace", KEY_BACKSPACE, 3), ("left", KEY_LEFT, 1)])
+async def test_key_presses_the_named_key_count_times(monkeypatch, name, usage, count):
+    reports = []
+
+    class Keyboard:
+        async def create_keyboard_service(self):
+            return 1
+
+        async def send_keyboard(self, service_id, usages):
+            assert service_id == 1
+            reports.append(tuple(usages))
+
+    @asynccontextmanager
+    async def session(provider):
+        yield Keyboard()
+
+    monkeypatch.setattr(core_device, "touch_session", session)
+    await unwrap(core_device.core_device_universal_hid_service_key)(
+        None, core_device.KeyName(name), count=count, char_delay=0, inter_delay=0
+    )
+    assert reports == [(usage,), ()] * count

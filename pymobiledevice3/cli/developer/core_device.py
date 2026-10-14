@@ -26,7 +26,15 @@ from pymobiledevice3.remote.core_device.hid_service import (
     HID_BUTTON_STATE_CANCELED,
     HID_BUTTON_STATE_DOWN,
     HID_BUTTON_STATE_UP,
+    KEY_BACKSPACE,
+    KEY_DOWN,
+    KEY_ENTER,
+    KEY_ESC,
+    KEY_LEFT,
     KEY_LEFT_SHIFT,
+    KEY_RIGHT,
+    KEY_TAB,
+    KEY_UP,
     TOUCHSCREEN_STATE_CONTACT,
     TOUCHSCREEN_STATE_RELEASE,
     IndigoHIDService,
@@ -882,7 +890,9 @@ async def core_device_universal_hid_service_session(
 @async_command
 async def core_device_universal_hid_service_type(
     service_provider: RSDServiceProviderDep,
-    text: Annotated[str, typer.Argument(help="Text to type (printable ASCII)")],
+    text: Annotated[
+        str, typer.Argument(help="Text to type (printable ASCII; a newline presses Return and a tab presses Tab)")
+    ],
     char_delay: Annotated[
         float,
         typer.Option("--char-delay", help="Seconds between key down and key up"),
@@ -913,6 +923,59 @@ async def core_device_universal_hid_service_type(
                 await asyncio.sleep(char_delay)
             usages = (KEY_LEFT_SHIFT, usage) if needs_shift else (usage,)
             await service.send_keyboard(kb_service_id, usages)
+            await asyncio.sleep(char_delay)
+            await service.send_keyboard(kb_service_id, ())
+            await asyncio.sleep(inter_delay)
+
+
+class KeyName(str, Enum):
+    """Named keys for ``key``; ``_NAMED_KEYS`` maps each to its HID Keyboard usage."""
+
+    BACKSPACE = "backspace"
+    ENTER = "enter"
+    ESCAPE = "escape"
+    TAB = "tab"
+    LEFT = "left"
+    RIGHT = "right"
+    UP = "up"
+    DOWN = "down"
+
+    def usage(self) -> int:
+        return _NAMED_KEYS[self]
+
+
+_NAMED_KEYS: dict[KeyName, int] = {
+    KeyName.BACKSPACE: KEY_BACKSPACE,
+    KeyName.ENTER: KEY_ENTER,
+    KeyName.ESCAPE: KEY_ESC,
+    KeyName.TAB: KEY_TAB,
+    KeyName.LEFT: KEY_LEFT,
+    KeyName.RIGHT: KEY_RIGHT,
+    KeyName.UP: KEY_UP,
+    KeyName.DOWN: KEY_DOWN,
+}
+
+
+@universal_hid_service_cli.command("key")
+@async_command
+async def core_device_universal_hid_service_key(
+    service_provider: RSDServiceProviderDep,
+    name: Annotated[KeyName, typer.Argument(help="Named key (backspace, enter, left, ...)")],
+    count: Annotated[int, typer.Option("--count", min=1, help="How many times to press it")] = 1,
+    char_delay: Annotated[
+        float,
+        typer.Option("--char-delay", help="Seconds between key down and key up"),
+    ] = 0.04,
+    inter_delay: Annotated[
+        float,
+        typer.Option("--inter-delay", help="Seconds between presses"),
+    ] = 0.02,
+) -> None:
+    """Press a named key ``COUNT`` times on the device via the same virtual keyboard as ``type``."""
+    async with touch_session(service_provider) as service:
+        kb_service_id = await service.create_keyboard_service()
+        for _ in range(count):
+            await service.send_keyboard(kb_service_id, (name.usage(),))
             await asyncio.sleep(char_delay)
             await service.send_keyboard(kb_service_id, ())
             await asyncio.sleep(inter_delay)
