@@ -636,6 +636,10 @@ class KdBufStream:
         return self.current_chunk.seek(offset, whence)
 
     def read(self, size: int):
+        # A kd_buf record never spans two chunks: every data chunk holds whole 64-byte records, and the
+        # header chunk (a fixed 1 MiB buffer) ends in threadmap slack that is not a multiple of 64 bytes.
+        # A read that does not fit in the current chunk therefore drops its short remainder and restarts
+        # at the next chunk's first record, which keeps the record stream aligned.
         while size > len(self.current_chunk.getbuffer()) - self.current_chunk.tell():
             data = self.chunk_queue.get()
             if isinstance(data, Exception):
