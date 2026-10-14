@@ -720,13 +720,20 @@ class CoreProfileSessionTap:
     IDENTIFIER = CoreProfileSessionTapService.IDENTIFIER
 
     def __init__(
-        self, dvt: DtxServiceProvider, time_config: dict[str, typing.Any], filters: typing.Optional[set[int]] = None
+        self,
+        dvt: DtxServiceProvider,
+        time_config: dict[str, typing.Any],
+        filters: typing.Optional[set[int]] = None,
+        sample_callstacks: bool = True,
     ):
         """
         :param dvt: Instruments service proxy.
         :param time_config: Timing information - numer, denom, mach_absolute_time and matching usecs_since_epoch,
         timezone.
         :param filters: Event filters to include, Include all if empty.
+        :param sample_callstacks: Sample a user callstack on the filtered events. This also makes the device add
+            MACH scheduler events to the trace and emit kperf sample events, which can outnumber the requested
+            events by 10x and make the device drop some of them; pass ``False`` to trace only the filtered events.
         """
         self._provider = dvt
         self._channel: typing.Optional[CoreProfileSessionTapChannel] = None
@@ -736,16 +743,20 @@ class CoreProfileSessionTap:
 
         if filters is None:
             filters = {0xFFFFFFFF}
+        trigger: dict[str, typing.Any] = {
+            "kdf2": filters,  # Kdebug filter: (class << 24) | (subclass << 16), subclass 0xFF for a whole class.
+            # Actions; [0] and [2] are no-ops that Instruments always sends.
+            "ta": [[0], [2]],
+            "tk": 3,  # Kind: kdebug trigger.
+            "uuid": self.uuid,
+        }
+        if sample_callstacks:
+            # [3]: sample on the default backtrace events of the filter (adds MACH scheduler events to the
+            # trace), [1, 1, 0]: collect user (not kernel) callstacks of up to 128 frames.
+            trigger["ta"] = [[3], [0], [2], [1, 1, 0]]
+            trigger["csd"] = 128
         config: dict[str, typing.Any] = {
-            "tc": [
-                {
-                    "csd": 128,  # Callstack frame depth.
-                    "kdf2": filters,  # Kdebug filter, receive all classes.
-                    "ta": [[3], [0], [2], [1, 1, 0]],  # Actions.
-                    "tk": 3,  # Kind.
-                    "uuid": self.uuid,
-                }
-            ],  # Triggers configs
+            "tc": [trigger],  # Triggers configs
             "rp": 100,  # Recording priority
             "bm": 0,  # Buffer mode.
             # Update rate (ms): how often the device flushes buffered events. Without it the device flushes

@@ -203,7 +203,7 @@ async def live_profile_session(
         parser.mach_absolute_time = time_config["mach_absolute_time"]
         parser.usecs_since_epoch = time_config["usecs_since_epoch"]
         parser.timezone = time_config["timezone"]
-        async with CoreProfileSessionTap(dvt, time_config, filters) as tap:
+        async with CoreProfileSessionTap(dvt, time_config, filters, sample_callstacks=False) as tap:
             chunk_queue: queue.Queue[Any] = queue.Queue()
             stream = tap.get_kdbuf_stream(chunk_queue)
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
@@ -505,7 +505,7 @@ async def parse_live_profile_session(
         enable_color = user_requested_colored_output()
         parser.color = enable_color and color_mode == TraceColorMode.RICH
 
-        async with CoreProfileSessionTap(dvt, time_config, filters) as tap:
+        async with CoreProfileSessionTap(dvt, time_config, filters, sample_callstacks=False) as tap:
             if show_tid:
                 print("{:^32}|{:^11}|{:^33}|   Event".format("Time", "Thread", "Process"))
             else:

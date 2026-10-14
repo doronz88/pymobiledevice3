@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from bpylist2 import archiver
@@ -54,3 +54,16 @@ async def test_stackshot_times_out_without_stackshot_data() -> None:
 
     with pytest.raises(ExtractingStackshotError, match="timed out waiting for stackshot data"):
         await tap.get_stackshot(timeout=0.01)
+
+
+def test_tap_samples_callstacks_only_when_asked() -> None:
+    def trigger(**kwargs: Any) -> dict[str, Any]:
+        tap = CoreProfileSessionTap(cast(DtxServiceProvider, None), {}, {0x040C0000}, **kwargs)
+        assert tap._config["ur"] == 100
+        return tap._config["tc"][0]
+
+    sampling = trigger()
+    assert sampling["ta"] == [[3], [0], [2], [1, 1, 0]] and sampling["csd"] == 128
+    plain = trigger(sample_callstacks=False)
+    assert plain["ta"] == [[0], [2]] and "csd" not in plain
+    assert plain["kdf2"] == {0x040C0000}
