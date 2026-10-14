@@ -488,6 +488,13 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         display_name="iPhone 18 Pro Max (US)",
     ),
     IRecvDevice(
+        product_type="iPhone19,4",
+        hardware_model="v68ap",
+        board_id=0x0E,
+        chip_id=0x8160,
+        display_name="iPhone Duo",
+    ),
+    IRecvDevice(
         product_type="iPhone19,7",
         hardware_model="v64sap",
         board_id=0x12,
