@@ -44,6 +44,8 @@ logger = logging.getLogger(__name__)
 BSC_SUBCLASS = 0x40C
 BSC_CLASS = 0x4
 VFS_AND_TRACES_SET = {0x03010000, 0x07FF0000}
+# How far (in seconds) parse-live may fall behind the device before it skips ahead to recent events.
+PARSE_LIVE_MAX_LAG = 2.0
 
 
 cli = InjectingTyper(
@@ -481,6 +483,13 @@ async def parse_live_profile_session(
             case_sensitive=False,
         ),
     ] = TraceColorMode.FAST,
+    skip_behind: Annotated[
+        bool,
+        typer.Option(
+            help=f"Skip ahead to recent events whenever output falls more than {PARSE_LIVE_MAX_LAG:g}s behind the "
+            "device. Without class/subclass filters the device can emit events faster than they can be parsed.",
+        ),
+    ] = True,
 ) -> None:
     """Print traces (syscalls, thread events, etc.) received from the device in real time."""
     async with DvtProvider(service_provider) as dvt:
@@ -511,8 +520,16 @@ async def parse_live_profile_session(
             else:
                 print("{:^32}|{:^33}|   Event".format("Time", "Process"))
 
+            def _warn_skipped(events: int, lag: float) -> None:
+                logger.warning(
+                    f"Skipped {events} events to catch up ({lag:.1f}s behind); "
+                    "narrow the trace with --class-filters/--subclass-filters/--bsc to see every event"
+                )
+
             chunk_queue: queue.Queue[Any] = queue.Queue()
-            stream = tap.get_kdbuf_stream(chunk_queue)
+            stream = tap.get_kdbuf_stream(
+                chunk_queue, max_lag=PARSE_LIVE_MAX_LAG if skip_behind else None, on_skip=_warn_skipped
+            )
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
             def _print_traces() -> None:
