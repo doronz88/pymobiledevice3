@@ -553,7 +553,7 @@ def format_callstack(callstack: str, dsc_uuid_map: dict[str, dict[str, str]], cu
 @async_command
 async def callstacks_live_profile_session(
     service_provider: ServiceProviderDep,
-    count: Count = -1,
+    count: Count = None,
     process: Annotated[
         Optional[str],
         typer.Option(help="Process ID / name to filter. Omit for all."),
