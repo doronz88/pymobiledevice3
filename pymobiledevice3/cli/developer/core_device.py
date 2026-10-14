@@ -929,7 +929,7 @@ async def core_device_universal_hid_service_type(
 
 
 class KeyName(str, Enum):
-    """Keys that ``type`` cannot send; ``_NAMED_KEYS`` maps each to its HID Keyboard usage."""
+    """Named keys for ``key``; ``_NAMED_KEYS`` maps each to its HID Keyboard usage."""
 
     BACKSPACE = "backspace"
     ENTER = "enter"
