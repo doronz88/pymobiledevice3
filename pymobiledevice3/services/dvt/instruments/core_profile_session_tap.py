@@ -1,5 +1,6 @@
 import asyncio
 import queue
+import struct
 import time
 import typing
 import uuid
@@ -624,10 +625,42 @@ def jsonify_parsed_stackshot(
 STACKSHOT_HEADER = Int32ul.build(int(kcdata_types_enum.KCDATA_BUFFER_BEGIN_STACKSHOT))
 
 
+KD_BUF_SIZE = 64
+
+
 class KdBufStream:
-    def __init__(self, chunk_queue: queue.Queue[typing.Any]):
+    """
+    File-like view over the kd_buf chunks queued by `CoreProfileSessionTap.pump_kdbuf_chunks`.
+
+    :param chunk_queue: Queue being fed by `pump_kdbuf_chunks`.
+    :param max_lag: Skip whole chunks whose newest event is more than this many seconds behind real time, so
+        a reader slower than the device catches up instead of falling ever further behind. `None` never skips.
+        The lag is measured against the smallest lag seen so far, which absorbs the delivery delay and any
+        device/host clock offset. The first (header) chunk is never skipped.
+    :param event_seconds: Converts a kd_buf timestamp (mach ticks) to seconds; required with `max_lag`.
+    :param on_skip: Called with the number of skipped events and how far behind the stream was, once per
+        catch-up.
+    """
+
+    def __init__(
+        self,
+        chunk_queue: queue.Queue[typing.Any],
+        max_lag: typing.Optional[float] = None,
+        event_seconds: typing.Optional[typing.Callable[[int], float]] = None,
+        on_skip: typing.Optional[typing.Callable[[int, float], None]] = None,
+    ):
+        if max_lag is not None and event_seconds is None:
+            raise ValueError("max_lag requires event_seconds")
         self.chunk_queue = chunk_queue
         self.current_chunk = BytesIO()
+        self.max_lag = max_lag
+        self.event_seconds = event_seconds
+        self.on_skip = on_skip
+        self.skipped_events = 0
+        self._started = False
+        self._min_offset: typing.Optional[float] = None  # smallest (host clock - event clock) seen
+        self._skipping = 0  # events skipped in the current catch-up
+        self._skipping_lag = 0.0
 
     def tell(self):
         return self.current_chunk.tell()
@@ -650,10 +683,38 @@ class KdBufStream:
                 continue
             if data.startswith(STACKSHOT_HEADER):
                 continue
-            else:
-                self.current_chunk = BytesIO(data)
+            if self._started and self._is_behind(data):
+                continue
+            self._started = True
+            self._report_skip()
+            self.current_chunk = BytesIO(data)
 
         return self.current_chunk.read(size)
+
+    def _is_behind(self, data: bytes) -> bool:
+        """Whether this data chunk's newest event is more than `max_lag` behind; counts it as skipped if so."""
+        if self.max_lag is None or len(data) < KD_BUF_SIZE:
+            return False
+        assert self.event_seconds is not None
+        newest = struct.unpack_from("<Q", data, len(data) - KD_BUF_SIZE)[0]
+        offset = time.monotonic() - self.event_seconds(newest)
+        if self._min_offset is None or offset < self._min_offset:
+            self._min_offset = offset
+        lag = offset - self._min_offset
+        if lag <= self.max_lag:
+            return False
+        self._skipping += len(data) // KD_BUF_SIZE
+        self._skipping_lag = max(self._skipping_lag, lag)
+        return True
+
+    def _report_skip(self) -> None:
+        if not self._skipping:
+            return
+        self.skipped_events += self._skipping
+        if self.on_skip is not None:
+            self.on_skip(self._skipping, self._skipping_lag)
+        self._skipping = 0
+        self._skipping_lag = 0.0
 
 
 class CoreProfileSessionTapService(DTXService):
@@ -740,6 +801,7 @@ class CoreProfileSessionTap:
             events by 10x and make the device drop some of them; pass ``False`` to trace only the filtered events.
         """
         self._provider = dvt
+        self.time_config = time_config
         self._channel: typing.Optional[CoreProfileSessionTapChannel] = None
         self.channel: typing.Optional[TapMessageChannel] = None
         self.stack_shot: typing.Optional[dict[str, typing.Any]] = None
@@ -907,14 +969,30 @@ class CoreProfileSessionTap:
         finally:
             chunk_queue.put(None)
 
-    def get_kdbuf_stream(self, chunk_queue: queue.Queue[typing.Any]):
+    def get_kdbuf_stream(
+        self,
+        chunk_queue: queue.Queue[typing.Any],
+        max_lag: typing.Optional[float] = None,
+        on_skip: typing.Optional[typing.Callable[[int, float], None]] = None,
+    ) -> KdBufStream:
         """
         Wrap a chunk queue in a file-like `KdBufStream` for reading the kd_buf trace.
 
         :param chunk_queue: Queue being fed by `pump_kdbuf_chunks`.
+        :param max_lag: Skip events more than this many seconds behind real time (see `KdBufStream`); needs the
+            ``numer``/``denom`` timebase in this tap's ``time_config``. `None` never skips.
+        :param on_skip: Called with the number of skipped events and the lag in seconds, once per catch-up.
         :returns: A seekable, readable stream over the queued kd_buf chunks.
         """
-        return KdBufStream(chunk_queue)
+        event_seconds: typing.Optional[typing.Callable[[int], float]] = None
+        if max_lag is not None:
+            seconds_per_tick = int(self.time_config["numer"]) / int(self.time_config["denom"]) / 1e9
+
+            def ticks_to_seconds(timestamp: int) -> float:
+                return timestamp * seconds_per_tick
+
+            event_seconds = ticks_to_seconds
+        return KdBufStream(chunk_queue, max_lag=max_lag, event_seconds=event_seconds, on_skip=on_skip)
 
     @staticmethod
     def parse_stackshot(data: bytes) -> dict[str, typing.Any]:
