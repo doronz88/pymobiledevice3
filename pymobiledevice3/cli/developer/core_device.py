@@ -882,7 +882,9 @@ async def core_device_universal_hid_service_session(
 @async_command
 async def core_device_universal_hid_service_type(
     service_provider: RSDServiceProviderDep,
-    text: Annotated[str, typer.Argument(help="Text to type (printable ASCII)")],
+    text: Annotated[
+        str, typer.Argument(help="Text to type (printable ASCII; a newline presses Return and a tab presses Tab)")
+    ],
     char_delay: Annotated[
         float,
         typer.Option("--char-delay", help="Seconds between key down and key up"),
