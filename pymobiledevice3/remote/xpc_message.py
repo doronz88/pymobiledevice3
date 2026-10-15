@@ -311,23 +311,25 @@ def _build_xpc_file_transfer(payload: FileTransferType) -> XpcObject:
 def _build_xpc_object(payload: Any) -> XpcObject:
     if payload is None:
         return XpcObject(XpcMessageType.NULL)
-    payload_builders: dict[Any, Callable[[Any], XpcObject]] = {
-        list: _build_xpc_array,
-        dict: _build_xpc_dictionary,
-        bool: lambda value: XpcObject(XpcMessageType.BOOL, int(value)),
-        str: lambda value: XpcObject(XpcMessageType.STRING, value),
-        bytes: lambda value: XpcObject(XpcMessageType.DATA, value),
-        bytearray: lambda value: XpcObject(XpcMessageType.DATA, bytes(value)),
-        float: lambda value: XpcObject(XpcMessageType.DOUBLE, value),
-        uuid.UUID: lambda value: XpcObject(XpcMessageType.UUID, value.bytes),
-        FileTransferType: _build_xpc_file_transfer,
-        "XpcUInt64Type": lambda value: XpcObject(XpcMessageType.UINT64, int(value)),
-        "XpcInt64Type": lambda value: XpcObject(XpcMessageType.INT64, int(value)),
-    }
-    builder = payload_builders.get(type(payload), payload_builders.get(type(payload).__name__))
+    builder = _PAYLOAD_BUILDERS.get(type(payload)) or _PAYLOAD_BUILDERS.get(type(payload).__name__)
     if builder is None:
         raise TypeError(f"unrecognized type for: {payload} {type(payload)}")
     return builder(payload)
+
+
+_PAYLOAD_BUILDERS: dict[Any, Callable[[Any], XpcObject]] = {
+    list: _build_xpc_array,
+    dict: _build_xpc_dictionary,
+    bool: lambda value: XpcObject(XpcMessageType.BOOL, int(value)),
+    str: lambda value: XpcObject(XpcMessageType.STRING, value),
+    bytes: lambda value: XpcObject(XpcMessageType.DATA, value),
+    bytearray: lambda value: XpcObject(XpcMessageType.DATA, bytes(value)),
+    float: lambda value: XpcObject(XpcMessageType.DOUBLE, value),
+    uuid.UUID: lambda value: XpcObject(XpcMessageType.UUID, value.bytes),
+    FileTransferType: _build_xpc_file_transfer,
+    "XpcUInt64Type": lambda value: XpcObject(XpcMessageType.UINT64, int(value)),
+    "XpcInt64Type": lambda value: XpcObject(XpcMessageType.INT64, int(value)),
+}
 
 
 def create_xpc_wrapper(d: dict[str, Any], message_id: int = 0, wanting_reply: bool = False) -> bytes:
