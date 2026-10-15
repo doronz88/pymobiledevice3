@@ -2,7 +2,7 @@ import struct
 
 import pytest
 
-from pymobiledevice3.binary import encode_utf8_cstring
+from pymobiledevice3.binary import CSTRING
 from pymobiledevice3.exceptions import BinaryBuildError, TruncatedDataError, UnexpectedConstantError
 from pymobiledevice3.services.afc import (
     AFCMAGIC,
@@ -42,9 +42,9 @@ def test_unknown_opcode_and_status_still_parse() -> None:
 def test_request_bodies() -> None:
     assert AfcFileSeekRequest(3, 1, -2).build() == struct.pack("<QQq", 3, 1, -2)
     with pytest.raises(BinaryBuildError):
-        encode_utf8_cstring("a\0b")  # a rename source would make the device rename "a" to "b"
+        CSTRING.build("a\0b")  # a rename source would make the device rename "a" to "b"
     with pytest.raises(BinaryBuildError):
-        encode_utf8_cstring("\udcff")
+        CSTRING.build("\udcff")
 
 
 def test_read_dir_response_stops_at_an_undecodable_tail() -> None:

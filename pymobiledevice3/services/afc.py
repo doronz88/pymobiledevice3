@@ -33,6 +33,7 @@ from pygnuutils.ls import Ls, LsStub
 from tqdm.auto import tqdm
 
 from pymobiledevice3.binary import (
+    CSTRING,
     U64_LE,
     BinaryStruct,
     ByteReader,
@@ -40,7 +41,6 @@ from pymobiledevice3.binary import (
     BytesLike,
     Const,
     OpenIntEnum,
-    encode_utf8_cstring,
     i64,
     u64,
 )
@@ -206,27 +206,21 @@ class AfcReadDirResponse:
         filenames: list[str] = []
         with contextlib.suppress(BinaryParseError):
             while reader.remaining:
-                filenames.append(reader.read_utf8_cstring())
+                filenames.append(CSTRING.read(reader))
         return cls(filenames)
 
 
 @dataclass
-class AfcMakeLinkRequest:
-    type: AfcLinkType
-    target: str
-    source: str
-
-    def build(self) -> bytes:
-        return U64_LE.pack(self.type) + encode_utf8_cstring(self.target) + encode_utf8_cstring(self.source)
+class AfcMakeLinkRequest(BinaryStruct, byte_order="<"):
+    type: Annotated[AfcLinkType, u64]
+    target: Annotated[str, CSTRING]
+    source: Annotated[str, CSTRING]
 
 
 @dataclass
-class AfcFopenRequest:
-    mode: AfcFopenMode
-    filename: str
-
-    def build(self) -> bytes:
-        return U64_LE.pack(self.mode) + encode_utf8_cstring(self.filename)
+class AfcFopenRequest(BinaryStruct, byte_order="<"):
+    mode: Annotated[AfcFopenMode, u64]
+    filename: Annotated[str, CSTRING]
 
 
 @dataclass
@@ -647,7 +641,7 @@ class AfcService(LockdownService):
         :raises AfcException: if the removal fails and ``force`` is False.
         """
         try:
-            await self._do_operation(AfcOpcode.REMOVE_PATH, encode_utf8_cstring(filename), filename)
+            await self._do_operation(AfcOpcode.REMOVE_PATH, CSTRING.build(filename), filename)
         except AfcException:
             if force:
                 return False
@@ -737,7 +731,7 @@ class AfcService(LockdownService):
         :raises AfcFileNotFoundError: if the path does not exist.
         :raises AfcException: if the path is not a directory or cannot be listed.
         """
-        data = await self._do_operation(AfcOpcode.READ_DIR, encode_utf8_cstring(filename), filename)
+        data = await self._do_operation(AfcOpcode.READ_DIR, CSTRING.build(filename), filename)
         return AfcReadDirResponse.parse(data).filenames[2:]  # skip the . and ..
 
     @path_to_str()
@@ -751,7 +745,7 @@ class AfcService(LockdownService):
         :return: Raw response payload from the operation (typically empty).
         :raises AfcException: if the directory could not be created.
         """
-        return await self._do_operation(AfcOpcode.MAKE_DIR, encode_utf8_cstring(filename), filename)
+        return await self._do_operation(AfcOpcode.MAKE_DIR, CSTRING.build(filename), filename)
 
     @path_to_str()
     async def isdir(self, filename: str) -> bool:
@@ -785,7 +779,7 @@ class AfcService(LockdownService):
         """
         try:
             stat: dict[str, Any] = list_to_dict(
-                await self._do_operation(AfcOpcode.GET_FILE_INFO, encode_utf8_cstring(filename), filename)
+                await self._do_operation(AfcOpcode.GET_FILE_INFO, CSTRING.build(filename), filename)
             )
         except AfcException as e:
             if e.status != AfcError.READ_ERROR:
@@ -897,7 +891,7 @@ class AfcService(LockdownService):
         try:
             await self._do_operation(
                 AfcOpcode.RENAME_PATH,
-                encode_utf8_cstring(source) + encode_utf8_cstring(target),
+                CSTRING.build(source) + CSTRING.build(target),
             )
         except AfcException as e:
             if await self.exists(source):
