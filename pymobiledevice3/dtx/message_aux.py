@@ -1,13 +1,14 @@
-import io
 import logging
 from collections.abc import Mapping
 from typing import Any, Union, cast
 
 from bpylist2 import archiver
-from construct import Bytes, ConstructError, Container, Peek
+
+from pymobiledevice3.binary import BytesLike
+from pymobiledevice3.exceptions import BinaryBuildError, BinaryParseError
 
 from . import ns_types as _ns_types
-from .primitives import PNULL, PBuf, PDict, PInt64, PStr, _primitive_value_con, _PrimitiveBase
+from .primitives import PNULL, PBuf, PDict, PInt64, PStr, _PrimitiveBase, build_primitive, parse_primitive
 
 # Register the NSKeyedArchive proxy classes eagerly (see the identical call in dtx/message.py):
 # a bare side-effect import is unsafe under PEP 810 lazy imports, and archiver.unarchive() is
@@ -15,26 +16,23 @@ from .primitives import PNULL, PBuf, PDict, PInt64, PStr, _primitive_value_con, 
 _ns_types.register_ns_keyed_classes()
 
 logger = logging.getLogger(__name__)
-_test_eof = Peek(Bytes(1))
 
 
 class MessageAux(list[Any]):
     """An adapter that parse DISPTACH arguments from/to primitive dictionaries"""
 
     @classmethod
-    def parse(cls, obj: Union[bytes, bytearray, memoryview], context: Any, path: str) -> list[Any]:
+    def parse(cls, obj: BytesLike) -> list[Any]:
         if len(obj) == 0:
             # interpret empty buffers as an empty list
             return []
-        stream = io.BytesIO(obj)
-        primitive_dict = _primitive_value_con._parse(stream, context, f"{path}.aux")
+        primitive_dict = parse_primitive(obj)
         if not isinstance(primitive_dict, dict):
-            raise ConstructError(
-                f"Expected a dictionary for MessageAux, got {type(primitive_dict).__name__}", path=path
-            )
+            raise BinaryParseError(f"expected a dictionary, got {type(primitive_dict).__name__}", record="MessageAux")
         if len(cast(Any, primitive_dict)) != 1 or not isinstance(cast(Any, primitive_dict).get(PNULL), list):
-            raise ConstructError(
-                f"Expected a dictionary with a single PNULL key mapping to a list, got {primitive_dict}", path=path
+            raise BinaryParseError(
+                f"expected a dictionary with a single PNULL key mapping to a list, got {primitive_dict}",
+                record="MessageAux",
             )
         converted_list: list[Any] = []
         for arg in cast(list[Any], primitive_dict[PNULL]):
@@ -55,14 +53,12 @@ class MessageAux(list[Any]):
                     try:
                         converted_list.append(archiver.unarchive(arg))
                     except Exception as e:
-                        raise ConstructError(
-                            f"Failed to unarchive argument from buffer: {e}, buf={arg!r}", path=path
-                        ) from e
+                        raise BinaryParseError(f"Failed to unarchive argument from buffer: {e}, buf={arg!r}") from e
 
         return converted_list
 
     @classmethod
-    def build(cls, obj: Any, context: Any, path: str) -> bytes:
+    def build(cls, obj: Any) -> bytes:
         if not obj:
             # nothing is written ¯\_(ツ)_/¯
             return b""
@@ -78,14 +74,11 @@ class MessageAux(list[Any]):
                 try:
                     converted_list.append(PBuf(archiver.archive(arg)))
                 except Exception as e:
-                    raise ConstructError(
-                        f"Failed to archive argument {arg} of type <{type(arg).__name__}>: {e}", path=path
+                    raise BinaryBuildError(
+                        f"Failed to archive argument {arg} of type <{type(arg).__name__}>: {e}"
                     ) from e
 
-        pdict = PDict({PNULL: converted_list})
-        stream = io.BytesIO()
-        _primitive_value_con._build(pdict, stream, context, f"{path}.aux")
-        return stream.getvalue()
+        return build_primitive(PDict({PNULL: converted_list}))
 
 
 def build_keyed_aux(values: Mapping[str, Union[str, int]]) -> bytes:
@@ -94,6 +87,4 @@ def build_keyed_aux(values: Mapping[str, Union[str, int]]) -> bytes:
     for key, value in values.items():
         # The receiver reads keys and string values as C strings, so they carry their terminator.
         pdict[PStr(f"{key}\0")] = [PStr(f"{value}\0") if isinstance(value, str) else PInt64(value)]
-    stream = io.BytesIO()
-    _primitive_value_con._build(pdict, stream, cast(Any, Container()), "aux")
-    return stream.getvalue()
+    return build_primitive(pdict)

@@ -5,9 +5,7 @@ This module contains the core DTX wire format components:
 - Protocol constants (magic numbers, size limits).
 - :class:`DTXMessageType` and :class:`DTXTransportFlags` enumerations.
 - :class:`DTXProtocolError` and :class:`DTXNsError` exception classes.
-- Construct ``Struct`` definitions for the fragment header and payload header.
 - :class:`DTXMessage` dataclass for a fully assembled message ready for dispatch.
-- Construct-based codecs: :data:`_dtx_payload`, :data:`_dtx_aux_args`, :data:`_dtx_message`.
 
 Fragment types (:class:`~.fragment.DTXFragment`, :class:`~.fragment.DTXFragmenter`)
 and :data:`~.fragment.MAX_FRAGMENT_SIZE` live in :mod:`.fragment`.
@@ -32,7 +30,6 @@ from .structs import (
     MESSAGE_PAYLOAD_HEADER_SIZE,
     DtxFragmentPayloadHeader,
     DTXMessageType,
-    dtx_fragment_payload_header,
 )
 
 # Register the NSKeyedArchive proxy classes eagerly. This must be an explicit call,
@@ -82,7 +79,7 @@ class DTXMessage:
         """Decoded auxiliary arguments (lazy, cached)."""
         if self._aux_cache is None and self._aux_decode_exception is None:
             try:
-                self._aux_cache = MessageAux.parse(self.aux_data, {}, "aux_data")
+                self._aux_cache = MessageAux.parse(self.aux_data)
             except Exception as e:
                 self._aux_decode_exception = e
         if self._aux_decode_exception is not None:
@@ -98,7 +95,7 @@ class DTXMessage:
         """Set the auxiliary arguments to *args*, updating the underlying aux_data bytes."""
         buf = b""
         try:
-            buf = MessageAux.build(args, {}, "aux")  # validate the args before building the final buffer
+            buf = MessageAux.build(args)  # validate the args before building the final buffer
         except Exception as e:
             raise DTXNSCodingError(f"Failed to encode DTX aux args object with PrimitiveDictionary: {args!r}") from e
         self.aux_data = memoryview(buf)
@@ -157,7 +154,7 @@ class DTXMessage:
                 f"Fragment {first_fragment.index} of message {first_fragment.identifier} declares data_size {first_fragment.data_size} smaller than MESSAGE_PAYLOAD_HEADER_SIZE {MESSAGE_PAYLOAD_HEADER_SIZE}"
             )
 
-        header = dtx_fragment_payload_header.parse(mv[:MESSAGE_PAYLOAD_HEADER_SIZE])
+        header = DtxFragmentPayloadHeader.parse(mv[:MESSAGE_PAYLOAD_HEADER_SIZE])
         if header.total_size != first_fragment.data_size - MESSAGE_PAYLOAD_HEADER_SIZE:
             raise DTXProtocolError(
                 f"Message {first_fragment.identifier} declares inconsistent sizes: fragment={first_fragment!r}, payload header {header!r}"
@@ -209,17 +206,15 @@ class DTXMessage:
 
         return [
             memoryview(
-                dtx_fragment_payload_header.build(
-                    DtxFragmentPayloadHeader(
-                        msg_type=int(self.type),
-                        flags_a=0,
-                        flags_b=0,
-                        reserved=0,
-                        aux_size=len(self.aux_data),
-                        total_size=len(self.aux_data) + len(self.payload_data),
-                        flags=int(self.flags),
-                    )
-                )
+                DtxFragmentPayloadHeader(
+                    msg_type=int(self.type),
+                    flags_a=0,
+                    flags_b=0,
+                    reserved=0,
+                    aux_size=len(self.aux_data),
+                    total_size=len(self.aux_data) + len(self.payload_data),
+                    flags=int(self.flags),
+                ).build()
             ),
             self.aux_data,
             self.payload_data,

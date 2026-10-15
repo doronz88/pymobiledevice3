@@ -1,10 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum, IntFlag
+from typing import Annotated
 
-from construct import Int8ul, Int16ul, Int32sl, Int32ul
-from construct_typed import DataclassMixin, DataclassStruct, csfield
-
-from pymobiledevice3.construct_compat import const_field
+from pymobiledevice3.binary import BinaryStruct, Const, i32, u8, u16, u32
 
 # ---------------------------------------------------------------------------
 # Protocol constants
@@ -49,59 +47,42 @@ class DTXMessageType(IntEnum):
 
 
 # ---------------------------------------------------------------------------
-# Construct structs
+# Wire structs
 # ---------------------------------------------------------------------------
 
 
 # Fragment (wire) header - minimum 32 bytes; ``header_size`` may indicate more.
 @dataclass
-class DtxFragmentHeader(DataclassMixin):
-    """Typed DTX fragment (wire) header. ``parse()`` yields typed field access instead of a
-    dynamically-typed construct ``Container``.
+class DtxFragmentHeader(BinaryStruct, byte_order="<"):
+    """DTX fragment (wire) header. Field order is the DTX wire format."""
 
-    ``const_field`` makes ``magic`` ``init=False`` at runtime, but pyright can't see that through the
-    construct-typing stubs and flags the non-default fields that follow — hence the per-field ignores.
-    Field order is the DTX wire format."""
-
-    magic: int = const_field(Int32ul, DTX_FRAGMENT_MAGIC)
-    header_size: int = csfield(Int32ul)  # pyright: ignore[reportGeneralTypeIssues]  # total header size
-    index: int = csfield(Int16ul)  # pyright: ignore[reportGeneralTypeIssues]  # 0-based fragment index
-    count: int = csfield(Int16ul)  # pyright: ignore[reportGeneralTypeIssues]  # total fragment count
-    data_size: int = csfield(Int32ul)  # pyright: ignore[reportGeneralTypeIssues]  # this fragment's body length
-    identifier: int = csfield(Int32ul)  # pyright: ignore[reportGeneralTypeIssues]  # request/response id
-    conversation_index: int = csfield(Int32ul)  # pyright: ignore[reportGeneralTypeIssues]  # 0=initiator, 1=reply
-    channel_code: int = csfield(Int32sl)  # pyright: ignore[reportGeneralTypeIssues]
-    flags: int = csfield(Int32ul)  # pyright: ignore[reportGeneralTypeIssues]  # DTXTransportFlags
-
-
-dtx_fragment_header = DataclassStruct(DtxFragmentHeader)
+    magic: Annotated[u32, Const(DTX_FRAGMENT_MAGIC)] = field(default=DTX_FRAGMENT_MAGIC, init=False)
+    header_size: u32  # total header size
+    index: u16  # 0-based fragment index
+    count: u16  # total fragment count
+    data_size: u32  # this fragment's body length
+    identifier: u32  # request/response id
+    conversation_index: u32  # 0=initiator, 1=reply
+    channel_code: i32
+    flags: u32  # DTXTransportFlags
 
 
 # Per-message payload header prepended to aux + payload bytes.
-# Layout (16 bytes, all little-endian):
-#   offset 0  : DTXMessageType  (uint8)
-#   offset 1-3: reserved zeros
-#   offset 4-7: aux_size  (uint32)
-#   offset 8-11: total_size (uint32) = aux_size + payload_size
-#   offset 12-15: flags (uint32) - currently unused
 @dataclass
-class DtxFragmentPayloadHeader(DataclassMixin):
-    """Typed DTX per-message payload header (16 bytes)."""
+class DtxFragmentPayloadHeader(BinaryStruct, byte_order="<"):
+    """DTX per-message payload header (16 bytes)."""
 
-    msg_type: int = csfield(Int8ul)
-    flags_a: int = csfield(Int8ul)
-    flags_b: int = csfield(Int8ul)
-    reserved: int = csfield(Int8ul)
-    aux_size: int = csfield(Int32ul)
-    total_size: int = csfield(Int32ul)
-    flags: int = csfield(Int32ul)
-
-
-dtx_fragment_payload_header = DataclassStruct(DtxFragmentPayloadHeader)
+    msg_type: u8  # DTXMessageType
+    flags_a: u8
+    flags_b: u8
+    reserved: u8
+    aux_size: u32
+    total_size: u32  # aux_size + payload_size
+    flags: u32  # currently unused
 
 
-FRAGMENT_HEADER_MIN_SIZE: int = dtx_fragment_header.sizeof()  # 32
+FRAGMENT_HEADER_MIN_SIZE: int = DtxFragmentHeader.SIZE  # 32
 """Minimum byte length of a DTX fragment header."""
 
-FRAGMENT_PAYLOAD_HEADER_SIZE: int = dtx_fragment_payload_header.sizeof()  # 16
+FRAGMENT_PAYLOAD_HEADER_SIZE: int = DtxFragmentPayloadHeader.SIZE  # 16
 """Byte length of the DTX per-message payload header."""
