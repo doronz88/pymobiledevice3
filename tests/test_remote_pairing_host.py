@@ -8,7 +8,7 @@ import json
 import socket
 import struct
 from contextlib import suppress
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives import hashes
@@ -24,10 +24,10 @@ from pymobiledevice3.remote.tunnel_service import (
     REPAIRING_PACKET_MAGIC,
     PairableHost,
     PairableHostInfo,
+    PairingDataComponentTLV8,
     PairingDataComponentTLVBuf,
     PairingDataComponentType,
     RPPairingPacket,
-    RPPairingPacketData,
 )
 
 T = PairingDataComponentType
@@ -36,8 +36,8 @@ T = PairingDataComponentType
 AUTH_TAG_VECTOR = ("Mgp6ZGPzXM2ku9br46vsiw==", "2BE6E510-0325-4365-923E-B14C6F57DB3A", "kXjlTr2l")
 
 
-def _decode_tlv(parsed) -> dict[str, Any]:
-    result = {}
+def _decode_tlv(parsed: list[PairingDataComponentTLV8]) -> dict[int, bytes]:
+    result: dict[int, bytes] = {}
     for tlv in parsed:
         result[tlv.type] = result.get(tlv.type, b"") + tlv.data
     return result
@@ -87,7 +87,7 @@ class _DeviceSimulator:
 
     async def _send_plain(self, value: dict[str, Any]) -> None:
         env = {"message": {"plain": {"_0": value}}, "originatedBy": "host", "sequenceNumber": self.seq}
-        self.writer.write(RPPairingPacket.build(RPPairingPacketData(body=json.dumps(env).encode())))
+        self.writer.write(RPPairingPacket(body=json.dumps(env).encode()).build())
         await self.writer.drain()
         self.seq += 1
 
@@ -124,8 +124,8 @@ class _DeviceSimulator:
 
         await self._send_pairing(
             PairingDataComponentTLVBuf.build([
-                {"type": T.METHOD, "data": b"\x00"},
-                {"type": T.STATE, "data": b"\x01"},
+                PairingDataComponentTLV8(T.METHOD, b"\x00"),
+                PairingDataComponentTLV8(T.STATE, b"\x01"),
             ])
         )
 
@@ -144,9 +144,9 @@ class _DeviceSimulator:
         client.process(m2[T.PUBLIC_KEY].hex(), m2[T.SALT].hex())
         a_pub = binascii.unhexlify(client.public)
 
-        m3: list[Optional[dict[str, Any]]] = [{"type": T.STATE, "data": b"\x03"}]
-        m3 += [{"type": T.PUBLIC_KEY, "data": a_pub[i : i + 255]} for i in range(0, len(a_pub), 255)]
-        m3 += [{"type": T.PROOF, "data": binascii.unhexlify(client.key_proof)}]
+        m3: list[PairingDataComponentTLV8] = [PairingDataComponentTLV8(T.STATE, b"\x03")]
+        m3 += [PairingDataComponentTLV8(T.PUBLIC_KEY, a_pub[i : i + 255]) for i in range(0, len(a_pub), 255)]
+        m3 += [PairingDataComponentTLV8(T.PROOF, binascii.unhexlify(client.key_proof))]
         await self._send_pairing(PairingDataComponentTLVBuf.build(m3))
 
         m4 = _decode_tlv(PairingDataComponentTLVBuf.parse(await self._recv_pairing()))
@@ -172,16 +172,16 @@ class _DeviceSimulator:
             "remotepairing_udid": "00008130-DEVICEUDID",
         })
         inner = PairingDataComponentTLVBuf.build([
-            {"type": T.IDENTIFIER, "data": b"DEVICE-ACCOUNT-ID"},
-            {"type": T.PUBLIC_KEY, "data": b"\x01" * 32},
-            {"type": T.SIGNATURE, "data": b"\x02" * 64},
-            {"type": T.INFO, "data": device_info},
+            PairingDataComponentTLV8(T.IDENTIFIER, b"DEVICE-ACCOUNT-ID"),
+            PairingDataComponentTLV8(T.PUBLIC_KEY, b"\x01" * 32),
+            PairingDataComponentTLV8(T.SIGNATURE, b"\x02" * 64),
+            PairingDataComponentTLV8(T.INFO, device_info),
         ])
         enc = cip.encrypt(b"\x00\x00\x00\x00PS-Msg05", inner, b"")
-        m5: list[Optional[dict[str, Any]]] = [
-            {"type": T.ENCRYPTED_DATA, "data": enc[i : i + 255]} for i in range(0, len(enc), 255)
+        m5: list[PairingDataComponentTLV8] = [
+            PairingDataComponentTLV8(T.ENCRYPTED_DATA, enc[i : i + 255]) for i in range(0, len(enc), 255)
         ]
-        m5 += [{"type": T.STATE, "data": b"\x05"}]
+        m5 += [PairingDataComponentTLV8(T.STATE, b"\x05")]
         await self._send_pairing(PairingDataComponentTLVBuf.build(m5))
 
         m6 = _decode_tlv(PairingDataComponentTLVBuf.parse(await self._recv_pairing()))

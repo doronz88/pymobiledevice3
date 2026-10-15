@@ -5,25 +5,22 @@ import plistlib
 import socket
 import struct
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import IntEnum
 from types import TracebackType
-from typing import Any, NoReturn, Optional, Union
+from typing import Annotated, Any, NoReturn, Optional, Union
 
-from construct import (
-    Const,
-    CString,
-    Enum,
-    FixedSized,
-    GreedyBytes,
-    Int16ul,
-    Int32ul,
-    Padding,
-    Prefixed,
-    Struct,
-    Switch,
-    this,
+from pymobiledevice3.binary import (
+    U32_LE,
+    BinaryStruct,
+    ByteReader,
+    Bytes,
+    BytesLike,
+    OpenIntEnum,
+    PaddedString,
+    u16,
+    u32,
 )
-
 from pymobiledevice3.exceptions import (
     BadCommandError,
     BadDevError,
@@ -41,88 +38,108 @@ ITUNES_HOST = ("127.0.0.1", 27015)
 # used for macOS and Linux
 USBMUXD_PIPE = "/var/run/usbmuxd"
 
-usbmuxd_version = Enum(
-    Int32ul,
-    BINARY=0,
-    PLIST=1,
-)
 
-usbmuxd_result = Enum(
-    Int32ul,
-    OK=0,
-    BADCOMMAND=1,
-    BADDEV=2,
-    CONNREFUSED=3,
-    NOSUCHSERVICE=4,
-    BADVERSION=6,
-)
+class UsbmuxdVersion(IntEnum):
+    BINARY = 0
+    PLIST = 1
 
-usbmuxd_msgtype = Enum(
-    Int32ul,
-    RESULT=1,
-    CONNECT=2,
-    LISTEN=3,
-    ADD=4,
-    REMOVE=5,
-    PAIRED=6,
-    PLIST=8,
-)
 
-usbmuxd_header = Struct(
-    "version" / usbmuxd_version,
-    "message" / usbmuxd_msgtype,
-    "tag" / Int32ul,
-)
+class UsbmuxdResult(OpenIntEnum):
+    OK = 0
+    BADCOMMAND = 1
+    BADDEV = 2
+    CONNREFUSED = 3
+    NOSUCHSERVICE = 4
+    BADVERSION = 6
 
-usbmuxd_request = Prefixed(
-    Int32ul,
-    Struct(
-        "header" / usbmuxd_header,
-        "data"
-        / Switch(
-            this.header.message,
-            {
-                usbmuxd_msgtype.CONNECT: Struct(
-                    "device_id" / Int32ul,
-                    "port" / Int16ul,
-                    "reserved" / Const(0, Int16ul),
-                ),
-                usbmuxd_msgtype.PLIST: GreedyBytes,
-            },
-        ),
-    ),
-    includelength=True,
-)
 
-usbmuxd_device_record = Struct(
-    "device_id" / Int32ul,
-    "product_id" / Int16ul,
-    "serial_number" / FixedSized(256, CString("ascii")),
-    Padding(2),
-    "location" / Int32ul,
-)
+class UsbmuxdMessageType(OpenIntEnum):
+    RESULT = 1
+    CONNECT = 2
+    LISTEN = 3
+    ADD = 4
+    REMOVE = 5
+    PAIRED = 6
+    PLIST = 8
 
-usbmuxd_response = Prefixed(
-    Int32ul,
-    Struct(
-        "header" / usbmuxd_header,
-        "data"
-        / Switch(
-            this.header.message,
-            {
-                usbmuxd_msgtype.RESULT: Struct(
-                    "result" / usbmuxd_result,
-                ),
-                usbmuxd_msgtype.ADD: usbmuxd_device_record,
-                usbmuxd_msgtype.REMOVE: Struct(
-                    "device_id" / Int32ul,
-                ),
-                usbmuxd_msgtype.PLIST: GreedyBytes,
-            },
-        ),
-    ),
-    includelength=True,
-)
+
+@dataclass
+class UsbmuxdHeader(BinaryStruct, byte_order="<"):
+    version: u32
+    message: u32
+    tag: u32
+
+
+@dataclass
+class UsbmuxdResultData(BinaryStruct, byte_order="<"):
+    result: Annotated[UsbmuxdResult, u32]
+
+
+@dataclass
+class _UsbmuxdConnectRequest(BinaryStruct, byte_order="<"):
+    device_id: u32
+    port: u16
+    reserved: u16 = 0
+
+
+@dataclass
+class UsbmuxdDeviceRecord(BinaryStruct, byte_order="<"):
+    device_id: u32
+    product_id: u16
+    serial_number: Annotated[str, PaddedString(256)]
+    padding: Annotated[bytes, Bytes(2)] = field(default=bytes(2), init=False, repr=False, compare=False)
+    location: u32
+
+
+@dataclass
+class UsbmuxdRemoveData(BinaryStruct, byte_order="<"):
+    device_id: u32
+
+
+# RESULT -> UsbmuxdResultData, ADD -> UsbmuxdDeviceRecord, REMOVE -> UsbmuxdRemoveData, PLIST -> bytes, other -> None
+UsbmuxdResponseData = Union[UsbmuxdResultData, UsbmuxdDeviceRecord, UsbmuxdRemoveData, bytes, None]
+
+
+@dataclass
+class UsbmuxdResponse:
+    header: UsbmuxdHeader
+    data: UsbmuxdResponseData
+
+
+def build_usbmuxd_request(version: int, message: int, tag: int, payload: bytes = b"") -> bytes:
+    """Build a length-prefixed usbmuxd packet (the length includes its own 4 bytes)."""
+    header = UsbmuxdHeader(version, message, tag).build()
+    return U32_LE.pack(U32_LE.size + len(header) + len(payload)) + header + payload
+
+
+def build_usbmuxd_connect_payload(device_id: int, port: int) -> bytes:
+    """Build the binary-protocol CONNECT body; ``port`` is packed as-is (callers pass it network-ordered)."""
+    return _UsbmuxdConnectRequest(device_id, port).build()
+
+
+def parse_usbmuxd_response(data: BytesLike) -> UsbmuxdResponse:
+    """
+    Parse a length-prefixed usbmuxd packet.
+
+    Bytes past the declared length, and past the end of a fixed-size body, are ignored.
+
+    :raises TruncatedDataError: if the packet is shorter than its declared length or its body is truncated.
+    :raises BinaryParseError: if the declared length is shorter than the length field itself, or a device
+        record's serial number is not NUL-terminated UTF-8.
+    """
+    outer = ByteReader(data)
+    reader = outer.sub(outer.unpack_one(U32_LE) - U32_LE.size)
+    header = UsbmuxdHeader.read(reader)
+    body: UsbmuxdResponseData = None
+    if header.message == UsbmuxdMessageType.RESULT:
+        body = UsbmuxdResultData.read(reader)
+    elif header.message == UsbmuxdMessageType.ADD:
+        body = UsbmuxdDeviceRecord.read(reader)
+    elif header.message == UsbmuxdMessageType.REMOVE:
+        body = UsbmuxdRemoveData.read(reader)
+    elif header.message == UsbmuxdMessageType.PLIST:
+        body = reader.read_all()
+    return UsbmuxdResponse(header, body)
 
 
 @dataclass
@@ -188,22 +205,21 @@ class MuxConnection:
     async def create(usbmux_address: Optional[str] = None):
         sock = await MuxConnection.create_usbmux_socket(usbmux_address=usbmux_address)
         try:
-            probe_message = usbmuxd_request.build({
-                "header": {"version": usbmuxd_version.PLIST, "message": usbmuxd_msgtype.PLIST, "tag": 1},
-                "data": plistlib.dumps({"MessageType": "ReadBUID"}),
-            })
+            probe_message = build_usbmuxd_request(
+                UsbmuxdVersion.PLIST, UsbmuxdMessageType.PLIST, 1, plistlib.dumps({"MessageType": "ReadBUID"})
+            )
             await asyncio.get_running_loop().sock_sendall(sock, probe_message)
-            response = usbmuxd_response.parse(await MuxConnection._recv_packet(sock))
+            response = parse_usbmuxd_response(await MuxConnection._recv_packet(sock))
         finally:
             sock.close()
 
         sock = await MuxConnection.create_usbmux_socket(usbmux_address=usbmux_address)
-        if response.header.version == usbmuxd_version.BINARY:
+        if response.header.version == UsbmuxdVersion.BINARY:
             return BinaryMuxConnection(sock)
-        if response.header.version == usbmuxd_version.PLIST:
+        if response.header.version == UsbmuxdVersion.PLIST:
             return PlistMuxConnection(sock)
         sock.close()
-        raise MuxVersionError(f"usbmuxd returned unsupported version: {response.version}")
+        raise MuxVersionError(f"usbmuxd returned unsupported version: {response.header.version}")
 
     @staticmethod
     async def _recv_exactly(sock: socket.socket, size: int) -> bytes:
@@ -261,11 +277,11 @@ class MuxConnection:
 
     def _raise_mux_exception(self, result: int, message: Optional[str] = None) -> NoReturn:
         exceptions: dict[int, type[MuxException]] = {
-            int(usbmuxd_result.BADCOMMAND): BadCommandError,
-            int(usbmuxd_result.BADDEV): BadDevError,
-            int(usbmuxd_result.CONNREFUSED): ConnectionFailedError,
-            int(usbmuxd_result.NOSUCHSERVICE): ConnectionFailedError,
-            int(usbmuxd_result.BADVERSION): MuxVersionError,
+            int(UsbmuxdResult.BADCOMMAND): BadCommandError,
+            int(UsbmuxdResult.BADDEV): BadDevError,
+            int(UsbmuxdResult.CONNREFUSED): ConnectionFailedError,
+            int(UsbmuxdResult.NOSUCHSERVICE): ConnectionFailedError,
+            int(UsbmuxdResult.BADVERSION): MuxVersionError,
         }
         exception = exceptions.get(result, MuxException)
         raise exception(message)
@@ -285,7 +301,7 @@ class MuxConnection:
 class BinaryMuxConnection(MuxConnection):
     def __init__(self, sock: socket.socket):
         super().__init__(sock)
-        self._version = usbmuxd_version.BINARY
+        self._version: int = UsbmuxdVersion.BINARY
 
     async def get_device_list(self, timeout: Optional[float] = None):
         self._assert_not_connected()
@@ -302,54 +318,57 @@ class BinaryMuxConnection(MuxConnection):
                 raise MuxException("Exception in listener socket") from e
 
     async def listen(self):
-        await self._send_receive(usbmuxd_msgtype.LISTEN)
+        await self._send_receive(UsbmuxdMessageType.LISTEN)
 
     async def _connect(self, device_id: int, port: int):
-        await self._send({
-            "header": {"version": self._version, "message": usbmuxd_msgtype.CONNECT, "tag": self._tag},
-            "data": {"device_id": device_id, "port": port},
-        })
-        response = await self._receive()
-        if response.header.message != usbmuxd_msgtype.RESULT:
+        await self._send_packet(UsbmuxdMessageType.CONNECT, build_usbmuxd_connect_payload(device_id, port))
+        response = await self._receive_response()
+        if not isinstance(response.data, UsbmuxdResultData):
             raise MuxException(f"unexpected message type received: {response}")
-        if response.data.result != usbmuxd_result.OK:
+        result = response.data.result
+        if result != UsbmuxdResult.OK:
             self._raise_mux_exception(
-                int(response.data.result),
-                f"failed to connect to device: {device_id} at port: {port}. reason: {response.data.result}",
+                result,
+                f"failed to connect to device: {device_id} at port: {port}. reason: {result.name}",
             )
 
-    async def _send(self, data: dict[str, Any]):
+    async def _send_packet(self, message: int, payload: bytes = b"") -> None:
         self._assert_not_connected()
-        await asyncio.get_running_loop().sock_sendall(self._sock, usbmuxd_request.build(data))
+        await asyncio.get_running_loop().sock_sendall(
+            self._sock, build_usbmuxd_request(self._version, message, self._tag, payload)
+        )
         self._tag += 1
 
-    async def _receive(self, expected_tag: Optional[int] = None) -> Any:
+    async def _receive_response(self, expected_tag: Optional[int] = None) -> UsbmuxdResponse:
         self._assert_not_connected()
-        response = usbmuxd_response.parse(await self._recv_packet(self._sock))
+        response = parse_usbmuxd_response(await self._recv_packet(self._sock))
         if expected_tag and response.header.tag != expected_tag:
             raise MuxException(f"Reply tag mismatch: expected {expected_tag}, got {response.header.tag}")
         return response
 
     async def receive_device_state_update(self):
-        response = await self._receive()
-        if response.header.message == usbmuxd_msgtype.ADD:
+        response = await self._receive_response()
+        if isinstance(response.data, UsbmuxdDeviceRecord):
             self._add_device(MuxDevice(response.data.device_id, response.data.serial_number, "USB"))
-        elif response.header.message == usbmuxd_msgtype.REMOVE:
+        elif isinstance(response.data, UsbmuxdRemoveData):
             self._remove_device(response.data.device_id)
-        elif response.header.message == usbmuxd_msgtype.PAIRED:
+        elif response.header.message == UsbmuxdMessageType.PAIRED:
             # Pairing state updates don't change the tracked device list.
             return
         else:
             raise MuxException(f"Invalid packet type received: {response}")
 
-    async def _send_receive(self, message_type: Union[int, str]):
-        await self._send({"header": {"version": self._version, "message": message_type, "tag": self._tag}, "data": b""})
-        response = await self._receive(self._tag - 1)
-        if response.header.message != usbmuxd_msgtype.RESULT:
+    async def _send_receive(self, message_type: UsbmuxdMessageType):
+        await self._send_packet(message_type)
+        response = await self._receive_response(self._tag - 1)
+        if not isinstance(response.data, UsbmuxdResultData):
             raise MuxException(f"unexpected message type received: {response}")
         result = response.data.result
-        if result != usbmuxd_result.OK:
-            self._raise_mux_exception(int(result), f"{message_type} failed: error {result}")
+        if result != UsbmuxdResult.OK:
+            self._raise_mux_exception(
+                result,
+                f"{message_type.name} failed: error {result.name}",
+            )
 
     def _add_device(self, device: MuxDevice):
         self.devices.append(device)
@@ -361,7 +380,7 @@ class BinaryMuxConnection(MuxConnection):
 class PlistMuxConnection(BinaryMuxConnection):
     def __init__(self, sock: socket.socket):
         super().__init__(sock)
-        self._version = usbmuxd_version.PLIST
+        self._version = UsbmuxdVersion.PLIST
 
     async def listen(self) -> None:
         await self._send_receive({"MessageType": "Listen"})
@@ -423,14 +442,11 @@ class PlistMuxConnection(BinaryMuxConnection):
             "kLibUSBMuxVersion": 3,
         }
         request.update(data)
-        await super()._send({
-            "header": {"version": self._version, "message": usbmuxd_msgtype.PLIST, "tag": self._tag},
-            "data": plistlib.dumps(request),
-        })
+        await self._send_packet(UsbmuxdMessageType.PLIST, plistlib.dumps(request))
 
     async def _receive(self, expected_tag: Optional[int] = None) -> dict[str, Any]:
-        response = await super()._receive(expected_tag=expected_tag)
-        if response.header.message != usbmuxd_msgtype.PLIST:
+        response = await self._receive_response(expected_tag=expected_tag)
+        if not isinstance(response.data, bytes):
             raise MuxException(f"Received non-plist type {response}")
         return plistlib.loads(response.data)
 

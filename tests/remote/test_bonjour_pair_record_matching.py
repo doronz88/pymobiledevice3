@@ -20,6 +20,7 @@ from pymobiledevice3.lockdown import compute_mobdev2_auth_tag
 from pymobiledevice3.remote.siphash import compute_auth_tag
 from pymobiledevice3.remote.tunnel_service import (
     PEER_ALT_IRK_KEY,
+    PairingDataComponentTLV8,
     PairingDataComponentTLVBuf,
     PairingDataComponentType,
     RemotePairingTunnelService,
@@ -172,10 +173,10 @@ async def test_record_without_alt_irk_still_pair_verifies(monkeypatch, tmp_path)
     device_key = X25519PrivateKey.generate().public_key().public_bytes_raw()
     replies = [
         PairingDataComponentTLVBuf.build([
-            {"type": PairingDataComponentType.STATE, "data": b"\x02"},
-            {"type": PairingDataComponentType.PUBLIC_KEY, "data": device_key},
+            PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x02"),
+            PairingDataComponentTLV8(PairingDataComponentType.PUBLIC_KEY, device_key),
         ]),
-        PairingDataComponentTLVBuf.build([{"type": PairingDataComponentType.STATE, "data": b"\x04"}]),
+        PairingDataComponentTLVBuf.build([PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x04")]),
     ]
 
     async def send_receive_pairing_data(pairing_data):

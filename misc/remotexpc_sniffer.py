@@ -4,7 +4,6 @@
 # dependencies = [
 #     "click",
 #     "coloredlogs",
-#     "construct",
 #     "hyperframe",
 #     "pymobiledevice3",
 #     "scapy",
@@ -16,13 +15,13 @@ from typing import Optional
 
 import click
 import coloredlogs
-from construct import ConstError, StreamError
 from hyperframe.frame import DataFrame, Frame, GoAwayFrame, HeadersFrame
 from scapy.layers.inet import IP, TCP
 from scapy.layers.inet6 import IPv6
 from scapy.packet import Packet
 from scapy.sendrecv import sniff
 
+from pymobiledevice3.exceptions import TruncatedDataError, UnexpectedConstantError
 from pymobiledevice3.remote.remotexpc import HTTP2_MAGIC
 from pymobiledevice3.remote.tunnel_service import PairingDataComponentTLVBuf
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type, XpcWrapper, decode_xpc_object
@@ -148,11 +147,11 @@ class RemoteXPCSniffer:
     def _handle_data_frame(self, stream: H2Stream, frame: DataFrame) -> None:
         previous_frame_data = self._previous_frame_data.get(stream.key, b"")
         try:
-            payload = XpcWrapper.parse(previous_frame_data + frame.data).message.payload
+            payload = XpcWrapper.parse(previous_frame_data + frame.data).payload
             if payload is None:
                 return None
-            xpc_message = decode_xpc_object(payload.obj)
-        except ConstError:  # if we don't know what this payload is
+            xpc_message = decode_xpc_object(payload)
+        except UnexpectedConstantError:  # if we don't know what this payload is
             logger.debug(
                 f"New Data frame {stream.src}->{stream.dst} on HTTP/2 stream {frame.stream_id} TCP port {stream.dport}"
             )
@@ -160,7 +159,7 @@ class RemoteXPCSniffer:
             if len(frame.data) > 64:
                 logger.debug(f"... {len(frame.data)} bytes")
             return
-        except StreamError:
+        except TruncatedDataError:
             self._previous_frame_data[stream.key] = previous_frame_data + frame.data
             return
 

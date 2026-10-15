@@ -23,12 +23,12 @@ with warnings.catch_warnings():
     import fastapi
 
 import uvicorn
-from construct import StreamError
 from fastapi import FastAPI
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import (
+    BinaryParseError,
     ConnectionFailedError,
     ConnectionFailedToUsbmuxdError,
     ConnectionTerminatedError,
@@ -41,6 +41,7 @@ from pymobiledevice3.exceptions import (
     PairingError,
     QuicProtocolNotSupportedError,
     StreamClosedError,
+    TruncatedDataError,
 )
 from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -367,7 +368,7 @@ class TunneldCore:
                             MuxException,
                             InvalidServiceError,
                             GetProhibitedError,
-                            StreamError,
+                            BinaryParseError,
                             ConnectionTerminatedError,
                             DeviceNotFoundError,
                             LockdownError,
@@ -391,7 +392,7 @@ class TunneldCore:
                 # specific handler must stay above the MuxException handler below.
                 logger.debug("failed to connect to usbmux. waiting for it to restart")
                 await asyncio.sleep(USBMUX_INTERVAL)
-            except (BlockingIOError, StreamError, MuxException) as e:
+            except (BlockingIOError, BinaryParseError, MuxException) as e:
                 # Connection lost - will reconnect on next iteration.
                 # MuxException("socket connection broken") is raised when usbmuxd drops the
                 # listen socket on device replug/reboot (notably on Linux); reconnect instead
@@ -481,7 +482,7 @@ class TunneldCore:
             OSError,
             ConnectionResetError,
             ConnectionTerminatedError,
-            StreamError,
+            TruncatedDataError,
             InvalidServiceError,
         ) as e:
             if tun is None:

@@ -20,7 +20,6 @@ from .structs import (
     MAX_MESSAGE_SIZE,
     DtxFragmentHeader,
     DTXTransportFlags,
-    dtx_fragment_header,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,7 +41,7 @@ class DTXFragment:
     @staticmethod
     async def read(stream: asyncio.StreamReader) -> DTXFragment:
         """Parse a DTX fragment from *stream* and return a DTXFragment object."""
-        header = dtx_fragment_header.parse(await stream.readexactly(FRAGMENT_HEADER_MIN_SIZE))
+        header = DtxFragmentHeader.parse(await stream.readexactly(FRAGMENT_HEADER_MIN_SIZE))
 
         if header.index >= header.count:
             raise DTXProtocolError(
@@ -87,18 +86,16 @@ class DTXFragment:
         """Return a list of memoryview chunks that make up this fragment for sending."""
         return [
             memoryview(
-                dtx_fragment_header.build(
-                    DtxFragmentHeader(
-                        header_size=FRAGMENT_HEADER_MIN_SIZE,
-                        index=self.index,
-                        count=self.count,
-                        data_size=self.data_size,
-                        identifier=self.identifier,
-                        conversation_index=self.conversation_index,
-                        channel_code=self.channel_code,
-                        flags=int(self.flags),
-                    )
-                )
+                DtxFragmentHeader(
+                    header_size=FRAGMENT_HEADER_MIN_SIZE,
+                    index=self.index,
+                    count=self.count,
+                    data_size=self.data_size,
+                    identifier=self.identifier,
+                    conversation_index=self.conversation_index,
+                    channel_code=self.channel_code,
+                    flags=int(self.flags),
+                ).build()
             ),
             self.payload,
         ]

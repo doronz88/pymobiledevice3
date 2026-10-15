@@ -2,65 +2,57 @@ import ipaddress
 import logging
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional, Union, cast
+from typing import Annotated, Any, Optional, Union, cast
 
-from construct import Adapter, Bytes, Int8ul, Int16ub, Int32ul, Switch, this
-from construct_typed import DataclassMixin, TStruct, csfield
-
+from pymobiledevice3.binary import BinaryStruct, ByteReader, Bytes, BytesLike, ipv4, ipv6, u8, u16, u32
 from pymobiledevice3.dtx import DTXContext, DTXQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
 
-if TYPE_CHECKING:
-    # ``construct.Adapter`` is generic in its type stubs but not subscriptable at runtime.
-    _IpAddressAdapterBase = Adapter[bytes, bytes, Any, Any]
-else:
-    _IpAddressAdapterBase = Adapter
-
-
-class IpAddressAdapter(_IpAddressAdapterBase):
-    """Decode raw address bytes into ipaddress objects."""
-
-    def _decode(self, obj: bytes, context: Any, path: str):
-        return ipaddress.ip_address(obj)
-
 
 @dataclass
-class AddressV6(DataclassMixin):
+class AddressV6(BinaryStruct, byte_order="<"):
     """IPv6 payload for a socket address."""
 
-    flow_info: int = csfield(Int32ul)
-    address: ipaddress.IPv6Address = csfield(IpAddressAdapter(Bytes(16)))
-    scope_id: int = csfield(Int32ul)
+    flow_info: u32
+    address: ipv6
+    scope_id: u32
 
 
 @dataclass
-class AddressV4(DataclassMixin):
+class AddressV4(BinaryStruct, byte_order="<"):
     """IPv4 payload for a socket address."""
 
-    address: ipaddress.IPv4Address = csfield(IpAddressAdapter(Bytes(4)))
-    _zero: bytes = csfield(Bytes(8))
+    address: ipv4
+    _zero: Annotated[bytes, Bytes(8)]
 
 
 @dataclass
-class SocketAddress(DataclassMixin):
+class SocketAddress(BinaryStruct, byte_order=">"):
     """Parsed socket address with family-specific payload."""
 
-    length: int = csfield(Int8ul)
-    family: int = csfield(Int8ul)
-    port: int = csfield(Int16ub)
-    data: Union[AddressV4, AddressV6] = csfield(
-        Switch(
-            this.length,
-            {
-                0x1C: TStruct(AddressV6),
-                0x10: TStruct(AddressV4),
-            },
-        )
-    )
+    length: u8
+    family: u8
+    port: u16
+    #: ``None`` when ``length`` is neither that of a ``sockaddr_in`` nor of a ``sockaddr_in6``.
+    data: Optional[Union[AddressV4, AddressV6]] = None
 
+    @property
+    def address(self) -> Optional[Union[ipaddress.IPv4Address, ipaddress.IPv6Address]]:
+        """The IP address, or ``None`` for an address family without a payload decoder."""
+        return None if self.data is None else self.data.address
 
-address_t = TStruct(SocketAddress)
+    @classmethod
+    def parse(cls, data: BytesLike) -> "SocketAddress":
+        """Parse a raw ``sockaddr`` (big-endian port, little-endian IPv6 flow info / scope id)."""
+        reader = ByteReader(data)
+        address = cls.read(reader)
+        if address.length == 0x1C:
+            address.data = AddressV6.read(reader)
+        elif address.length == 0x10:
+            address.data = AddressV4.read(reader)
+        return address
+
 
 MESSAGE_TYPE_INTERFACE_DETECTION = 0
 MESSAGE_TYPE_CONNECTION_DETECTION = 1
@@ -192,8 +184,8 @@ class NetworkMonitor(DtxService[NetworkMonitorService]):
                     kind,
                 ) = cast(tuple[Any, ...], message[1])
                 event = ConnectionDetectionEvent(
-                    local_address=address_t.parse(local_address),
-                    remote_address=address_t.parse(remote_address),
+                    local_address=SocketAddress.parse(local_address),
+                    remote_address=SocketAddress.parse(remote_address),
                     interface_index=interface_index,
                     pid=pid,
                     recv_buffer_size=recv_buffer_size,

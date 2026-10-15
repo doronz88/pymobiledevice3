@@ -8,11 +8,11 @@
 #
 # Ported to Python by DoronZ <doron88@gmail.com>. Licensed under LGPL-2.1-or-later (same as original).
 
-import io
 import logging
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Annotated, Optional, Union
 
-from construct import Bytes, ChecksumError, Int16ul, Int32ul, Int64ul, Struct
+from pymobiledevice3.binary import BinaryStruct, ByteReader, Bytes, Const, u16, u32, u64
 
 logger = logging.getLogger(__name__)
 
@@ -36,125 +36,137 @@ ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3 = 0x7F, ord("E"), ord("L"), ord("F")
 ELFCLASSNONE, ELFCLASS32, ELFCLASS64 = 0, 1, 2
 
 # -----------------------------------------------------------------------------
-# Construct Structs (little-endian)
+# Header layouts (little-endian)
 # -----------------------------------------------------------------------------
 
-# MBN v1
-MBN_V1 = Struct(
-    "type" / Int32ul,
-    "unk_0x04" / Int32ul,
-    "unk_0x08" / Int32ul,
-    "unk_0x0c" / Int32ul,
-    "data_size" / Int32ul,  # total - sizeof(header)
-    "sig_offset" / Int32ul,  # real offset = enc_sig_offset & 0xFFFFFF00 (FYI)
-    "unk_0x18" / Int32ul,
-    "unk_0x1c" / Int32ul,
-    "unk_0x20" / Int32ul,
-    "unk_0x24" / Int32ul,
-)
 
-# MBN v2
-MBN_V2 = Struct(
-    "magic1" / Bytes(8),
-    "unk_0x08" / Int32ul,
-    "unk_0x0c" / Int32ul,  # 0xFFFFFFFF
-    "unk_0x10" / Int32ul,  # 0xFFFFFFFF
-    "header_size" / Int32ul,
-    "unk_0x18" / Int32ul,
-    "data_size" / Int32ul,  # total - sizeof(header)
-    "sig_offset" / Int32ul,
-    "unk_0x24" / Int32ul,
-    "unk_0x28" / Int32ul,
-    "unk_0x2c" / Int32ul,
-    "unk_0x30" / Int32ul,
-    "unk_0x34" / Int32ul,  # 0x1
-    "unk_0x38" / Int32ul,  # 0x1
-    "unk_0x3c" / Int32ul,  # 0xFFFFFFFF
-    "unk_0x40" / Int32ul,  # 0xFFFFFFFF
-    "unk_0x44" / Int32ul,  # 0xFFFFFFFF
-    "unk_0x48" / Int32ul,  # 0xFFFFFFFF
-    "unk_0x4c" / Int32ul,  # 0xFFFFFFFF
-)
+@dataclass
+class MbnV1Header(BinaryStruct, byte_order="<"):
+    magic: Annotated[bytes, Bytes(MBN_V1_MAGIC_SIZE), Const(MBN_V1_MAGIC)]  # the image type
+    unk_0x04: u32
+    unk_0x08: u32
+    unk_0x0c: u32
+    data_size: u32  # total - header size
+    sig_offset: u32  # real offset = enc_sig_offset & 0xFFFFFF00
+    unk_0x18: u32
+    unk_0x1c: u32
+    unk_0x20: u32
+    unk_0x24: u32
 
-# MBN BIN
-MBN_BIN = Struct(
-    "magic" / Bytes(8),
-    "unk_0x08" / Int32ul,
-    "version" / Int32ul,
-    "total_size" / Int32ul,  # includes header
-    "unk_0x14" / Int32ul,
-)
 
-# v7 trailer header used by mbn_mav25_stitch
-MBN_V7 = Struct(
-    "reserved" / Int32ul,
-    "version" / Int32ul,
-    "common_metadata_size" / Int32ul,
-    "qti_metadata_size" / Int32ul,
-    "oem_metadata_size" / Int32ul,
-    "hash_table_size" / Int32ul,
-    "qti_signature_size" / Int32ul,
-    "qti_certificate_chain_size" / Int32ul,
-    "oem_signature_size" / Int32ul,
-    "oem_certificate_chain_size" / Int32ul,
-)
+@dataclass
+class MbnV2Header(BinaryStruct, byte_order="<"):
+    magic: Annotated[bytes, Bytes(MBN_V2_MAGIC_SIZE), Const(MBN_V2_MAGIC)]
+    unk_0x08: u32
+    unk_0x0c: u32
+    unk_0x10: u32
+    header_size: u32
+    unk_0x18: u32
+    data_size: u32  # total - header size
+    sig_offset: u32
+    unk_0x24: u32
+    unk_0x28: u32
+    unk_0x2c: u32
+    unk_0x30: u32
+    unk_0x34: u32
+    unk_0x38: u32
+    unk_0x3c: u32
+    unk_0x40: u32
+    unk_0x44: u32
+    unk_0x48: u32
+    unk_0x4c: u32
 
-# ELF (minimal fields we need)
-ELF32_Ehdr = Struct(
-    "e_ident" / Bytes(16),
-    "e_type" / Int16ul,
-    "e_machine" / Int16ul,
-    "e_version" / Int32ul,
-    "e_entry" / Int32ul,
-    "e_phoff" / Int32ul,
-    "e_shoff" / Int32ul,
-    "e_flags" / Int32ul,
-    "e_ehsize" / Int16ul,
-    "e_phentsize" / Int16ul,
-    "e_phnum" / Int16ul,
-    "e_shentsize" / Int16ul,
-    "e_shnum" / Int16ul,
-    "e_shstrndx" / Int16ul,
-)
 
-ELF64_Ehdr = Struct(
-    "e_ident" / Bytes(16),
-    "e_type" / Int16ul,
-    "e_machine" / Int16ul,
-    "e_version" / Int32ul,
-    "e_entry" / Int64ul,
-    "e_phoff" / Int64ul,
-    "e_shoff" / Int64ul,
-    "e_flags" / Int32ul,
-    "e_ehsize" / Int16ul,
-    "e_phentsize" / Int16ul,
-    "e_phnum" / Int16ul,
-    "e_shentsize" / Int16ul,
-    "e_shnum" / Int16ul,
-    "e_shstrndx" / Int16ul,
-)
+@dataclass
+class MbnBinHeader(BinaryStruct, byte_order="<"):
+    magic: Annotated[bytes, Bytes(8)]  # MBN_BIN_MAGIC at MBN_BIN_MAGIC_OFFSET
+    unk_0x08: u32
+    version: u32
+    total_size: u32  # includes the header
+    unk_0x14: u32
 
-ELF32_Phdr = Struct(
-    "p_type" / Int32ul,
-    "p_offset" / Int32ul,
-    "p_vaddr" / Int32ul,
-    "p_paddr" / Int32ul,
-    "p_filesz" / Int32ul,
-    "p_memsz" / Int32ul,
-    "p_flags" / Int32ul,
-    "p_align" / Int32ul,
-)
 
-ELF64_Phdr = Struct(
-    "p_type" / Int32ul,
-    "p_flags" / Int32ul,
-    "p_offset" / Int64ul,
-    "p_vaddr" / Int64ul,
-    "p_paddr" / Int64ul,
-    "p_filesz" / Int64ul,
-    "p_memsz" / Int64ul,
-    "p_align" / Int64ul,
-)
+@dataclass
+class MbnV7Header(BinaryStruct, byte_order="<"):
+    """Trailer header at the start of the last ELF segment, used by mbn_mav25_stitch."""
+
+    reserved: u32
+    version: u32
+    common_metadata_size: u32
+    qti_metadata_size: u32
+    oem_metadata_size: u32
+    hash_table_size: u32
+    qti_signature_size: u32
+    qti_certificate_chain_size: u32
+    oem_signature_size: u32
+    oem_certificate_chain_size: u32
+
+
+# ELF headers (little-endian only, as in mbn.c)
+
+
+@dataclass
+class Elf32Ehdr(BinaryStruct, byte_order="<"):
+    e_ident: Annotated[bytes, Bytes(EI_NIDENT)]
+    e_type: u16
+    e_machine: u16
+    e_version: u32
+    e_entry: u32
+    e_phoff: u32
+    e_shoff: u32
+    e_flags: u32
+    e_ehsize: u16
+    e_phentsize: u16
+    e_phnum: u16
+    e_shentsize: u16
+    e_shnum: u16
+    e_shstrndx: u16
+
+
+@dataclass
+class Elf64Ehdr(BinaryStruct, byte_order="<"):
+    e_ident: Annotated[bytes, Bytes(EI_NIDENT)]
+    e_type: u16
+    e_machine: u16
+    e_version: u32
+    e_entry: u64
+    e_phoff: u64
+    e_shoff: u64
+    e_flags: u32
+    e_ehsize: u16
+    e_phentsize: u16
+    e_phnum: u16
+    e_shentsize: u16
+    e_shnum: u16
+    e_shstrndx: u16
+
+
+@dataclass
+class Elf32Phdr(BinaryStruct, byte_order="<"):
+    p_type: u32
+    p_offset: u32
+    p_vaddr: u32
+    p_paddr: u32
+    p_filesz: u32
+    p_memsz: u32
+    p_flags: u32
+    p_align: u32
+
+
+@dataclass
+class Elf64Phdr(BinaryStruct, byte_order="<"):
+    p_type: u32
+    p_flags: u32  # moved up compared to ELF32
+    p_offset: u64
+    p_vaddr: u64
+    p_paddr: u64
+    p_filesz: u64
+    p_memsz: u64
+    p_align: u64
+
+
+ElfEhdr = Union[Elf32Ehdr, Elf64Ehdr]
+ElfPhdr = Union[Elf32Phdr, Elf64Phdr]
 
 
 # -----------------------------------------------------------------------------
@@ -173,59 +185,50 @@ def _is_valid_elf_ident(e_ident: bytes) -> bool:
     )
 
 
-def _read_elf_headers(data: bytes):
-    if len(data) < EI_NIDENT:
-        return None, None
-    e_ident = data[:EI_NIDENT]
-    if not _is_valid_elf_ident(e_ident):
-        return None, None
-    if e_ident[EI_CLASS] == ELFCLASS64:
-        if len(data) < ELF64_Ehdr.sizeof():
-            return None, None
-        hdr = ELF64_Ehdr.parse(data[: ELF64_Ehdr.sizeof()])
-        return "ELF64", hdr
-    elif e_ident[EI_CLASS] == ELFCLASS32:
-        if len(data) < ELF32_Ehdr.sizeof():
-            return None, None
-        hdr = ELF32_Ehdr.parse(data[: ELF32_Ehdr.sizeof()])
-        return "ELF32", hdr
-    return None, None
+def _read_elf_header(data: bytes) -> Optional[ElfEhdr]:
+    if len(data) < EI_NIDENT or not _is_valid_elf_ident(data[:EI_NIDENT]):
+        return None
+    ehdr_type: type[ElfEhdr]
+    if data[EI_CLASS] == ELFCLASS64:
+        ehdr_type = Elf64Ehdr
+    elif data[EI_CLASS] == ELFCLASS32:
+        ehdr_type = Elf32Ehdr
+    else:
+        return None
+    if len(data) < ehdr_type.SIZE:
+        return None
+    return ehdr_type.parse(data)
 
 
-def _read_program_headers(data: bytes, kind: str, hdr: Any) -> list[Any]:
-    phdrs: list[Any] = []
+def _read_program_headers(data: bytes, hdr: ElfEhdr) -> list[ElfPhdr]:
     if hdr.e_phnum == 0:
         logger.error("%s: ELF has no program sections", "_read_program_headers")
-        return phdrs
+        return []
 
-    table_size = hdr.e_phnum * (ELF64_Phdr.sizeof() if kind == "ELF64" else ELF32_Phdr.sizeof())
-    if hdr.e_phoff + table_size > len(data):
+    phdr_type: type[ElfPhdr] = Elf64Phdr if isinstance(hdr, Elf64Ehdr) else Elf32Phdr
+    if hdr.e_phoff + hdr.e_phnum * phdr_type.SIZE > len(data):
         logger.error("%s: Program header table is out of bounds", "_read_program_headers")
         return []
 
-    table = data[hdr.e_phoff : hdr.e_phoff + table_size]
-    bio = io.BytesIO(table)
-    for _ in range(hdr.e_phnum):
-        ph = ELF64_Phdr.parse_stream(bio) if kind == "ELF64" else ELF32_Phdr.parse_stream(bio)
-        phdrs.append(ph)
-    return phdrs
+    reader = ByteReader(data, hdr.e_phoff)
+    return [phdr_type.read(reader) for _ in range(hdr.e_phnum)]
 
 
 def _elf_last_segment_end(data: bytes) -> Optional[int]:
-    kind, hdr = _read_elf_headers(data)
-    if kind is None or not hdr:
+    hdr = _read_elf_header(data)
+    if hdr is None:
         return None
-    phdrs = _read_program_headers(data, kind, hdr)
+    phdrs = _read_program_headers(data, hdr)
     if not phdrs:
         return None
     # last by highest p_offset
-    last = max(phdrs, key=lambda p: int(p.p_offset))
-    return int(last.p_offset + last.p_filesz)
+    last = max(phdrs, key=lambda p: p.p_offset)
+    return last.p_offset + last.p_filesz
 
 
-def _mbn_v7_header_sizes_valid(h: Any, sect_size: int) -> bool:
+def _mbn_v7_header_sizes_valid(h: MbnV7Header, sect_size: int) -> bool:
     total = (
-        MBN_V7.sizeof()
+        MbnV7Header.SIZE
         + h.common_metadata_size
         + h.qti_metadata_size
         + h.oem_metadata_size
@@ -238,7 +241,7 @@ def _mbn_v7_header_sizes_valid(h: Any, sect_size: int) -> bool:
     return total <= sect_size
 
 
-def _mbn_v7_header_sizes_expected(h: Any) -> bool:
+def _mbn_v7_header_sizes_expected(h: MbnV7Header) -> bool:
     return (
         (h.qti_metadata_size in (0, 0xE0))
         and (h.oem_metadata_size in (0, 0xE0))
@@ -247,7 +250,7 @@ def _mbn_v7_header_sizes_expected(h: Any) -> bool:
     )
 
 
-def _mbn_v7_log(h: Any, func: str, prefix: str) -> None:
+def _mbn_v7_log(h: MbnV7Header, func: str, prefix: str) -> None:
     logger.debug(
         "%s: %s header {version=0x%x, common_metadata_size=0x%x, qti_metadata_size=0x%x, "
         "oem_metadata_size=0x%x, hash_table_size=0x%x, qti_signature_size=0x%x, "
@@ -290,11 +293,10 @@ def mbn_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
     try:
         # MBN v2
         if data_size > MBN_V2_MAGIC_SIZE and data[:MBN_V2_MAGIC_SIZE] == MBN_V2_MAGIC:
-            if data_size < MBN_V2.sizeof():
+            if data_size < MbnV2Header.SIZE:
                 logger.error("%s: truncated MBN v2 header", "mbn_stitch")
                 return None
-            h = MBN_V2.parse(data[: MBN_V2.sizeof()])
-            parsed_size = h.data_size + MBN_V2.sizeof()
+            parsed_size = MbnV2Header.parse(data).data_size + MbnV2Header.SIZE
             logger.debug(
                 "%s: encountered MBN v2 image, parsed_size = 0x%x",
                 "mbn_stitch",
@@ -303,11 +305,10 @@ def mbn_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
 
         # MBN v1
         elif data_size > MBN_V1_MAGIC_SIZE and data[:MBN_V1_MAGIC_SIZE] == MBN_V1_MAGIC:
-            if data_size < MBN_V1.sizeof():
+            if data_size < MbnV1Header.SIZE:
                 logger.error("%s: truncated MBN v1 header", "mbn_stitch")
                 return None
-            h = MBN_V1.parse(data[: MBN_V1.sizeof()])
-            parsed_size = h.data_size + MBN_V1.sizeof()
+            parsed_size = MbnV1Header.parse(data).data_size + MbnV1Header.SIZE
             logger.debug(
                 "%s: encountered MBN v1 image, parsed_size = 0x%x",
                 "mbn_stitch",
@@ -319,11 +320,10 @@ def mbn_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
             data_size > (MBN_BIN_MAGIC_SIZE + MBN_BIN_MAGIC_OFFSET)
             and data[MBN_BIN_MAGIC_OFFSET : MBN_BIN_MAGIC_OFFSET + MBN_BIN_MAGIC_SIZE] == MBN_BIN_MAGIC
         ):
-            if data_size < MBN_BIN.sizeof():
+            if data_size < MbnBinHeader.SIZE:
                 logger.error("%s: truncated MBN BIN header", "mbn_stitch")
                 return None
-            h = MBN_BIN.parse(data[: MBN_BIN.sizeof()])
-            parsed_size = h.total_size
+            parsed_size = MbnBinHeader.parse(data).total_size
             logger.debug(
                 "%s: encountered MBN BIN image, parsed_size = 0x%x",
                 "mbn_stitch",
@@ -373,9 +373,6 @@ def mbn_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
         out[stitch_offset : stitch_offset + blob_size] = blob
         return bytes(out)
 
-    except ChecksumError:
-        logger.exception("mbn_stitch: construct checksum error")
-        return None
     except Exception:
         logger.exception("mbn_stitch")
         return None
@@ -397,16 +394,16 @@ def mbn_mav25_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
 
     data_size, blob_size = len(data), len(blob)
 
-    kind, ehdr = _read_elf_headers(data)
-    if kind is None or not ehdr:
+    ehdr = _read_elf_header(data)
+    if ehdr is None:
         logger.error("%s: data is not a valid ELF", "mbn_mav25_stitch")
         return None
 
-    if blob_size < MBN_V7.sizeof():
+    if blob_size < MbnV7Header.SIZE:
         logger.error("%s: header is bigger than blob", "mbn_mav25_stitch")
         return None
 
-    src = MBN_V7.parse(blob[: MBN_V7.sizeof()])
+    src = MbnV7Header.parse(blob)
     _mbn_v7_log(src, "mbn_mav25_stitch", "src")
     if src.version != 7:
         logger.error(
@@ -427,11 +424,11 @@ def mbn_mav25_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
         )
 
     # last PHDR (by index)
-    phdrs = _read_program_headers(data, kind, ehdr)
+    phdrs = _read_program_headers(data, ehdr)
     if not phdrs:
         return None
     last_ph = phdrs[-1]
-    sect_off, sect_size = int(last_ph.p_offset), int(last_ph.p_filesz)
+    sect_off, sect_size = last_ph.p_offset, last_ph.p_filesz
 
     if sect_off == 0:
         logger.error("%s: section has 0 offset", "mbn_mav25_stitch")
@@ -447,7 +444,7 @@ def mbn_mav25_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
             sect_size,
         )
         return None
-    if sect_size < MBN_V7.sizeof():
+    if sect_size < MbnV7Header.SIZE:
         logger.error(
             "%s: dest header is bigger than the section (0x%x)",
             "mbn_mav25_stitch",
@@ -455,7 +452,7 @@ def mbn_mav25_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
         )
         return None
 
-    dest = MBN_V7.parse(data[sect_off : sect_off + MBN_V7.sizeof()])
+    dest = MbnV7Header.parse(data[sect_off : sect_off + MbnV7Header.SIZE])
     _mbn_v7_log(dest, "mbn_mav25_stitch", "dest")
     if dest.version != 7:
         logger.error(
@@ -495,7 +492,7 @@ def mbn_mav25_stitch(data: bytes, blob: bytes) -> Optional[bytes]:
         )
 
     # compute new layout from src
-    new_metadata_size = MBN_V7.sizeof() + src.common_metadata_size + src.qti_metadata_size + src.oem_metadata_size
+    new_metadata_size = MbnV7Header.SIZE + src.common_metadata_size + src.qti_metadata_size + src.oem_metadata_size
     new_metadata_and_hash_table_size = new_metadata_size + src.hash_table_size
     new_oem_sig_and_cert_chain_size = src.oem_signature_size + src.oem_certificate_chain_size
 

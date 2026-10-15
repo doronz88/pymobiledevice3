@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import os
+import struct
 import sys
 import traceback
 from collections.abc import Coroutine
@@ -10,8 +11,9 @@ from typing import Any, Callable, Optional, TypeVar, Union, cast, overload
 
 import questionary
 import requests
-from construct import Int8ul, Int16ul, Int32ul, Int64ul, Select
 from tqdm import tqdm
+
+from pymobiledevice3.exceptions import BinaryParseError
 
 _F = TypeVar("_F", bound=Callable[..., Any])
 
@@ -36,8 +38,15 @@ def plist_access_path(d: Any, path: tuple[Any, ...], type_: Optional[type] = Non
     return d
 
 
-def bytes_to_uint(b: bytes):
-    return Select(u64=Int64ul, u32=Int32ul, u16=Int16ul, u8=Int8ul).parse(b)
+_UINT_FORMATS = (struct.Struct("<Q"), struct.Struct("<I"), struct.Struct("<H"), struct.Struct("<B"))
+
+
+def bytes_to_uint(b: bytes) -> int:
+    """Read a little-endian unsigned integer from the first 8, 4, 2 or 1 bytes - the widest that ``b`` holds."""
+    for fmt in _UINT_FORMATS:
+        if len(b) >= fmt.size:
+            return fmt.unpack_from(b)[0]
+    raise BinaryParseError("cannot read an unsigned integer from empty data")
 
 
 def current_task_name(default: str = "?") -> str:

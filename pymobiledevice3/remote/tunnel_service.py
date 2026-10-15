@@ -21,12 +21,9 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppres
 from pathlib import Path
 from socket import create_connection
 from ssl import VerifyMode
-from typing import TYPE_CHECKING, Any, Callable, NamedTuple, Optional, TextIO, Union, cast
+from typing import TYPE_CHECKING, Annotated, Any, Callable, NamedTuple, Optional, TextIO, Union, cast
 
 import opack2
-from construct import Bytes, Container, GreedyBytes, GreedyRange, Int8ul, Int16ub, Int64ul, Prefixed, Struct
-from construct import Enum as ConstructEnum
-from construct_typed import DataclassMixin, DataclassStruct, csfield
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives._serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -47,7 +44,7 @@ from srptools import SRPClientSession, SRPContext, SRPServerSession
 from srptools import utils as _srptools_utils
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
 
-from pymobiledevice3.construct_compat import const_field
+from pymobiledevice3.binary import BinaryStruct, ByteReader, Bytes, BytesLike, Const, OpenIntEnum, u16
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 
@@ -69,10 +66,12 @@ from pymobiledevice3.bonjour import (
 )
 from pymobiledevice3.ca import make_cert
 from pymobiledevice3.exceptions import (
+    BinaryParseError,
     ConnectionTerminatedError,
     InvalidServiceError,
     NotConnectedError,
     PairingError,
+    ProtocolError,
     PskCipherNotSupportedError,
     PyMobileDevice3Exception,
     QuicProtocolNotSupportedError,
@@ -120,68 +119,91 @@ UDP_HEADER_SIZE = 8
 IOS_DEVICE_MTU_SIZE = 1500
 packet_builder.PACKET_MAX_SIZE = IOS_DEVICE_MTU_SIZE - IPV6_HEADER_SIZE - UDP_HEADER_SIZE
 
-PairingDataComponentType = ConstructEnum(
-    Int8ul,
-    METHOD=0x00,
-    IDENTIFIER=0x01,
-    SALT=0x02,
-    PUBLIC_KEY=0x03,
-    PROOF=0x04,
-    ENCRYPTED_DATA=0x05,
-    STATE=0x06,
-    ERROR=0x07,
-    RETRY_DELAY=0x08,
-    CERTIFICATE=0x09,
-    SIGNATURE=0x0A,
-    PERMISSIONS=0x0B,
-    FRAGMENT_DATA=0x0C,
-    FRAGMENT_LAST=0x0D,
-    SESSION_ID=0x0E,
-    TTL=0x0F,
-    EXTRA_DATA=0x10,
-    INFO=0x11,
-    ACL=0x12,
-    FLAGS=0x13,
-    VALIDATION_DATA=0x14,
-    MFI_AUTH_TOKEN=0x15,
-    MFI_PRODUCT_TYPE=0x16,
-    SERIAL_NUMBER=0x17,
-    MFI_AUTH_TOKEN_UUID=0x18,
-    APP_FLAGS=0x19,
-    OWNERSHIP_PROOF=0x1A,
-    SETUP_CODE_TYPE=0x1B,
-    PRODUCTION_DATA=0x1C,
-    APP_INFO=0x1D,
-    SEPARATOR=0xFF,
-)
 
-PairingDataComponentTLV8 = Struct(
-    "type" / PairingDataComponentType,
-    "data" / Prefixed(Int8ul, GreedyBytes),
-)
+class PairingDataComponentType(OpenIntEnum):
+    METHOD = 0x00
+    IDENTIFIER = 0x01
+    SALT = 0x02
+    PUBLIC_KEY = 0x03
+    PROOF = 0x04
+    ENCRYPTED_DATA = 0x05
+    STATE = 0x06
+    ERROR = 0x07
+    RETRY_DELAY = 0x08
+    CERTIFICATE = 0x09
+    SIGNATURE = 0x0A
+    PERMISSIONS = 0x0B
+    FRAGMENT_DATA = 0x0C
+    FRAGMENT_LAST = 0x0D
+    SESSION_ID = 0x0E
+    TTL = 0x0F
+    EXTRA_DATA = 0x10
+    INFO = 0x11
+    ACL = 0x12
+    FLAGS = 0x13
+    VALIDATION_DATA = 0x14
+    MFI_AUTH_TOKEN = 0x15
+    MFI_PRODUCT_TYPE = 0x16
+    SERIAL_NUMBER = 0x17
+    MFI_AUTH_TOKEN_UUID = 0x18
+    APP_FLAGS = 0x19
+    OWNERSHIP_PROOF = 0x1A
+    SETUP_CODE_TYPE = 0x1B
+    PRODUCTION_DATA = 0x1C
+    APP_INFO = 0x1D
+    SEPARATOR = 0xFF
 
-PairingDataComponentTLVBuf = GreedyRange(PairingDataComponentTLV8)
+
+@dataclasses.dataclass
+class PairingDataComponentTLV8:
+    """One TLV8 item: 1-byte type, 1-byte length, ``length`` bytes of data."""
+
+    type: int
+    data: bytes
+
+    def build(self) -> bytes:
+        return bytes((self.type, len(self.data))) + self.data
+
+
+class PairingDataComponentTLVBuf:
+    """A buffer of consecutive TLV8 items."""
+
+    @staticmethod
+    def parse(data: BytesLike) -> list[PairingDataComponentTLV8]:
+        """Parse as many complete items as possible; an incomplete trailing item is ignored."""
+        reader = ByteReader(data)
+        result: list[PairingDataComponentTLV8] = []
+        while reader.remaining >= 2:
+            type_, length = reader.read(2)
+            if length > reader.remaining:
+                break
+            result.append(PairingDataComponentTLV8(PairingDataComponentType(type_), reader.read(length)))
+        return result
+
+    @staticmethod
+    def build(items: list[PairingDataComponentTLV8]) -> bytes:
+        return b"".join(item.build() for item in items)
+
 
 # Values of the ERROR component, as CoreUtils' pair-setup maps them to/from its OSStatus codes (noted per value).
 # HomeKit's published kTLVError_* table only agrees up to BACKOFF.
-PairingErrorCode = ConstructEnum(
-    Int8ul,
-    UNKNOWN=0x01,  # kUnknownErr
-    AUTHENTICATION=0x02,  # kAuthenticationErr
-    BACKOFF=0x03,  # kBackoffErr, sent along with RETRY_DELAY
-    UNKNOWN_PEER=0x04,  # kNotFoundErr
-    MAX_PEERS=0x05,  # kNoSpaceErr
-    MAX_TRIES=0x06,  # kCountErr, pair-setup disabled after too many attempts
-    PERMISSION=0x07,  # kPermissionErr
-    OWNERSHIP_FAILURE=0x08,  # kOwnershipFailureErr
-    ACCESS=0x09,  # kAccessErr
-    UNSUPPORTED=0x0A,  # kUnsupportedErr
-)
+class PairingErrorCode(OpenIntEnum):
+    UNKNOWN = 0x01  # kUnknownErr
+    AUTHENTICATION = 0x02  # kAuthenticationErr
+    BACKOFF = 0x03  # kBackoffErr, sent along with RETRY_DELAY
+    UNKNOWN_PEER = 0x04  # kNotFoundErr
+    MAX_PEERS = 0x05  # kNoSpaceErr
+    MAX_TRIES = 0x06  # kCountErr, pair-setup disabled after too many attempts
+    PERMISSION = 0x07  # kPermissionErr
+    OWNERSHIP_FAILURE = 0x08  # kOwnershipFailureErr
+    ACCESS = 0x09  # kAccessErr
+    UNSUPPORTED = 0x0A  # kUnsupportedErr
 
 
-def _describe_pairing_error(tlv: dict[str, Any]) -> str:
+def _describe_pairing_error(tlv: dict[int, bytes]) -> str:
     """Describe the ERROR component of a decoded pairing TLV."""
-    message = f"device returned pairing error: {PairingErrorCode.parse(tlv[PairingDataComponentType.ERROR])}"
+    code = PairingErrorCode(ByteReader(tlv[PairingDataComponentType.ERROR]).read(1)[0])
+    message = f"device returned pairing error: {code.name}"
     retry_delay = tlv.get(PairingDataComponentType.RETRY_DELAY)
     if retry_delay:
         # little-endian seconds until the device accepts another attempt
@@ -204,17 +226,27 @@ PIN_PAIRING_MODELS = ("AppleTV", "RealityDevice")
 
 
 @dataclasses.dataclass
-class CDTunnelPacketData(DataclassMixin):
-    """Typed CoreDevice tunnel packet: ``CDTunnel`` magic + a length-prefixed body.
-
-    const_field() makes ``magic`` init=False at runtime; pyright can't see that through the
-    construct-typing stubs, hence the ignore on the following field."""
-
-    magic: bytes = const_field(Bytes(len(CDTUNNEL_MAGIC)), CDTUNNEL_MAGIC)
-    body: bytes = csfield(Prefixed(Int16ub, GreedyBytes))  # pyright: ignore[reportGeneralTypeIssues]
+class _CDTunnelHeader(BinaryStruct, byte_order=">"):
+    magic: Annotated[bytes, Bytes(len(CDTUNNEL_MAGIC)), Const(CDTUNNEL_MAGIC)] = dataclasses.field(
+        default=CDTUNNEL_MAGIC, init=False
+    )
+    length: u16
 
 
-CDTunnelPacket = DataclassStruct(CDTunnelPacketData)
+@dataclasses.dataclass
+class CDTunnelPacket:
+    """CoreDevice tunnel packet: ``CDTunnel`` magic + a big-endian 16-bit length + that many bytes of body."""
+
+    body: bytes
+
+    @classmethod
+    def parse(cls, data: BytesLike) -> "CDTunnelPacket":
+        reader = ByteReader(data)
+        return cls(reader.read(_CDTunnelHeader.read(reader).length))
+
+    def build(self) -> bytes:
+        return _CDTunnelHeader(len(self.body)).build() + self.body
+
 
 REPAIRING_PACKET_MAGIC = b"RPPairing"
 # Pair record key holding the device's 16-byte ``altIRK`` (see :func:`get_remote_pairing_tunnel_services`).
@@ -224,14 +256,22 @@ _warned_stale_pair_records: set[str] = set()
 
 
 @dataclasses.dataclass
-class RPPairingPacketData(DataclassMixin):
-    """Typed remote-pairing packet: ``RPPairing`` magic + a length-prefixed body."""
+class _RPPairingHeader(BinaryStruct, byte_order=">"):
+    magic: Annotated[bytes, Bytes(len(REPAIRING_PACKET_MAGIC)), Const(REPAIRING_PACKET_MAGIC)] = dataclasses.field(
+        default=REPAIRING_PACKET_MAGIC, init=False
+    )
+    length: u16
 
-    magic: bytes = const_field(Bytes(len(REPAIRING_PACKET_MAGIC)), REPAIRING_PACKET_MAGIC)
-    body: bytes = csfield(Prefixed(Int16ub, GreedyBytes))  # pyright: ignore[reportGeneralTypeIssues]
 
+@dataclasses.dataclass
+class RPPairingPacket:
+    """Remote-pairing packet: ``RPPairing`` magic + a big-endian 16-bit length + that many bytes of body."""
 
-RPPairingPacket = DataclassStruct(RPPairingPacketData)
+    body: bytes
+
+    def build(self) -> bytes:
+        return _RPPairingHeader(len(self.body)).build() + self.body
+
 
 #: When True, :func:`create_tun_device` builds the tunnel's interface as a pure-Python
 #: userspace stack (``UserspaceTun``, no root) instead of a kernel ``utun`` (needs root/admin).
@@ -407,7 +447,7 @@ class RemotePairingTunnel(ABC):
 
     @staticmethod
     def _encode_cdtunnel_packet(data: dict[str, Any]) -> bytes:
-        return CDTunnelPacket.build(CDTunnelPacketData(body=json.dumps(data).encode()))
+        return CDTunnelPacket(body=json.dumps(data).encode()).build()
 
 
 class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
@@ -468,7 +508,7 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
 
     @staticmethod
     def _encode_cdtunnel_packet(data: dict[str, Any]) -> bytes:
-        return CDTunnelPacket.build(CDTunnelPacketData(body=json.dumps(data).encode()))
+        return CDTunnelPacket(body=json.dumps(data).encode()).build()
 
 
 class RemotePairingTcpTunnel(RemotePairingTunnel):
@@ -869,8 +909,8 @@ class RemotePairingProtocol(StartTcpTunnel):
         """Display a Trust / Don't Trust dialog"""
 
         tlv = PairingDataComponentTLVBuf.build([
-            {"type": PairingDataComponentType.METHOD, "data": b"\x00"},
-            {"type": PairingDataComponentType.STATE, "data": b"\x01"},
+            PairingDataComponentTLV8(PairingDataComponentType.METHOD, b"\x00"),
+            PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x01"),
         ])
 
         await self._send_pairing_data({
@@ -922,10 +962,10 @@ class RemotePairingProtocol(StartTcpTunnel):
         client_session_key_proof = binascii.unhexlify(self.srp_context.key_proof)
 
         tlv = PairingDataComponentTLVBuf.build([
-            {"type": PairingDataComponentType.STATE, "data": b"\x03"},
-            {"type": PairingDataComponentType.PUBLIC_KEY, "data": client_public[:255]},
-            {"type": PairingDataComponentType.PUBLIC_KEY, "data": client_public[255:]},
-            {"type": PairingDataComponentType.PROOF, "data": client_session_key_proof},
+            PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x03"),
+            PairingDataComponentTLV8(PairingDataComponentType.PUBLIC_KEY, client_public[:255]),
+            PairingDataComponentTLV8(PairingDataComponentType.PUBLIC_KEY, client_public[255:]),
+            PairingDataComponentTLV8(PairingDataComponentType.PROOF, client_session_key_proof),
         ])
 
         response = await self._send_receive_pairing_data({
@@ -975,22 +1015,22 @@ class RemotePairingProtocol(StartTcpTunnel):
         })
 
         tlv = PairingDataComponentTLVBuf.build([
-            {"type": PairingDataComponentType.IDENTIFIER, "data": self.identifier.encode()},
-            {
-                "type": PairingDataComponentType.PUBLIC_KEY,
-                "data": self.ed25519_private_key.public_key().public_bytes_raw(),
-            },
-            {"type": PairingDataComponentType.SIGNATURE, "data": self.signature},
-            {"type": PairingDataComponentType.INFO, "data": device_info},
+            PairingDataComponentTLV8(PairingDataComponentType.IDENTIFIER, self.identifier.encode()),
+            PairingDataComponentTLV8(
+                PairingDataComponentType.PUBLIC_KEY,
+                self.ed25519_private_key.public_key().public_bytes_raw(),
+            ),
+            PairingDataComponentTLV8(PairingDataComponentType.SIGNATURE, self.signature),
+            PairingDataComponentTLV8(PairingDataComponentType.INFO, device_info),
         ])
 
         cip = ChaCha20Poly1305(setup_encryption_key)
         encrypted_data = cip.encrypt(b"\x00\x00\x00\x00PS-Msg05", tlv, b"")
 
         tlv = PairingDataComponentTLVBuf.build([
-            {"type": PairingDataComponentType.ENCRYPTED_DATA, "data": encrypted_data[:255]},
-            {"type": PairingDataComponentType.ENCRYPTED_DATA, "data": encrypted_data[255:]},
-            {"type": PairingDataComponentType.STATE, "data": b"\x05"},
+            PairingDataComponentTLV8(PairingDataComponentType.ENCRYPTED_DATA, encrypted_data[:255]),
+            PairingDataComponentTLV8(PairingDataComponentType.ENCRYPTED_DATA, encrypted_data[255:]),
+            PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x05"),
         ])
 
         response = await self._send_receive_pairing_data({
@@ -1008,7 +1048,7 @@ class RemotePairingProtocol(StartTcpTunnel):
 
         return tlv
 
-    def _parse_peer_alt_irk(self, device_tlv: dict[str, Any]) -> Optional[bytes]:
+    def _parse_peer_alt_irk(self, device_tlv: dict[int, bytes]) -> Optional[bytes]:
         """Extract the device's ``altIRK`` from its M6 identity payload, or ``None`` if it sent none.
 
         The device derives the ``authTag`` it advertises over mDNS from this key, so keeping it in the
@@ -1046,6 +1086,8 @@ class RemotePairingProtocol(StartTcpTunnel):
         try:
             response = await self._send_receive_encrypted_request({"request": {"_0": {"createRemoteUnlockKey": {}}}})
             self.remote_unlock_host_key = response["createRemoteUnlockKey"]["hostKey"]
+        except (BinaryParseError, ProtocolError):
+            raise  # a malformed reply, not a device without remote unlock
         except PyMobileDevice3Exception:
             # tvOS does not support remote unlock.
             self.remote_unlock_host_key = ""
@@ -1062,11 +1104,11 @@ class RemotePairingProtocol(StartTcpTunnel):
 
     async def _validate_pairing(self) -> bool:
         pairing_data = PairingDataComponentTLVBuf.build([
-            {"type": PairingDataComponentType.STATE, "data": b"\x01"},
-            {
-                "type": PairingDataComponentType.PUBLIC_KEY,
-                "data": self.x25519_private_key.public_key().public_bytes_raw(),
-            },
+            PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x01"),
+            PairingDataComponentTLV8(
+                PairingDataComponentType.PUBLIC_KEY,
+                self.x25519_private_key.public_key().public_bytes_raw(),
+            ),
         ])
         response = await self._send_receive_pairing_data({
             "data": pairing_data,
@@ -1115,15 +1157,15 @@ class RemotePairingProtocol(StartTcpTunnel):
         encrypted_data = cip.encrypt(
             b"\x00\x00\x00\x00PV-Msg03",
             PairingDataComponentTLVBuf.build([
-                {"type": PairingDataComponentType.IDENTIFIER, "data": self.identifier.encode()},
-                {"type": PairingDataComponentType.SIGNATURE, "data": signature},
+                PairingDataComponentTLV8(PairingDataComponentType.IDENTIFIER, self.identifier.encode()),
+                PairingDataComponentTLV8(PairingDataComponentType.SIGNATURE, signature),
             ]),
             b"",
         )
 
         pairing_data = PairingDataComponentTLVBuf.build([
-            {"type": PairingDataComponentType.STATE, "data": b"\x03"},
-            {"type": PairingDataComponentType.ENCRYPTED_DATA, "data": encrypted_data},
+            PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x03"),
+            PairingDataComponentTLV8(PairingDataComponentType.ENCRYPTED_DATA, encrypted_data),
         ])
 
         response = await self._send_receive_pairing_data({
@@ -1143,7 +1185,7 @@ class RemotePairingProtocol(StartTcpTunnel):
         await self._send_plain_request({"event": {"_0": {"pairVerifyFailed": {}}}})
 
     async def _send_receive_encrypted_request(self, request: dict[str, Any]) -> dict[str, Any]:
-        nonce = Int64ul.build(self._encrypted_sequence_number) + b"\x00" * 4
+        nonce = struct.pack("<Q", self._encrypted_sequence_number) + b"\x00" * 4
         encrypted_data = self.client_cip.encrypt(nonce, json.dumps(request).encode(), b"")
 
         response = await self.send_receive_request({
@@ -1204,8 +1246,8 @@ class RemotePairingProtocol(StartTcpTunnel):
         return response["message"]["plain"]["_0"]
 
     @staticmethod
-    def decode_tlv(tlv_list: list[Container[Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
+    def decode_tlv(tlv_list: list[PairingDataComponentTLV8]) -> dict[int, bytes]:
+        result: dict[int, bytes] = {}
         for tlv in tlv_list:
             if tlv.type in result:
                 result[tlv.type] += tlv.data
@@ -1334,11 +1376,7 @@ class RemotePairingTunnelService(RemotePairingProtocol):
 
     async def send_request(self, data: dict[str, Any]) -> None:
         writer = self.writer
-        writer.write(
-            RPPairingPacket.build(
-                RPPairingPacketData(body=json.dumps(data, default=self._default_json_encoder).encode())
-            )
-        )
+        writer.write(RPPairingPacket(body=json.dumps(data, default=self._default_json_encoder).encode()).build())
         try:
             await writer.drain()
         except OSError as e:
@@ -1863,9 +1901,9 @@ class PairableHost:
 
         await self._display_pin(pin, pin_callback)
 
-        tlv: list[Optional[dict[str, Any]]] = [
-            {"type": PairingDataComponentType.STATE, "data": b"\x02"},
-            {"type": PairingDataComponentType.SALT, "data": salt},
+        tlv: list[PairingDataComponentTLV8] = [
+            PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x02"),
+            PairingDataComponentTLV8(PairingDataComponentType.SALT, salt),
         ]
         tlv += self._chunk_component(int(PairingDataComponentType.PUBLIC_KEY), server_public)
         self.logger.debug("Sending pair-setup M2 (salt + B)")
@@ -1888,8 +1926,8 @@ class PairableHost:
             self.logger.warning("SRP client proof verification failed (wrong PIN?)")
             await self._send_pairing_data(
                 PairingDataComponentTLVBuf.build([
-                    {"type": PairingDataComponentType.STATE, "data": b"\x04"},
-                    {"type": PairingDataComponentType.ERROR, "data": b"\x02"},  # kTLVError_Authentication
+                    PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x04"),
+                    PairingDataComponentTLV8(PairingDataComponentType.ERROR, b"\x02"),  # kTLVError_Authentication
                 ])
             )
             raise PairingError("SRP authentication failed (wrong PIN?)")
@@ -1900,8 +1938,8 @@ class PairableHost:
         self.logger.debug("Sending pair-setup M4 (server proof)")
         await self._send_pairing_data(
             PairingDataComponentTLVBuf.build([
-                {"type": PairingDataComponentType.STATE, "data": b"\x04"},
-                {"type": PairingDataComponentType.PROOF, "data": binascii.unhexlify(srp_server.key_proof_hash)},
+                PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x04"),
+                PairingDataComponentTLV8(PairingDataComponentType.PROOF, binascii.unhexlify(srp_server.key_proof_hash)),
             ])
         )
 
@@ -1929,7 +1967,7 @@ class PairableHost:
         m6_plain = self._build_accessory_identity_tlv(session_key)
         m6_cipher = cip.encrypt(b"\x00\x00\x00\x00PS-Msg06", m6_plain, b"")
         tlv = self._chunk_component(int(PairingDataComponentType.ENCRYPTED_DATA), m6_cipher)
-        tlv.append({"type": PairingDataComponentType.STATE, "data": b"\x06"})
+        tlv.append(PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x06"))
         await self._send_pairing_data(PairingDataComponentTLVBuf.build(tlv))
 
         self.encryption_key = session_key
@@ -1960,10 +1998,10 @@ class PairableHost:
         })
 
         return PairingDataComponentTLVBuf.build([
-            {"type": PairingDataComponentType.IDENTIFIER, "data": self.host_info.identifier.encode()},
-            {"type": PairingDataComponentType.PUBLIC_KEY, "data": ltpk},
-            {"type": PairingDataComponentType.SIGNATURE, "data": signature},
-            {"type": PairingDataComponentType.INFO, "data": info},
+            PairingDataComponentTLV8(PairingDataComponentType.IDENTIFIER, self.host_info.identifier.encode()),
+            PairingDataComponentTLV8(PairingDataComponentType.PUBLIC_KEY, ltpk),
+            PairingDataComponentTLV8(PairingDataComponentType.SIGNATURE, signature),
+            PairingDataComponentTLV8(PairingDataComponentType.INFO, info),
         ])
 
     @property
@@ -2007,26 +2045,26 @@ class PairableHost:
             await result
 
     @staticmethod
-    def _chunk_component(component_type: int, data: bytes) -> list[Optional[dict[str, Any]]]:
+    def _chunk_component(component_type: int, data: bytes) -> list[PairingDataComponentTLV8]:
         return [
-            {"type": component_type, "data": data[i : i + TLV_MAX_FRAGMENT_SIZE]}
+            PairingDataComponentTLV8(component_type, data[i : i + TLV_MAX_FRAGMENT_SIZE])
             for i in range(0, len(data), TLV_MAX_FRAGMENT_SIZE)
         ]
 
     @staticmethod
-    def _expect_state(tlv: dict[str, Any], expected: int) -> None:
+    def _expect_state(tlv: dict[int, bytes], expected: int) -> None:
         state = tlv.get(PairingDataComponentType.STATE)
         if not state or state[0] != expected:
             raise PairingError(f"unexpected pair-setup state: expected {expected}, got {state!r}")
 
     @staticmethod
-    def _ensure_no_error(tlv: dict[str, Any]) -> None:
+    def _ensure_no_error(tlv: dict[int, bytes]) -> None:
         if PairingDataComponentType.ERROR in tlv:
             raise PairingError(_describe_pairing_error(tlv))
 
     @staticmethod
-    def decode_tlv(tlv_list: list[Container[Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
+    def decode_tlv(tlv_list: list[PairingDataComponentTLV8]) -> dict[int, bytes]:
+        result: dict[int, bytes] = {}
         for tlv in tlv_list:
             if tlv.type in result:
                 result[tlv.type] += tlv.data
@@ -2069,9 +2107,7 @@ class PairableHost:
             "originatedBy": "device",
             "sequenceNumber": XpcUInt64Type(self._sequence_number),
         }
-        self._writer.write(
-            RPPairingPacket.build(RPPairingPacketData(body=json.dumps(envelope, default=self._json_default).encode()))
-        )
+        self._writer.write(RPPairingPacket(body=json.dumps(envelope, default=self._json_default).encode()).build())
         try:
             await self._writer.drain()
         except OSError as e:

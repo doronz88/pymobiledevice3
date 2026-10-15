@@ -3,12 +3,13 @@
 import enum
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import Any, BinaryIO, Optional, cast
+from dataclasses import dataclass
+from typing import Annotated, Any, BinaryIO, Optional, Union, cast
 
 import pcapng.blocks as blocks
-from construct import Byte, Bytes, Container, CString, Int16ub, Int32ub, Int32ul, Padded, Seek, Struct, this
 from pcapng import FileWriter
 
+from pymobiledevice3.binary import BinaryStruct, ByteReader, BytesLike, PaddedString, u8, u16, u32, u32le
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -301,27 +302,40 @@ LINKTYPE_RAW = 101
 
 ETHERNET_HEADER = b"\xbe\xef" * 6 + b"\x08\x00"
 
-device_packet_struct = Struct(
-    "header_length" / Int32ub,
-    "header_version" / Byte,
-    "packet_length" / Int32ub,
-    "interface_type" / Byte,
-    "unit" / Int16ub,
-    "io" / Byte,
-    "protocol_family" / Int32ub,
-    "frame_pre_length" / Int32ub,
-    "frame_post_length" / Int32ub,
-    "interface_name" / Padded(16, CString("utf8")),
-    "pid" / Int32ul,
-    "comm" / Padded(17, CString("utf8")),
-    "svc" / Int32ub,
-    "epid" / Int32ul,
-    "ecomm" / Padded(17, CString("utf8")),
-    "seconds" / Int32ub,
-    "microseconds" / Int32ub,
-    Seek(this.header_length),
-    "data" / Bytes(this.packet_length),
-)
+_COMM_SIZE = 17
+
+
+@dataclass
+class DevicePacket(BinaryStruct, byte_order=">"):
+    """A packet captured by pcapd: per-packet metadata (big-endian, except ``pid``/``epid``) followed by the
+    raw frame ``data``, which starts at ``header_length``."""
+
+    header_length: u32
+    header_version: u8
+    packet_length: u32
+    interface_type: Annotated[Union[int, enum.Enum], u8]
+    unit: u16
+    io: u8
+    protocol_family: u32
+    frame_pre_length: u32
+    frame_post_length: u32
+    interface_name: Annotated[str, PaddedString(16)]
+    pid: u32le
+    # The kernel truncates process names at a byte boundary, which can split a UTF-8 character.
+    comm: Annotated[str, PaddedString(_COMM_SIZE, errors="replace")]
+    svc: u32
+    epid: u32le
+    ecomm: Annotated[str, PaddedString(_COMM_SIZE, errors="replace")]
+    seconds: u32
+    microseconds: u32
+    data: bytes = b""
+
+
+def parse_device_packet(data: BytesLike) -> DevicePacket:
+    """Parse a raw pcapd packet; the frame starts at ``header_length``, which may exceed the fixed header size."""
+    packet = DevicePacket.parse(data)
+    packet.data = ByteReader(data[packet.header_length :], base=packet.header_length).read(packet.packet_length)
+    return packet
 
 
 class CrossPlatformAddressFamily(enum.IntEnum):
@@ -351,7 +365,7 @@ class PcapdService(LockdownService):
 
     async def watch(
         self, packets_count: int = -1, process: Optional[str] = None, interface_name: Optional[str] = None
-    ) -> AsyncGenerator[Container[Any], None]:
+    ) -> AsyncGenerator[DevicePacket, None]:
         """
         Stream captured packets from the device as they arrive.
 
@@ -363,7 +377,7 @@ class PcapdService(LockdownService):
         :param packets_count: Number of packets to yield before stopping; -1 streams indefinitely.
         :param process: If set, only yield packets whose pid (as a string) or process name matches.
         :param interface_name: If set, only yield packets captured on this interface.
-        :yields: A parsed packet container; ``interface_type`` is an `INTERFACE_NAMES` value and
+        :yields: A parsed `DevicePacket`; ``interface_type`` is an `INTERFACE_NAMES` value and
             ``protocol_family`` a `CrossPlatformAddressFamily` value.
         """
         packet_index = 0
@@ -372,7 +386,7 @@ class PcapdService(LockdownService):
             if not d:
                 break
 
-            packet = device_packet_struct.parse(cast(bytes, d))
+            packet = parse_device_packet(cast(bytes, d))
 
             if process is not None and process != str(packet.pid) and process != packet.comm:
                 continue
@@ -380,29 +394,29 @@ class PcapdService(LockdownService):
             if interface_name is not None and interface_name != packet.interface_name:
                 continue
 
-            packet["interface_type"] = INTERFACE_NAMES(packet.interface_type)
-            packet["protocol_family"] = CrossPlatformAddressFamily(packet.protocol_family)
+            packet.interface_type = INTERFACE_NAMES(packet.interface_type)
+            packet.protocol_family = CrossPlatformAddressFamily(packet.protocol_family)
 
             if not packet.frame_pre_length:
                 # Add fake ethernet header for pdp packets.
-                packet["data"] = ETHERNET_HEADER + packet.data
+                packet.data = ETHERNET_HEADER + packet.data
             elif packet.interface_name == "pdp_ip":
-                packet["data"] = ETHERNET_HEADER + packet.data[4:]
+                packet.data = ETHERNET_HEADER + packet.data[4:]
 
             yield packet
 
             packet_index += 1
 
-    async def write_to_pcap(self, out: BinaryIO, packet_generator: AsyncIterator[Container[Any]]) -> None:
+    async def write_to_pcap(self, out: BinaryIO, packet_generator: AsyncIterator[DevicePacket]) -> None:
         """
         Write captured packets to a pcapng stream.
 
         Consumes an async packet generator (such as `watch`) and writes each packet as an enhanced
-        packet block, annotating it with the originating process metadata. Uses the packet's own
-        ``timestamp`` if present, otherwise the current wall-clock time.
+        packet block, annotating it with the originating process metadata. Each block carries the
+        device's capture time (``seconds``/``microseconds``), or the host's clock if the device sent none.
 
         :param out: A writable binary file-like object to receive the pcapng data.
-        :param packet_generator: Async iterable yielding parsed packet containers.
+        :param packet_generator: Async iterable yielding parsed packets.
         """
         shb: Any = blocks.SectionHeader(
             options={
@@ -419,9 +433,10 @@ class PcapdService(LockdownService):
         writer: Any = FileWriter(out, shb)
 
         async for packet in packet_generator:
-            packet_time = packet.timestamp if hasattr(packet, "timestamp") else time.time()
-
-            timestamp_microseconds = int(packet_time * 1_000_000)
+            if packet.seconds:
+                timestamp_microseconds = packet.seconds * 1_000_000 + packet.microseconds
+            else:
+                timestamp_microseconds = int(time.time() * 1_000_000)
             timestamp_high = (timestamp_microseconds >> 32) & 0xFFFFFFFF
             timestamp_low = timestamp_microseconds & 0xFFFFFFFF
 

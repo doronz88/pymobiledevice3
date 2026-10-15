@@ -90,7 +90,7 @@ def _format_line_fields(
     }
 
     level = syslog_entry.level.name
-    log_level_color = log_level_colors[level]
+    log_level_color = log_level_colors.get(level, "white")  # a level unknown to us (newer iOS)
     image_name = posixpath.basename(syslog_entry.image_name)
     process_name = posixpath.basename(syslog_entry.filename)
     image_offset_str = f"+0x{syslog_entry.image_offset:x}" if image_offset and image_name else ""

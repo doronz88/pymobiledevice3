@@ -10,6 +10,7 @@ from enum import IntEnum
 from pathlib import Path
 from tarfile import TarFile
 
+from pymobiledevice3.binary import BinaryStruct, Bytes, OpenIntEnum, u8, u16, u32, u64, uuid_t
 from pymobiledevice3.exceptions import ConnectionTerminatedError, DevicePathError, ProtocolError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -76,7 +77,7 @@ OS_TRACE_RELAY_STREAM_FLAGS_DEFAULT = (
 )
 
 
-class SyslogLogLevel(IntEnum):
+class SyslogLogLevel(OpenIntEnum):
     """Severity level of a syslog entry, as carried in the raw stream's level byte."""
 
     NOTICE = 0x00
@@ -127,120 +128,79 @@ class SyslogEntry:
     mach_timestamp: typing.Optional[int] = None
 
 
+@dataclasses.dataclass
+class _SyslogRecordHeader(BinaryStruct, byte_order="<"):
+    """Fixed-size header of a binary os_trace_relay syslog record; the variable-length strings follow it."""
+
+    _unknown0: typing.Annotated[bytes, Bytes(9)]
+    pid: u32
+    procid: u64
+    process_image_uuid: uuid_t  # the process' main executable
+    _unknown1: typing.Annotated[bytes, Bytes(18)]
+    seconds: u32
+    _unknown2: u32
+    microseconds: u32
+    _unknown3: u8
+    level: typing.Annotated[SyslogLogLevel, u8]
+    _unknown4: typing.Annotated[bytes, Bytes(6)]
+    mach_timestamp: u64
+    thread_id: u64
+    image_uuid: uuid_t  # the sender image
+    image_name_size: u16
+    message_size: u16
+    _unknown5: u16
+    sender_image_offset: u32
+    subsystem_size: u32
+    category_size: u32
+    _unknown6: u32
+
+
 def parse_syslog_entry(data: bytes) -> SyslogEntry:
     """
     Decode one binary syslog record from the os_trace_relay activity stream into a
     `SyslogEntry`.
 
-    Fixed-offset fields (pid, timestamps, level, UUIDs, thread/proc ids) are unpacked from the
-    record header, followed by the variable-length filename, image name, message, and optional
-    subsystem/category label. The label is only populated when both subsystem and category are
-    present in the record.
+    The fixed-size header is followed by the NUL-terminated filename, then the image name, message and
+    optional subsystem/category label, each sized by a header field (sizes include a trailing NUL). The
+    label is only populated when both subsystem and category are present in the record.
 
     :param data: The raw bytes of a single record (the payload following the stream's length prefix).
     :returns: The parsed log entry.
     """
-    offset = 0
+    header = _SyslogRecordHeader.parse(data)
 
-    # Skip first 9 bytes
-    offset += 9
+    def take(offset: int, size: int) -> str:
+        return try_decode(data[offset : offset + size - 1], errors="replace")
 
-    # Parse pid (4 bytes, little-endian unsigned int)
-    pid = struct.unpack("<I", data[offset : offset + 4])[0]
-    offset += 4
-
-    # The next 42 bytes hold: procid at +0 (u64), then the process' main executable UUID at +8
-    procid = struct.unpack("<Q", data[offset : offset + 8])[0]
-    process_image_uuid = uuid.UUID(bytes=data[offset + 8 : offset + 24])
-
-    # Skip 42 bytes
-    offset += 42
-
-    # Parse timestamp
-    seconds = struct.unpack("<I", data[offset : offset + 4])[0]
-    offset += 4
-    offset += 4  # Skip 4 bytes
-    microseconds = struct.unpack("<I", data[offset : offset + 4])[0]
-    offset += 4
-    timestamp = datetime.fromtimestamp(seconds + (microseconds / 1000000))
-
-    # Skip 1 byte
-    offset += 1
-
-    # Parse level (1 byte)
-    level = data[offset]
-    offset += 1
-
-    # The next 38 bytes hold the raw mach timestamp at +6, the thread id at +14, and the sender image UUID at +22
-    mach_timestamp = struct.unpack("<Q", data[offset + 6 : offset + 14])[0]
-    thread_id = struct.unpack("<Q", data[offset + 14 : offset + 22])[0]
-    image_uuid = uuid.UUID(bytes=data[offset + 22 : offset + 38])
-
-    # Skip 38 bytes
-    offset += 38
-
-    # Parse image_name_size (2 bytes, little-endian unsigned short)
-    image_name_size = struct.unpack("<H", data[offset : offset + 2])[0]
-    offset += 2
-
-    # Parse message_size (2 bytes, little-endian unsigned short)
-    message_size = struct.unpack("<H", data[offset : offset + 2])[0]
-    offset += 2
-
-    # Skip 2 bytes
-    offset += 2
-
-    # Parse sender_image_offset (4 bytes, little-endian unsigned int)
-    sender_image_offset = struct.unpack("<I", data[offset : offset + 4])[0]
-    offset += 4
-
-    # Parse subsystem_size (4 bytes, little-endian unsigned int)
-    subsystem_size = struct.unpack("<I", data[offset : offset + 4])[0]
-    offset += 4
-
-    # Parse category_size (4 bytes, little-endian unsigned int)
-    category_size = struct.unpack("<I", data[offset : offset + 4])[0]
-    offset += 4
-
-    # Skip 4 bytes
-    offset += 4
-
-    # Parse filename (null-terminated)
+    offset = _SyslogRecordHeader.SIZE
     filename_end = data.find(b"\x00", offset)
     filename = try_decode(data[offset:filename_end], errors="replace")
     offset = filename_end + 1
+    image_name = take(offset, header.image_name_size)
+    offset += header.image_name_size
+    message = take(offset, header.message_size)
+    offset += header.message_size
 
-    # Parse image_name
-    image_name = try_decode(data[offset : offset + image_name_size - 1], errors="replace")
-    offset += image_name_size
-
-    # Parse message
-    message = try_decode(data[offset : offset + message_size - 1], errors="replace")
-    offset += message_size
-
-    # Parse label (optional)
     label = None
-    if subsystem_size > 0 and category_size > 0:
-        subsystem = try_decode(data[offset : offset + subsystem_size - 1], errors="replace")
-        offset += subsystem_size
-        category = try_decode(data[offset : offset + category_size - 1], errors="replace")
-        offset += category_size
+    if header.subsystem_size > 0 and header.category_size > 0:
+        subsystem = take(offset, header.subsystem_size)
+        category = take(offset + header.subsystem_size, header.category_size)
         label = SyslogLabel(subsystem=subsystem, category=category)
 
     return SyslogEntry(
-        pid=pid,
-        timestamp=timestamp,
-        level=SyslogLogLevel(level),
+        pid=header.pid,
+        timestamp=datetime.fromtimestamp(header.seconds + (header.microseconds / 1000000)),
+        level=header.level,
         image_name=image_name,
-        image_offset=sender_image_offset,
+        image_offset=header.sender_image_offset,
         filename=filename,
         message=message,
         label=label,
-        procid=procid,
-        thread_id=thread_id,
-        image_uuid=image_uuid,
-        process_image_uuid=process_image_uuid,
-        mach_timestamp=mach_timestamp,
+        procid=header.procid,
+        thread_id=header.thread_id,
+        image_uuid=header.image_uuid,
+        process_image_uuid=header.process_image_uuid,
+        mach_timestamp=header.mach_timestamp,
     )
 
 

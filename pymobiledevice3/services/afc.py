@@ -15,7 +15,6 @@ import pathlib
 import posixpath
 import shutil
 import stat as stat_module
-import struct
 import sys
 from collections.abc import AsyncIterator, Coroutine, Iterable
 from dataclasses import dataclass, field
@@ -24,8 +23,6 @@ from re import Pattern
 from types import TracebackType
 from typing import Annotated, Any, Callable, NamedTuple, Optional, TextIO, TypeVar, cast
 
-from construct import Bytes, CString, GreedyRange, Int64sl, Int64ul, Tell
-from construct_typed import DataclassMixin, EnumBase, TEnum, TStruct, csfield
 from prompt_toolkit import HTML, print_formatted_text
 
 # `ls_cli` is a real-click command; the click it raises exceptions from is pygnuutils' own
@@ -35,9 +32,26 @@ from pygnuutils.cli.ls import ls as ls_cli
 from pygnuutils.ls import Ls, LsStub
 from tqdm.auto import tqdm
 
+from pymobiledevice3.binary import (
+    U64_LE,
+    BinaryStruct,
+    ByteReader,
+    Bytes,
+    BytesLike,
+    Const,
+    OpenIntEnum,
+    encode_utf8_cstring,
+    i64,
+    u64,
+)
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.construct_compat import const_field
-from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError, ConnectionTerminatedError
+from pymobiledevice3.exceptions import (
+    AfcException,
+    AfcFileNotFoundError,
+    ArgumentError,
+    BinaryParseError,
+    ConnectionTerminatedError,
+)
 from pymobiledevice3.interactive_shell import Arg, CompletionContext, InteractiveShell, shell_command
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -67,7 +81,7 @@ class StatResult(NamedTuple):
     st_birthtime: float
 
 
-class AfcOpcode(EnumBase):
+class AfcOpcode(OpenIntEnum):
     STATUS = 0x00000001
     DATA = 0x00000002  # Data
     READ_DIR = 0x00000003  # ReadDir
@@ -99,7 +113,7 @@ class AfcOpcode(EnumBase):
     SET_FILE_TIME = 0x0000001E  # set st_mtime
 
 
-class AfcError(EnumBase):
+class AfcError(OpenIntEnum):
     SUCCESS = 0
     UNKNOWN_ERROR = 1
     OP_HEADER_INVALID = 2
@@ -130,12 +144,12 @@ class AfcError(EnumBase):
     DIR_NOT_EMPTY = 33
 
 
-class AfcLinkType(EnumBase):
+class AfcLinkType(OpenIntEnum):
     HARDLINK = 1
     SYMLINK = 2
 
 
-class AfcFopenMode(EnumBase):
+class AfcFopenMode(OpenIntEnum):
     RDONLY = 0x00000001  # r   O_RDONLY
     RW = 0x00000002  # r+  O_RDWR   | O_CREAT
     WRONLY = 0x00000003  # w   O_WRONLY | O_CREAT  | O_TRUNC
@@ -143,12 +157,6 @@ class AfcFopenMode(EnumBase):
     APPEND = 0x00000005  # a   O_WRONLY | O_APPEND | O_CREAT
     RDAPPEND = 0x00000006  # a+  O_RDWR   | O_APPEND | O_CREAT
 
-
-# typed construct adapters for the enums
-afc_opcode_t = TEnum(Int64ul, AfcOpcode)
-afc_error_construct = TEnum(Int64ul, AfcError)
-afc_link_type_construct = TEnum(Int64ul, AfcLinkType)
-afc_fopen_mode_construct = TEnum(Int64ul, AfcFopenMode)
 
 AFC_FOPEN_TEXTUAL_MODES = {
     "r": AfcFopenMode.RDONLY,
@@ -168,106 +176,86 @@ MAXIMUM_WRITE_SIZE = 1 << 30
 AFCMAGIC = b"CFA6LPAA"
 
 
-@dataclass
-class AfcHeader(DataclassMixin):
-    # const_field() makes ``magic`` init=False at runtime, but pyright can't see that through the
-    # construct-typing stubs and flags the non-default fields that follow. Field order is the AFC wire
-    # format.
-    magic: bytes = const_field(Bytes(len(AFCMAGIC)), AFCMAGIC)
-    entire_length: int = csfield(Int64ul)  # pyright: ignore[reportGeneralTypeIssues]
-    this_length: int = csfield(Int64ul)  # pyright: ignore[reportGeneralTypeIssues]
-    packet_num: int = csfield(Int64ul)  # pyright: ignore[reportGeneralTypeIssues]
-    operation: AfcOpcode = csfield(afc_opcode_t)  # pyright: ignore[reportGeneralTypeIssues]
-    _data_offset: int = field(default=0, init=False, metadata={"subcon": Tell})
+def parse_afc_status(data: BytesLike) -> AfcError:
+    """Parse the little-endian uint64 ``AfcError`` carried by a STATUS packet."""
+    return AfcError(ByteReader(data).unpack_one(U64_LE))
 
 
 @dataclass
-class AfcReadDirRequest(DataclassMixin):
-    filename: str = csfield(CString("utf8"))
+class AfcHeader(BinaryStruct, byte_order="<"):
+    """AFC packet header."""
+
+    magic: Annotated[bytes, Bytes(len(AFCMAGIC)), Const(AFCMAGIC)] = field(default=AFCMAGIC, init=False)
+    entire_length: u64
+    this_length: u64
+    packet_num: u64
+    operation: Annotated[AfcOpcode, u64]
+
+
+AFC_HEADER_SIZE = AfcHeader.SIZE
 
 
 @dataclass
-class AfcReadDirResponse(DataclassMixin):
-    filenames: list[str] = csfield(GreedyRange(CString("utf8")))
+class AfcReadDirResponse:
+    filenames: list[str]
+
+    @classmethod
+    def parse(cls, data: BytesLike) -> "AfcReadDirResponse":
+        # An unterminated or undecodable tail ends the list rather than raising.
+        reader = ByteReader(data)
+        filenames: list[str] = []
+        with contextlib.suppress(BinaryParseError):
+            while reader.remaining:
+                filenames.append(reader.read_utf8_cstring())
+        return cls(filenames)
 
 
 @dataclass
-class AfcMkdirRequest(DataclassMixin):
-    filename: str = csfield(CString("utf8"))
+class AfcMakeLinkRequest:
+    type: AfcLinkType
+    target: str
+    source: str
+
+    def build(self) -> bytes:
+        return U64_LE.pack(self.type) + encode_utf8_cstring(self.target) + encode_utf8_cstring(self.source)
 
 
 @dataclass
-class AfcStatRequest(DataclassMixin):
-    filename: str = csfield(CString("utf8"))
+class AfcFopenRequest:
+    mode: AfcFopenMode
+    filename: str
+
+    def build(self) -> bytes:
+        return U64_LE.pack(self.mode) + encode_utf8_cstring(self.filename)
 
 
 @dataclass
-class AfcMakeLinkRequest(DataclassMixin):
-    type: AfcLinkType = csfield(afc_link_type_construct)
-    target: str = csfield(CString("utf8"))
-    source: str = csfield(CString("utf8"))
+class AfcFopenResponse(BinaryStruct, byte_order="<"):
+    handle: u64
 
 
 @dataclass
-class AfcFopenRequest(DataclassMixin):
-    mode: AfcFopenMode = csfield(afc_fopen_mode_construct)
-    filename: str = csfield(CString("utf8"))
+class AfcFcloseRequest(BinaryStruct, byte_order="<"):
+    handle: u64
 
 
 @dataclass
-class AfcFopenResponse(DataclassMixin):
-    handle: int = csfield(Int64ul)
+class AfcFreadRequest(BinaryStruct, byte_order="<"):
+    handle: u64
+    size: u64
 
 
 @dataclass
-class AfcFcloseRequest(DataclassMixin):
-    handle: int = csfield(Int64ul)
+class AfcLockRequest(BinaryStruct, byte_order="<"):
+    handle: u64
+    op: u64
 
 
 @dataclass
-class AfcRmRequest(DataclassMixin):
-    filename: str = csfield(CString("utf8"))
-
-
-@dataclass
-class AfcRenameRequest(DataclassMixin):
-    source: str = csfield(CString("utf8"))
-    target: str = csfield(CString("utf8"))
-
-
-@dataclass
-class AfcFreadRequest(DataclassMixin):
-    handle: int = csfield(Int64ul)
-    size: int = csfield(Int64ul)
-
-
-@dataclass
-class AfcLockRequest(DataclassMixin):
-    handle: int = csfield(Int64ul)
-    op: int = csfield(Int64ul)
-
-
-@dataclass
-class AfcFileSeekRequest(DataclassMixin):
-    handle: int = csfield(Int64ul)
-    whence: int = csfield(Int64ul)
-    offset: int = csfield(Int64sl)
-
-
-afc_header_t = TStruct(AfcHeader)
-afc_read_dir_req_t = TStruct(AfcReadDirRequest)
-afc_read_dir_resp_t = TStruct(AfcReadDirResponse)
-afc_mkdir_req_t = TStruct(AfcMkdirRequest)
-afc_stat_t = TStruct(AfcStatRequest)
-afc_make_link_req_t = TStruct(AfcMakeLinkRequest)
-afc_fopen_req_t = TStruct(AfcFopenRequest)
-afc_fopen_resp_t = TStruct(AfcFopenResponse)
-afc_fclose_req_t = TStruct(AfcFcloseRequest)
-afc_rm_req_t = TStruct(AfcRmRequest)
-afc_rename_req_t = TStruct(AfcRenameRequest)
-afc_fread_req_t = TStruct(AfcFreadRequest)
-afc_lock_t = TStruct(AfcLockRequest)
-afc_fseek_req_t = TStruct(AfcFileSeekRequest)
+class AfcFileSeekRequest(BinaryStruct, byte_order="<"):
+    handle: u64
+    whence: u64
+    offset: i64
 
 
 def list_to_dict(raw: bytes) -> dict[str, str]:
@@ -368,19 +356,19 @@ class AfcService(LockdownService):
         """Background task: read AFC response packets and route them to waiting callers."""
         try:
             while True:
-                header_bytes = await self.service.recvall(afc_header_t.sizeof())
+                header_bytes = await self.service.recvall(AFC_HEADER_SIZE)
                 if not header_bytes:
                     break
-                header = afc_header_t.parse(header_bytes)
-                assert header.entire_length >= afc_header_t.sizeof()
-                length = header.entire_length - afc_header_t.sizeof()
+                header = AfcHeader.parse(header_bytes)
+                assert header.entire_length >= AFC_HEADER_SIZE
+                length = header.entire_length - AFC_HEADER_SIZE
                 data = await self.service.recvall(length) if length else b""
 
                 status = AfcError.SUCCESS
                 if header.operation == AfcOpcode.STATUS:
                     if length != 8:
                         self.logger.error("Status length != 8")
-                    status = afc_error_construct.parse(data)
+                    status = parse_afc_status(data)
                 elif header.operation != AfcOpcode.DATA:
                     self.logger.debug("Unexpected AFC opcode %s", header.operation)
 
@@ -659,9 +647,7 @@ class AfcService(LockdownService):
         :raises AfcException: if the removal fails and ``force`` is False.
         """
         try:
-            await self._do_operation(
-                AfcOpcode.REMOVE_PATH, afc_rm_req_t.build(AfcRmRequest(filename=filename)), filename
-            )
+            await self._do_operation(AfcOpcode.REMOVE_PATH, encode_utf8_cstring(filename), filename)
         except AfcException:
             if force:
                 return False
@@ -751,10 +737,8 @@ class AfcService(LockdownService):
         :raises AfcFileNotFoundError: if the path does not exist.
         :raises AfcException: if the path is not a directory or cannot be listed.
         """
-        data = await self._do_operation(
-            AfcOpcode.READ_DIR, afc_read_dir_req_t.build(AfcReadDirRequest(filename=filename)), filename
-        )
-        return afc_read_dir_resp_t.parse(data).filenames[2:]  # skip the . and ..
+        data = await self._do_operation(AfcOpcode.READ_DIR, encode_utf8_cstring(filename), filename)
+        return AfcReadDirResponse.parse(data).filenames[2:]  # skip the . and ..
 
     @path_to_str()
     async def makedirs(self, filename: str):
@@ -767,9 +751,7 @@ class AfcService(LockdownService):
         :return: Raw response payload from the operation (typically empty).
         :raises AfcException: if the directory could not be created.
         """
-        return await self._do_operation(
-            AfcOpcode.MAKE_DIR, afc_mkdir_req_t.build(AfcMkdirRequest(filename=filename)), filename
-        )
+        return await self._do_operation(AfcOpcode.MAKE_DIR, encode_utf8_cstring(filename), filename)
 
     @path_to_str()
     async def isdir(self, filename: str) -> bool:
@@ -803,9 +785,7 @@ class AfcService(LockdownService):
         """
         try:
             stat: dict[str, Any] = list_to_dict(
-                await self._do_operation(
-                    AfcOpcode.GET_FILE_INFO, afc_stat_t.build(AfcStatRequest(filename=filename)), filename
-                )
+                await self._do_operation(AfcOpcode.GET_FILE_INFO, encode_utf8_cstring(filename), filename)
             )
         except AfcException as e:
             if e.status != AfcError.READ_ERROR:
@@ -869,7 +849,7 @@ class AfcService(LockdownService):
         """
         return await self._do_operation(
             AfcOpcode.MAKE_LINK,
-            afc_make_link_req_t.build(AfcMakeLinkRequest(type=type_, target=target, source=source)),
+            AfcMakeLinkRequest(type=type_, target=target, source=source).build(),
         )
 
     @path_to_str()
@@ -890,11 +870,9 @@ class AfcService(LockdownService):
 
         data = await self._do_operation(
             AfcOpcode.FILE_OPEN,
-            afc_fopen_req_t.build(
-                AfcFopenRequest(mode=AFC_FOPEN_TEXTUAL_MODES[mode], filename=filename),
-            ),
+            AfcFopenRequest(mode=AFC_FOPEN_TEXTUAL_MODES[mode], filename=filename).build(),
         )
-        return afc_fopen_resp_t.parse(data).handle
+        return AfcFopenResponse.parse(data).handle
 
     async def fclose(self, handle: int):
         """
@@ -904,7 +882,7 @@ class AfcService(LockdownService):
         :return: Raw response payload from the operation (typically empty).
         :raises AfcException: if the close operation fails.
         """
-        return await self._do_operation(AfcOpcode.FILE_CLOSE, afc_fclose_req_t.build(AfcFcloseRequest(handle=handle)))
+        return await self._do_operation(AfcOpcode.FILE_CLOSE, AfcFcloseRequest(handle=handle).build())
 
     @path_to_str()
     async def rename(self, source: str, target: str) -> None:
@@ -919,7 +897,7 @@ class AfcService(LockdownService):
         try:
             await self._do_operation(
                 AfcOpcode.RENAME_PATH,
-                afc_rename_req_t.build(AfcRenameRequest(source=source, target=target)),
+                encode_utf8_cstring(source) + encode_utf8_cstring(target),
             )
         except AfcException as e:
             if await self.exists(source):
@@ -946,7 +924,7 @@ class AfcService(LockdownService):
         while sz > 0:
             to_read = MAXIMUM_READ_SIZE if sz > MAXIMUM_READ_SIZE else sz
             status, chunk = await self._send_and_wait(
-                AfcOpcode.READ, afc_fread_req_t.build(AfcFreadRequest(handle=handle, size=to_read))
+                AfcOpcode.READ, AfcFreadRequest(handle=handle, size=to_read).build()
             )
             if status != AfcError.SUCCESS:
                 raise AfcException("fread error", status)
@@ -965,7 +943,7 @@ class AfcService(LockdownService):
         """
         await self._do_operation(
             AfcOpcode.FILE_SEEK,
-            afc_fseek_req_t.build(AfcFileSeekRequest(handle=handle, whence=whence, offset=offset)),
+            AfcFileSeekRequest(handle=handle, whence=whence, offset=offset).build(),
         )
 
     async def fwrite(self, handle: int, data: bytes, chunk_size: int = MAXIMUM_WRITE_SIZE) -> None:
@@ -981,7 +959,7 @@ class AfcService(LockdownService):
         :param chunk_size: Maximum bytes per ``WRITE`` operation (default ``MAXIMUM_WRITE_SIZE``).
         :raises AfcException: if any write operation returns a non-success status.
         """
-        file_handle = struct.pack("<Q", handle)
+        file_handle = U64_LE.pack(handle)
         chunks_count = len(data) // chunk_size
         for i in range(chunks_count):
             chunk = data[i * chunk_size : (i + 1) * chunk_size]
@@ -1122,9 +1100,7 @@ class AfcService(LockdownService):
         :return: Raw response payload from the operation (typically empty).
         :raises AfcException: if the lock operation fails.
         """
-        return await self._do_operation(
-            AfcOpcode.FILE_LOCK, afc_lock_t.build(AfcLockRequest(handle=handle, op=operation))
-        )
+        return await self._do_operation(AfcOpcode.FILE_LOCK, AfcLockRequest(handle=handle, op=operation).build())
 
     async def _dispatch_packet(self, operation: AfcOpcode, data: bytes, this_length: int = 0) -> int:
         """
@@ -1136,15 +1112,13 @@ class AfcService(LockdownService):
         :return: The packet_num assigned to this packet (used to match the response)
         """
         pkt_num = self.packet_num
-        entire_length = afc_header_t.sizeof() + len(data)
-        header = afc_header_t.build(
-            AfcHeader(
-                entire_length=entire_length,
-                this_length=this_length or entire_length,
-                packet_num=pkt_num,
-                operation=operation,
-            )
-        )
+        entire_length = AFC_HEADER_SIZE + len(data)
+        header = AfcHeader(
+            entire_length=entire_length,
+            this_length=this_length or entire_length,
+            packet_num=pkt_num,
+            operation=operation,
+        ).build()
         self.packet_num += 1
         await self.service.sendall(header + data)
         return pkt_num
@@ -1159,18 +1133,18 @@ class AfcService(LockdownService):
 
         :return: Tuple of (status_code, response_data)
         """
-        header_bytes = await self.service.recvall(afc_header_t.sizeof())
+        header_bytes = await self.service.recvall(AFC_HEADER_SIZE)
         status = AfcError.SUCCESS
         data = b""
         if header_bytes:
-            header = afc_header_t.parse(header_bytes)
-            assert header.entire_length >= afc_header_t.sizeof()
-            length = header.entire_length - afc_header_t.sizeof()
+            header = AfcHeader.parse(header_bytes)
+            assert header.entire_length >= AFC_HEADER_SIZE
+            length = header.entire_length - AFC_HEADER_SIZE
             data = await self.service.recvall(length)
             if header.operation == AfcOpcode.STATUS:
                 if length != 8:
                     self.logger.error("Status length != 8")
-                status = afc_error_construct.parse(data)
+                status = parse_afc_status(data)
             elif header.operation != AfcOpcode.DATA:
                 self.logger.debug("Unexpected AFC opcode %s", header.operation)
         return status, data

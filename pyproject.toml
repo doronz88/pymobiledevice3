@@ -35,11 +35,6 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "construct>=2.9.29",
-    # construct-typing 0.8.0 requires Python >= 3.10 and replaces csfield(Const(...)) with
-    # csfield_const() (see afc.py). Keep the 3.9 floor on the last 0.7.x release.
-    "construct-typing>=0.8.0; python_version >= '3.10'",
-    "construct-typing>=0.7.0,<0.8.0; python_version < '3.10'",
     "asn1",
     "coloredlogs",
     "IPython",
@@ -243,7 +238,7 @@ ignore = [
     "TRY400",
     # Abstract `raise` to an inner function
     "TRY301",
-    # Do not perform function call `csfield` in dataclass defaults
+    # Do not perform function call in dataclass defaults (e.g. `memoryview(b"")`)
     "RUF009",
     # Use `X | Y` instead of `Union` (keep Union so annotations stay evaluable on the 3.9 floor,
     # e.g. under typing.get_type_hints(), not just as strings via `from __future__ import annotations`)

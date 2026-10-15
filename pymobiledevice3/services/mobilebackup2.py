@@ -17,9 +17,10 @@ from typing import Any, Optional, Union, cast
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
 from pyiosbackup import Backup
-from pyiosbackup.keybag import Keybag, encryption_key_struct
+from pyiosbackup.keybag import Keybag
 from pyiosbackup.manifest_plist import ManifestPlist
 
+from pymobiledevice3.binary import U32_LE, ByteReader
 from pymobiledevice3.exceptions import (
     AfcException,
     AfcFileNotFoundError,
@@ -938,8 +939,10 @@ class Mobilebackup2Service(LockdownService):
         manifest_db = device_directory / "Manifest.db"
         decrypted_manifest_path.write_bytes(keybag.decrypt(manifest_db.read_bytes(), manifest.manifest_key))
 
-        parsed_key = encryption_key_struct.parse(manifest.manifest_key)
-        return aes_key_unwrap(cast(Any, keybag).get_key(parsed_key.class_), parsed_key.key)
+        # ManifestKey is a little-endian uint32 protection class followed by the wrapped key.
+        reader = ByteReader(manifest.manifest_key)
+        protection_class = reader.unpack_one(U32_LE)
+        return aes_key_unwrap(cast(Any, keybag).get_key(protection_class), reader.read_all())
 
     @staticmethod
     def _encrypt_backup_manifest_db(decrypted_manifest_path: Path, manifest_db_path: Path, manifest_key: bytes) -> None:
