@@ -121,10 +121,6 @@ class ByteReader:
         reader.data, reader.base, reader.offset, reader.end = self.data, self.base, start, start + size
         return reader
 
-    def prefixed(self, fmt: struct.Struct) -> "ByteReader":
-        """Read a length in ``fmt`` and return a reader over that many following bytes (construct's ``Prefixed``)."""
-        return self.sub(self.unpack_one(fmt))
-
     def read_all(self) -> bytes:
         return self.read(self.end - self.offset)
 
@@ -150,14 +146,6 @@ class ByteReader:
         result = self.data[self.offset : end]
         self.offset = end + 1
         return result
-
-    def read_utf8_cstring(self) -> str:
-        start = self.absolute
-        raw = self.read_cstring()
-        try:
-            return raw.decode("utf-8")
-        except UnicodeDecodeError as e:
-            raise BinaryParseError(f"invalid UTF-8 in C string: {e}", offset=start) from e
 
 
 T = TypeVar("T")
@@ -416,21 +404,6 @@ class OpenIntEnum(enum.IntEnum):
         member._value_ = value
         # Registered so the next ``cls(value)`` returns the same object.
         return cast(OpenIntEnum, cls._value2member_map_.setdefault(value, member))
-
-
-def encode_utf8_cstring(value: str) -> bytes:
-    """Encode ``value`` as a NUL-terminated UTF-8 string; an embedded NUL (the peer would stop there) is rejected."""
-    if "\0" in value:
-        raise BinaryBuildError(f"embedded NUL in {value!r}")
-    try:
-        return value.encode("utf-8") + b"\0"
-    except UnicodeEncodeError as e:
-        raise BinaryBuildError(f"cannot encode {value!r}: {e}") from e
-
-
-def pad_to(data: bytes, alignment: int) -> bytes:
-    """Append NUL bytes so ``len(data)`` is a multiple of ``alignment``."""
-    return data + b"\0" * (-len(data) % alignment)
 
 
 class Format:
@@ -884,13 +857,11 @@ __all__ = [
     "Scalar",
     "Switch",
     "Tuple",
-    "encode_utf8_cstring",
     "i16",
     "i32",
     "i64",
     "ipv4",
     "ipv6",
-    "pad_to",
     "u8",
     "u16",
     "u32",

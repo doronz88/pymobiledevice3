@@ -27,11 +27,9 @@ from pymobiledevice3.binary import (
     PrefixedArray,
     Switch,
     Tuple,
-    encode_utf8_cstring,
     i32,
     ipv4,
     ipv6,
-    pad_to,
     u8,
     u16,
     u32,
@@ -308,15 +306,6 @@ def test_records_do_not_read_past_the_reader_window() -> None:
     assert Plain.read(ByteReader(data).sub(6)) == Plain(0x0201, 0x06050403)
 
 
-def test_reader_prefixed() -> None:
-    reader = ByteReader(_U32.pack(3) + b"abc" + b"next", base=10)
-    body = reader.prefixed(_U32)
-    assert (body.absolute, body.read_all()) == (14, b"abc")
-    assert reader.read_all() == b"next"
-    with pytest.raises(TruncatedDataError):
-        ByteReader(_U32.pack(5) + b"abc").prefixed(_U32)
-
-
 def test_reader_errors() -> None:
     reader = ByteReader(b"abc", offset=1, base=10)
     with pytest.raises(BinaryParseError, match="invalid size") as negative:
@@ -496,13 +485,3 @@ def test_codec_fields_follow_the_fixed_size_fields() -> None:
         class Interleaved(BinaryStruct):
             name: Annotated[str, CSTRING]
             size: u32
-
-
-def test_cstring_and_padding_helpers() -> None:
-    assert encode_utf8_cstring("hé") == b"h\xc3\xa9\0"
-    with pytest.raises(BinaryBuildError, match="embedded NUL"):
-        encode_utf8_cstring("a\0b")
-    with pytest.raises(BinaryBuildError):
-        encode_utf8_cstring("\udcff")
-    assert pad_to(b"abc", 4) == b"abc\0"
-    assert pad_to(b"abcd", 4) == b"abcd"
