@@ -2,16 +2,27 @@ import asyncio
 import platform
 import socket
 import struct
+import time
 import uuid
+from datetime import datetime, timedelta
 from types import MethodType
 from typing import Any, cast
 
 import pytest
 from hyperframe.frame import DataFrame, Frame, HeadersFrame, RstStreamFrame, SettingsFrame, WindowUpdateFrame
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError, RemoteXPCHandshakeTimeoutError, StreamClosedError
+from pymobiledevice3.exceptions import (
+    BinaryBuildError,
+    BinaryParseError,
+    ConnectionTerminatedError,
+    ProtocolError,
+    RemoteXPCHandshakeTimeoutError,
+    StreamClosedError,
+    TruncatedDataError,
+    UnexpectedConstantError,
+)
 from pymobiledevice3.pair_records import generate_host_id
-from pymobiledevice3.remote import remotexpc
+from pymobiledevice3.remote import remotexpc, xpc_message
 from pymobiledevice3.remote.remotexpc import (
     DEFAULT_PEER_WINDOW_SIZE,
     DEFAULT_SETTINGS_INITIAL_WINDOW_SIZE,
@@ -21,7 +32,17 @@ from pymobiledevice3.remote.remotexpc import (
     WINDOW_UPDATE_THRESHOLD,
     RemoteXPCConnection,
 )
-from pymobiledevice3.remote.xpc_message import XpcFlags, XpcWrapper, decode_xpc_object
+from pymobiledevice3.remote.xpc_message import (
+    FileTransferType,
+    XpcFlags,
+    XpcInt64Type,
+    XpcMessageType,
+    XpcObject,
+    XpcUInt64Type,
+    XpcWrapper,
+    create_xpc_wrapper,
+    decode_xpc_object,
+)
 
 
 class FakeWriter:
@@ -152,8 +173,8 @@ async def test_send_file_transfer_uses_odd_stream_and_carries_transfer_id():
     assert all(stream_id % 2 == 1 for stream_id in stream_ids)
     assert isinstance(frames[0], HeadersFrame)
     preamble = XpcWrapper.parse(frames[1].data)
-    assert preamble.message.message_id == 7
-    assert preamble.flags.FILE_TX_STREAM_REQUEST
+    assert preamble.message_id == 7
+    assert XpcFlags.FILE_TX_STREAM_REQUEST in XpcFlags(preamble.flags)
 
 
 @pytest.mark.asyncio
@@ -327,7 +348,7 @@ async def test_send_request_splits_a_large_message_into_max_sized_frames():
     assert all(isinstance(f, DataFrame) and f.stream_id == 1 for f in frames)
     assert len(frames) > 1 and all(len(w) - FRAME_HEADER_SIZE <= MAX_OUTBOUND_FRAME_SIZE for w in writer.writes)
     reassembled = b"".join(w[FRAME_HEADER_SIZE:] for w in writer.writes)
-    assert XpcWrapper.parse(reassembled).message.message_id == 0
+    assert XpcWrapper.parse(reassembled).message_id == 0
     assert connection.next_message_id[1] == 1
 
 
@@ -351,7 +372,7 @@ async def test_send_request_uses_odd_message_ids_after_the_handshake_message():
     for wanting_reply in (False, True, False, True):
         await connection.send_request({"command": "x"}, wanting_reply=wanting_reply)
 
-    message_ids = [XpcWrapper.parse(w[FRAME_HEADER_SIZE:]).message.message_id for w in writer.writes]
+    message_ids = [XpcWrapper.parse(w[FRAME_HEADER_SIZE:]).message_id for w in writer.writes]
     assert message_ids == [0, 1, 3, 5]
 
 
@@ -385,7 +406,7 @@ async def test_connect_reports_an_unanswered_handshake(monkeypatch: pytest.Monke
 
 def _handshake_uuids(writer: FakeWriter) -> list[uuid.UUID]:
     return [
-        decode_xpc_object(XpcWrapper.parse(frame.data).message.payload.obj)["UUID"]
+        decode_xpc_object(cast(XpcObject, XpcWrapper.parse(frame.data).payload))["UUID"]
         for frame in _parse_written_frames(writer)
     ]
 
@@ -555,3 +576,179 @@ async def test_send_after_peer_reset_raises_connection_terminated():
     finally:
         device.close()
         await connection.close()
+
+
+# Golden frame pinning the RemoteXPC wire encoding.
+_GOLDEN_XPC_WRAPPER = bytes.fromhex(
+    "920bb02901010100f0000000000000000500000000000000423713420500000000f00000e00000000a000000"
+    "73000000009000000700000068c3a96c6c6f00006200000000200000010000006e0000000010000069000000"
+    "00300000feffffffffffffff750000000040000003000000000000006400000000500000000000000000f83f"
+    "6461746100000000008000000300000001020300757569640000000000a00000000000000000000000000000"
+    "000000016c00000000e000001c0000000200000000f00000040000000000000000e000000400000000000000"
+    "6674000000a00100040000000000000000f00000140000000100000073000000004000000900000000000000"
+)
+_GOLDEN_XPC_VALUE = {
+    "s": "héllo",
+    "b": True,
+    "n": None,
+    "i": XpcInt64Type(-2),
+    "u": XpcUInt64Type(3),
+    "d": 1.5,
+    "data": b"\x01\x02\x03",
+    "uuid": uuid.UUID(int=1),
+    "l": [{}, []],
+    "ft": FileTransferType(transfer_size=9, transfer_id=4),
+}
+
+
+def test_xpc_wrapper_wire_format():
+    assert create_xpc_wrapper(_GOLDEN_XPC_VALUE, message_id=5, wanting_reply=True) == _GOLDEN_XPC_WRAPPER
+
+    wrapper = XpcWrapper.parse(_GOLDEN_XPC_WRAPPER)
+    assert wrapper.flags == XpcFlags.ALWAYS_SET | XpcFlags.DATA_PRESENT | XpcFlags.WANTING_REPLY
+    assert wrapper.message_id == 5
+    assert wrapper.payload is not None
+    assert wrapper.build() == _GOLDEN_XPC_WRAPPER
+    decoded = decode_xpc_object(wrapper.payload)
+    # a decoded file transfer carries no transfer_id; its stream is derived positionally
+    assert decoded == {**_GOLDEN_XPC_VALUE, "ft": FileTransferType(transfer_size=9)}
+    assert type(decoded["i"]) is XpcInt64Type and type(decoded["u"]) is XpcUInt64Type
+
+
+def test_xpc_wrapper_keeps_unnamed_flag_bits():
+    frame = XpcWrapper(flags=0x80000201, message_id=9).build()
+    wrapper = XpcWrapper.parse(frame)
+    assert wrapper.flags == 0x80000201 and isinstance(wrapper.flags, XpcFlags)
+    assert wrapper.message_id == 9 and wrapper.payload is None
+    assert wrapper.build() == frame
+
+
+def test_xpc_wrapper_parse_errors():
+    for cut in range(len(_GOLDEN_XPC_WRAPPER)):
+        with pytest.raises(TruncatedDataError):
+            XpcWrapper.parse(_GOLDEN_XPC_WRAPPER[:cut])
+    with pytest.raises(UnexpectedConstantError):
+        XpcWrapper.parse(b"\x00\x00\x00\x00")
+    # an unparsable payload is dropped, not raised
+    corrupt = bytearray(_GOLDEN_XPC_WRAPPER)
+    corrupt[24] ^= 0xFF
+    assert XpcWrapper.parse(bytes(corrupt)).payload is None
+
+
+def test_xpc_object_parses_uncommon_types():
+    def obj(type_: int, body: bytes = b"") -> bytes:
+        return struct.pack("<I", type_) + body
+
+    assert XpcObject.parse(obj(XpcMessageType.DATE, struct.pack("<Q", 7))) == XpcObject(XpcMessageType.DATE, 7)
+    assert XpcObject.parse(obj(XpcMessageType.FD, struct.pack("<I", 3))) == XpcObject(XpcMessageType.FD, 3)
+    shmem = XpcObject.parse(obj(XpcMessageType.SHMEM, struct.pack("<II", 4096, 0)))
+    assert shmem == XpcObject(XpcMessageType.SHMEM, 4096)
+    assert XpcObject.parse(obj(0x1234)) == XpcObject(0x1234, None)  # unknown types carry no body
+    with pytest.raises(BinaryParseError):
+        XpcObject.parse(obj(XpcMessageType.POINTER))
+    with pytest.raises(BinaryParseError):  # non-UTF-8 dictionary key
+        XpcObject.parse(obj(XpcMessageType.DICTIONARY, struct.pack("<II", 8, 1) + b"\xff\0\0\0"))
+
+
+def test_xpc_object_build_errors():
+    with pytest.raises(BinaryBuildError):
+        XpcObject(XpcMessageType.UUID, b"abc").build()
+    with pytest.raises(BinaryBuildError):
+        XpcObject(XpcMessageType.INT64, 2**64).build()
+    with pytest.raises(BinaryBuildError):  # nested failures surface the same way
+        XpcObject(XpcMessageType.ARRAY, [XpcObject(XpcMessageType.UINT64, -1)]).build()
+
+
+def test_deeply_nested_payload_is_dropped_not_a_recursion_error():
+    # 5000 nested single-element arrays: a corrupt or hostile peer, not a real message.
+    payload = struct.pack("<I", XpcMessageType.NULL)
+    for _ in range(5000):
+        body = struct.pack("<I", 1) + payload
+        payload = struct.pack("<II", XpcMessageType.ARRAY, len(body)) + body
+    frame = XpcWrapper(payload=XpcObject(XpcMessageType.NULL)).build()
+    frame = frame[:-4] + payload  # replace the NULL payload object with the nested one
+    frame = frame[:8] + struct.pack("<Q", len(frame) - 24) + frame[16:]
+    assert XpcWrapper.parse(frame).payload is None
+
+
+def _replaying_connection(chunks: list[bytes]) -> RemoteXPCConnection:
+    frames = iter(chunks)
+
+    async def receive_next_data_frame(self):
+        return DataFrame(1, data=next(frames))
+
+    connection = RemoteXPCConnection(("localhost", 0))
+    connection._receive_next_data_frame = MethodType(receive_next_data_frame, connection)
+    return connection
+
+
+@pytest.mark.asyncio
+async def test_receive_response_reassembles_split_frames_and_skips_empty_replies():
+    reply = create_xpc_wrapper({"answer": "yes"})
+    chunks = [create_xpc_wrapper({}), XpcWrapper().build()] + [reply[i : i + 7] for i in range(0, len(reply), 7)]
+    assert await _replaying_connection(chunks).receive_response() == {"answer": "yes"}
+
+
+@pytest.mark.asyncio
+async def test_receive_response_rejects_a_non_dictionary_reply():
+    with pytest.raises(ProtocolError):
+        frame = XpcWrapper(payload=XpcObject(XpcMessageType.STRING, "not a dict")).build()
+        await _replaying_connection([frame]).receive_response()
+
+
+@pytest.mark.parametrize("value", [{"key": "a\0b"}, {"a\0b": "value"}])
+def test_xpc_rejects_embedded_nul(value: dict[str, Any]):
+    with pytest.raises(BinaryBuildError):
+        create_xpc_wrapper(value)
+
+
+def test_xpc_dates_are_signed():
+    before_1970 = XpcObject(XpcMessageType.DATE, -1_000_000_000)  # one second before the epoch
+    assert XpcObject.parse(before_1970.build()) == before_1970
+    assert decode_xpc_object(before_1970) == datetime.fromtimestamp(0) - timedelta(seconds=1)
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="needs time.tzset to pin the local time zone")
+def test_xpc_dates_before_1970_without_platform_support(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Windows' fromtimestamp() rejects negative timestamps; the fallback must still apply daylight saving.
+    real_datetime = xpc_message.datetime
+
+    class WindowsDatetime(real_datetime):
+        @classmethod
+        def fromtimestamp(cls, t: float, tz: Any = None) -> Any:
+            if t < 0:
+                raise OSError(22, "Invalid argument")
+            return real_datetime.fromtimestamp(t, tz)
+
+    def xpc_date(utc: datetime) -> XpcObject:
+        return XpcObject(XpcMessageType.DATE, int((utc - datetime(1970, 1, 1)).total_seconds()) * 1_000_000_000)
+
+    monkeypatch.setattr(xpc_message, "datetime", WindowsDatetime)
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    try:
+        assert decode_xpc_object(xpc_date(datetime(1960, 1, 1, 12))) == datetime(1960, 1, 1, 7)  # EST
+        assert decode_xpc_object(xpc_date(datetime(1960, 7, 1, 12))) == datetime(1960, 7, 1, 8)  # EDT
+        assert decode_xpc_object(XpcObject(XpcMessageType.DATE, -(2**63))).year == 1677  # the earliest int64 date
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+
+def test_padding_is_relative_to_each_object_not_the_container() -> None:
+    # A dictionary whose declared length (5) is not a multiple of 4 leaves the next object unaligned in the array.
+    items = (
+        struct.pack("<III", XpcMessageType.DICTIONARY, 5, 0)
+        + b"\0"
+        + struct.pack("<II", XpcMessageType.STRING, 2)
+        + b"a\0\0\0"
+        + struct.pack("<I", XpcMessageType.NULL)
+    )
+    raw = struct.pack("<III", XpcMessageType.ARRAY, 4 + len(items), 3) + items
+    parsed = XpcObject.parse(raw)
+    assert [item.type for item in parsed.data] == [
+        XpcMessageType.DICTIONARY,
+        XpcMessageType.STRING,
+        XpcMessageType.NULL,
+    ]
+    assert parsed.data[1].data == "a"

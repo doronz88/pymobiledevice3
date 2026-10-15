@@ -11,7 +11,6 @@ from collections import deque
 from collections.abc import AsyncIterable
 from typing import Any, Callable, Optional, Union, cast
 
-from construct import StreamError
 from hyperframe.frame import (
     DataFrame,
     Frame,
@@ -30,11 +29,13 @@ from pymobiledevice3.exceptions import (
     PyMobileDevice3Exception,
     RemoteXPCHandshakeTimeoutError,
     StreamClosedError,
+    TruncatedDataError,
 )
 from pymobiledevice3.pair_records import generate_host_id
 from pymobiledevice3.remote.xpc_message import (
     XpcFlags,
     XpcInt64Type,
+    XpcMessageType,
     XpcUInt64Type,
     XpcWrapper,
     create_xpc_wrapper,
@@ -352,7 +353,7 @@ class RemoteXPCConnection:
                     continue
 
                 xpc_wrapper = XpcWrapper.parse(frame.data)
-                if not xpc_wrapper.flags.FILE_TX_STREAM_REQUEST:
+                if not xpc_wrapper.flags & XpcFlags.FILE_TX_STREAM_REQUEST:
                     raise ProtocolError(f"Got unexpected file transfer stream: {frame.stream_id}")
         except asyncio.CancelledError:
             raise
@@ -370,16 +371,19 @@ class RemoteXPCConnection:
         while True:
             frame = await self._receive_next_data_frame()
             try:
-                xpc_message = XpcWrapper.parse(self._previous_frame_data + frame.data).message
+                payload = XpcWrapper.parse(self._previous_frame_data + frame.data).payload
                 self._previous_frame_data = b""
-            except StreamError:
+            except TruncatedDataError:
                 self._previous_frame_data += frame.data
                 continue
-            if xpc_message.payload is None:
+            if payload is None:
                 continue
-            if xpc_message.payload.obj.data.entries is None:
+            if payload.type != XpcMessageType.DICTIONARY:
+                raise ProtocolError(f"expected a dictionary reply, got {payload.type!r}")
+            if not payload.data:
+                # an empty dictionary carries nothing to answer with
                 continue
-            return decode_xpc_object(xpc_message.payload.obj)
+            return decode_xpc_object(payload)
 
     async def send_receive_request(self, data: dict[str, Any]) -> dict[str, Any]:
         async with self._request_lock:
@@ -422,17 +426,11 @@ class RemoteXPCConnection:
         # flags" + xpc_connection_cancel() if Headers#3 isn't seen before Data#1's term.
         await self.send_request({})
         await self._send_frame(HeadersFrame(stream_id=REPLY_CHANNEL, flags=["END_HEADERS"]))
-        await self._send_frame(
-            DataFrame(stream_id=ROOT_CHANNEL, data=XpcWrapper.build({"size": 0, "flags": 0x0201, "payload": None}))
-        )
+        await self._send_frame(DataFrame(stream_id=ROOT_CHANNEL, data=XpcWrapper(flags=0x0201).build()))
         await self._send_frame(
             DataFrame(
                 stream_id=REPLY_CHANNEL,
-                data=XpcWrapper.build({
-                    "size": 0,
-                    "flags": XpcFlags.ALWAYS_SET | XpcFlags.INIT_HANDSHAKE,
-                    "payload": None,
-                }),
+                data=XpcWrapper(flags=XpcFlags.ALWAYS_SET | XpcFlags.INIT_HANDSHAKE).build(),
             )
         )
         self.next_message_id[REPLY_CHANNEL] += 1
@@ -520,10 +518,9 @@ class RemoteXPCConnection:
         # The preamble is a DATA frame, so it is flow controlled too. Sending it unaccounted
         # overruns the connection window once a previous transfer has drained it, and the device
         # answers with GOAWAY error 3 (FLOW_CONTROL_ERROR).
-        preamble = XpcWrapper.build({
-            "flags": XpcFlags.FILE_TX_STREAM_REQUEST | XpcFlags.ALWAYS_SET,
-            "message": {"message_id": transfer_id, "payload": None},
-        })
+        preamble = XpcWrapper(
+            flags=XpcFlags.FILE_TX_STREAM_REQUEST | XpcFlags.ALWAYS_SET, message_id=transfer_id
+        ).build()
         await self._send_flow_controlled(stream_id, preamble, 0, len(preamble))
         offset = 0
         while offset < len(data):
@@ -546,14 +543,10 @@ class RemoteXPCConnection:
             if isinstance(frame, DataFrame):
                 return frame
 
-    async def _open_channel(self, stream_id: int, flags: Any) -> None:
-        # flags is a construct FlagsEnum value (BitwisableString), not a plain int: `int()` on it
-        # would try to parse the flag *name* and raise. construct resolves it to bits at build time.
+    async def _open_channel(self, stream_id: int, flags: int) -> None:
         flags |= XpcFlags.ALWAYS_SET
         await self._send_frame(HeadersFrame(stream_id=stream_id, flags=["END_HEADERS"]))
-        await self._send_frame(
-            DataFrame(stream_id=stream_id, data=XpcWrapper.build({"size": 0, "flags": flags, "payload": None}))
-        )
+        await self._send_frame(DataFrame(stream_id=stream_id, data=XpcWrapper(flags=flags).build()))
 
     async def _send_frame(self, frame: Frame) -> None:
         if isinstance(frame, DataFrame):
