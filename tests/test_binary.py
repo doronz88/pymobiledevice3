@@ -268,22 +268,38 @@ def test_reader() -> None:
     assert reader.unpack_one(struct.Struct("<H")) == 0x0403
     assert (reader.offset, reader.absolute, reader.remaining) == (4, 14, 8)
     assert reader.read_utf8_cstring() == "abc"
-    assert reader.read_all() == b"rest"
+    reader.skip(1)
+    assert reader.read_all() == b"est"
     assert reader.remaining == 0
 
+
+def test_sub_reader_is_a_window_on_the_same_buffer() -> None:
     reader = ByteReader(b"abcdef", offset=2, base=10)
     sub = reader.sub(2)
-    assert (sub.data, sub.absolute, reader.offset) == (b"cd", 12, 4)
+    assert sub.data is reader.data
+    assert (sub.absolute, sub.remaining, reader.offset) == (12, 2, 4)
     with pytest.raises(TruncatedDataError) as truncated:
         sub.read(3)
-    assert truncated.value.offset == 12
     assert str(truncated.value) == "at offset 12: expected 3 bytes, found 2"
+    for read in (lambda r: r.unpack_one(_U32), lambda r: r.skip(3), lambda r: r.sub(3)):
+        with pytest.raises(TruncatedDataError):
+            read(ByteReader(b"abcdef").sub(2))
+    with pytest.raises(TruncatedDataError, match="unterminated"):
+        ByteReader(b"ab\0").sub(2).read_cstring()  # the NUL is past the window
+    assert sub.read_all() == b"cd"
 
 
-def test_prefixed() -> None:
+def test_records_do_not_read_past_the_reader_window() -> None:
+    data = bytes(range(1, 8))
+    with pytest.raises(TruncatedDataError, match=r"^Plain\.b at offset 2: expected 4 bytes, found 3$"):
+        Plain.read(ByteReader(data).sub(5))
+    assert Plain.read(ByteReader(data).sub(6)) == Plain(0x0201, 0x06050403)
+
+
+def test_reader_prefixed() -> None:
     reader = ByteReader(_U32.pack(3) + b"abc" + b"next", base=10)
     body = reader.prefixed(_U32)
-    assert (body.data, body.absolute) == (b"abc", 14)
+    assert (body.absolute, body.read_all()) == (14, b"abc")
     assert reader.read_all() == b"next"
     with pytest.raises(TruncatedDataError):
         ByteReader(_U32.pack(5) + b"abc").prefixed(_U32)

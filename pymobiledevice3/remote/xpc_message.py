@@ -171,15 +171,15 @@ class XpcObject:
 
 
 def _parse_string(reader: ByteReader) -> str:
-    body = reader.prefixed(U32_LE)
-    value = body.read_utf8_cstring()
-    reader.read(-len(body.data) % 4)
+    start = reader.offset
+    value = reader.prefixed(U32_LE).read_utf8_cstring()
+    reader.skip(-(reader.offset - start) % 4)
     return value
 
 
 def _parse_data(reader: ByteReader) -> bytes:
     value = reader.prefixed(U32_LE).read_all()
-    reader.read(-len(value) % 4)
+    reader.skip(-len(value) % 4)
     return value
 
 
@@ -189,7 +189,7 @@ def _parse_dictionary(reader: ByteReader) -> list[tuple[str, XpcObject]]:
     for _ in range(body.unpack_one(U32_LE)):
         key_start = body.offset
         key = body.read_utf8_cstring()
-        body.read(-(body.offset - key_start) % 4)
+        body.skip(-(body.offset - key_start) % 4)
         entries.append((key, XpcObject.parse_stream(body)))
     return entries
 

@@ -65,59 +65,81 @@ F64_LE = struct.Struct("<d")
 
 
 class ByteReader:
-    """Sequential reader over an in-memory buffer; every ``read*``/``unpack*`` returns exactly what was asked for
-    or raises :class:`TruncatedDataError`.
+    """Sequential reader over the window ``data[offset:end]`` of an in-memory buffer; every ``read*``/``unpack*``
+    returns exactly what was asked for or raises :class:`TruncatedDataError`.
 
-    ``base`` is the absolute offset of ``data[0]`` in the outermost buffer, so errors from nested readers
-    (see :meth:`sub`) report absolute offsets.
+    Readers made by :meth:`sub` share ``data`` (nothing is copied) and have a narrower ``end``. ``base`` is the
+    absolute offset of ``data[0]`` in the outermost buffer, so errors report absolute offsets.
     """
 
+    __slots__ = ("base", "data", "end", "offset")
+
     def __init__(self, data: BytesLike, offset: int = 0, base: int = 0) -> None:
-        self.data = bytes(data)
+        self.data = data if type(data) is bytes else bytes(data)
         self.base = base
-        if not 0 <= offset <= len(self.data):  # offsets often come from the wire
-            raise BinaryParseError(f"invalid offset {offset} in {len(self.data)} bytes", offset=base)
+        self.end = len(self.data)
+        if not 0 <= offset <= self.end:  # offsets often come from the wire
+            raise BinaryParseError(f"invalid offset {offset} in {self.end} bytes", offset=base)
         self.offset = offset
 
     @property
     def remaining(self) -> int:
-        return len(self.data) - self.offset
+        return self.end - self.offset
 
     @property
     def absolute(self) -> int:
         """The current position as an absolute offset in the outermost buffer."""
         return self.base + self.offset
 
-    def read(self, size: int) -> bytes:
+    def _invalid_size(self, size: int) -> BinaryParseError:
         if size < 0:  # a length computed from wire data
-            raise BinaryParseError(f"invalid size {size}", offset=self.absolute)
-        if size > self.remaining:
-            raise TruncatedDataError(f"expected {size} bytes, found {self.remaining}", offset=self.absolute)
-        result = self.data[self.offset : self.offset + size]
+            return BinaryParseError(f"invalid size {size}", offset=self.absolute)
+        return TruncatedDataError(f"expected {size} bytes, found {self.remaining}", offset=self.absolute)
+
+    def read(self, size: int) -> bytes:
+        offset = self.offset
+        if not 0 <= size <= self.end - offset:
+            raise self._invalid_size(size)
+        self.offset = offset + size
+        return self.data[offset : offset + size]
+
+    def skip(self, size: int) -> None:
+        if not 0 <= size <= self.end - self.offset:
+            raise self._invalid_size(size)
         self.offset += size
-        return result
 
     def sub(self, size: int) -> "ByteReader":
-        """Consume the next ``size`` bytes and return a reader over just them (keeping absolute offsets)."""
-        start = self.absolute
-        return ByteReader(self.read(size), base=start)
+        """Consume the next ``size`` bytes and return a reader confined to them."""
+        start = self.offset
+        self.skip(size)
+        reader = ByteReader.__new__(ByteReader)
+        reader.data, reader.base, reader.offset, reader.end = self.data, self.base, start, start + size
+        return reader
 
     def prefixed(self, fmt: struct.Struct) -> "ByteReader":
         """Read a length in ``fmt`` and return a reader over that many following bytes (construct's ``Prefixed``)."""
         return self.sub(self.unpack_one(fmt))
 
     def read_all(self) -> bytes:
-        return self.read(self.remaining)
+        return self.read(self.end - self.offset)
 
     def unpack(self, fmt: struct.Struct) -> tuple[Any, ...]:
-        return fmt.unpack(self.read(fmt.size))
+        offset = self.offset
+        if fmt.size > self.end - offset:
+            raise self._invalid_size(fmt.size)
+        self.offset = offset + fmt.size
+        return fmt.unpack_from(self.data, offset)
 
     def unpack_one(self, fmt: struct.Struct) -> Any:
-        return fmt.unpack(self.read(fmt.size))[0]
+        offset = self.offset
+        if fmt.size > self.end - offset:
+            raise self._invalid_size(fmt.size)
+        self.offset = offset + fmt.size
+        return fmt.unpack_from(self.data, offset)[0]
 
     def read_cstring(self) -> bytes:
         """Read up to (and consume) a NUL terminator; the terminator is not returned."""
-        end = self.data.find(b"\0", self.offset)
+        end = self.data.find(b"\0", self.offset, self.end)
         if end == -1:
             raise TruncatedDataError("unterminated C string", offset=self.absolute)
         result = self.data[self.offset : end]
@@ -423,20 +445,20 @@ class BinaryStruct:
     @classmethod
     def parse(cls: type[T], data: BytesLike) -> T:
         """Parse the record from the start of ``data``; trailing bytes are ignored."""
-        return cls._parse(data, 0, 0)
+        return cls._parse(data, 0, len(data), 0)
 
     @classmethod
     def read(cls: type[T], reader: ByteReader) -> T:
         """Parse the record at the reader's offset and advance past it."""
-        record = cls._parse(reader.data, reader.offset, reader.base)
+        record = cls._parse(reader.data, reader.offset, reader.end, reader.base)
         reader.offset += cls.SIZE
         return record
 
     @classmethod
-    def _parse(cls: type[T], data: BytesLike, start: int, base: int) -> T:
-        """Parse at ``data[start:]``; ``base + start`` is that position's absolute offset (for errors)."""
-        if len(data) - start < cls.SIZE:
-            cls._raise_short(data, start, base)
+    def _parse(cls: type[T], data: BytesLike, start: int, end: int, base: int) -> T:
+        """Parse at ``data[start:end]``; ``base + start`` is that position's absolute offset (for errors)."""
+        if end - start < cls.SIZE:
+            cls._raise_short(data, start, end, base)
         if cls._plain:
             return cls(*cls._runs[0].struct.unpack_from(data, start))
         values: list[Any] = []
@@ -456,10 +478,10 @@ class BinaryStruct:
         return cls(*values)
 
     @classmethod
-    def _raise_short(cls, data: BytesLike, start: int, base: int) -> NoReturn:
+    def _raise_short(cls, data: BytesLike, start: int, end: int, base: int) -> NoReturn:
         """A wrong constant that is already readable wins (``b"HTTP/1.1..."`` is not a short XPC frame, it is not
         an XPC frame at all); otherwise the error names the first field that does not fit."""
-        available = len(data) - start
+        available = end - start
         for field in cls._consts:
             if field.offset + field.struct.size <= available:
                 actual = field.struct.unpack_from(data, start + field.offset)[0]
