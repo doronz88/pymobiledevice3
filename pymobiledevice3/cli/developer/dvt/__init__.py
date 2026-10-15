@@ -50,7 +50,11 @@ from pymobiledevice3.services.dvt.instruments.dyld_metrics import DyldMetrics
 from pymobiledevice3.services.dvt.instruments.energy_monitor import EnergyMonitor
 from pymobiledevice3.services.dvt.instruments.graphics import Graphics
 from pymobiledevice3.services.dvt.instruments.leaks import Leaks
-from pymobiledevice3.services.dvt.instruments.network_monitor import ConnectionDetectionEvent, NetworkMonitor
+from pymobiledevice3.services.dvt.instruments.network_monitor import (
+    ConnectionDetectionEvent,
+    NetworkMonitor,
+    SocketAddress,
+)
 from pymobiledevice3.services.dvt.instruments.network_statistics import NetworkStatistics
 from pymobiledevice3.services.dvt.instruments.notifications import Notifications
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
@@ -410,6 +414,10 @@ async def device_information(service_provider: ServiceProviderDep) -> None:
         print_json(info)
 
 
+def _address_json(address: SocketAddress) -> Optional[str]:
+    return None if address.address is None else str(address.address)
+
+
 @cli.command("netstat")
 @async_command
 async def netstat(service_provider: ServiceProviderDep, output_format: OutputFormatOption = OutputFormat.TEXT) -> None:
@@ -420,9 +428,9 @@ async def netstat(service_provider: ServiceProviderDep, output_format: OutputFor
                 if output_format is OutputFormat.JSON:
                     print_json_line({
                         "event": "connection_detected",
-                        "local": {"address": str(event.local_address.data.address), "port": event.local_address.port},
+                        "local": {"address": _address_json(event.local_address), "port": event.local_address.port},
                         "remote": {
-                            "address": str(event.remote_address.data.address),
+                            "address": _address_json(event.remote_address),
                             "port": event.remote_address.port,
                         },
                         "pid": event.pid,
@@ -430,8 +438,8 @@ async def netstat(service_provider: ServiceProviderDep, output_format: OutputFor
                     })
                 else:
                     print(
-                        f"Connection detected: {event.local_address.data.address}:{event.local_address.port} -> "
-                        f"{event.remote_address.data.address}:{event.remote_address.port}",
+                        f"Connection detected: {event.local_address.address}:{event.local_address.port} -> "
+                        f"{event.remote_address.address}:{event.remote_address.port}",
                         flush=True,
                     )
 

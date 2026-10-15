@@ -168,6 +168,17 @@ def test_netstat_text_prints_connection_line_to_stdout(monkeypatch, capsys):
     assert "10.0.0.1:5000 -> 17.0.0.1:443" in captured.out
 
 
+def test_netstat_json_emits_null_for_an_undecodable_address(monkeypatch, capsys):
+    event = _connection_event()
+    event.remote_address = SocketAddress(length=8, family=0, port=0, data=None)
+    monkeypatch.setattr(dvt_module, "NetworkMonitor", _fake_stream([event]))
+
+    dvt_module.netstat(_FAKE_SERVICE_PROVIDER, output_format=OutputFormat.JSON)
+
+    (line,) = capsys.readouterr().out.strip().splitlines()
+    assert json.loads(line)["remote"] == {"address": None, "port": 0}
+
+
 class _FakeOslogMessage:
     device_time = datetime.datetime(2026, 10, 11, 21, 27, 0, 803022)
     process = 42
