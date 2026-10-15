@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from pymobiledevice3.utils import hexdump, path_to_str, str_to_path
+from pymobiledevice3.exceptions import BinaryParseError
+from pymobiledevice3.utils import bytes_to_uint, hexdump, path_to_str, str_to_path
 
 
 def test_hexdump_formats_full_and_partial_lines() -> None:
@@ -62,3 +63,24 @@ async def test_path_to_str_wraps_coroutine_functions() -> None:
         return name
 
     assert await f(Path("a")) == "a"  # pyright: ignore[reportArgumentType]
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (b"\x01", 1),
+        (b"\x01\x02", 0x0201),
+        (b"\x01\x02\x03", 0x0201),
+        (b"\x01\x02\x03\x04", 0x04030201),
+        (b"\x01\x02\x03\x04\x05\x06\x07", 0x04030201),
+        (b"\x01\x02\x03\x04\x05\x06\x07\x08", 0x0807060504030201),
+        (b"\x01\x02\x03\x04\x05\x06\x07\x08\x09", 0x0807060504030201),
+    ],
+)
+def test_bytes_to_uint_reads_the_widest_integer_that_fits(data: bytes, expected: int) -> None:
+    assert bytes_to_uint(data) == expected
+
+
+def test_bytes_to_uint_of_nothing() -> None:
+    with pytest.raises(BinaryParseError):
+        bytes_to_uint(b"")
