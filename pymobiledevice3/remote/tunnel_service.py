@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import contextlib
 import dataclasses
 import hashlib
 import inspect
@@ -44,7 +45,19 @@ from srptools import SRPClientSession, SRPContext, SRPServerSession
 from srptools import utils as _srptools_utils
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
 
-from pymobiledevice3.binary import BinaryStruct, ByteReader, Bytes, BytesLike, Const, OpenIntEnum, u16
+from pymobiledevice3.binary import (
+    GREEDY_BYTES,
+    U8,
+    U16_BE,
+    BinaryStruct,
+    ByteReader,
+    Bytes,
+    BytesLike,
+    Const,
+    OpenIntEnum,
+    Prefixed,
+    u8,
+)
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 
@@ -76,6 +89,7 @@ from pymobiledevice3.exceptions import (
     PyMobileDevice3Exception,
     QuicProtocolNotSupportedError,
     RemotePairingCompletedError,
+    TruncatedDataError,
     UserDeniedPairingError,
 )
 from pymobiledevice3.pair_records import (
@@ -155,14 +169,11 @@ class PairingDataComponentType(OpenIntEnum):
 
 
 @dataclasses.dataclass
-class PairingDataComponentTLV8:
+class PairingDataComponentTLV8(BinaryStruct):
     """One TLV8 item: 1-byte type, 1-byte length, ``length`` bytes of data."""
 
-    type: int
-    data: bytes
-
-    def build(self) -> bytes:
-        return bytes((self.type, len(self.data))) + self.data
+    type: Annotated[PairingDataComponentType, u8]
+    data: Annotated[bytes, Prefixed(U8, GREEDY_BYTES)]
 
 
 class PairingDataComponentTLVBuf:
@@ -173,11 +184,9 @@ class PairingDataComponentTLVBuf:
         """Parse as many complete items as possible; an incomplete trailing item is ignored."""
         reader = ByteReader(data)
         result: list[PairingDataComponentTLV8] = []
-        while reader.remaining >= 2:
-            type_, length = reader.read(2)
-            if length > reader.remaining:
-                break
-            result.append(PairingDataComponentTLV8(PairingDataComponentType(type_), reader.read(length)))
+        with contextlib.suppress(TruncatedDataError):
+            while reader.remaining:
+                result.append(PairingDataComponentTLV8.read(reader))
         return result
 
     @staticmethod
@@ -226,26 +235,13 @@ PIN_PAIRING_MODELS = ("AppleTV", "RealityDevice")
 
 
 @dataclasses.dataclass
-class _CDTunnelHeader(BinaryStruct, byte_order=">"):
+class CDTunnelPacket(BinaryStruct, byte_order=">"):
+    """CoreDevice tunnel packet: ``CDTunnel`` magic + a big-endian 16-bit length + that many bytes of body."""
+
     magic: Annotated[bytes, Bytes(len(CDTUNNEL_MAGIC)), Const(CDTUNNEL_MAGIC)] = dataclasses.field(
         default=CDTUNNEL_MAGIC, init=False
     )
-    length: u16
-
-
-@dataclasses.dataclass
-class CDTunnelPacket:
-    """CoreDevice tunnel packet: ``CDTunnel`` magic + a big-endian 16-bit length + that many bytes of body."""
-
-    body: bytes
-
-    @classmethod
-    def parse(cls, data: BytesLike) -> "CDTunnelPacket":
-        reader = ByteReader(data)
-        return cls(reader.read(_CDTunnelHeader.read(reader).length))
-
-    def build(self) -> bytes:
-        return _CDTunnelHeader(len(self.body)).build() + self.body
+    body: Annotated[bytes, Prefixed(U16_BE, GREEDY_BYTES)]
 
 
 REPAIRING_PACKET_MAGIC = b"RPPairing"
@@ -256,21 +252,13 @@ _warned_stale_pair_records: set[str] = set()
 
 
 @dataclasses.dataclass
-class _RPPairingHeader(BinaryStruct, byte_order=">"):
+class RPPairingPacket(BinaryStruct, byte_order=">"):
+    """Remote-pairing packet: ``RPPairing`` magic + a big-endian 16-bit length + that many bytes of body."""
+
     magic: Annotated[bytes, Bytes(len(REPAIRING_PACKET_MAGIC)), Const(REPAIRING_PACKET_MAGIC)] = dataclasses.field(
         default=REPAIRING_PACKET_MAGIC, init=False
     )
-    length: u16
-
-
-@dataclasses.dataclass
-class RPPairingPacket:
-    """Remote-pairing packet: ``RPPairing`` magic + a big-endian 16-bit length + that many bytes of body."""
-
-    body: bytes
-
-    def build(self) -> bytes:
-        return _RPPairingHeader(len(self.body)).build() + self.body
+    body: Annotated[bytes, Prefixed(U16_BE, GREEDY_BYTES)]
 
 
 #: When True, :func:`create_tun_device` builds the tunnel's interface as a pure-Python
@@ -1905,7 +1893,7 @@ class PairableHost:
             PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x02"),
             PairingDataComponentTLV8(PairingDataComponentType.SALT, salt),
         ]
-        tlv += self._chunk_component(int(PairingDataComponentType.PUBLIC_KEY), server_public)
+        tlv += self._chunk_component(PairingDataComponentType.PUBLIC_KEY, server_public)
         self.logger.debug("Sending pair-setup M2 (salt + B)")
         await self._send_pairing_data(PairingDataComponentTLVBuf.build(tlv))
 
@@ -1966,7 +1954,7 @@ class PairableHost:
         self.logger.debug("Sending pair-setup M6 (our identity)")
         m6_plain = self._build_accessory_identity_tlv(session_key)
         m6_cipher = cip.encrypt(b"\x00\x00\x00\x00PS-Msg06", m6_plain, b"")
-        tlv = self._chunk_component(int(PairingDataComponentType.ENCRYPTED_DATA), m6_cipher)
+        tlv = self._chunk_component(PairingDataComponentType.ENCRYPTED_DATA, m6_cipher)
         tlv.append(PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x06"))
         await self._send_pairing_data(PairingDataComponentTLVBuf.build(tlv))
 
@@ -2045,7 +2033,7 @@ class PairableHost:
             await result
 
     @staticmethod
-    def _chunk_component(component_type: int, data: bytes) -> list[PairingDataComponentTLV8]:
+    def _chunk_component(component_type: PairingDataComponentType, data: bytes) -> list[PairingDataComponentTLV8]:
         return [
             PairingDataComponentTLV8(component_type, data[i : i + TLV_MAX_FRAGMENT_SIZE])
             for i in range(0, len(data), TLV_MAX_FRAGMENT_SIZE)
