@@ -1,5 +1,8 @@
 from uuid import UUID
 
+import pytest
+
+from pymobiledevice3.exceptions import TruncatedDataError
 from pymobiledevice3.services.os_trace import SyslogLogLevel, parse_syslog_entry
 
 # a record as an iOS 27.0 device sent it
@@ -9,6 +12,7 @@ RECORD = bytes.fromhex(
     "000000000000000000685c08000000000000002f7573722f6c6962657865632f6c6f636174696f6e64002f7573722f6c6962657865632f"
     "6c6f636174696f6e6400434c3a20496e636f6d696e67206d65737361676500"
 )
+_LEVEL_OFFSET = 68
 
 
 def test_a_record_is_parsed_into_its_fields() -> None:
@@ -28,3 +32,15 @@ def test_a_record_is_parsed_into_its_fields() -> None:
 def test_the_mach_timestamp_is_the_whole_tick_count() -> None:
     # the two bytes ahead of it (ed 01 here) are another field, not its low bits
     assert parse_syslog_entry(RECORD).mach_timestamp == 0xA1B6DAFC4
+
+
+def test_parse_syslog_entry_truncated_header() -> None:
+    with pytest.raises(TruncatedDataError):
+        parse_syslog_entry(RECORD[:128])
+
+
+def test_an_unknown_level_still_parses() -> None:
+    record = bytearray(RECORD)
+    record[_LEVEL_OFFSET] = 0x7F
+    entry = parse_syslog_entry(bytes(record))
+    assert entry.level == 0x7F and isinstance(entry.level, SyslogLogLevel)
