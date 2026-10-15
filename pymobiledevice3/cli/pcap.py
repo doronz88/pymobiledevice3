@@ -3,12 +3,11 @@ from pathlib import Path
 from typing import Annotated, Any, Optional, cast
 
 import typer
-from construct import Container
 from pygments import formatters, highlight, lexers
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_hex, user_requested_colored_output
-from pymobiledevice3.services.pcapd import PcapdService
+from pymobiledevice3.services.pcapd import INTERFACE_NAMES, CrossPlatformAddressFamily, DevicePacket, PcapdService
 
 cli = InjectingTyper(
     name="pcap",
@@ -17,13 +16,13 @@ cli = InjectingTyper(
 )
 
 
-def print_packet_header(packet: Container[Any], color: bool) -> None:
+def print_packet_header(packet: DevicePacket, color: bool) -> None:
     date = datetime.fromtimestamp(packet.seconds + (packet.microseconds / 1000000))
     data = (
         f"{date}: "
         f"Process {packet.comm} ({packet.pid}), "
-        f"Interface: {packet.interface_name} ({packet.interface_type.name}), "
-        f"Family: {packet.protocol_family.name}"
+        f"Interface: {packet.interface_name} ({INTERFACE_NAMES(packet.interface_type).name}), "
+        f"Family: {CrossPlatformAddressFamily(packet.protocol_family).name}"
     )
     if not color:
         print(data)
@@ -34,7 +33,7 @@ def print_packet_header(packet: Container[Any], color: bool) -> None:
         )
 
 
-def print_packet(packet: Container[Any], color: Optional[bool] = None) -> Container[Any]:
+def print_packet(packet: DevicePacket, color: Optional[bool] = None) -> DevicePacket:
     """Return the packet, so it can be chained in a generator"""
     if color is None:
         color = user_requested_colored_output()
