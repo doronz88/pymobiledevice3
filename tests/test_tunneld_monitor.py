@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError, MuxException
+from pymobiledevice3.exceptions import (
+    ConnectionTerminatedError,
+    MuxException,
+    TruncatedDataError,
+    UnexpectedConstantError,
+)
 from pymobiledevice3.tunneld import server as tunneld_server
 
 
@@ -63,13 +68,64 @@ async def test_monitor_usbmux_task_reconnects_after_socket_broken(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_start_tunnel_task_reports_dropped_device_quietly(monkeypatch, caplog):
+@pytest.mark.parametrize("error", [TruncatedDataError("short reply"), UnexpectedConstantError("bad magic")])
+async def test_monitor_usbmux_task_reconnects_after_a_malformed_usbmux_reply(monkeypatch, error):
+    monkeypatch.setattr(tunneld_server, "USBMUX_INTERVAL", 0)
+    create_calls = 0
+
+    async def fake_receive() -> None:
+        raise error
+
+    async def fake_create_mux(usbmux_address=None):
+        nonlocal create_calls
+        create_calls += 1
+        if create_calls >= 2:
+            raise asyncio.CancelledError()
+        return _FakeMux(fake_receive)
+
+    monkeypatch.setattr(tunneld_server.usbmux, "create_mux", fake_create_mux)
+    core = tunneld_server.TunneldCore(wifi_monitor=False, usb_monitor=False, usbmux_monitor=True, mobdev2_monitor=False)
+    await core.monitor_usbmux_task()
+    assert create_calls == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [TruncatedDataError("short reply"), UnexpectedConstantError("bad magic")])
+async def test_monitor_usbmux_task_skips_a_device_whose_lockdown_reply_is_malformed(monkeypatch, error):
+    receives = 0
+
+    async def fake_receive() -> None:
+        nonlocal receives
+        receives += 1
+        if receives >= 2:
+            raise asyncio.CancelledError()
+
+    mux = _FakeMux(fake_receive)
+    mux.devices = [Mock(serial="device", connection_type="USB")]
+
+    async def fake_create_mux(usbmux_address=None):
+        return mux
+
+    async def fake_create_using_usbmux(serial, usbmux_address=None):
+        raise error
+
+    monkeypatch.setattr(tunneld_server.usbmux, "create_mux", fake_create_mux)
+    monkeypatch.setattr(tunneld_server, "create_using_usbmux", fake_create_using_usbmux)
+    core = tunneld_server.TunneldCore(wifi_monitor=False, usb_monitor=False, usbmux_monitor=True, mobdev2_monitor=False)
+    await core.monitor_usbmux_task()
+    assert receives == 2
+    assert core.tunnel_tasks == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [ConnectionTerminatedError(), TruncatedDataError("short reply")])
+async def test_start_tunnel_task_reports_dropped_device_quietly(monkeypatch, caplog, error):
     """A device that drops the link while the tunnel is being established is routine for a
     long-running tunneld; it must not be logged as an unexpected exception with a traceback."""
 
     @asynccontextmanager
     async def fake_start_tunnel(protocol_handler, protocol=None):
-        raise ConnectionTerminatedError()
+        raise error
         yield
 
     monkeypatch.setattr(tunneld_server, "start_tunnel", fake_start_tunnel)

@@ -20,7 +20,6 @@ from ssl import SSLZeroReturnError, TLSVersion
 from types import TracebackType
 from typing import Any, Optional, cast, overload
 
-from construct import StreamError
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
@@ -37,6 +36,7 @@ from pymobiledevice3.ca import generate_pairing_cert_chain
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
     BadDevError,
+    BinaryParseError,
     CannotStopSessionError,
     ConnectionFailedError,
     ConnectionTerminatedError,
@@ -1471,7 +1471,7 @@ async def retry_create_using_usbmux(
             BadDevError,
             MuxException,
             OSError,
-            StreamError,
+            BinaryParseError,
             DeviceNotFoundError,
             IncompleteReadError,
             ConnectionTerminatedError,

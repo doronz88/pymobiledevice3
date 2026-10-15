@@ -2,8 +2,9 @@ from typing import Any
 
 import pytest
 
-from pymobiledevice3 import usbmux
+from pymobiledevice3 import lockdown, usbmux
 from pymobiledevice3.cli import diagnostics
+from pymobiledevice3.exceptions import TruncatedDataError, UnexpectedConstantError
 from pymobiledevice3.usbmux import MuxDevice, wait_for_device_detach
 
 UDID = "00008150-001074523440401C"
@@ -66,3 +67,23 @@ async def test_restart_waits_for_the_device_to_leave_before_reconnecting(monkeyp
     await diagnostics.wait_for_restart(UDID)
 
     assert events == [f"detached {UDID}", f"reconnected {UDID}", "closed"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [TruncatedDataError("short reply"), UnexpectedConstantError("bad magic")])
+async def test_retry_create_using_usbmux_retries_after_a_malformed_usbmux_reply(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    attempts: list[int] = []
+    client = object()
+
+    async def create_using_usbmux(**kwargs: Any) -> Any:
+        attempts.append(len(attempts))
+        if len(attempts) == 1:
+            raise error
+        return client
+
+    monkeypatch.setattr(lockdown, "create_using_usbmux", create_using_usbmux)
+    monkeypatch.setattr(lockdown, "RECONNECT_RETRY_INTERVAL_SECONDS", 0)
+    assert await lockdown.retry_create_using_usbmux(retry_timeout=5) is client
+    assert len(attempts) == 2
