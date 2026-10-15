@@ -1,38 +1,49 @@
-from typing import Any, Optional
+import io
+from dataclasses import dataclass, field
+from typing import Annotated, Optional
 
-from construct import Array, Bytes, Const, Default, Int32ub, Int32ul, Pointer, Struct, this
+from pymobiledevice3.binary import BinaryStruct, ByteReader, Bytes, Const, u32, u32be
 
-ftab_entry = Struct(
-    "tag" / Bytes(4),
-    "offset" / Int32ul,
-    "size" / Int32ul,
-    "pad_0x0C" / Default(Int32ul, 0),
-    "data" / Pointer(this.offset, Bytes(this.size)),
-)
+FTAB_MAGIC = b"ftab"
 
-ftab_header = Struct(
-    "always_01" / Int32ul,  # 1
-    "always_ff" / Int32ul,  # 0xFFFFFFFF
-    "unk_0x08" / Int32ub,  # 0
-    "unk_0x0C" / Int32ub,  # 0
-    "unk_0x10" / Int32ub,  # 0
-    "unk_0x14" / Int32ub,  # 0
-    "unk_0x18" / Int32ub,  # 0
-    "unk_0x1C" / Int32ub,  # 0
-    "tag" / Bytes(4),  # e.g. 'rkos'
-    "magic" / Const(b"ftab"),  # 'ftab' magic
-    "num_entries" / Int32ul,
-    "pad_0x2C" / Int32ub,
-    "entries" / Array(this.num_entries, ftab_entry),
-)
+
+@dataclass
+class FtabEntry(BinaryStruct, byte_order="<"):
+    tag: Annotated[bytes, Bytes(4)]
+    offset: u32  # absolute offset of the payload
+    size: u32
+    pad_0x0C: u32 = 0
+    data: bytes = b""  # the payload, not part of the table entry
+
+
+@dataclass
+class FtabHeader(BinaryStruct, byte_order="<"):
+    always_01: u32
+    always_ff: u32  # 0xFFFFFFFF
+    unk_0x08: u32be  # unk_0x08 .. unk_0x1C are all 0
+    unk_0x0C: u32be
+    unk_0x10: u32be
+    unk_0x14: u32be
+    unk_0x18: u32be
+    unk_0x1C: u32be
+    tag: Annotated[bytes, Bytes(4)]  # e.g. b"rkos"
+    magic: Annotated[bytes, Bytes(4), Const(FTAB_MAGIC)]
+    num_entries: u32
+    pad_0x2C: u32be
+    entries: list[FtabEntry] = field(default_factory=list[FtabEntry])  # the entry table follows the header
 
 
 class Ftab:
     def __init__(self, component_data: bytes):
-        self.parsed = ftab_header.parse(component_data)
+        reader = ByteReader(component_data)
+        self.parsed = FtabHeader.read(reader)
+        for _ in range(self.parsed.num_entries):
+            entry = FtabEntry.read(reader)
+            entry.data = ByteReader(component_data, entry.offset).read(entry.size) if entry.size else b""
+            self.parsed.entries.append(entry)
 
     @property
-    def tag(self):
+    def tag(self) -> bytes:
         return self.parsed.tag
 
     def get_entry_data(self, tag: bytes) -> Optional[bytes]:
@@ -42,12 +53,26 @@ class Ftab:
         return None
 
     def add_entry(self, tag: bytes, data: bytes):
-        new_offset = self.parsed.entries[-1].offset + self.parsed.entries[-1].size
-        new_entry: dict[str, Any] = {"tag": tag, "offset": new_offset, "size": len(data), "data": data}
-
-        self.parsed.num_entries += 1  # pyright: ignore[reportAttributeAccessIssue]
-        self.parsed.entries.append(new_entry)
+        entries = self.parsed.entries
+        entries.append(FtabEntry(tag=tag, offset=0, size=len(data), data=data))
+        self.parsed.num_entries = len(entries)
+        # The table grew by one entry, so lay the payloads out again right after it (as idevicerestore's
+        # ftab_add_entry does): real images pack their first payload directly after the table.
+        offset = FtabHeader.SIZE + FtabEntry.SIZE * len(entries)
+        for entry in entries:
+            entry.offset = offset
+            offset += entry.size
 
     @property
     def data(self) -> bytes:
-        return ftab_header.build(self.parsed)
+        header = self.parsed
+        stream = io.BytesIO()
+        stream.write(header.build())
+        for entry in header.entries:
+            stream.write(entry.build())
+            # Entry payloads live at their absolute offsets; seeking past the end zero-fills the gap.
+            table_position = stream.tell()
+            stream.seek(entry.offset)
+            stream.write(entry.data)
+            stream.seek(table_position)
+        return stream.getvalue()
