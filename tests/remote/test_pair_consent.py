@@ -7,6 +7,7 @@ import pytest
 from pymobiledevice3.exceptions import PairingError
 from pymobiledevice3.remote.tunnel_service import (
     PairConsentResult,
+    PairingDataComponentTLV8,
     PairingDataComponentTLVBuf,
     PairingDataComponentType,
     RemotePairingProtocol,
@@ -19,10 +20,10 @@ BACKOFF_M2 = b"\x07\x01\x03\x08\x02\x7c\x20\x06\x01\x02"
 PUBLIC_KEY = bytes(range(256)) + bytes(128)
 SALT = bytes(range(16))
 VALID_M2 = PairingDataComponentTLVBuf.build([
-    {"type": PairingDataComponentType.STATE, "data": b"\x02"},
-    {"type": PairingDataComponentType.PUBLIC_KEY, "data": PUBLIC_KEY[:255]},
-    {"type": PairingDataComponentType.PUBLIC_KEY, "data": PUBLIC_KEY[255:]},
-    {"type": PairingDataComponentType.SALT, "data": SALT},
+    PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x02"),
+    PairingDataComponentTLV8(PairingDataComponentType.PUBLIC_KEY, PUBLIC_KEY[:255]),
+    PairingDataComponentTLV8(PairingDataComponentType.PUBLIC_KEY, PUBLIC_KEY[255:]),
+    PairingDataComponentTLV8(PairingDataComponentType.SALT, SALT),
 ])
 
 
