@@ -128,6 +128,13 @@ KEYBOARD_SURFACE_DEFAULT_SERVICE_ID = 0x100002001
 # ``list_connected_services`` right away and its entry does not change), so
 # this is a pause; 0.1 s was already enough on the device it was measured on.
 KEYBOARD_ATTACH_SETTLE_SECONDS = 0.3
+# How long :func:`touch_session` waits after the media stream starts before
+# yielding. backboardd re-matches the HID surfaces against the authenticated
+# stream asynchronously, and a touch sent before that lands on an
+# ``externalAccessory`` surface and is dropped. Nothing reports the re-match,
+# so this is a pause. 0.1 s was enough on an iPhone 15 Pro; an iPhone 11 needed
+# 0.4 s, and 0.3 s dropped the first touch every time (#2036).
+TOUCH_AUTH_SETTLE_SECONDS = 0.5
 
 # HID Keyboard usage codes (page 0x07) -- the bits that go into the
 # 240-bit bitmap of :func:`build_keyboard_report`. Only the keys we
@@ -617,11 +624,7 @@ async def touch_session(
                 "The device's mediastream / dtuhidd daemon is likely wedged "
                 "— reboot the device and retry."
             ) from exc
-        # backboardd needs a brief moment to (re-)match the HID surfaces
-        # against the newly-authenticated stream before our reports will
-        # be dispatched as builtIn:YES. Without this delay the first frame
-        # of a gesture can land while the surface is still externalAccessory.
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(TOUCH_AUTH_SETTLE_SECONDS)
         drain_task = asyncio.create_task(_drain())
         try:
             async with UniversalHIDServiceService(rsd) as hid:
