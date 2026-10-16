@@ -39,7 +39,9 @@ class Sysmontap(Tap):
         self.system_attributes_cls = dataclasses.make_dataclass("SysmonSystemAttributes", system_attributes)
 
         config: dict[str, Any] = {
-            "ur": Sysmontap.MINIMUM_INTERVAL_MS,  # Output frequency ms
+            # Output rate (ms): how often the device pushes a message. Matching the sampling interval
+            # makes it emit once per sample instead of flooding mostly-empty updates every millisecond.
+            "ur": interval_ms,
             "bm": 0,
             "procAttrs": process_attributes,
             "sysAttrs": system_attributes,
