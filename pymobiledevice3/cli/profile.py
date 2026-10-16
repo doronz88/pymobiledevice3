@@ -60,41 +60,37 @@ async def profile_install(
 @cli.command("cloud-configuration")
 @async_command
 async def profile_cloud_configuration(
-    ctx: typer.Context,
+    service_provider: ServiceProviderDep, config: Annotated[Optional[Path], typer.Argument()] = None
+) -> None:
+    """Get/Set cloud configuration"""
+    if not config:
+        print_json(await MobileConfigService(lockdown=service_provider).get_cloud_configuration())
+    else:
+        with config.open("rb") as config_file:
+            config_json = plistlib.load(config_file)
+        logger.info(f"applying cloud configuration {config_json}")
+        await MobileConfigService(lockdown=service_provider).set_cloud_configuration(config_json)
+        logger.info("applied cloud configuration")
+
+
+@cli.command("download-cloud-configuration")
+@async_command
+async def profile_download_cloud_configuration(
     service_provider: ServiceProviderDep,
-    config: Annotated[Optional[Path], typer.Argument()] = None,
-    download_and_apply: Annotated[
-        bool,
-        typer.Option("--download-and-apply", help="Ask the device to download and apply its DEP cloud configuration"),
-    ] = False,
     username: Annotated[
         Optional[str],
-        typer.Option(help="MDM enrollment username for --download-and-apply"),
+        typer.Option(help="MDM enrollment username"),
     ] = None,
     password: Annotated[
         Optional[str],
-        typer.Option(help="MDM enrollment password for --download-and-apply"),
+        typer.Option(help="MDM enrollment password"),
     ] = None,
 ) -> None:
-    """Get/Set cloud configuration or download and apply it"""
-    if download_and_apply and config is not None:
-        ctx.fail("--download-and-apply is mutually exclusive with CONFIG.")
-    if not download_and_apply and (username is not None or password is not None):
-        ctx.fail("--username and --password require --download-and-apply.")
-
+    """Ask the device to download and apply its DEP cloud configuration"""
     async with MobileConfigService(lockdown=service_provider) as service:
-        if download_and_apply:
-            logger.info("downloading and applying DEP cloud configuration")
-            await service.download_and_apply_cloud_configuration(username=username, password=password)
-            logger.info("downloaded and applied DEP cloud configuration")
-        elif config is None:
-            print_json(await service.get_cloud_configuration())
-        else:
-            with config.open("rb") as config_file:
-                config_json = plistlib.load(config_file)
-            logger.info(f"applying cloud configuration {config_json}")
-            await service.set_cloud_configuration(config_json)
-            logger.info("applied cloud configuration")
+        logger.info("downloading and applying DEP cloud configuration")
+        await service.download_and_apply_cloud_configuration(username=username, password=password)
+        logger.info("downloaded and applied DEP cloud configuration")
 
 
 @cli.command("store")
