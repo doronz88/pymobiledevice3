@@ -8,18 +8,28 @@ from typing import Annotated
 import pytest
 
 from pymobiledevice3.binary import (
+    CSTRING,
+    GREEDY_BYTES,
+    PASS,
+    U8,
+    U16_BE,
+    U32_LE,
+    Aligned,
     Array,
     BinaryStruct,
     ByteReader,
     Bytes,
     Const,
+    CString,
     OpenIntEnum,
     PaddedString,
-    encode_utf8_cstring,
+    Prefixed,
+    PrefixedArray,
+    Switch,
+    Tuple,
     i32,
     ipv4,
     ipv6,
-    pad_to,
     u8,
     u16,
     u32,
@@ -267,26 +277,33 @@ def test_reader() -> None:
     assert reader.unpack(struct.Struct("<BB")) == (1, 2)
     assert reader.unpack_one(struct.Struct("<H")) == 0x0403
     assert (reader.offset, reader.absolute, reader.remaining) == (4, 14, 8)
-    assert reader.read_utf8_cstring() == "abc"
-    assert reader.read_all() == b"rest"
+    assert reader.read_cstring() == b"abc"
+    reader.skip(1)
+    assert reader.read_all() == b"est"
     assert reader.remaining == 0
 
+
+def test_sub_reader_is_a_window_on_the_same_buffer() -> None:
     reader = ByteReader(b"abcdef", offset=2, base=10)
     sub = reader.sub(2)
-    assert (sub.data, sub.absolute, reader.offset) == (b"cd", 12, 4)
+    assert sub.data is reader.data
+    assert (sub.absolute, sub.remaining, reader.offset) == (12, 2, 4)
     with pytest.raises(TruncatedDataError) as truncated:
         sub.read(3)
-    assert truncated.value.offset == 12
     assert str(truncated.value) == "at offset 12: expected 3 bytes, found 2"
+    for read in (lambda r: r.unpack_one(U32_LE), lambda r: r.skip(3), lambda r: r.sub(3)):
+        with pytest.raises(TruncatedDataError):
+            read(ByteReader(b"abcdef").sub(2))
+    with pytest.raises(TruncatedDataError, match="unterminated"):
+        ByteReader(b"ab\0").sub(2).read_cstring()  # the NUL is past the window
+    assert sub.read_all() == b"cd"
 
 
-def test_prefixed() -> None:
-    reader = ByteReader(_U32.pack(3) + b"abc" + b"next", base=10)
-    body = reader.prefixed(_U32)
-    assert (body.data, body.absolute) == (b"abc", 14)
-    assert reader.read_all() == b"next"
-    with pytest.raises(TruncatedDataError):
-        ByteReader(_U32.pack(5) + b"abc").prefixed(_U32)
+def test_records_do_not_read_past_the_reader_window() -> None:
+    data = bytes(range(1, 8))
+    with pytest.raises(TruncatedDataError, match=r"^Plain\.b at offset 2: expected 4 bytes, found 3$"):
+        Plain.read(ByteReader(data).sub(5))
+    assert Plain.read(ByteReader(data).sub(6)) == Plain(0x0201, 0x06050403)
 
 
 def test_reader_errors() -> None:
@@ -302,10 +319,6 @@ def test_reader_errors() -> None:
     with pytest.raises(TruncatedDataError) as unterminated:
         ByteReader(b"xabc", offset=1, base=10).read_cstring()
     assert unterminated.value.offset == 11
-    with pytest.raises(BinaryParseError, match="invalid UTF-8") as invalid:
-        ByteReader(b"x\xc3\0", offset=1, base=10).read_utf8_cstring()
-    assert not isinstance(invalid.value, TruncatedDataError)
-    assert invalid.value.offset == 11
 
 
 def test_open_int_enum_keeps_unknown_values() -> None:
@@ -320,11 +333,155 @@ def test_open_int_enum_keeps_unknown_values() -> None:
         Level("x")
 
 
-def test_cstring_and_padding_helpers() -> None:
-    assert encode_utf8_cstring("hé") == b"h\xc3\xa9\0"
+def test_cstring() -> None:
+    assert CSTRING.build("hé") == b"h\xc3\xa9\0"
+    assert CSTRING.parse(b"h\xc3\xa9\0rest") == "hé"
     with pytest.raises(BinaryBuildError, match="embedded NUL"):
-        encode_utf8_cstring("a\0b")
+        CSTRING.build("a\0b")
     with pytest.raises(BinaryBuildError):
-        encode_utf8_cstring("\udcff")
-    assert pad_to(b"abc", 4) == b"abc\0"
-    assert pad_to(b"abcd", 4) == b"abcd"
+        CSTRING.build("\udcff")
+    with pytest.raises(BinaryParseError, match="invalid UTF-8") as invalid:
+        CSTRING.read(ByteReader(b"x\xc3\0", offset=1, base=10))
+    assert not isinstance(invalid.value, TruncatedDataError)
+    assert invalid.value.offset == 11
+    assert CString(errors="replace").parse(b"\xc3\0") == "\ufffd"
+
+
+def test_scalar_and_bytes_codecs() -> None:
+    assert U16_BE.build(0x1234) == b"\x12\x34"
+    assert U16_BE.parse(b"\x12\x34") == 0x1234
+    with pytest.raises(BinaryBuildError, match="cannot encode 256"):
+        U8.build(256)
+    assert Bytes(2).read(ByteReader(b"abc")) == b"ab"
+    assert Bytes(2).build(bytearray(b"ab")) == b"ab"
+    with pytest.raises(BinaryBuildError, match="expected 2 bytes, got 3"):
+        Bytes(2).build(b"abc")
+    assert PASS.parse(b"abc") is None and PASS.build(None) == b""
+
+
+def test_prefixed() -> None:
+    string = Prefixed(U32_LE, CSTRING)
+    assert string.build("ab") == _U32.pack(3) + b"ab\0"
+    reader = ByteReader(_U32.pack(3) + b"ab\0" + b"next", base=10)
+    assert string.read(reader) == "ab"
+    assert (reader.offset, reader.end) == (7, 11)  # the window is restored
+    assert reader.read_all() == b"next"
+    with pytest.raises(TruncatedDataError, match="at offset 14: expected 5 bytes, found 3"):
+        Prefixed(U32_LE, GREEDY_BYTES).read(ByteReader(_U32.pack(5) + b"abc", base=10))
+    with pytest.raises(TruncatedDataError, match="unterminated"):
+        string.parse(_U32.pack(2) + b"ab\0")  # the terminator is outside the prefixed bytes
+    # Bytes the inner value leaves unread are skipped.
+    reader = ByteReader(_U32.pack(4) + b"a\0bc" + b"next")
+    assert string.read(reader) == "a"
+    assert reader.read_all() == b"next"
+    with pytest.raises(BinaryBuildError, match="length of 256"):
+        Prefixed(U8, GREEDY_BYTES).build(b"x" * 256)
+
+
+def test_aligned_pads_from_where_the_value_starts() -> None:
+    padded = Aligned(4, CSTRING)
+    assert padded.build("ab") == b"ab\0\0"
+    assert padded.build("abc") == b"abc\0"
+    reader = ByteReader(b"xa\0\0\0next", offset=1)
+    assert padded.read(reader) == "a"
+    assert reader.read_all() == b"next"
+    with pytest.raises(TruncatedDataError):
+        padded.parse(b"a\0\0")
+
+
+def test_prefixed_array_and_tuple() -> None:
+    assert Tuple(U8, U8, CSTRING).build((1, 2, "a")) == b"\x01\x02a\0"
+    assert Tuple(U8, U8, CSTRING).parse(b"\x01\x02a\0") == (1, 2, "a")
+    with pytest.raises(BinaryBuildError, match="expected 3 values, got 2"):
+        Tuple(U8, U8, CSTRING).build((1, 2))
+    entries = PrefixedArray(U8, Tuple(CSTRING, U8))
+    data = b"\x02a\0\x01b\0\x02"
+    assert entries.build([("a", 1), ("b", 2)]) == data
+    assert entries.parse(data) == [("a", 1), ("b", 2)]
+    assert entries.parse(b"\x00") == []
+    with pytest.raises(TruncatedDataError) as truncated:
+        entries.parse(data[:-1])
+    assert str(truncated.value) == "[1] at offset 6: expected 1 bytes, found 0"
+    with pytest.raises(BinaryBuildError, match=r"^\[1\]: expected 2 values, got 1"):
+        entries.build([("a", 1), ("b",)])
+
+
+class Kind(IntEnum):
+    TEXT = 1
+    NUMBER = 2
+
+
+def test_switch() -> None:
+    value = Switch(U8, {Kind.TEXT: CSTRING, Kind.NUMBER: U16_BE})
+    assert value.build((Kind.TEXT, "a")) == b"\x01a\0"
+    assert value.parse(b"\x02\x00\x05") == (2, 5)
+    with pytest.raises(BinaryParseError, match="at offset 0: unknown tag 0x3"):
+        value.parse(b"\x03")
+    with pytest.raises(BinaryBuildError, match="unknown tag 0x3"):
+        value.build((3, None))
+    with pytest.raises(TruncatedDataError) as truncated:
+        value.parse(b"\x02\x00")
+    assert str(truncated.value) == "NUMBER at offset 1: expected 2 bytes, found 1"
+    with pytest.raises(BinaryBuildError, match=r"^TEXT: embedded NUL"):
+        value.build((Kind.TEXT, "a\0"))
+    with pytest.raises(BinaryBuildError, match=r"^NUMBER: cannot encode 65536"):
+        value.build((Kind.NUMBER, 65536))  # a scalar case
+    with pytest.raises(BinaryBuildError, match="cannot encode 256"):
+        Switch(U8, {256: PASS}).build((256, None))
+
+    with_default = Switch(U8, {1: U8}, default=PASS)
+    assert with_default.parse(b"\x01\x07") == (1, 7)
+    assert with_default.parse(b"\x02\x07") == (2, None)
+    assert with_default.build((2, None)) == b"\x02"
+
+
+def test_error_path_through_nested_codecs() -> None:
+    tree = PrefixedArray(U8, Switch(U8, {Kind.TEXT: Aligned(4, Prefixed(U32_LE, CSTRING))}))
+    data = b"\x02" + b"\x01" + _U32.pack(2) + b"a\0" + b"\0\0" + b"\x01" + _U32.pack(200) + b"x"
+    with pytest.raises(TruncatedDataError) as truncated:
+        tree.parse(data)
+    assert str(truncated.value) == "[1] -> TEXT at offset 15: expected 200 bytes, found 1"
+    assert truncated.value.path == ["[1]", "TEXT"]
+    located = truncated.value.located(record="R")
+    assert (str(located), located.path) == (
+        "[1] -> TEXT -> R at offset 15: expected 200 bytes, found 1",
+        ["[1]", "TEXT"],
+    )
+
+
+@dataclass
+class Named(BinaryStruct, byte_order=">"):
+    magic: Annotated[int, u16, Const(0xCAFE)] = field(default=0xCAFE, init=False)
+    kind: Annotated[Kind, u8]
+    name: Annotated[str, CSTRING]
+    body: Annotated[bytes, Prefixed(U16_BE, GREEDY_BYTES)]
+
+
+def test_record_with_codec_fields() -> None:
+    record = Named(Kind.TEXT, "ab", b"xyz")
+    data = b"\xca\xfe\x01ab\0\x00\x03xyz"
+    assert record.build() == data
+    assert Named.parse(data + b"trailing") == record
+    assert isinstance(Named.parse(data).kind, Kind)
+    assert Named.SIZE == 3  # the fixed-size fields
+    reader = ByteReader(data + b"next")
+    assert Named.read(reader) == record
+    assert reader.read_all() == b"next"
+    assert PrefixedArray(U8, Named).parse(b"\x01" + data) == [record]  # records are codecs
+
+    with pytest.raises(UnexpectedConstantError, match=r"Named\.magic at offset 0"):
+        Named.parse(b"\x00" * 12)
+    with pytest.raises(TruncatedDataError) as truncated:
+        Named.parse(data[:-1])
+    assert str(truncated.value) == "Named.body at offset 8: expected 3 bytes, found 2"
+    with pytest.raises(BinaryBuildError, match=r"^Named\.name: embedded NUL"):
+        Named(Kind.TEXT, "a\0", b"").build()
+
+
+def test_codec_fields_follow_the_fixed_size_fields() -> None:
+    with pytest.raises(TypeError, match="must precede the codec fields"):
+
+        @dataclass
+        class Interleaved(BinaryStruct):
+            name: Annotated[str, CSTRING]
+            size: u32

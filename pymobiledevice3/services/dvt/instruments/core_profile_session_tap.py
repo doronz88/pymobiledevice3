@@ -20,6 +20,7 @@ from pymobiledevice3.binary import (
     BinaryStruct,
     ByteReader,
     BytesLike,
+    CString,
     PaddedString,
     i16,
     i32,
@@ -268,9 +269,8 @@ def _u64(reader: ByteReader) -> int:
     return reader.unpack_one(U64_LE)
 
 
-def _cstring(reader: ByteReader) -> str:
-    # The kernel truncates names (process, thread, queue) at a byte count, which can split a UTF-8 character.
-    return reader.read_cstring().decode("utf-8", "replace")
+# The kernel truncates names (process, thread, queue) at a byte count, which can split a UTF-8 character.
+_cstring = CString(errors="replace").read
 
 
 _THREAD_NAME = PaddedString(64, errors="replace")

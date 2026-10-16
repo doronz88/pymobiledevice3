@@ -2,26 +2,33 @@
 
 import dataclasses
 import enum
-import struct
 import uuid
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Callable, Optional, cast
 
 from pymobiledevice3.binary import (
+    CSTRING,
     F64_LE,
+    GREEDY_BYTES,
     I64_LE,
+    PASS,
     U32_LE,
     U64_LE,
+    Aligned,
     BinaryStruct,
     ByteReader,
+    Bytes,
     BytesLike,
+    CodecBase,
     Const,
-    encode_utf8_cstring,
-    pad_to,
+    Prefixed,
+    PrefixedArray,
+    Switch,
+    Tuple,
     u32,
     u64,
 )
-from pymobiledevice3.exceptions import BinaryBuildError, BinaryParseError
+from pymobiledevice3.exceptions import BinaryParseError
 
 
 class XpcMessageType(enum.IntEnum):
@@ -68,8 +75,6 @@ XPC_WRAPPER_MAGIC = 0x29B00B92
 XPC_PAYLOAD_MAGIC = 0x42133742
 XPC_PAYLOAD_PROTOCOL_VERSION = 0x00000005
 
-_U32_PAIR = struct.Struct("<II")
-
 
 @dataclasses.dataclass
 class XpcWrapperHeader(BinaryStruct, byte_order="<"):
@@ -113,14 +118,6 @@ class FileTransferType:
 
 
 @dataclasses.dataclass
-class XpcFileTransfer:
-    """Wire body of an ``XpcMessageType.FILE_TRANSFER`` object."""
-
-    msg_id: int
-    data: "XpcObject"
-
-
-@dataclasses.dataclass
 class XpcObject:
     """One encoded XPC object.
 
@@ -140,134 +137,61 @@ class XpcObject:
 
     @classmethod
     def parse(cls, data: BytesLike) -> "XpcObject":
-        return cls.parse_stream(ByteReader(data))
+        return cls.read(ByteReader(data))
 
     @classmethod
-    def parse_stream(cls, reader: ByteReader) -> "XpcObject":
-        type_offset = reader.absolute
-        raw_type = reader.unpack_one(U32_LE)
-        try:
-            object_type: int = XpcMessageType(raw_type)
-        except ValueError:
-            return cls(raw_type, None)
-        parser = _XPC_OBJECT_PARSERS.get(object_type)
-        if parser is None:
-            if object_type == XpcMessageType.POINTER:
-                raise BinaryParseError("XPC POINTER objects cannot be parsed", record="XpcObject", offset=type_offset)
-            return cls(object_type, None)
-        return cls(object_type, parser(reader))
+    def read(cls, reader: ByteReader) -> "XpcObject":
+        object_type: int
+        object_type, data = _XPC_OBJECT.read(reader)
+        return cls(_XPC_MESSAGE_TYPES.get(object_type, object_type), data)
 
     def build(self) -> bytes:
-        builder = _XPC_OBJECT_BUILDERS.get(self.type)
-        try:
-            body = b"" if builder is None else builder(self.data)
-            return U32_LE.pack(self.type) + body
-        except struct.error as e:
-            raise BinaryBuildError(f"cannot encode {self.data!r}: {e}", record="XpcObject") from e
+        return _XPC_OBJECT.build((self.type, self.data))
 
 
-# Padding is relative to where each object starts, not to the enclosing reader: a container whose declared length
-# is not a multiple of 4 leaves the objects after it unaligned.
+@dataclasses.dataclass
+class XpcFileTransfer(BinaryStruct, byte_order="<"):
+    """Wire body of an ``XpcMessageType.FILE_TRANSFER`` object."""
+
+    msg_id: u64
+    data: Annotated[XpcObject, XpcObject]
 
 
-def _parse_string(reader: ByteReader) -> str:
-    body = reader.prefixed(U32_LE)
-    value = body.read_utf8_cstring()
-    reader.read(-len(body.data) % 4)
-    return value
+class _Unparsable(CodecBase[None]):
+    """A type whose payload layout is unknown, so nothing after it can be parsed."""
+
+    def read(self, reader: ByteReader) -> None:
+        raise BinaryParseError("XPC POINTER objects cannot be parsed", offset=reader.absolute - U32_LE.size)
+
+    def build(self, value: None) -> bytes:
+        return b""
 
 
-def _parse_data(reader: ByteReader) -> bytes:
-    value = reader.prefixed(U32_LE).read_all()
-    reader.read(-len(value) % 4)
-    return value
+_XPC_MESSAGE_TYPES: dict[int, int] = {member.value: member for member in XpcMessageType}
 
-
-def _parse_dictionary(reader: ByteReader) -> list[tuple[str, XpcObject]]:
-    body = reader.prefixed(U32_LE)
-    entries: list[tuple[str, XpcObject]] = []
-    for _ in range(body.unpack_one(U32_LE)):
-        key_start = body.offset
-        key = body.read_utf8_cstring()
-        body.read(-(body.offset - key_start) % 4)
-        entries.append((key, XpcObject.parse_stream(body)))
-    return entries
-
-
-def _parse_array(reader: ByteReader) -> list[XpcObject]:
-    body = reader.prefixed(U32_LE)
-    return [XpcObject.parse_stream(body) for _ in range(body.unpack_one(U32_LE))]
-
-
-_XPC_OBJECT_PARSERS: dict[int, Callable[[ByteReader], Any]] = {
-    XpcMessageType.DICTIONARY: _parse_dictionary,
-    XpcMessageType.ARRAY: _parse_array,
-    XpcMessageType.FILE_TRANSFER: lambda reader: XpcFileTransfer(
-        reader.unpack_one(U64_LE), XpcObject.parse_stream(reader)
-    ),
-    XpcMessageType.STRING: _parse_string,
-    XpcMessageType.INT64: lambda reader: reader.unpack_one(I64_LE),
-    XpcMessageType.UINT64: lambda reader: reader.unpack_one(U64_LE),
-    XpcMessageType.DOUBLE: lambda reader: reader.unpack_one(F64_LE),
-    XpcMessageType.BOOL: lambda reader: reader.unpack_one(U32_LE),
-    XpcMessageType.NULL: lambda reader: None,
-    XpcMessageType.UUID: lambda reader: reader.read(16),
-    XpcMessageType.DATE: lambda reader: reader.unpack_one(I64_LE),  # int64_t nanoseconds (xpc_date_create)
-    XpcMessageType.DATA: _parse_data,
-    XpcMessageType.FD: lambda reader: reader.unpack_one(U32_LE),
-    XpcMessageType.SHMEM: lambda reader: reader.unpack(_U32_PAIR)[0],
-}
-
-
-def _prefixed(body: bytes) -> bytes:
-    return U32_LE.pack(len(body)) + body
-
-
-def _build_string_body(value: str) -> bytes:
-    return pad_to(_prefixed(encode_utf8_cstring(value)), 4)
-
-
-def _build_data_body(value: bytes) -> bytes:
-    return pad_to(_prefixed(bytes(value)), 4)
-
-
-def _build_dictionary_body(entries: list[tuple[str, XpcObject]]) -> bytes:
-    body = [U32_LE.pack(len(entries))]
-    for key, value in entries:
-        body.append(pad_to(encode_utf8_cstring(key), 4))
-        body.append(value.build())
-    return _prefixed(b"".join(body))
-
-
-def _build_array_body(entries: list[XpcObject]) -> bytes:
-    return _prefixed(U32_LE.pack(len(entries)) + b"".join(entry.build() for entry in entries))
-
-
-def _build_uuid_body(value: bytes) -> bytes:
-    if len(value) != 16:
-        raise BinaryBuildError(f"expected 16 bytes, got {len(value)}", record="XpcObject", field="UUID")
-    return bytes(value)
-
-
-def _build_file_transfer_body(value: XpcFileTransfer) -> bytes:
-    return U64_LE.pack(value.msg_id) + value.data.build()
-
-
-_XPC_OBJECT_BUILDERS: dict[int, Callable[[Any], bytes]] = {
-    XpcMessageType.DICTIONARY: _build_dictionary_body,
-    XpcMessageType.STRING: _build_string_body,
-    XpcMessageType.INT64: I64_LE.pack,
-    XpcMessageType.UINT64: U64_LE.pack,
-    XpcMessageType.DOUBLE: F64_LE.pack,
-    XpcMessageType.BOOL: U32_LE.pack,
-    XpcMessageType.UUID: _build_uuid_body,
-    XpcMessageType.DATE: I64_LE.pack,
-    XpcMessageType.DATA: _build_data_body,
-    XpcMessageType.FD: U32_LE.pack,
-    XpcMessageType.SHMEM: lambda length: _U32_PAIR.pack(length, 0),
-    XpcMessageType.ARRAY: _build_array_body,
-    XpcMessageType.FILE_TRANSFER: _build_file_transfer_body,
-}
+# Padding is relative to where each value starts, not to the enclosing container: a container whose declared
+# length is not a multiple of 4 leaves the objects after it unaligned.
+_XPC_OBJECT = Switch(
+    U32_LE,
+    {
+        XpcMessageType.NULL: PASS,
+        XpcMessageType.BOOL: U32_LE,
+        XpcMessageType.INT64: I64_LE,
+        XpcMessageType.UINT64: U64_LE,
+        XpcMessageType.DOUBLE: F64_LE,
+        XpcMessageType.POINTER: _Unparsable(),
+        XpcMessageType.DATE: I64_LE,  # int64_t nanoseconds (xpc_date_create)
+        XpcMessageType.DATA: Aligned(4, Prefixed(U32_LE, GREEDY_BYTES)),
+        XpcMessageType.STRING: Aligned(4, Prefixed(U32_LE, CSTRING)),
+        XpcMessageType.UUID: Bytes(16),
+        XpcMessageType.FD: U32_LE,
+        XpcMessageType.SHMEM: Aligned(8, U32_LE),  # u32 length + 4 reserved bytes
+        XpcMessageType.ARRAY: Prefixed(U32_LE, PrefixedArray(U32_LE, XpcObject)),
+        XpcMessageType.DICTIONARY: Prefixed(U32_LE, PrefixedArray(U32_LE, Tuple(Aligned(4, CSTRING), XpcObject))),
+        XpcMessageType.FILE_TRANSFER: XpcFileTransfer,
+    },
+    default=PASS,  # a type without a payload layout here: no payload bytes are consumed
+)
 
 
 @dataclasses.dataclass
@@ -306,7 +230,7 @@ def _parse_payload(reader: ByteReader) -> Optional[XpcObject]:
     to recurse into) yields ``None``."""
     try:
         XpcPayloadHeader.read(reader)
-        return XpcObject.parse_stream(reader)
+        return XpcObject.read(reader)
     except (BinaryParseError, RecursionError):
         return None
 
@@ -387,23 +311,25 @@ def _build_xpc_file_transfer(payload: FileTransferType) -> XpcObject:
 def _build_xpc_object(payload: Any) -> XpcObject:
     if payload is None:
         return XpcObject(XpcMessageType.NULL)
-    payload_builders: dict[Any, Callable[[Any], XpcObject]] = {
-        list: _build_xpc_array,
-        dict: _build_xpc_dictionary,
-        bool: lambda value: XpcObject(XpcMessageType.BOOL, int(value)),
-        str: lambda value: XpcObject(XpcMessageType.STRING, value),
-        bytes: lambda value: XpcObject(XpcMessageType.DATA, value),
-        bytearray: lambda value: XpcObject(XpcMessageType.DATA, bytes(value)),
-        float: lambda value: XpcObject(XpcMessageType.DOUBLE, value),
-        uuid.UUID: lambda value: XpcObject(XpcMessageType.UUID, value.bytes),
-        FileTransferType: _build_xpc_file_transfer,
-        "XpcUInt64Type": lambda value: XpcObject(XpcMessageType.UINT64, int(value)),
-        "XpcInt64Type": lambda value: XpcObject(XpcMessageType.INT64, int(value)),
-    }
-    builder = payload_builders.get(type(payload), payload_builders.get(type(payload).__name__))
+    builder = _PAYLOAD_BUILDERS.get(type(payload)) or _PAYLOAD_BUILDERS.get(type(payload).__name__)
     if builder is None:
         raise TypeError(f"unrecognized type for: {payload} {type(payload)}")
     return builder(payload)
+
+
+_PAYLOAD_BUILDERS: dict[Any, Callable[[Any], XpcObject]] = {
+    list: _build_xpc_array,
+    dict: _build_xpc_dictionary,
+    bool: lambda value: XpcObject(XpcMessageType.BOOL, int(value)),
+    str: lambda value: XpcObject(XpcMessageType.STRING, value),
+    bytes: lambda value: XpcObject(XpcMessageType.DATA, value),
+    bytearray: lambda value: XpcObject(XpcMessageType.DATA, bytes(value)),
+    float: lambda value: XpcObject(XpcMessageType.DOUBLE, value),
+    uuid.UUID: lambda value: XpcObject(XpcMessageType.UUID, value.bytes),
+    FileTransferType: _build_xpc_file_transfer,
+    "XpcUInt64Type": lambda value: XpcObject(XpcMessageType.UINT64, int(value)),
+    "XpcInt64Type": lambda value: XpcObject(XpcMessageType.INT64, int(value)),
+}
 
 
 def create_xpc_wrapper(d: dict[str, Any], message_id: int = 0, wanting_reply: bool = False) -> bytes:
