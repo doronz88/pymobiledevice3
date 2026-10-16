@@ -1635,7 +1635,11 @@ async def testp_cdp_server_keeps_an_armed_pause_for_user_code(lockdown: Lockdown
                 await call(method, {})
             # A fresh document: an armed pause takes the very next statement to run, so a timer
             # left behind by an earlier test on this page would take it instead of the user's code.
-            await call("Page.navigate", {"url": "https://example.com/"})
+            # And a blank one: into a real page Safari injects scripts of its own for a while after
+            # the load (LinkPresentation's metadata extractor 2, 4, 8 and 14 s in, Reader's article
+            # finder 5 s in - measured on iOS 27.2), and one of those took the pause instead. It
+            # runs none in about:blank, and navigating there again still replaces the document.
+            await call("Page.navigate", {"url": "about:blank"})
             await asyncio.sleep(3)
             big = await call(
                 "Runtime.evaluate",
@@ -3582,31 +3586,51 @@ async def testp_cdp_server_emulates_user_preferences(lockdown: LockdownClient) -
                 )
                 return reply["result"]["result"]["value"]
 
-            assert await preferences() == "false/false/false/false"
+            # The device's own settings are the baseline, not "all off": a phone in Dark Mode (or
+            # with Reduce Motion or Increase Contrast on) matches before anything is emulated.
+            # Every preference is driven to both of its values, so whichever the device has, one
+            # of the two is a change that only an emulation reaching the page can make.
+            baseline = await preferences()
+            dark, motion, contrast, printing = (flag == "true" for flag in baseline.split("/"))
+            assert not printing, baseline
 
-            reply = await client.command(next(ids), "Emulation.setAutoDarkModeOverride", {"enabled": True})
-            assert "error" not in reply, reply
-            assert await preferences() == "true/false/false/false"
+            def matching(*flags: bool) -> str:
+                return "/".join("true" if flag else "false" for flag in flags)
+
+            for enabled in (True, False):
+                reply = await client.command(next(ids), "Emulation.setAutoDarkModeOverride", {"enabled": enabled})
+                assert "error" not in reply, reply
+                assert await preferences() == matching(enabled, motion, contrast, False)
             await client.command(next(ids), "Emulation.setAutoDarkModeOverride", {})
-            assert await preferences() == "false/false/false/false"
+            assert await preferences() == baseline
 
-            features = [
+            turned_on = [
                 {"name": "prefers-color-scheme", "value": "dark"},
                 {"name": "prefers-reduced-motion", "value": "reduce"},
                 {"name": "prefers-contrast", "value": "more"},
             ]
-            reply = await client.command(next(ids), "Emulation.setEmulatedMedia", {"media": "", "features": features})
-            assert "error" not in reply, reply
-            assert await preferences() == "true/true/true/false"
-            # Chrome semantics: features left out of the next list are reset.
-            await client.command(next(ids), "Emulation.setEmulatedMedia", {"media": "", "features": features[:1]})
-            assert await preferences() == "true/false/false/false"
+            turned_off = [
+                {"name": "prefers-color-scheme", "value": "light"},
+                {"name": "prefers-reduced-motion", "value": "no-preference"},
+                {"name": "prefers-contrast", "value": "no-preference"},
+            ]
+            for features, state in ((turned_on, True), (turned_off, False)):
+                reply = await client.command(
+                    next(ids), "Emulation.setEmulatedMedia", {"media": "", "features": features}
+                )
+                assert "error" not in reply, reply
+                assert await preferences() == matching(state, state, state, False)
+            # Chrome semantics: features left out of the next list are reset - to the device's own.
+            flipped_scheme = (turned_off if dark else turned_on)[:1]
+            await client.command(next(ids), "Emulation.setEmulatedMedia", {"media": "", "features": flipped_scheme})
+            assert await preferences() == matching(not dark, motion, contrast, False)
             # WebKit renders an emulated print media type with the light scheme, whatever the
-            # override says (verified on iOS 26 in either order), so print is checked on its own.
+            # override says (verified on iOS 26 in either order) or the device does (iOS 27.2, in
+            # Dark Mode), so print is checked on its own.
             await client.command(next(ids), "Emulation.setEmulatedMedia", {"media": "print", "features": []})
-            assert await preferences() == "false/false/false/true"
+            assert await preferences() == matching(False, motion, contrast, True)
             await client.command(next(ids), "Emulation.setEmulatedMedia", {"media": "", "features": []})
-            assert await preferences() == "false/false/false/false"
+            assert await preferences() == baseline
         finally:
             await client.close()
 
