@@ -9,17 +9,14 @@ from types import MethodType
 from typing import Any, cast
 
 import pytest
+from bytestruct import BinaryBuildError, BinaryParseError, TruncatedDataError, UnexpectedConstantError
 from hyperframe.frame import DataFrame, Frame, HeadersFrame, RstStreamFrame, SettingsFrame, WindowUpdateFrame
 
 from pymobiledevice3.exceptions import (
-    BinaryBuildError,
-    BinaryParseError,
     ConnectionTerminatedError,
     ProtocolError,
     RemoteXPCHandshakeTimeoutError,
     StreamClosedError,
-    TruncatedDataError,
-    UnexpectedConstantError,
 )
 from pymobiledevice3.pair_records import generate_host_id
 from pymobiledevice3.remote import remotexpc, xpc_message

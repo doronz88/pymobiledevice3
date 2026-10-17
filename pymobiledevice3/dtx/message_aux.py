@@ -3,9 +3,7 @@ from collections.abc import Mapping
 from typing import Any, Union, cast
 
 from bpylist2 import archiver
-
-from pymobiledevice3.binary import BytesLike
-from pymobiledevice3.exceptions import BinaryBuildError, BinaryParseError
+from bytestruct import BinaryBuildError, BinaryParseError, BytesLike
 
 from . import ns_types as _ns_types
 from .primitives import PNULL, PBuf, PDict, PInt64, PStr, _PrimitiveBase, build_primitive, parse_primitive

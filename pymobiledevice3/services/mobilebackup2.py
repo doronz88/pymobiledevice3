@@ -14,13 +14,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional, Union, cast
 
+from bytestruct import U32_LE, ByteReader
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
 from pyiosbackup import Backup
 from pyiosbackup.keybag import Keybag
 from pyiosbackup.manifest_plist import ManifestPlist
 
-from pymobiledevice3.binary import U32_LE, ByteReader
 from pymobiledevice3.exceptions import (
     AfcException,
     AfcFileNotFoundError,

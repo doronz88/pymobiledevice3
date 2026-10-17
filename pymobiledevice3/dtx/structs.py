@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum, IntFlag
 from typing import Annotated
 
-from pymobiledevice3.binary import BinaryStruct, Const, i32, u8, u16, u32
+from bytestruct import BinaryStruct, Const, i32, u8, u16, u32
 
 # ---------------------------------------------------------------------------
 # Protocol constants

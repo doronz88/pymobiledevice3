@@ -19,6 +19,7 @@ from enum import Enum
 from typing import Callable, Optional
 
 import typer
+from bytestruct import BinaryDataError
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
@@ -173,7 +174,8 @@ async def _usbmux_checks() -> list[Check]:
     """Reach usbmux, then exercise what it is actually asked to do."""
     try:
         devices = await usbmux.list_devices()
-    except (PyMobileDevice3Exception, OSError) as e:
+    except (PyMobileDevice3Exception, BinaryDataError, OSError) as e:
+        # BinaryDataError: usbmux answered, but with a garbled reply.
         # OSError covers what the socket layer does not convert: no permission on the socket,
         # an unresolvable USBMUXD_SOCKET_ADDRESS, a daemon that died mid-handshake.
         daemon = OSUTILS.usbmux_daemon()

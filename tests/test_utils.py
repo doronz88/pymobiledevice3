@@ -3,8 +3,8 @@ import os
 from pathlib import Path
 
 import pytest
+from bytestruct import BinaryParseError
 
-from pymobiledevice3.exceptions import BinaryParseError
 from pymobiledevice3.utils import bytes_to_uint, hexdump, path_to_str, str_to_path
 
 

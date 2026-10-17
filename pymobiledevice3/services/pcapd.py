@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from typing import Annotated, Any, BinaryIO, Optional, Union, cast
 
 import pcapng.blocks as blocks
+from bytestruct import BinaryStruct, ByteReader, BytesLike, PaddedString, u8, u16, u32, u32le
 from pcapng import FileWriter
 
-from pymobiledevice3.binary import BinaryStruct, ByteReader, BytesLike, PaddedString, u8, u16, u32, u32le
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService

@@ -29,8 +29,19 @@ import struct
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from pymobiledevice3.binary import F64_LE, I32_LE, I64_LE, U32_LE, BinaryStruct, ByteReader, BytesLike, u32, u64
-from pymobiledevice3.exceptions import BinaryBuildError, BinaryParseError
+from bytestruct import (
+    F64_LE,
+    I32_LE,
+    I64_LE,
+    U32_LE,
+    BinaryBuildError,
+    BinaryParseError,
+    BinaryStruct,
+    ByteReader,
+    BytesLike,
+    u32,
+    u64,
+)
 
 # ---------------------------------------------------------------------------
 # Constants

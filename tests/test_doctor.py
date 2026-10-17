@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from typing import Any, Optional, cast
 
 import pytest
+from bytestruct import TruncatedDataError
 from packaging.version import Version
 from typer.testing import CliRunner
 
@@ -273,8 +274,9 @@ def test_a_udid_is_spelled_the_way_usbmux_spells_it():
         ConnectionFailedToUsbmuxdError("refused"),
         PermissionError("no access to /var/run/usbmuxd"),
         OSError("Name or service not known"),
+        TruncatedDataError("expected 16 bytes, found 3"),  # a garbled reply
     ],
-    ids=["refused", "no-permission", "unresolvable-address"],
+    ids=["refused", "no-permission", "unresolvable-address", "garbled-reply"],
 )
 async def test_an_unreachable_daemon_is_a_check_not_a_traceback(monkeypatch, error):
     # A host whose usbmux cannot be reached is the main thing doctor exists to explain; crashing

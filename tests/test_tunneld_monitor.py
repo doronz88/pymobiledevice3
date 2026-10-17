@@ -4,13 +4,9 @@ from contextlib import asynccontextmanager, nullcontext
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from bytestruct import TruncatedDataError, UnexpectedConstantError
 
-from pymobiledevice3.exceptions import (
-    ConnectionTerminatedError,
-    MuxException,
-    TruncatedDataError,
-    UnexpectedConstantError,
-)
+from pymobiledevice3.exceptions import ConnectionTerminatedError, MuxException
 from pymobiledevice3.tunneld import server as tunneld_server
 
 

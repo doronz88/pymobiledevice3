@@ -10,7 +10,8 @@ from enum import IntEnum
 from pathlib import Path
 from tarfile import TarFile
 
-from pymobiledevice3.binary import BinaryStruct, Bytes, OpenIntEnum, u8, u16, u32, u64, uuid_t
+from bytestruct import BinaryStruct, Bytes, OpenIntEnum, u8, u16, u32, u64, uuid_t
+
 from pymobiledevice3.exceptions import ConnectionTerminatedError, DevicePathError, ProtocolError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider

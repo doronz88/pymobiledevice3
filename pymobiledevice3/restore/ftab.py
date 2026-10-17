@@ -2,7 +2,7 @@ import io
 from dataclasses import dataclass, field
 from typing import Annotated, Optional
 
-from pymobiledevice3.binary import BinaryStruct, ByteReader, Bytes, Const, u32, u32be
+from bytestruct import BinaryStruct, ByteReader, Bytes, Const, u32, u32be
 
 FTAB_MAGIC = b"ftab"
 

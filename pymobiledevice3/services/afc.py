@@ -23,18 +23,10 @@ from re import Pattern
 from types import TracebackType
 from typing import Annotated, Any, Callable, NamedTuple, Optional, TextIO, TypeVar, cast
 
-from prompt_toolkit import HTML, print_formatted_text
-
-# `ls_cli` is a real-click command; the click it raises exceptions from is pygnuutils' own
-# dependency, so resolve it through pygnuutils instead of importing click directly.
-from pygnuutils.cli.ls import click as _ls_cli_click
-from pygnuutils.cli.ls import ls as ls_cli
-from pygnuutils.ls import Ls, LsStub
-from tqdm.auto import tqdm
-
-from pymobiledevice3.binary import (
+from bytestruct import (
     CSTRING,
     U64_LE,
+    BinaryParseError,
     BinaryStruct,
     ByteReader,
     Bytes,
@@ -44,14 +36,17 @@ from pymobiledevice3.binary import (
     i64,
     u64,
 )
+from prompt_toolkit import HTML, print_formatted_text
+
+# `ls_cli` is a real-click command; the click it raises exceptions from is pygnuutils' own
+# dependency, so resolve it through pygnuutils instead of importing click directly.
+from pygnuutils.cli.ls import click as _ls_cli_click
+from pygnuutils.cli.ls import ls as ls_cli
+from pygnuutils.ls import Ls, LsStub
+from tqdm.auto import tqdm
+
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import (
-    AfcException,
-    AfcFileNotFoundError,
-    ArgumentError,
-    BinaryParseError,
-    ConnectionTerminatedError,
-)
+from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError, ConnectionTerminatedError
 from pymobiledevice3.interactive_shell import Arg, CompletionContext, InteractiveShell, shell_command
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider

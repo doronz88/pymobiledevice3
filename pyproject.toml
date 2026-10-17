@@ -74,6 +74,9 @@ dependencies = [
     "typer-injector>=0.3.0",
     "defusedxml",
     "pywin32; platform_system == 'Windows'",
+    # Declarative binary records and codecs for the wire formats (usbmux, AFC, DTX, XPC, pcapd, ...);
+    # formerly the in-tree pymobiledevice3/binary.py. Its errors are re-exported from pymobiledevice3.exceptions.
+    "bytestruct>=0.1.0",
     # IORegistry access for `doctor`: tells "the host does not see this device at all" apart from
     # "usbmuxd is not listing it", which are the same symptom with different fixes. IOKit is macOS.
     # 0.0.6 floor: the first release shipping py.typed, without which every property read here is

@@ -1,5 +1,7 @@
 from collections.abc import Iterable
 
+from bytestruct import BinaryDataError
+
 from pymobiledevice3.exceptions import AppNotInstalledError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -61,7 +63,7 @@ class HouseArrestService(AfcService):
         cmd = VEND_DOCUMENTS if documents_only else VEND_CONTAINER
         try:
             await service.send_command(bundle_id, cmd)
-        except PyMobileDevice3Exception:
+        except (PyMobileDevice3Exception, BinaryDataError):  # an error status, or a malformed reply
             await service.close()
             raise
         return service

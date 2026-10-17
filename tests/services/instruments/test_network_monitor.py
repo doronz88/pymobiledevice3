@@ -2,8 +2,8 @@ import ipaddress
 import struct
 
 import pytest
+from bytestruct import TruncatedDataError
 
-from pymobiledevice3.exceptions import TruncatedDataError
 from pymobiledevice3.services.dvt.instruments.network_monitor import AddressV4, AddressV6, SocketAddress
 
 

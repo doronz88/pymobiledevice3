@@ -11,9 +11,8 @@ from typing import Any, Callable, Optional, TypeVar, Union, cast, overload
 
 import questionary
 import requests
+from bytestruct import BinaryParseError
 from tqdm import tqdm
-
-from pymobiledevice3.exceptions import BinaryParseError
 
 _F = TypeVar("_F", bound=Callable[..., Any])
 
