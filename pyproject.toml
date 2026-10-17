@@ -55,13 +55,13 @@ dependencies = [
     "wsproto",
     "Pillow",
     "questionary>=2.0.0",
-    "ipsw_parser>=1.8.2",
+    "ipsw_parser>=1.8.3",
     "ifaddr",
     "hyperframe",
     "srptools",
     "qh3>=1.0.0,<2",
     "developer_disk_image>=0.3.0",
-    "opack2",
+    "opack2>=0.1.0",
     "psutil",
     "pytun-pmd3>=3.0.3",
     "prompt_toolkit",
@@ -75,7 +75,7 @@ dependencies = [
     "defusedxml",
     "pywin32; platform_system == 'Windows'",
     # Declarative binary records and codecs for the wire formats (usbmux, AFC, DTX, XPC, pcapd, ...);
-    # formerly the in-tree pymobiledevice3/binary.py. Its errors are re-exported from pymobiledevice3.exceptions.
+    # formerly the in-tree pymobiledevice3/binary.py. Its errors are bytestruct's (import them from bytestruct).
     "bytestruct>=0.1.0",
     # IORegistry access for `doctor`: tells "the host does not see this device at all" apart from
     # "usbmuxd is not listing it", which are the same symptom with different fixes. IOKit is macOS.
