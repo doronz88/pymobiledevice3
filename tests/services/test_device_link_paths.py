@@ -1,4 +1,7 @@
+import os
+import plistlib
 import struct
+from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -65,3 +68,19 @@ def test_backup_rejects_device_identifier():
     service.lockdown = Mock(udid="../outside")
     with pytest.raises(DevicePathError):
         _ = service._udid
+
+
+@pytest.mark.asyncio
+async def test_directory_modification_date_is_utc(tmp_path):
+    file = tmp_path / "file"
+    file.touch()
+    os.utime(file, (1760000000, 1760000000))
+    service = AsyncMock()
+    await DeviceLink(service, tmp_path).contents_of_directory(["", "."])
+    response = service.send_plist.call_args.args[0]
+    expected = datetime(2025, 10, 9, 8, 53, 20)
+    assert response[3]["file"]["DLFileModificationDate"] == expected
+    assert (
+        plistlib.loads(plistlib.dumps(response, fmt=plistlib.FMT_BINARY))[3]["file"]["DLFileModificationDate"]
+        == expected
+    )

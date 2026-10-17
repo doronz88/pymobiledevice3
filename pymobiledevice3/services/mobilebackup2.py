@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager, closing, suppress
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Optional, Union, cast
@@ -271,8 +271,7 @@ class Mobilebackup2Service(LockdownService):
 
                 # Initialize Status.plist file if doesn't exist.
                 status_path = device_directory / "Status.plist"
-                current_date = datetime.now()
-                current_date = current_date.replace(tzinfo=None)
+                current_date = datetime.now(timezone.utc).replace(tzinfo=None)
                 if full or not status_path.exists():
                     with open(device_directory / "Status.plist", "wb") as fd:
                         plistlib.dump(

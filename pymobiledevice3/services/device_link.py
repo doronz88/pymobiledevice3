@@ -31,7 +31,6 @@ PURGE_DISK_SPACE_ERROR_STRING = "DLPurgeDiskSpace failed to purge"
 PURGE_REQUEST_OVERSHOOT = 0x80000000
 # MBErrorDomain/105, the device's own verdict once the host answers the purge request.
 MB_ERROR_INSUFFICIENT_DISK_SPACE = 105
-APPLE_EPOCH = 978307200
 ERRNO_TO_DEVICE_ERROR = {
     2: -6,
     17: -7,
@@ -291,7 +290,8 @@ class DeviceLink:
                 ftype = "DLFileTypeDirectory"
             if file.is_file():
                 ftype = "DLFileTypeRegular"
-            modifications_data = datetime.datetime.fromtimestamp(file.stat().st_mtime - APPLE_EPOCH)
+            # plistlib expects naive UTC datetimes and handles the Apple epoch.
+            modifications_data = datetime.datetime.fromtimestamp(file.stat().st_mtime, datetime.timezone.utc)
             modifications_data = modifications_data.replace(tzinfo=None)
             data[file.name] = {
                 "DLFileType": ftype,
