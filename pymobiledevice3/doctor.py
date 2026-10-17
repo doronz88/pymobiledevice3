@@ -24,7 +24,7 @@ from packaging.version import Version
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import is_multicast_blocked, probe_multicast
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import MuxException, PyMobileDevice3Exception, TunneldConnectionError
+from pymobiledevice3.exceptions import BinaryDataError, MuxException, PyMobileDevice3Exception, TunneldConnectionError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.pair_records import iter_remote_pair_records
@@ -173,7 +173,8 @@ async def _usbmux_checks() -> list[Check]:
     """Reach usbmux, then exercise what it is actually asked to do."""
     try:
         devices = await usbmux.list_devices()
-    except (PyMobileDevice3Exception, OSError) as e:
+    except (PyMobileDevice3Exception, BinaryDataError, OSError) as e:
+        # BinaryDataError: usbmux answered, but with a garbled reply.
         # OSError covers what the socket layer does not convert: no permission on the socket,
         # an unresolvable USBMUXD_SOCKET_ADDRESS, a daemon that died mid-handshake.
         daemon = OSUTILS.usbmux_daemon()

@@ -15,7 +15,7 @@ from typer.testing import CliRunner
 
 from pymobiledevice3 import __main__, bonjour, doctor
 from pymobiledevice3.cli import doctor as cli_doctor
-from pymobiledevice3.exceptions import ConnectionFailedToUsbmuxdError, MuxException
+from pymobiledevice3.exceptions import ConnectionFailedToUsbmuxdError, MuxException, TruncatedDataError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu import posix_util
 from pymobiledevice3.osu.os_utils import HostUsbDevice, UsbmuxDaemon, service_binary
@@ -273,8 +273,9 @@ def test_a_udid_is_spelled_the_way_usbmux_spells_it():
         ConnectionFailedToUsbmuxdError("refused"),
         PermissionError("no access to /var/run/usbmuxd"),
         OSError("Name or service not known"),
+        TruncatedDataError("expected 16 bytes, found 3"),  # a garbled reply
     ],
-    ids=["refused", "no-permission", "unresolvable-address"],
+    ids=["refused", "no-permission", "unresolvable-address", "garbled-reply"],
 )
 async def test_an_unreachable_daemon_is_a_check_not_a_traceback(monkeypatch, error):
     # A host whose usbmux cannot be reached is the main thing doctor exists to explain; crashing
