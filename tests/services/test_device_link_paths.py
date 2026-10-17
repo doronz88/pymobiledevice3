@@ -1,7 +1,10 @@
+import ctypes
+import errno
 import os
 import plistlib
 import struct
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -84,3 +87,15 @@ async def test_directory_modification_date_is_utc(tmp_path):
         plistlib.loads(plistlib.dumps(response, fmt=plistlib.FMT_BINARY))[3]["file"]["DLFileModificationDate"]
         == expected
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error,expected", [(errno.ELOOP, -10), (errno.EACCES, -1)])
+async def test_download_maps_host_errno(tmp_path, monkeypatch, error, expected):
+    monkeypatch.setattr(Path, "open", Mock(side_effect=OSError(error, os.strerror(error))))
+    service = AsyncMock()
+    await DeviceLink(service, tmp_path).download_files(["", ["file"]])
+    response = service.send_plist.call_args.args[0]
+    assert response[:3] == ["DLMessageStatusResponse", ctypes.c_uint64(-13).value, "Multi status"]
+    assert response[3]["file"]["DLFileErrorCode"] == ctypes.c_uint64(expected).value
+    assert service.sendall.call_args_list[1].args[0][4] == 0x06  # CODE_ERROR_LOCAL

@@ -1,6 +1,7 @@
 import ctypes
 import ctypes.util
 import datetime
+import errno
 import logging
 import shutil
 import struct
@@ -32,13 +33,13 @@ PURGE_REQUEST_OVERSHOOT = 0x80000000
 # MBErrorDomain/105, the device's own verdict once the host answers the purge request.
 MB_ERROR_INSUFFICIENT_DISK_SPACE = 105
 ERRNO_TO_DEVICE_ERROR = {
-    2: -6,
-    17: -7,
-    20: -8,
-    21: -9,
-    62: -10,
-    5: -11,
-    28: -15,
+    errno.ENOENT: -6,
+    errno.EEXIST: -7,
+    errno.ENOTDIR: -8,
+    errno.EISDIR: -9,
+    errno.ELOOP: -10,
+    errno.EIO: -11,
+    errno.ENOSPC: -15,
 }
 
 DLMessage = Sequence[Any]
@@ -266,7 +267,7 @@ class DeviceLink:
                 assert e.errno is not None and e.strerror is not None
                 status[file] = {
                     "DLFileErrorString": e.strerror,
-                    "DLFileErrorCode": ctypes.c_uint64(ERRNO_TO_DEVICE_ERROR[e.errno]).value,
+                    "DLFileErrorCode": ctypes.c_uint64(ERRNO_TO_DEVICE_ERROR.get(e.errno, -1)).value,
                 }
                 error_bytes = e.strerror.encode()
                 await self._sendall(
