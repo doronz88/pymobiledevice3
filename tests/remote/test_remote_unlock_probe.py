@@ -1,8 +1,9 @@
 from typing import Any
 
 import pytest
+from bytestruct import UnexpectedConstantError
 
-from pymobiledevice3.exceptions import ProtocolError, PyMobileDevice3Exception, UnexpectedConstantError
+from pymobiledevice3.exceptions import ProtocolError, PyMobileDevice3Exception
 from pymobiledevice3.remote.tunnel_service import RemotePairingProtocol
 
 

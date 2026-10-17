@@ -1,6 +1,7 @@
 import struct
 
 import pytest
+from bytestruct import BinaryBuildError, BinaryParseError, TruncatedDataError, UnexpectedConstantError
 
 from pymobiledevice3.dtx.message_aux import MessageAux
 from pymobiledevice3.dtx.primitives import (
@@ -15,7 +16,6 @@ from pymobiledevice3.dtx.primitives import (
     parse_primitive,
 )
 from pymobiledevice3.dtx.structs import DTX_FRAGMENT_MAGIC, DtxFragmentHeader, DtxFragmentPayloadHeader
-from pymobiledevice3.exceptions import BinaryBuildError, BinaryParseError, TruncatedDataError, UnexpectedConstantError
 
 # Built by the construct-based codec this module replaced.
 _GOLDEN_PRIMITIVE_DICT = bytes.fromhex(

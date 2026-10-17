@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass
 from typing import Annotated, Optional, Union
 
-from pymobiledevice3.binary import BinaryStruct, ByteReader, Bytes, Const, u16, u32, u64
+from bytestruct import BinaryStruct, ByteReader, Bytes, Const, u16, u32, u64
 
 logger = logging.getLogger(__name__)
 

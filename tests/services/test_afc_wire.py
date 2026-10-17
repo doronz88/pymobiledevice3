@@ -1,9 +1,8 @@
 import struct
 
 import pytest
+from bytestruct import CSTRING, BinaryBuildError, TruncatedDataError, UnexpectedConstantError
 
-from pymobiledevice3.binary import CSTRING
-from pymobiledevice3.exceptions import BinaryBuildError, TruncatedDataError, UnexpectedConstantError
 from pymobiledevice3.services.afc import (
     AFCMAGIC,
     AfcError,

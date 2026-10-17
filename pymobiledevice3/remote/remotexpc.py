@@ -11,6 +11,7 @@ from collections import deque
 from collections.abc import AsyncIterable
 from typing import Any, Callable, Optional, Union, cast
 
+from bytestruct import TruncatedDataError
 from hyperframe.frame import (
     DataFrame,
     Frame,
@@ -29,7 +30,6 @@ from pymobiledevice3.exceptions import (
     PyMobileDevice3Exception,
     RemoteXPCHandshakeTimeoutError,
     StreamClosedError,
-    TruncatedDataError,
 )
 from pymobiledevice3.pair_records import generate_host_id
 from pymobiledevice3.remote.xpc_message import (

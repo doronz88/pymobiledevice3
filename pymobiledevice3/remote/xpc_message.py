@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Callable, Optional, cast
 
-from pymobiledevice3.binary import (
+from bytestruct import (
     CSTRING,
     F64_LE,
     GREEDY_BYTES,
@@ -15,6 +15,7 @@ from pymobiledevice3.binary import (
     U32_LE,
     U64_LE,
     Aligned,
+    BinaryParseError,
     BinaryStruct,
     ByteReader,
     Bytes,
@@ -28,7 +29,6 @@ from pymobiledevice3.binary import (
     u32,
     u64,
 )
-from pymobiledevice3.exceptions import BinaryParseError
 
 
 class XpcMessageType(enum.IntEnum):

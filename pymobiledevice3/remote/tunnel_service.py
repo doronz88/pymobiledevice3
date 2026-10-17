@@ -25,6 +25,21 @@ from ssl import VerifyMode
 from typing import TYPE_CHECKING, Annotated, Any, Callable, NamedTuple, Optional, TextIO, Union, cast
 
 import opack2
+from bytestruct import (
+    GREEDY_BYTES,
+    U8,
+    U16_BE,
+    BinaryParseError,
+    BinaryStruct,
+    ByteReader,
+    Bytes,
+    BytesLike,
+    Const,
+    OpenIntEnum,
+    Prefixed,
+    TruncatedDataError,
+    u8,
+)
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives._serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -45,19 +60,6 @@ from srptools import SRPClientSession, SRPContext, SRPServerSession
 from srptools import utils as _srptools_utils
 from srptools.constants import PRIME_3072, PRIME_3072_GEN
 
-from pymobiledevice3.binary import (
-    GREEDY_BYTES,
-    U8,
-    U16_BE,
-    BinaryStruct,
-    ByteReader,
-    Bytes,
-    BytesLike,
-    Const,
-    OpenIntEnum,
-    Prefixed,
-    u8,
-)
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 
@@ -79,7 +81,6 @@ from pymobiledevice3.bonjour import (
 )
 from pymobiledevice3.ca import make_cert
 from pymobiledevice3.exceptions import (
-    BinaryParseError,
     ConnectionTerminatedError,
     InvalidServiceError,
     NotConnectedError,
@@ -89,7 +90,6 @@ from pymobiledevice3.exceptions import (
     PyMobileDevice3Exception,
     QuicProtocolNotSupportedError,
     RemotePairingCompletedError,
-    TruncatedDataError,
     UserDeniedPairingError,
 )
 from pymobiledevice3.pair_records import (

@@ -4,9 +4,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from bytestruct import TruncatedDataError
 from cryptography.hazmat.primitives.keywrap import aes_key_wrap
 
-from pymobiledevice3.exceptions import TruncatedDataError
 from pymobiledevice3.services import mobilebackup2
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 

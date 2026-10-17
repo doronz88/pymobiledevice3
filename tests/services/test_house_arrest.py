@@ -3,8 +3,9 @@ from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
+from bytestruct import TruncatedDataError
 
-from pymobiledevice3.exceptions import AppNotInstalledError, PyMobileDevice3Exception, TruncatedDataError
+from pymobiledevice3.exceptions import AppNotInstalledError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.house_arrest import HouseArrestService
 from pymobiledevice3.services.installation_proxy import InstallationProxyService

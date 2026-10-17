@@ -1,8 +1,8 @@
 from uuid import UUID
 
 import pytest
+from bytestruct import TruncatedDataError
 
-from pymobiledevice3.exceptions import TruncatedDataError
 from pymobiledevice3.services.os_trace import SyslogLogLevel, parse_syslog_entry
 
 # a record as an iOS 27.0 device sent it

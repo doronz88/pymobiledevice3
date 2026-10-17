@@ -20,6 +20,7 @@ from ssl import SSLZeroReturnError, TLSVersion
 from types import TracebackType
 from typing import Any, Optional, cast, overload
 
+from bytestruct import BinaryParseError
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePrivateKey
@@ -36,7 +37,6 @@ from pymobiledevice3.ca import generate_pairing_cert_chain
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
     BadDevError,
-    BinaryParseError,
     CannotStopSessionError,
     ConnectionFailedError,
     ConnectionTerminatedError,

@@ -23,12 +23,12 @@ with warnings.catch_warnings():
     import fastapi
 
 import uvicorn
+from bytestruct import BinaryParseError, TruncatedDataError
 from fastapi import FastAPI
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.exceptions import (
-    BinaryParseError,
     ConnectionFailedError,
     ConnectionFailedToUsbmuxdError,
     ConnectionTerminatedError,
@@ -41,7 +41,6 @@ from pymobiledevice3.exceptions import (
     PairingError,
     QuicProtocolNotSupportedError,
     StreamClosedError,
-    TruncatedDataError,
 )
 from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils

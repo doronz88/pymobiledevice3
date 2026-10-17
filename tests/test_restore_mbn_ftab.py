@@ -1,8 +1,8 @@
 import struct
 
 import pytest
+from bytestruct import TruncatedDataError, UnexpectedConstantError
 
-from pymobiledevice3.exceptions import TruncatedDataError, UnexpectedConstantError
 from pymobiledevice3.restore.ftab import Ftab, FtabEntry, FtabHeader
 from pymobiledevice3.restore.mbn import (
     MBN_BIN_MAGIC,

@@ -10,13 +10,12 @@ from io import BytesIO
 from typing import Annotated
 
 from bpylist2 import archiver
-from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
-
-from pymobiledevice3.binary import (
+from bytestruct import (
     I32_LE,
     U32_LE,
     U64_LE,
     Array,
+    BinaryParseError,
     BinaryStruct,
     ByteReader,
     BytesLike,
@@ -29,15 +28,12 @@ from pymobiledevice3.binary import (
     u64,
     uuid_t,
 )
+from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
+
 from pymobiledevice3.dtx import DTXContext, DTXQueue, DTXService, dtx_method, dtx_on_data, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
-from pymobiledevice3.exceptions import (
-    BinaryParseError,
-    ConnectionTerminatedError,
-    DvtException,
-    ExtractingStackshotError,
-)
+from pymobiledevice3.exceptions import ConnectionTerminatedError, DvtException, ExtractingStackshotError
 from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.tap import TapMessageChannel

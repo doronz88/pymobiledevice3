@@ -4,7 +4,8 @@ from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Optional, Union, cast
 
-from pymobiledevice3.binary import BinaryStruct, ByteReader, Bytes, BytesLike, ipv4, ipv6, u8, u16, u32
+from bytestruct import BinaryStruct, ByteReader, Bytes, BytesLike, ipv4, ipv6, u8, u16, u32
+
 from pymobiledevice3.dtx import DTXContext, DTXQueue, DTXService, dtx_method, dtx_on_dispatch, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider

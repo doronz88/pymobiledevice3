@@ -3,8 +3,9 @@ import socket
 import struct
 
 import pytest
+from bytestruct import BinaryParseError, TruncatedDataError
 
-from pymobiledevice3.exceptions import BadDevError, BinaryParseError, TruncatedDataError
+from pymobiledevice3.exceptions import BadDevError
 from pymobiledevice3.usbmux import (
     BinaryMuxConnection,
     MuxDevice,
@@ -102,10 +103,14 @@ def test_parse_declared_length_shorter_than_its_own_field() -> None:
         assert not isinstance(error.value, TruncatedDataError)
 
 
-def test_parse_unterminated_or_invalid_serial() -> None:
-    for serial in (b"x" * 256, b"\xff"):
-        with pytest.raises(BinaryParseError, match=r"UsbmuxdDeviceRecord\.serial_number at offset 22"):
-            parse_usbmuxd_response(_packet(UsbmuxdMessageType.ADD, _device_record(serial)))
+def test_parse_invalid_serial() -> None:
+    with pytest.raises(BinaryParseError, match=r"UsbmuxdDeviceRecord\.serial_number at offset 22"):
+        parse_usbmuxd_response(_packet(UsbmuxdMessageType.ADD, _device_record(b"\xff")))
+
+
+def test_serial_filling_its_field_parses_whole() -> None:
+    response = parse_usbmuxd_response(_packet(UsbmuxdMessageType.ADD, _device_record(b"x" * 256)))
+    assert response.data == UsbmuxdDeviceRecord(3, 0x12A8, "x" * 256, 0x14100000)
 
 
 def test_device_record_padding_is_skipped() -> None:

@@ -10,7 +10,7 @@ from enum import IntEnum
 from types import TracebackType
 from typing import Annotated, Any, NoReturn, Optional, Union
 
-from pymobiledevice3.binary import (
+from bytestruct import (
     U32_LE,
     BinaryStruct,
     ByteReader,
@@ -21,6 +21,7 @@ from pymobiledevice3.binary import (
     u16,
     u32,
 )
+
 from pymobiledevice3.exceptions import (
     BadCommandError,
     BadDevError,

@@ -1024,6 +1024,8 @@ async def establish_userspace_rsd(
     except PyMobileDevice3Exception:
         # Lost an establishment race (aopen serializes on the lifecycle lock, so by now the
         # winner has published): share its tunnel when it serves the requested device.
+        # Binary parse errors are deliberately not caught: a malformed reply means this attempt
+        # talked to the device and failed, not that another tunnel was already active.
         winner = _cli_tunnel or _active_tunnel
         if (
             winner is not None

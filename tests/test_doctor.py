@@ -10,12 +10,13 @@ from types import SimpleNamespace
 from typing import Any, Optional, cast
 
 import pytest
+from bytestruct import TruncatedDataError
 from packaging.version import Version
 from typer.testing import CliRunner
 
 from pymobiledevice3 import __main__, bonjour, doctor
 from pymobiledevice3.cli import doctor as cli_doctor
-from pymobiledevice3.exceptions import ConnectionFailedToUsbmuxdError, MuxException, TruncatedDataError
+from pymobiledevice3.exceptions import ConnectionFailedToUsbmuxdError, MuxException
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu import posix_util
 from pymobiledevice3.osu.os_utils import HostUsbDevice, UsbmuxDaemon, service_binary

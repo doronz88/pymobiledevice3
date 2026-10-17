@@ -1,10 +1,10 @@
 from typing import Any
 
 import pytest
+from bytestruct import TruncatedDataError, UnexpectedConstantError
 
 from pymobiledevice3 import lockdown, usbmux
 from pymobiledevice3.cli import diagnostics
-from pymobiledevice3.exceptions import TruncatedDataError, UnexpectedConstantError
 from pymobiledevice3.usbmux import MuxDevice, wait_for_device_detach
 
 UDID = "00008150-001074523440401C"

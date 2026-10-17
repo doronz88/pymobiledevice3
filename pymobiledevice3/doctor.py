@@ -19,12 +19,13 @@ from enum import Enum
 from typing import Callable, Optional
 
 import typer
+from bytestruct import BinaryDataError
 from packaging.version import Version
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.bonjour import is_multicast_blocked, probe_multicast
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import BinaryDataError, MuxException, PyMobileDevice3Exception, TunneldConnectionError
+from pymobiledevice3.exceptions import MuxException, PyMobileDevice3Exception, TunneldConnectionError
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.pair_records import iter_remote_pair_records

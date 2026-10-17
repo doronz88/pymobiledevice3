@@ -1,6 +1,8 @@
 from collections.abc import Iterable
 
-from pymobiledevice3.exceptions import AppNotInstalledError, BinaryDataError, PyMobileDevice3Exception
+from bytestruct import BinaryDataError
+
+from pymobiledevice3.exceptions import AppNotInstalledError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell

@@ -4,10 +4,10 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from bytestruct import BinaryParseError, TruncatedDataError
 from pcapng import FileScanner
 from pcapng.blocks import EnhancedPacket
 
-from pymobiledevice3.exceptions import BinaryParseError, TruncatedDataError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.pcapd import PcapdService, parse_device_packet
 
@@ -47,9 +47,9 @@ def test_parse_device_packet_truncated() -> None:
             parse_device_packet(raw[:cut])
 
 
-def test_parse_device_packet_unterminated_name() -> None:
+def test_parse_device_packet_invalid_name() -> None:
     raw = bytearray(_device_packet())
-    raw[25:41] = b"A" * 16
+    raw[25:41] = b"\xff" + b"\0" * 15  # interface names are strict UTF-8
     with pytest.raises(BinaryParseError):
         parse_device_packet(bytes(raw))
 
