@@ -119,6 +119,21 @@ class MobileConfigService(LockdownService):
         """
         await self._send_recv({"RequestType": "SetCloudConfiguration", "CloudConfiguration": cloud_configuration})
 
+    async def download_and_apply_cloud_configuration(
+        self, username: Optional[str] = None, password: Optional[str] = None
+    ) -> None:
+        """
+        Ask the device to download and apply its DEP cloud configuration.
+
+        :param username: optional MDM enrollment username.
+        :param password: optional MDM enrollment password.
+        """
+        await self._send_recv({
+            "RequestType": "DownloadAndApplyCloudConfiguration",
+            "MDMUsername": username or "",
+            "MDMPassword": password or "",
+        })
+
     async def establish_provisional_enrollment(self, nonce: bytes) -> None:
         """
         Establish a provisional MDM enrollment.

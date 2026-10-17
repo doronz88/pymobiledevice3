@@ -73,6 +73,26 @@ async def profile_cloud_configuration(
         logger.info("applied cloud configuration")
 
 
+@cli.command("download-cloud-configuration")
+@async_command
+async def profile_download_cloud_configuration(
+    service_provider: ServiceProviderDep,
+    username: Annotated[
+        Optional[str],
+        typer.Option(help="MDM enrollment username"),
+    ] = None,
+    password: Annotated[
+        Optional[str],
+        typer.Option(help="MDM enrollment password"),
+    ] = None,
+) -> None:
+    """Ask the device to download and apply its DEP cloud configuration"""
+    async with MobileConfigService(lockdown=service_provider) as service:
+        logger.info("downloading and applying DEP cloud configuration")
+        await service.download_and_apply_cloud_configuration(username=username, password=password)
+        logger.info("downloaded and applied DEP cloud configuration")
+
+
 @cli.command("store")
 @async_command
 async def profile_store(service_provider: ServiceProviderDep, profiles: list[Path]) -> None:
