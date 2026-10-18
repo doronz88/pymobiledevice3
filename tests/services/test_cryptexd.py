@@ -2,7 +2,7 @@ import logging
 import plistlib
 import re
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import pytest
 
@@ -11,6 +11,7 @@ from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
     CryptexdError,
     DeviceFeatureNotSupportedError,
+    DevicePathError,
 )
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services import cryptexd
@@ -494,11 +495,27 @@ class FakeCryptexImage:
         self.root_hash = b"Cryptex1,GenericVolume"
 
 
-def _fake_repository(tmp_path: Path, monkeypatch, build_id: str = LATEST_DDI_BUILD_ID) -> list[int]:
-    """Point the cache at `tmp_path` and serve a canned download; returns a download counter."""
+def _point_manifest_at(restore: Path, paths: dict[str, str]) -> None:
+    """Rewrite the payload paths `restore`'s BuildManifest declares, without moving any file."""
+    manifest_path = restore / "BuildManifest.plist"
+    manifest = plistlib.loads(manifest_path.read_bytes())
+    for key, path in paths.items():
+        manifest["BuildIdentities"][0]["Manifest"][key]["Info"]["Path"] = path
+    manifest_path.write_bytes(plistlib.dumps(manifest))
+
+
+def _fake_repository(
+    tmp_path: Path, monkeypatch, build_id: str = LATEST_DDI_BUILD_ID, paths: Optional[dict[str, str]] = None
+) -> list[int]:
+    """Point the cache at `tmp_path` and serve a canned download; returns a download counter.
+
+    `paths` overrides payload paths in the served manifest, as a tampered repository could.
+    """
     bundle = tmp_path / "source"
     bundle.mkdir()
     _write_cryptex_bundle(bundle, build_id, BUNDLE_LAYOUTS["published"])
+    if paths:
+        _point_manifest_at(bundle, paths)
     downloads: list[int] = []
 
     class FakeRepository:
@@ -547,6 +564,52 @@ def test_fetch_cryptex_ddi_replaces_a_cache_of_the_wrong_build(tmp_path: Path, m
     cryptexd.fetch_cryptex_ddi()
 
     assert len(downloads) == 2
+
+
+#: Payload paths a manifest must not be able to use to leave the cache or Restore directory;
+#: ``{tmp}`` stands for the test's temporary directory, so a regression cannot write elsewhere.
+ESCAPING_PATHS = {
+    "parent": "../escaped",
+    "nested parent": "Firmware/../../escaped",
+    "absolute": "{tmp}/escaped",
+}
+
+
+@pytest.mark.parametrize("path", ESCAPING_PATHS.values(), ids=list(ESCAPING_PATHS))
+def test_fetch_cryptex_ddi_refuses_manifest_paths_outside_the_cache(tmp_path: Path, monkeypatch, path: str) -> None:
+    _fake_repository(tmp_path, monkeypatch, paths={"Cryptex1,GenericTrustCache": path.format(tmp=tmp_path)})
+    cache = tmp_path / "home" / "Xcode_iOS_DDI_Cryptex"
+
+    with pytest.raises(DevicePathError):
+        cryptexd.fetch_cryptex_ddi()
+
+    # Every destination is checked before the first write, so no payload lands anywhere ...
+    assert not (tmp_path / "home" / "escaped").exists()
+    assert not (tmp_path / "escaped").exists()
+    assert not (cache / "Image.dmg").exists()
+    # ... and without a manifest the next call downloads again instead of trusting a partial cache.
+    assert not (cache / "BuildManifest.plist").exists()
+
+
+def test_fetch_cryptex_ddi_accepts_payloads_in_subdirectories(tmp_path: Path, monkeypatch) -> None:
+    _fake_repository(tmp_path, monkeypatch, paths={"Cryptex1,GenericTrustCache": "Firmware/./Image.dmg.trustcache"})
+
+    restore = cryptexd.fetch_cryptex_ddi()
+
+    assert (restore / "Firmware" / "Image.dmg.trustcache").read_bytes() == b"Cryptex1,GenericTrustCache"
+    assert load_cryptex1_assets(restore).trustcache == b"Cryptex1,GenericTrustCache"
+
+
+@pytest.mark.parametrize("path", ESCAPING_PATHS.values(), ids=list(ESCAPING_PATHS))
+def test_assets_are_not_read_from_outside_the_restore_directory(tmp_path: Path, path: str) -> None:
+    restore = tmp_path / "Restore"
+    restore.mkdir()
+    _write_cryptex_bundle(restore, LATEST_DDI_BUILD_ID, BUNDLE_LAYOUTS["published"])
+    (tmp_path / "escaped").write_bytes(b"not a cryptex payload")
+    _point_manifest_at(restore, {"Cryptex1,CryptexInfoPlist": path.format(tmp=tmp_path)})
+
+    with pytest.raises(DevicePathError):
+        load_cryptex1_assets(restore)
 
 
 def _restricted_service(features: list[str]) -> CryptexdService:
