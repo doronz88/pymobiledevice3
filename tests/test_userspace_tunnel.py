@@ -15,6 +15,7 @@ threads at all — that relaying spawns none.
 import asyncio
 import os
 import socket
+import sys
 import threading
 from contextlib import AsyncExitStack
 from typing import Any, cast
@@ -296,6 +297,36 @@ async def test_relay_uses_unix_sockets_and_removes_them_on_exit():
         await close_stream_writer(writer)
         await _poll_until(lambda: not dial_plane._relay_tasks)
     assert not os.path.exists(socket_dir)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS defaults unix stream sockets to 8 KiB buffers")
+async def test_unix_relay_buffers_are_raised(monkeypatch):
+    # With macOS's 8 KiB defaults the relay moved 8 KiB per event-loop pass and capped device->host
+    # streams at a few MB/s, so both ends of the connection must have the larger buffers.
+    relay_buffers = []
+    relay_handler = UserspaceDialPlane._relay_handler
+
+    async def recording_relay_handler(self, port, creader, cwriter):
+        sock = cwriter.get_extra_info("socket")
+        relay_buffers.append((
+            sock.getsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF),
+            sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF),
+        ))
+        await relay_handler(self, port, creader, cwriter)
+
+    monkeypatch.setattr(UserspaceDialPlane, "_relay_handler", recording_relay_handler)
+    tun = FakeTun()
+    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
+        _reader, writer = await dial_plane.dial(DEVICE_ADDR, 2222)
+        sock = writer.get_extra_info("socket")
+        for option in (socket.SO_SNDBUF, socket.SO_RCVBUF):
+            assert sock.getsockopt(socket.SOL_SOCKET, option) >= userspace_tunnel.RELAY_SOCKET_BUFFER_SIZE
+        await writer.drain()  # sends the port header, so the relay handler starts
+        server_buffers = (await _poll_until(lambda: relay_buffers))[0]
+        assert min(server_buffers) >= userspace_tunnel.RELAY_SOCKET_BUFFER_SIZE
+
+        await close_stream_writer(writer)
+        await _poll_until(lambda: not dial_plane._relay_tasks)
 
 
 async def test_tcp_relay_forced_by_env_var(monkeypatch):
