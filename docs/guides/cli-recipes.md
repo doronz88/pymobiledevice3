@@ -414,13 +414,21 @@ pymobiledevice3 developer dvt core-profile-session parse-live --bsc
 pymobiledevice3 developer dvt core-profile-session parse-live -s open -s openat
 pymobiledevice3 developer dvt core-profile-session syscalls
 
-# Syscalls by subsystem: --fs (syscalls that take a path), --net (sockets), --proc (process lifecycle).
-# They combine with each other and with -s; `syscalls --group fs` lists a group
-pymobiledevice3 developer dvt core-profile-session parse-live --fs --net
-pymobiledevice3 developer dvt core-profile-session syscalls --group fs
+# Syscalls by subsystem: --fs (syscalls that take a path), --net (sockets), --proc (process lifecycle),
+# --io (reads, writes and the other syscalls on file descriptors), --mem (memory mappings), --signal,
+# --cred (credentials, code signing and policy checks, access to other tasks), --sync (locks, kqueues,
+# workqueues) and --mach (Mach traps). Groups add up, and combine with -s and -e: `--fs --io` prints both.
+# `syscalls --group io` lists a group
+pymobiledevice3 developer dvt core-profile-session parse-live --fs --io
+pymobiledevice3 developer dvt core-profile-session parse-live --mem --signal --cred
+pymobiledevice3 developer dvt core-profile-session syscalls --group io
 
 # dyld events (image loads, dlopen, dlsym, ...); unlike the syscall groups, filtered on the device
 pymobiledevice3 developer dvt core-profile-session parse-live --dyld
+
+# One JSON object per trace (time, thread, pid, process, event, parsed fields and text), e.g. for jq.
+# On a terminal, traces are otherwise colored by what they show; --color-mode fast colors only the columns
+pymobiledevice3 developer dvt core-profile-session parse-live --fs --json | jq -c 'select(.process == "MobileSafari")'
 
 # Any events by their trace code name; the device filters each event's subclass, and the other events
 # in it are dropped right after decoding. `events` lists the names

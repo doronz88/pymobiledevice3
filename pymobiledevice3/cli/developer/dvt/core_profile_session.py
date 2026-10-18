@@ -1,11 +1,14 @@
 import asyncio
 import contextlib
+import functools
 import importlib.resources
 import json
 import logging
 import queue
+import sys
 from collections.abc import Mapping
 from enum import Enum
+from io import TextIOWrapper
 from itertools import islice
 from pathlib import Path
 from typing import Annotated, Any, Optional, cast
@@ -13,6 +16,7 @@ from typing import Annotated, Any, Optional, cast
 import typer
 from pykdebugparser.pykdebugparser import PyKdebugParser
 from pykdebugparser.trace_codes import default_trace_codes, syscall_eventids
+from pykdebugparser.traces_parser import TracesParser
 from typer_injector import InjectingTyper
 
 import pymobiledevice3.resources
@@ -162,7 +166,179 @@ SYSCALL_GROUPS: dict[str, tuple[str, ...]] = {
         "wait4",
         "waitid",
     ),
+    # Syscalls on file descriptors: reads and writes, and the descriptors themselves.
+    "io": (
+        "fchflags",
+        "fchmod",
+        "fchown",
+        "fdatasync",
+        "fgetattrlist",
+        "fgetxattr",
+        "flistxattr",
+        "fremovexattr",
+        "fsetattrlist",
+        "fsetxattr",
+        "fstatfs",
+        "fstatfs64",
+        "fsync",
+        "ftruncate",
+        "futimes",
+        "getattrlistbulk",
+        "getdirentries64",
+        "getdirentriesattr",
+        "guarded_close_np",
+        "guarded_pwrite_np",
+        "guarded_write_np",
+        "guarded_writev_np",
+        "ioctl",
+        "lseek",
+        "pipe",
+        "pipe2",
+        "pread",
+        "pwrite",
+        "read",
+        "readv",
+        "sendfile",
+        "sys_close",
+        "sys_dup",
+        "sys_dup2",
+        "sys_dup3",
+        "sys_fcntl",
+        "sys_fileport_makefd",
+        "sys_fileport_makeport",
+        "sys_flock",
+        "sys_fstat64",
+        "sys_preadv",
+        "sys_pwritev",
+        "write",
+        "writev",
+    ),
+    # Memory mappings and their protections.
+    "mem": (
+        "madvise",
+        "map_with_linking_np",
+        "mincore",
+        "minherit",
+        "mlock",
+        "mlockall",
+        "mmap",
+        "mprotect",
+        "mremap_encrypted",
+        "msync",
+        "munlock",
+        "munlockall",
+        "munmap",
+        "shared_region_check_np",
+        "shared_region_map_and_slide_2_np",
+        "shared_region_map_and_slide_np",
+    ),
+    # Sending, handling and masking signals.
+    "signal": (
+        "disable_threadsignal",
+        "kill",
+        "pthread_kill",
+        "pthread_sigmask",
+        "sigaction",
+        "sigaltstack",
+        "sigpending",
+        "sigprocmask",
+        "sigreturn",
+        "sigsuspend",
+        "sigwait",
+    ),
+    # Credentials, code signing and policy (Sandbox, AMFI) checks, and access to other tasks.
+    "cred": (
+        "audit_session_port",
+        "csops",
+        "csops_audittoken",
+        "csrctl",
+        "initgroups",
+        "issetugid",
+        "mac_syscall",
+        "persona",
+        "setauid",
+        "setegid",
+        "seteuid",
+        "setgid",
+        "setgroups",
+        "setlogin",
+        "setregid",
+        "setreuid",
+        "setuid",
+        "task_inspect_for_pid",
+        "task_read_for_pid",
+    ),
+    # Waiting and waking: locks, condition variables, kqueues and workqueues.
+    "sync": (
+        "kevent",
+        "kevent64",
+        "kevent_id",
+        "kevent_qos",
+        "kqueue",
+        "kqueue_workloop_ctl",
+        "poll",
+        "pselect",
+        "psynch_cvbroad",
+        "psynch_cvclrprepost",
+        "psynch_cvsignal",
+        "psynch_cvwait",
+        "psynch_mutexdrop",
+        "psynch_mutexwait",
+        "select",
+        "sem_close",
+        "sem_open",
+        "sem_post",
+        "sem_trywait",
+        "sem_unlink",
+        "sem_wait",
+        "semwait_signal",
+        "ulock_wait",
+        "ulock_wait2",
+        "ulock_wake",
+        "workq_kernreturn",
+    ),
+    # Mach traps only (`group_mach_traps`).
+    "mach": (),
 }
+#: The Mach traps of a parse-live group, by trace code name (they are events, as `--event` takes them). The device
+#: sends Mach traps in their own subclass. `--mach` is every Mach trap pykdebugparser parses (`group_mach_traps`).
+MACH_TRAP_GROUPS: dict[str, tuple[str, ...]] = {
+    "mem": (
+        "MSC_kern_mach_vm_purgable_control_trap",
+        "MSC_mach_vm_allocate_trap",
+        "MSC_mach_vm_deallocate_trap",
+        "MSC_mach_vm_map_trap",
+        "MSC_mach_vm_protect_trap",
+    ),
+    "cred": (
+        "MSC_pid_for_task",
+        "MSC_task_for_pid",
+        "MSC_task_name_for_pid",
+    ),
+    "sync": (
+        "MSC_mach_wait_until",
+        "MSC_semaphore_signal_trap",
+        "MSC_semaphore_timedwait_trap",
+        "MSC_semaphore_wait_trap",
+    ),
+}
+
+
+@functools.cache
+def _parsed_mach_traps() -> tuple[str, ...]:
+    """The trace code names of the Mach traps pykdebugparser parses."""
+    codes = default_trace_codes()
+    # pykdebugparser is not annotated
+    parser: Any = TracesParser(codes, dict[int, int](), dict[int, str]())
+    handlers: dict[str, object] = parser.handlers
+    return tuple(sorted({name for name in codes.values() if name.startswith("MSC_") and name in handlers}))
+
+
+def group_mach_traps(group: str) -> tuple[str, ...]:
+    """The Mach traps of a parse-live group."""
+    return _parsed_mach_traps() if group == "mach" else MACH_TRAP_GROUPS.get(group, ())
+
+
 # How far (in seconds) parse-live may fall behind the device before it skips ahead to recent events.
 PARSE_LIVE_MAX_LAG = 2.0
 
@@ -671,17 +847,50 @@ async def parse_live_profile_session(
     proc: Annotated[
         bool, typer.Option("--proc", help="Print the process lifecycle syscalls (`syscalls --group proc`).")
     ] = False,
+    io: Annotated[
+        bool,
+        typer.Option("--io", help="Print the syscalls on file descriptors: read, write, ... (`syscalls --group io`)."),
+    ] = False,
+    mem: Annotated[
+        bool, typer.Option("--mem", help="Print memory mapping syscalls and Mach traps (`syscalls --group mem`).")
+    ] = False,
+    signal: Annotated[
+        bool, typer.Option("--signal", help="Print the signal syscalls (`syscalls --group signal`).")
+    ] = False,
+    cred: Annotated[
+        bool,
+        typer.Option(
+            "--cred",
+            help="Print credential, code signing and policy checks, and access to other tasks (`syscalls --group cred`).",
+        ),
+    ] = False,
+    sync: Annotated[
+        bool,
+        typer.Option(
+            "--sync", help="Print locks, condition variables, kqueues and workqueues (`syscalls --group sync`)."
+        ),
+    ] = False,
+    mach: Annotated[bool, typer.Option("--mach", help="Print the Mach traps (`syscalls --group mach`).")] = False,
     dyld: Annotated[
         bool,
         typer.Option("--dyld", help="Print dyld events (image loads, dlopen, dlsym, ...), filtered on the device."),
     ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print each trace as a JSON object, one per line: its time, thread, process, event name, parsed fields "
+            "and text.",
+        ),
+    ] = False,
     color_mode: Annotated[
         TraceColorMode,
         typer.Option(
-            help="Trace color style. 'fast' uses low-overhead ANSI coloring, 'rich' uses syntax highlighting.",
+            help="Trace color style: 'rich' also colors the event by what it shows (call, strings, numbers, errors, "
+            "...), 'fast' colors only the columns.",
             case_sensitive=False,
         ),
-    ] = TraceColorMode.FAST,
+    ] = TraceColorMode.RICH,
     skip_behind: Annotated[
         bool,
         typer.Option(
@@ -691,11 +900,15 @@ async def parse_live_profile_session(
     ] = True,
 ) -> None:
     """Print traces (syscalls, thread events, etc.) received from the device in real time."""
-    groups = [group for group, enabled in (("fs", fs), ("net", net), ("proc", proc)) if enabled]
+    enabled = {"fs": fs, "net": net, "proc": proc, "io": io, "mem": mem, "signal": signal, "cred": cred, "sync": sync}
+    enabled["mach"] = mach
+    # Groups add up: each one adds its syscalls and Mach traps to what is printed.
+    groups = [group for group, on in enabled.items() if on]
     syscall_ids = syscall_eventids([*syscalls, *(name for group in groups for name in SYSCALL_GROUPS[group])])
-    event_ids = event_eventids(events)
+    event_ids = event_eventids([*events, *(name for group in groups for name in group_mach_traps(group))])
     async with DvtProvider(service_provider) as dvt:
-        print("Receiving time information")
+        if not json_output:
+            print("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
         parser: Any = PyKdebugParser()
         if dyld:
@@ -726,10 +939,11 @@ async def parse_live_profile_session(
         parser.color = enable_color and color_mode == TraceColorMode.RICH
 
         async with CoreProfileSessionTap(dvt, time_config, filters, sample_callstacks=False) as tap:
-            if show_tid:
-                print("{:^32}|{:^11}|{:^33}|   Event".format("Time", "Thread", "Process"))
-            else:
-                print("{:^32}|{:^33}|   Event".format("Time", "Process"))
+            if not json_output:
+                if show_tid:
+                    print("{:^32}|{:^11}|{:^33}|   Event".format("Time", "Thread", "Process"))
+                else:
+                    print("{:^32}|{:^33}|   Event".format("Time", "Process"))
 
             def _warn_skipped(events: int, lag: float) -> None:
                 logger.warning(
@@ -737,19 +951,34 @@ async def parse_live_profile_session(
                     "narrow the trace with --class-filters/--subclass-filters/--bsc to see every event"
                 )
 
+            # Lines are written in batches, and flushed whenever the stream waits for the device: a write per line
+            # (what a line-buffered terminal does) costs a busy trace up to half its speed.
+            out = sys.stdout
             chunk_queue: queue.Queue[Any] = queue.Queue()
             stream = tap.get_kdbuf_stream(
-                chunk_queue, max_lag=PARSE_LIVE_MAX_LAG if skip_behind else None, on_skip=_warn_skipped
+                chunk_queue,
+                max_lag=PARSE_LIVE_MAX_LAG if skip_behind else None,
+                on_skip=_warn_skipped,
+                on_wait=out.flush,
             )
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
             def _print_traces() -> None:
+                write = out.write
                 # KdBufStream is a duck-typed stream; pykdebugparser annotates the parameter as io.IOBase
-                for trace in islice(parser.formatted_traces(stream), count):  # pyright: ignore[reportArgumentType]
-                    if enable_color and color_mode == TraceColorMode.FAST:
-                        trace = _colorize_parse_live_trace(trace, show_tid=show_tid)
-                    print(trace, flush=True)
+                if json_output:
+                    for trace in islice(parser.dict_traces(stream), count):  # pyright: ignore[reportArgumentType]
+                        write(json.dumps(trace) + "\n")
+                else:
+                    for line in islice(parser.formatted_traces(stream), count):  # pyright: ignore[reportArgumentType]
+                        if enable_color and color_mode == TraceColorMode.FAST:
+                            line = _colorize_parse_live_trace(line, show_tid=show_tid)
+                        write(line + "\n")
+                out.flush()
 
+            line_buffering = getattr(out, "line_buffering", False)
+            if line_buffering and isinstance(out, TextIOWrapper):
+                out.reconfigure(line_buffering=False)
             try:
                 await asyncio.to_thread(_print_traces)
             finally:
@@ -757,6 +986,9 @@ async def parse_live_profile_session(
                 with contextlib.suppress(asyncio.CancelledError):
                     await producer_task
                 chunk_queue.put(None)
+                if line_buffering and isinstance(out, TextIOWrapper):
+                    out.flush()
+                    out.reconfigure(line_buffering=True)
 
 
 @cli.command("events")
@@ -770,16 +1002,24 @@ class SyscallGroup(str, Enum):
     FS = "fs"
     NET = "net"
     PROC = "proc"
+    IO = "io"
+    MEM = "mem"
+    SIGNAL = "signal"
+    CRED = "cred"
+    SYNC = "sync"
+    MACH = "mach"
 
 
 @cli.command("syscalls")
 def list_syscalls(
     group: Annotated[
-        Optional[SyscallGroup], typer.Option(help="Only list the syscalls of this parse-live group (--fs, ...).")
+        Optional[SyscallGroup],
+        typer.Option(help="Only list the syscalls and Mach traps of this parse-live group (--fs, ...)."),
     ] = None,
 ) -> None:
-    """List the syscall names that `parse-live --syscall` accepts."""
-    for name in syscall_names() if group is None else SYSCALL_GROUPS[group.value]:
+    """List the syscall names that `parse-live --syscall` accepts, or the syscalls and Mach traps of a group."""
+    names = syscall_names() if group is None else [*SYSCALL_GROUPS[group.value], *group_mach_traps(group.value)]
+    for name in names:
         print(name)
 
 

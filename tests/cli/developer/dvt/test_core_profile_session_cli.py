@@ -1,5 +1,8 @@
 import asyncio
 import inspect
+import io
+import json
+import sys
 from typing import Any, cast
 
 import pytest
@@ -81,6 +84,9 @@ def _run_parse_live(monkeypatch: pytest.MonkeyPatch, **options: Any) -> tuple[An
         def formatted_traces(self, stream: object) -> list[str]:
             return []
 
+        def dict_traces(self, stream: object) -> list[dict[str, object]]:
+            return [{"event": "BSC_open", "fields": {"fd": 3}, "text": "open(), fd: 3"}]
+
     monkeypatch.setattr(core_profile_session, "DvtProvider", FakeDvtProvider)
     monkeypatch.setattr(core_profile_session, "CoreProfileSessionTap", FakeCoreProfileSessionTap)
     monkeypatch.setattr(core_profile_session, "PyKdebugParser", FakeParser)
@@ -136,3 +142,49 @@ def test_event_eventids() -> None:
     assert len(core_profile_session.event_eventids(["CPUPM_FORCED_IDLE"])) > 1
     with pytest.raises(ValueError, match="unknown events: nosuch"):
         core_profile_session.event_eventids(["BSC_open", "nosuch"])
+
+
+def test_mach_trap_groups_are_known_events() -> None:
+    for group, members in core_profile_session.MACH_TRAP_GROUPS.items():
+        assert group in core_profile_session.SYSCALL_GROUPS, group
+        assert all(name.startswith("MSC_") for name in members), group
+        core_profile_session.event_eventids(list(members))
+
+
+def test_parse_live_groups_add_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    filters, parser = _run_parse_live(monkeypatch, fs=True, io=True, mach=True)
+
+    syscalls = [*core_profile_session.SYSCALL_GROUPS["fs"], *core_profile_session.SYSCALL_GROUPS["io"]]
+    traps = core_profile_session.event_eventids(list(core_profile_session.group_mach_traps("mach")))
+    assert parser.filter_eventid == syscall_eventids(syscalls) | traps
+    # Syscalls come in their subclass, Mach traps in theirs.
+    assert filters == {
+        core_profile_session.BSC_SUBCLASS << 16,
+        *core_profile_session.VFS_AND_TRACES_SET,
+        0x010C0000,
+        core_profile_session.TRACE_CLASS_FILTER,
+    }
+
+
+def test_parse_live_restores_line_buffered_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
+    # On a terminal stdout is line-buffered; parse-live writes in batches meanwhile and restores it.
+    stdout = io.TextIOWrapper(io.BytesIO(), line_buffering=True)
+    monkeypatch.setattr(sys, "stdout", stdout)
+    _run_parse_live(monkeypatch, io=True)
+    assert stdout.line_buffering
+
+
+def test_mach_group_is_the_parsed_mach_traps() -> None:
+    traps = core_profile_session.group_mach_traps("mach")
+    assert {"MSC_mach_msg2_trap", "MSC_task_for_pid"} <= set(traps)
+    assert all(name.startswith("MSC_") for name in traps)
+    assert set(core_profile_session.group_mach_traps("mem")) <= set(traps)
+
+
+def test_parse_live_json(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    _run_parse_live(monkeypatch, json_output=True)
+
+    # Only the traces, one JSON object per line: no status or column header lines.
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
+        {"event": "BSC_open", "fields": {"fd": 3}, "text": "open(), fd: 3"}
+    ]

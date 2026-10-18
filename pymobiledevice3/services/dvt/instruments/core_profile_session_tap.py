@@ -653,6 +653,8 @@ class KdBufStream:
     :param event_seconds: Converts a kd_buf timestamp (mach ticks) to seconds; required with `max_lag`.
     :param on_skip: Called with the number of skipped events and how far behind the stream was, once per
         catch-up.
+    :param on_wait: Called before a read waits for the next chunk (everything received so far was read), e.g. to
+        flush buffered output.
     """
 
     def __init__(
@@ -661,6 +663,7 @@ class KdBufStream:
         max_lag: typing.Optional[float] = None,
         event_seconds: typing.Optional[typing.Callable[[int], float]] = None,
         on_skip: typing.Optional[typing.Callable[[int, float], None]] = None,
+        on_wait: typing.Optional[typing.Callable[[], None]] = None,
     ):
         if max_lag is not None and event_seconds is None:
             raise ValueError("max_lag requires event_seconds")
@@ -669,6 +672,7 @@ class KdBufStream:
         self.max_lag = max_lag
         self.event_seconds = event_seconds
         self.on_skip = on_skip
+        self.on_wait = on_wait
         self.skipped_events = 0
         self._started = False
         self._min_offset: typing.Optional[float] = None  # smallest (host clock - event clock) seen
@@ -687,6 +691,8 @@ class KdBufStream:
         # A read that does not fit in the current chunk therefore drops its short remainder and restarts
         # at the next chunk's first record, which keeps the record stream aligned.
         while size > len(self.current_chunk.getbuffer()) - self.current_chunk.tell():
+            if self.on_wait is not None and self.chunk_queue.empty():
+                self.on_wait()
             data = self.chunk_queue.get()
             if isinstance(data, Exception):
                 raise data
@@ -987,6 +993,7 @@ class CoreProfileSessionTap:
         chunk_queue: queue.Queue[typing.Any],
         max_lag: typing.Optional[float] = None,
         on_skip: typing.Optional[typing.Callable[[int, float], None]] = None,
+        on_wait: typing.Optional[typing.Callable[[], None]] = None,
     ) -> KdBufStream:
         """
         Wrap a chunk queue in a file-like `KdBufStream` for reading the kd_buf trace.
@@ -995,6 +1002,7 @@ class CoreProfileSessionTap:
         :param max_lag: Skip events more than this many seconds behind real time (see `KdBufStream`); needs the
             ``numer``/``denom`` timebase in this tap's ``time_config``. `None` never skips.
         :param on_skip: Called with the number of skipped events and the lag in seconds, once per catch-up.
+        :param on_wait: Called before the stream waits for the next chunk (see `KdBufStream`).
         :returns: A seekable, readable stream over the queued kd_buf chunks.
         """
         event_seconds: typing.Optional[typing.Callable[[int], float]] = None
@@ -1005,7 +1013,7 @@ class CoreProfileSessionTap:
                 return timestamp * seconds_per_tick
 
             event_seconds = ticks_to_seconds
-        return KdBufStream(chunk_queue, max_lag=max_lag, event_seconds=event_seconds, on_skip=on_skip)
+        return KdBufStream(chunk_queue, max_lag=max_lag, event_seconds=event_seconds, on_skip=on_skip, on_wait=on_wait)
 
     @staticmethod
     def parse_stackshot(data: bytes) -> dict[str, typing.Any]:
