@@ -4,8 +4,10 @@ import importlib.resources
 import json
 import logging
 import queue
+import sys
 from collections.abc import Mapping
 from enum import Enum
+from io import TextIOWrapper
 from itertools import islice
 from pathlib import Path
 from typing import Annotated, Any, Optional, cast
@@ -962,19 +964,30 @@ async def parse_live_profile_session(
                     "narrow the trace with --class-filters/--subclass-filters/--bsc to see every event"
                 )
 
+            # Lines are written in batches, and flushed whenever the stream waits for the device: a write per line
+            # (what a line-buffered terminal does) costs a busy trace up to half its speed.
+            out = sys.stdout
             chunk_queue: queue.Queue[Any] = queue.Queue()
             stream = tap.get_kdbuf_stream(
-                chunk_queue, max_lag=PARSE_LIVE_MAX_LAG if skip_behind else None, on_skip=_warn_skipped
+                chunk_queue,
+                max_lag=PARSE_LIVE_MAX_LAG if skip_behind else None,
+                on_skip=_warn_skipped,
+                on_wait=out.flush,
             )
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
             def _print_traces() -> None:
+                write = out.write
                 # KdBufStream is a duck-typed stream; pykdebugparser annotates the parameter as io.IOBase
                 for trace in islice(parser.formatted_traces(stream), count):  # pyright: ignore[reportArgumentType]
                     if enable_color and color_mode == TraceColorMode.FAST:
                         trace = _colorize_parse_live_trace(trace, show_tid=show_tid)
-                    print(trace, flush=True)
+                    write(trace + "\n")
+                out.flush()
 
+            line_buffering = getattr(out, "line_buffering", False)
+            if line_buffering and isinstance(out, TextIOWrapper):
+                out.reconfigure(line_buffering=False)
             try:
                 await asyncio.to_thread(_print_traces)
             finally:
@@ -982,6 +995,9 @@ async def parse_live_profile_session(
                 with contextlib.suppress(asyncio.CancelledError):
                     await producer_task
                 chunk_queue.put(None)
+                if line_buffering and isinstance(out, TextIOWrapper):
+                    out.flush()
+                    out.reconfigure(line_buffering=True)
 
 
 @cli.command("events")

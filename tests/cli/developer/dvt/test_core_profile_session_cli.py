@@ -1,5 +1,7 @@
 import asyncio
 import inspect
+import io
+import sys
 from typing import Any, cast
 
 import pytest
@@ -158,3 +160,11 @@ def test_parse_live_groups_add_up(monkeypatch: pytest.MonkeyPatch) -> None:
         0x010C0000,
         core_profile_session.TRACE_CLASS_FILTER,
     }
+
+
+def test_parse_live_restores_line_buffered_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
+    # On a terminal stdout is line-buffered; parse-live writes in batches meanwhile and restores it.
+    stdout = io.TextIOWrapper(io.BytesIO(), line_buffering=True)
+    monkeypatch.setattr(sys, "stdout", stdout)
+    _run_parse_live(monkeypatch, io=True)
+    assert stdout.line_buffering
