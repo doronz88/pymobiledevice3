@@ -12,7 +12,7 @@ from typing import Annotated, Any, Optional, cast
 
 import typer
 from pykdebugparser.pykdebugparser import PyKdebugParser
-from pykdebugparser.trace_codes import syscall_eventids
+from pykdebugparser.trace_codes import default_trace_codes, syscall_eventids
 from typer_injector import InjectingTyper
 
 import pymobiledevice3.resources
@@ -146,6 +146,26 @@ def parse_filters(subclasses: list[int], classes: list[int]) -> Optional[set[int
             parsed |= VFS_AND_TRACES_SET
         parsed.add((class_ << 24) | 0x00FF0000)
     return parsed
+
+
+def _validate_syscalls(names: list[str]) -> list[str]:
+    # An option callback runs while the arguments are parsed, so a typo fails before connecting to the device.
+    try:
+        syscall_eventids(names)
+    except ValueError as e:
+        raise typer.BadParameter(
+            f"{e} (`pymobiledevice3 developer dvt core-profile-session syscalls` lists them)"
+        ) from e
+    return names
+
+
+def syscall_names() -> list[str]:
+    """The syscall names `parse-live --syscall` accepts; a `_nocancel` variant is covered by its base name."""
+    # `BSC_#123`-style names are placeholders for syscall numbers without a name.
+    names = {
+        name[len("BSC_") :] for name in default_trace_codes().values() if name.startswith("BSC_") and "#" not in name
+    }
+    return sorted(name for name in names if not (name.endswith("_nocancel") and name[: -len("_nocancel")] in names))
 
 
 @cli.command("live")
@@ -481,11 +501,14 @@ async def parse_live_profile_session(
         list[str],
         typer.Option(
             "--syscall",
+            "-s",
             default_factory=list,
+            callback=_validate_syscalls,
             show_default=False,
             help="Only print this syscall (e.g. open, openat; with its _nocancel variant), with its paths. Can be "
-            "specified multiple times. The device can only filter whole subclasses, so it sends every syscall and "
-            "the others are dropped right after decoding, which keeps up with the device even over --userspace.",
+            "specified multiple times; the `syscalls` command lists the names. The device can only filter whole "
+            "subclasses, so it sends every syscall and the others are dropped right after decoding, which keeps up "
+            "with the device even over --userspace.",
         ),
     ],
     color_mode: Annotated[
@@ -504,10 +527,7 @@ async def parse_live_profile_session(
     ] = True,
 ) -> None:
     """Print traces (syscalls, thread events, etc.) received from the device in real time."""
-    try:
-        syscall_ids = syscall_eventids(syscalls)
-    except ValueError as e:
-        raise typer.BadParameter(str(e), param_hint="--syscall") from e
+    syscall_ids = syscall_eventids(syscalls)
     async with DvtProvider(service_provider) as dvt:
         print("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
@@ -565,6 +585,13 @@ async def parse_live_profile_session(
                 with contextlib.suppress(asyncio.CancelledError):
                     await producer_task
                 chunk_queue.put(None)
+
+
+@cli.command("syscalls")
+def list_syscalls() -> None:
+    """List the syscall names that `parse-live --syscall` accepts."""
+    for name in syscall_names():
+        print(name)
 
 
 def get_image_name(dsc_uuid_map: dict[str, dict[str, str]], image_uuid: str, current_dsc_map: dict[str, str]) -> str:

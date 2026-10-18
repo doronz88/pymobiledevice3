@@ -409,8 +409,10 @@ pymobiledevice3 developer dvt core-profile-session parse-live
 pymobiledevice3 developer dvt core-profile-session parse-live --bsc
 
 # Only some syscalls, with their paths (each also matches its _nocancel variant). The device still
-# sends every syscall; the others are dropped right after decoding, which keeps up over any tunnel
-pymobiledevice3 developer dvt core-profile-session parse-live --syscall open --syscall openat
+# sends every syscall; the others are dropped right after decoding, which keeps up over any tunnel.
+# `syscalls` lists the names
+pymobiledevice3 developer dvt core-profile-session parse-live -s open -s openat
+pymobiledevice3 developer dvt core-profile-session syscalls
 
 # Save KDebug events to file
 pymobiledevice3 developer dvt core-profile-session save FILENAME

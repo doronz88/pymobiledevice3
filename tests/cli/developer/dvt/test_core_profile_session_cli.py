@@ -3,9 +3,10 @@ import inspect
 from typing import Any, cast
 
 import pytest
-import typer
 from pykdebugparser.trace_codes import syscall_eventids
+from typer.testing import CliRunner
 
+from pymobiledevice3 import __main__
 from pymobiledevice3.cli.developer.dvt import core_profile_session
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 
@@ -25,11 +26,23 @@ def test_parse_live_rejects_an_unknown_syscall_before_connecting(monkeypatch: py
         raise AssertionError("connected to the device")
 
     monkeypatch.setattr(core_profile_session, "DvtProvider", no_device)
+    monkeypatch.delenv("PYMOBILEDEVICE3_UDID", raising=False)
 
-    with pytest.raises(typer.BadParameter, match="unknown syscalls: nosuch"):
-        core_profile_session.parse_live_profile_session(
-            service_provider=LOCKDOWN, class_filters=[], subclass_filters=[], syscalls=["open", "nosuch"]
-        )
+    result = CliRunner().invoke(
+        __main__.app, ["developer", "dvt", "core-profile-session", "parse-live", "-s", "open", "--syscall", "nosuch"]
+    )
+
+    assert result.exit_code == 2
+    assert "unknown syscalls: nosuch" in result.output
+    assert "core-profile-session syscalls" in result.output
+
+
+def test_syscall_names_are_what_parse_live_accepts() -> None:
+    names = core_profile_session.syscall_names()
+    assert {"open", "openat", "read"} <= set(names)
+    assert "open_nocancel" not in names  # covered by `open`
+    assert not [name for name in names if "#" in name]
+    assert syscall_eventids(names)
 
 
 def test_parse_live_syscall_filters_on_the_host(monkeypatch: pytest.MonkeyPatch) -> None:
