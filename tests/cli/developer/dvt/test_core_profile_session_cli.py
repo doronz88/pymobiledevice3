@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import io
+import json
 import sys
 from typing import Any, cast
 
@@ -82,6 +83,9 @@ def _run_parse_live(monkeypatch: pytest.MonkeyPatch, **options: Any) -> tuple[An
 
         def formatted_traces(self, stream: object) -> list[str]:
             return []
+
+        def dict_traces(self, stream: object) -> list[dict[str, object]]:
+            return [{"event": "BSC_open", "fields": {"fd": 3}, "text": "open(), fd: 3"}]
 
     monkeypatch.setattr(core_profile_session, "DvtProvider", FakeDvtProvider)
     monkeypatch.setattr(core_profile_session, "CoreProfileSessionTap", FakeCoreProfileSessionTap)
@@ -175,3 +179,12 @@ def test_mach_group_is_the_parsed_mach_traps() -> None:
     assert {"MSC_mach_msg2_trap", "MSC_task_for_pid"} <= set(traps)
     assert all(name.startswith("MSC_") for name in traps)
     assert set(core_profile_session.group_mach_traps("mem")) <= set(traps)
+
+
+def test_parse_live_json(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    _run_parse_live(monkeypatch, json_output=True)
+
+    # Only the traces, one JSON object per line: no status or column header lines.
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
+        {"event": "BSC_open", "fields": {"fd": 3}, "text": "open(), fd: 3"}
+    ]

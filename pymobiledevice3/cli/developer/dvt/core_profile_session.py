@@ -875,6 +875,14 @@ async def parse_live_profile_session(
         bool,
         typer.Option("--dyld", help="Print dyld events (image loads, dlopen, dlsym, ...), filtered on the device."),
     ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Print each trace as a JSON object, one per line: its time, thread, process, event name, parsed fields "
+            "and text.",
+        ),
+    ] = False,
     color_mode: Annotated[
         TraceColorMode,
         typer.Option(
@@ -899,7 +907,8 @@ async def parse_live_profile_session(
     syscall_ids = syscall_eventids([*syscalls, *(name for group in groups for name in SYSCALL_GROUPS[group])])
     event_ids = event_eventids([*events, *(name for group in groups for name in group_mach_traps(group))])
     async with DvtProvider(service_provider) as dvt:
-        print("Receiving time information")
+        if not json_output:
+            print("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
         parser: Any = PyKdebugParser()
         if dyld:
@@ -930,10 +939,11 @@ async def parse_live_profile_session(
         parser.color = enable_color and color_mode == TraceColorMode.RICH
 
         async with CoreProfileSessionTap(dvt, time_config, filters, sample_callstacks=False) as tap:
-            if show_tid:
-                print("{:^32}|{:^11}|{:^33}|   Event".format("Time", "Thread", "Process"))
-            else:
-                print("{:^32}|{:^33}|   Event".format("Time", "Process"))
+            if not json_output:
+                if show_tid:
+                    print("{:^32}|{:^11}|{:^33}|   Event".format("Time", "Thread", "Process"))
+                else:
+                    print("{:^32}|{:^33}|   Event".format("Time", "Process"))
 
             def _warn_skipped(events: int, lag: float) -> None:
                 logger.warning(
@@ -956,10 +966,14 @@ async def parse_live_profile_session(
             def _print_traces() -> None:
                 write = out.write
                 # KdBufStream is a duck-typed stream; pykdebugparser annotates the parameter as io.IOBase
-                for trace in islice(parser.formatted_traces(stream), count):  # pyright: ignore[reportArgumentType]
-                    if enable_color and color_mode == TraceColorMode.FAST:
-                        trace = _colorize_parse_live_trace(trace, show_tid=show_tid)
-                    write(trace + "\n")
+                if json_output:
+                    for trace in islice(parser.dict_traces(stream), count):  # pyright: ignore[reportArgumentType]
+                        write(json.dumps(trace) + "\n")
+                else:
+                    for line in islice(parser.formatted_traces(stream), count):  # pyright: ignore[reportArgumentType]
+                        if enable_color and color_mode == TraceColorMode.FAST:
+                            line = _colorize_parse_live_trace(line, show_tid=show_tid)
+                        write(line + "\n")
                 out.flush()
 
             line_buffering = getattr(out, "line_buffering", False)
