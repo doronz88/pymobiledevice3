@@ -151,7 +151,7 @@ def test_parse_live_groups_add_up(monkeypatch: pytest.MonkeyPatch) -> None:
     filters, parser = _run_parse_live(monkeypatch, fs=True, io=True, mach=True)
 
     syscalls = [*core_profile_session.SYSCALL_GROUPS["fs"], *core_profile_session.SYSCALL_GROUPS["io"]]
-    traps = core_profile_session.event_eventids(list(core_profile_session.MACH_TRAP_GROUPS["mach"]))
+    traps = core_profile_session.event_eventids(list(core_profile_session.group_mach_traps("mach")))
     assert parser.filter_eventid == syscall_eventids(syscalls) | traps
     # Syscalls come in their subclass, Mach traps in theirs.
     assert filters == {
@@ -168,3 +168,10 @@ def test_parse_live_restores_line_buffered_stdout(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(sys, "stdout", stdout)
     _run_parse_live(monkeypatch, io=True)
     assert stdout.line_buffering
+
+
+def test_mach_group_is_the_parsed_mach_traps() -> None:
+    traps = core_profile_session.group_mach_traps("mach")
+    assert {"MSC_mach_msg2_trap", "MSC_task_for_pid"} <= set(traps)
+    assert all(name.startswith("MSC_") for name in traps)
+    assert set(core_profile_session.group_mach_traps("mem")) <= set(traps)

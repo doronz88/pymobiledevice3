@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import functools
 import importlib.resources
 import json
 import logging
@@ -15,6 +16,7 @@ from typing import Annotated, Any, Optional, cast
 import typer
 from pykdebugparser.pykdebugparser import PyKdebugParser
 from pykdebugparser.trace_codes import default_trace_codes, syscall_eventids
+from pykdebugparser.traces_parser import TracesParser
 from typer_injector import InjectingTyper
 
 import pymobiledevice3.resources
@@ -295,55 +297,12 @@ SYSCALL_GROUPS: dict[str, tuple[str, ...]] = {
         "ulock_wake",
         "workq_kernreturn",
     ),
-    # Mach traps only (`MACH_TRAP_GROUPS`).
+    # Mach traps only (`group_mach_traps`).
     "mach": (),
 }
 #: The Mach traps of a parse-live group, by trace code name (they are events, as `--event` takes them). The device
-#: sends Mach traps in their own subclass.
+#: sends Mach traps in their own subclass. `--mach` is every Mach trap pykdebugparser parses (`group_mach_traps`).
 MACH_TRAP_GROUPS: dict[str, tuple[str, ...]] = {
-    "mach": (
-        "MSC_host_create_mach_voucher_trap",
-        "MSC_host_self_trap",
-        "MSC_iokit_user_client",
-        "MSC_kern_mach_vm_purgable_control_trap",
-        "MSC_mach_generate_activity_id",
-        "MSC_mach_msg2_trap",
-        "MSC_mach_port_allocate_trap",
-        "MSC_mach_port_construct_trap",
-        "MSC_mach_port_deallocate_trap",
-        "MSC_mach_port_destruct_trap",
-        "MSC_mach_port_extract_member_trap",
-        "MSC_mach_port_get_attributes_trap",
-        "MSC_mach_port_guard_trap",
-        "MSC_mach_port_insert_member_trap",
-        "MSC_mach_port_insert_right_trap",
-        "MSC_mach_port_mod_refs_trap",
-        "MSC_mach_port_request_notification_trap",
-        "MSC_mach_port_type_trap",
-        "MSC_mach_port_unguard_trap",
-        "MSC_mach_reply_port",
-        "MSC_mach_timebase_info",
-        "MSC_mach_vm_allocate_trap",
-        "MSC_mach_vm_deallocate_trap",
-        "MSC_mach_vm_map_trap",
-        "MSC_mach_vm_protect_trap",
-        "MSC_mach_wait_until",
-        "MSC_mk_timer_arm",
-        "MSC_mk_timer_arm_leeway",
-        "MSC_mk_timer_cancel",
-        "MSC_mk_timer_create",
-        "MSC_mk_timer_destroy",
-        "MSC_pid_for_task",
-        "MSC_semaphore_signal_trap",
-        "MSC_semaphore_timedwait_trap",
-        "MSC_semaphore_wait_trap",
-        "MSC_task_for_pid",
-        "MSC_task_name_for_pid",
-        "MSC_task_self_trap",
-        "MSC_thread_get_special_reply_port",
-        "MSC_thread_self_trap",
-        "MSC_thread_switch",
-    ),
     "mem": (
         "MSC_kern_mach_vm_purgable_control_trap",
         "MSC_mach_vm_allocate_trap",
@@ -363,6 +322,23 @@ MACH_TRAP_GROUPS: dict[str, tuple[str, ...]] = {
         "MSC_semaphore_wait_trap",
     ),
 }
+
+
+@functools.cache
+def _parsed_mach_traps() -> tuple[str, ...]:
+    """The trace code names of the Mach traps pykdebugparser parses."""
+    codes = default_trace_codes()
+    # pykdebugparser is not annotated
+    parser: Any = TracesParser(codes, dict[int, int](), dict[int, str]())
+    handlers: dict[str, object] = parser.handlers
+    return tuple(sorted({name for name in codes.values() if name.startswith("MSC_") and name in handlers}))
+
+
+def group_mach_traps(group: str) -> tuple[str, ...]:
+    """The Mach traps of a parse-live group."""
+    return _parsed_mach_traps() if group == "mach" else MACH_TRAP_GROUPS.get(group, ())
+
+
 # How far (in seconds) parse-live may fall behind the device before it skips ahead to recent events.
 PARSE_LIVE_MAX_LAG = 2.0
 
@@ -920,7 +896,7 @@ async def parse_live_profile_session(
     # Groups add up: each one adds its syscalls and Mach traps to what is printed.
     groups = [group for group, on in enabled.items() if on]
     syscall_ids = syscall_eventids([*syscalls, *(name for group in groups for name in SYSCALL_GROUPS[group])])
-    event_ids = event_eventids([*events, *(name for group in groups for name in MACH_TRAP_GROUPS.get(group, ()))])
+    event_ids = event_eventids([*events, *(name for group in groups for name in group_mach_traps(group))])
     async with DvtProvider(service_provider) as dvt:
         print("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
@@ -1027,7 +1003,7 @@ def list_syscalls(
     ] = None,
 ) -> None:
     """List the syscall names that `parse-live --syscall` accepts, or the syscalls and Mach traps of a group."""
-    names = syscall_names() if group is None else [*SYSCALL_GROUPS[group.value], *MACH_TRAP_GROUPS.get(group.value, ())]
+    names = syscall_names() if group is None else [*SYSCALL_GROUPS[group.value], *group_mach_traps(group.value)]
     for name in names:
         print(name)
 
