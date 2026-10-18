@@ -45,6 +45,123 @@ logger = logging.getLogger(__name__)
 BSC_SUBCLASS = 0x40C
 BSC_CLASS = 0x4
 VFS_AND_TRACES_SET = {0x03010000, 0x07FF0000}
+DBG_DYLD = 0x1F
+# DBG_TRACE: thread names and the strings dyld events refer to.
+TRACE_CLASS_FILTER = 0x07FF0000
+# Syscall groups for parse-live, by subsystem (each name also matches its _nocancel variant).
+SYSCALL_GROUPS: dict[str, tuple[str, ...]] = {
+    # Syscalls that take a path.
+    "fs": (
+        "access",
+        "access_extended",
+        "chdir",
+        "chmod",
+        "chmod_extended",
+        "chown",
+        "chroot",
+        "clonefileat",
+        "exchangedata",
+        "faccessat",
+        "fchmodat",
+        "fchownat",
+        "fstatat",
+        "fstatat64",
+        "getattrlist",
+        "getattrlistat",
+        "getxattr",
+        "lchown",
+        "link",
+        "linkat",
+        "listxattr",
+        "lstat",
+        "lstat64",
+        "lstat64_extended",
+        "lstat_extended",
+        "mkdir",
+        "mkdir_extended",
+        "mkdirat",
+        "mkfifo",
+        "mkfifo_extended",
+        "mkfifoat",
+        "mknod",
+        "mknodat",
+        "mount",
+        "open",
+        "open_dprotected_np",
+        "open_extended",
+        "openat",
+        "openat_dprotected_np",
+        "openbyid_np",
+        "pathconf",
+        "readlink",
+        "readlinkat",
+        "removexattr",
+        "rename",
+        "renameat",
+        "renameatx_np",
+        "revoke",
+        "rmdir",
+        "searchfs",
+        "setattrlist",
+        "setattrlistat",
+        "setxattr",
+        "stat",
+        "stat64",
+        "stat64_extended",
+        "stat_extended",
+        "statfs",
+        "statfs64",
+        "symlink",
+        "symlinkat",
+        "truncate",
+        "undelete",
+        "unlink",
+        "unlinkat",
+        "unmount",
+        "utimes",
+    ),
+    "net": (
+        "accept",
+        "bind",
+        "connect",
+        "connectx",
+        "disconnectx",
+        "getpeername",
+        "getsockname",
+        "getsockopt",
+        "listen",
+        "peeloff",
+        "recvfrom",
+        "recvmsg",
+        "recvmsg_x",
+        "sendfile",
+        "sendmsg",
+        "sendmsg_x",
+        "sendto",
+        "setsockopt",
+        "shutdown",
+        "socket",
+        "socket_delegate",
+        "socketpair",
+    ),
+    "proc": (
+        "abort_with_payload",
+        "execve",
+        "exit",
+        "fork",
+        "kill",
+        "pid_resume",
+        "pid_suspend",
+        "posix_spawn",
+        "ptrace",
+        "setpgid",
+        "setsid",
+        "terminate_with_payload",
+        "vfork",
+        "wait4",
+        "waitid",
+    ),
+}
 # How far (in seconds) parse-live may fall behind the device before it skips ahead to recent events.
 PARSE_LIVE_MAX_LAG = 2.0
 
@@ -158,6 +275,26 @@ def _validate_syscalls(names: Any) -> list[str]:
         raise typer.BadParameter(
             f"{e} (`pymobiledevice3 developer dvt core-profile-session syscalls` lists them)"
         ) from e
+    return names
+
+
+def event_eventids(names: list[str]) -> set[int]:
+    """The event ids of trace code names (a name some codes share gives all of them)."""
+    codes: dict[str, set[int]] = {}
+    for code, name in default_trace_codes().items():
+        codes.setdefault(name, set()).add(code)
+    unknown = [name for name in names if name not in codes]
+    if unknown:
+        raise ValueError(f"unknown events: {', '.join(unknown)}")
+    return {code for name in names for code in codes[name]}
+
+
+def _validate_events(names: Any) -> list[str]:
+    # See `_validate_syscalls`.
+    try:
+        event_eventids(names)
+    except ValueError as e:
+        raise typer.BadParameter(f"{e} (`pymobiledevice3 developer dvt core-profile-session events` lists them)") from e
     return names
 
 
@@ -513,6 +650,30 @@ async def parse_live_profile_session(
             "with the device even over --userspace.",
         ),
     ],
+    events: Annotated[
+        list[str],
+        typer.Option(
+            "--event",
+            "-e",
+            default_factory=list,
+            show_default=False,
+            callback=_validate_events,
+            help="Only print this event (a trace code name, e.g. DBG_DYLD_TIMING_DLOPEN). Can be specified multiple "
+            "times; the `events` command lists the names. The device filters the event's whole subclass, and the "
+            "other events in it are dropped right after decoding.",
+        ),
+    ],
+    fs: Annotated[
+        bool, typer.Option("--fs", help="Print the syscalls that take a path (`syscalls --group fs`).")
+    ] = False,
+    net: Annotated[bool, typer.Option("--net", help="Print the socket syscalls (`syscalls --group net`).")] = False,
+    proc: Annotated[
+        bool, typer.Option("--proc", help="Print the process lifecycle syscalls (`syscalls --group proc`).")
+    ] = False,
+    dyld: Annotated[
+        bool,
+        typer.Option("--dyld", help="Print dyld events (image loads, dlopen, dlsym, ...), filtered on the device."),
+    ] = False,
     color_mode: Annotated[
         TraceColorMode,
         typer.Option(
@@ -529,19 +690,27 @@ async def parse_live_profile_session(
     ] = True,
 ) -> None:
     """Print traces (syscalls, thread events, etc.) received from the device in real time."""
-    syscall_ids = syscall_eventids(syscalls)
+    groups = [group for group, enabled in (("fs", fs), ("net", net), ("proc", proc)) if enabled]
+    syscall_ids = syscall_eventids([*syscalls, *(name for group in groups for name in SYSCALL_GROUPS[group])])
+    event_ids = event_eventids(events)
     async with DvtProvider(service_provider) as dvt:
         print("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
         parser: Any = PyKdebugParser()
+        if dyld:
+            class_filters.append(DBG_DYLD)
         parser.filter_class = list(class_filters)
         if bsc:
             subclass_filters.append(BSC_SUBCLASS)
         parser.filter_subclass = subclass_filters
-        parser.filter_eventid = syscall_ids
-        # The device filters by subclass at best: request every syscall, and filter the chosen ones on the host.
-        device_subclasses = [*subclass_filters, BSC_SUBCLASS] if syscall_ids else subclass_filters
+        parser.filter_eventid = syscall_ids | event_ids
+        # The device filters by subclass at best: request every syscall (and the subclass of each event), and
+        # filter the chosen ones on the host.
+        device_subclasses = [*subclass_filters, BSC_SUBCLASS] if syscall_ids else list(subclass_filters)
+        device_subclasses += sorted({eventid >> 16 for eventid in event_ids})
         filters = parse_filters(device_subclasses, class_filters)
+        if (dyld or event_ids) and filters is not None:
+            filters.add(TRACE_CLASS_FILTER)
         parser.numer = time_config["numer"]
         parser.denom = time_config["denom"]
         parser.mach_absolute_time = time_config["mach_absolute_time"]
@@ -589,10 +758,27 @@ async def parse_live_profile_session(
                 chunk_queue.put(None)
 
 
+@cli.command("events")
+def list_events() -> None:
+    """List the event names that `parse-live --event` accepts."""
+    for name in sorted(set(default_trace_codes().values())):
+        print(name)
+
+
+class SyscallGroup(str, Enum):
+    FS = "fs"
+    NET = "net"
+    PROC = "proc"
+
+
 @cli.command("syscalls")
-def list_syscalls() -> None:
+def list_syscalls(
+    group: Annotated[
+        Optional[SyscallGroup], typer.Option(help="Only list the syscalls of this parse-live group (--fs, ...).")
+    ] = None,
+) -> None:
     """List the syscall names that `parse-live --syscall` accepts."""
-    for name in syscall_names():
+    for name in syscall_names() if group is None else SYSCALL_GROUPS[group.value]:
         print(name)
 
 

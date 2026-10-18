@@ -45,7 +45,8 @@ def test_syscall_names_are_what_parse_live_accepts() -> None:
     assert syscall_eventids(names)
 
 
-def test_parse_live_syscall_filters_on_the_host(monkeypatch: pytest.MonkeyPatch) -> None:
+def _run_parse_live(monkeypatch: pytest.MonkeyPatch, **options: Any) -> tuple[Any, Any]:
+    """Run parse-live against fakes; return the device filters it requested and its parser."""
     requested: dict[str, Any] = {}
     parsers: list[Any] = []
 
@@ -85,11 +86,53 @@ def test_parse_live_syscall_filters_on_the_host(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(core_profile_session, "PyKdebugParser", FakeParser)
 
     core_profile_session.parse_live_profile_session(
-        service_provider=LOCKDOWN, class_filters=[], subclass_filters=[], syscalls=["open"]
+        service_provider=LOCKDOWN, class_filters=[], subclass_filters=[], **{"syscalls": [], "events": [], **options}
     )
+    (parser,) = parsers
+    return requested["filters"], parser
+
+
+def test_parse_live_syscall_filters_on_the_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    filters, parser = _run_parse_live(monkeypatch, syscalls=["open"])
 
     # The device can only filter subclasses: it sends every syscall, with the VFS lookups that hold the paths.
-    assert requested["filters"] == core_profile_session.parse_filters([core_profile_session.BSC_SUBCLASS], [])
-    (parser,) = parsers
+    assert filters == core_profile_session.parse_filters([core_profile_session.BSC_SUBCLASS], [])
     assert parser.filter_subclass == []
     assert parser.filter_eventid == syscall_eventids(["open"])
+
+
+def test_syscall_groups_are_known_syscalls() -> None:
+    names = set(core_profile_session.syscall_names())
+    for group, members in core_profile_session.SYSCALL_GROUPS.items():
+        assert set(members) <= names, group
+
+
+def test_parse_live_fs_and_dyld(monkeypatch: pytest.MonkeyPatch) -> None:
+    filters, parser = _run_parse_live(monkeypatch, fs=True, dyld=True)
+
+    assert filters == {
+        core_profile_session.BSC_SUBCLASS << 16,
+        *core_profile_session.VFS_AND_TRACES_SET,
+        (core_profile_session.DBG_DYLD << 24) | 0x00FF0000,  # dyld is filtered on the device
+        core_profile_session.TRACE_CLASS_FILTER,  # with the strings its events refer to
+    }
+    assert parser.filter_class == [core_profile_session.DBG_DYLD]
+    assert parser.filter_subclass == []
+    assert parser.filter_eventid == syscall_eventids(core_profile_session.SYSCALL_GROUPS["fs"])
+
+
+def test_parse_live_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    filters, parser = _run_parse_live(monkeypatch, events=["DBG_DYLD_TIMING_DLOPEN"])
+
+    # Only the event's subclass is requested from the device, with the strings dyld events refer to.
+    assert filters == {0x1F080000, core_profile_session.TRACE_CLASS_FILTER}
+    assert parser.filter_class == []
+    assert parser.filter_eventid == {0x1F080000}
+
+
+def test_event_eventids() -> None:
+    assert core_profile_session.event_eventids(["BSC_open", "VFS_LOOKUP"]) == {0x40C0014, 0x3010090}
+    # A name that several codes share gives all of them.
+    assert len(core_profile_session.event_eventids(["CPUPM_FORCED_IDLE"])) > 1
+    with pytest.raises(ValueError, match="unknown events: nosuch"):
+        core_profile_session.event_eventids(["BSC_open", "nosuch"])

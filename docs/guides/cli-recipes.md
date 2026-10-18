@@ -414,6 +414,19 @@ pymobiledevice3 developer dvt core-profile-session parse-live --bsc
 pymobiledevice3 developer dvt core-profile-session parse-live -s open -s openat
 pymobiledevice3 developer dvt core-profile-session syscalls
 
+# Syscalls by subsystem: --fs (syscalls that take a path), --net (sockets), --proc (process lifecycle).
+# They combine with each other and with -s; `syscalls --group fs` lists a group
+pymobiledevice3 developer dvt core-profile-session parse-live --fs --net
+pymobiledevice3 developer dvt core-profile-session syscalls --group fs
+
+# dyld events (image loads, dlopen, dlsym, ...); unlike the syscall groups, filtered on the device
+pymobiledevice3 developer dvt core-profile-session parse-live --dyld
+
+# Any events by their trace code name; the device filters each event's subclass, and the other events
+# in it are dropped right after decoding. `events` lists the names
+pymobiledevice3 developer dvt core-profile-session parse-live -e DBG_DYLD_TIMING_DLOPEN -e DBG_DYLD_TIMING_DLSYM
+pymobiledevice3 developer dvt core-profile-session events
+
 # Save KDebug events to file
 pymobiledevice3 developer dvt core-profile-session save FILENAME
 
