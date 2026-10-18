@@ -414,10 +414,14 @@ pymobiledevice3 developer dvt core-profile-session parse-live --bsc
 pymobiledevice3 developer dvt core-profile-session parse-live -s open -s openat
 pymobiledevice3 developer dvt core-profile-session syscalls
 
-# Syscalls by subsystem: --fs (syscalls that take a path), --net (sockets), --proc (process lifecycle).
-# They combine with each other and with -s; `syscalls --group fs` lists a group
-pymobiledevice3 developer dvt core-profile-session parse-live --fs --net
-pymobiledevice3 developer dvt core-profile-session syscalls --group fs
+# Syscalls by subsystem: --fs (syscalls that take a path), --net (sockets), --proc (process lifecycle),
+# --io (reads, writes and the other syscalls on file descriptors), --mem (memory mappings), --signal,
+# --cred (credentials, code signing and policy checks, access to other tasks), --sync (locks, kqueues,
+# workqueues) and --mach (Mach traps). Groups add up, and combine with -s and -e: `--fs --io` prints both.
+# `syscalls --group io` lists a group
+pymobiledevice3 developer dvt core-profile-session parse-live --fs --io
+pymobiledevice3 developer dvt core-profile-session parse-live --mem --signal --cred
+pymobiledevice3 developer dvt core-profile-session syscalls --group io
 
 # dyld events (image loads, dlopen, dlsym, ...); unlike the syscall groups, filtered on the device
 pymobiledevice3 developer dvt core-profile-session parse-live --dyld
