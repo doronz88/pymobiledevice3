@@ -402,10 +402,15 @@ pymobiledevice3 developer dvt launch com.apple.mobilesafari
 
 # Live KDebug parsing (strace-like). Unfiltered, the device emits events faster than they can
 # be parsed, so output skips ahead (with a warning on stderr) whenever it falls 2s behind;
-# --bsc / --class-filters / --subclass-filters filter on the device to keep every event,
-# and --no-skip-behind keeps every event at the cost of falling ever further behind
+# --bsc / --class-filters / --subclass-filters filter on the device (by subclass at most), and
+# --no-skip-behind keeps every event at the cost of falling ever further behind. While apps launch,
+# --bsc keeps up over --native or a root tunnel, but not over the default userspace tunnel
 pymobiledevice3 developer dvt core-profile-session parse-live
 pymobiledevice3 developer dvt core-profile-session parse-live --bsc
+
+# Only some syscalls, with their paths (each also matches its _nocancel variant). The device still
+# sends every syscall; the others are dropped right after decoding, which keeps up over any tunnel
+pymobiledevice3 developer dvt core-profile-session parse-live --syscall open --syscall openat
 
 # Save KDebug events to file
 pymobiledevice3 developer dvt core-profile-session save FILENAME

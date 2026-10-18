@@ -12,6 +12,7 @@ from typing import Annotated, Any, Optional, cast
 
 import typer
 from pykdebugparser.pykdebugparser import PyKdebugParser
+from pykdebugparser.trace_codes import syscall_eventids
 from typer_injector import InjectingTyper
 
 import pymobiledevice3.resources
@@ -476,6 +477,17 @@ async def parse_live_profile_session(
         Optional[str],
         typer.Option(help="Process ID / name to filter. Omit for all."),
     ] = None,
+    syscalls: Annotated[
+        list[str],
+        typer.Option(
+            "--syscall",
+            default_factory=list,
+            show_default=False,
+            help="Only print this syscall (e.g. open, openat; with its _nocancel variant), with its paths. Can be "
+            "specified multiple times. The device can only filter whole subclasses, so it sends every syscall and "
+            "the others are dropped right after decoding, which keeps up with the device even over --userspace.",
+        ),
+    ],
     color_mode: Annotated[
         TraceColorMode,
         typer.Option(
@@ -492,6 +504,10 @@ async def parse_live_profile_session(
     ] = True,
 ) -> None:
     """Print traces (syscalls, thread events, etc.) received from the device in real time."""
+    try:
+        syscall_ids = syscall_eventids(syscalls)
+    except ValueError as e:
+        raise typer.BadParameter(str(e), param_hint="--syscall") from e
     async with DvtProvider(service_provider) as dvt:
         print("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
@@ -500,7 +516,10 @@ async def parse_live_profile_session(
         if bsc:
             subclass_filters.append(BSC_SUBCLASS)
         parser.filter_subclass = subclass_filters
-        filters = parse_filters(subclass_filters, class_filters)
+        parser.filter_eventid = syscall_ids
+        # The device filters by subclass at best: request every syscall, and filter the chosen ones on the host.
+        device_subclasses = [*subclass_filters, BSC_SUBCLASS] if syscall_ids else subclass_filters
+        filters = parse_filters(device_subclasses, class_filters)
         parser.numer = time_config["numer"]
         parser.denom = time_config["denom"]
         parser.mach_absolute_time = time_config["mach_absolute_time"]
