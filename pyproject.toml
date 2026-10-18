@@ -41,7 +41,7 @@ dependencies = [
     "bpylist2>=4.0.1",
     "pygments",
     "daemonize",
-    "pykdebugparser>=1.6.0",
+    "pykdebugparser>=1.6.1",
     "pyusb>=1.2.1",
     "tqdm",
     "requests",
