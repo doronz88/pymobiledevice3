@@ -171,6 +171,13 @@ SOCKET_BUFFER_SIZE = 6 * 1024 * 1024
 #: Read/relay chunk size for the dial-plane bridge.
 _CHUNK = 65536
 
+#: Send/receive buffer of both ends of a unix-socket relay connection. macOS defaults them to 8 KiB
+#: (net.local.stream.sendspace/recvspace), so each event-loop pass moved only 8 KiB from the stack to
+#: the service: device->host streams capped at ~6-9 MB/s with the loop idle, the device's data piled
+#: up in the stack until its receive window closed. Measured on a kdebug trace: 256 KiB, 1 MiB and
+#: 4 MiB all reach ~80 MB/s, the same as the kernel tunnel.
+RELAY_SOCKET_BUFFER_SIZE = 1024 * 1024
+
 #: pmd3's per-OS tun loopback header (macOS: b"\x00\x00\x00\x1e" = AF_INET6).
 LOOPBACK_HEADER = get_os_utils().loopback_header
 
@@ -228,6 +235,15 @@ def _eth_header(dst_mac: str, src_mac: str) -> bytes:
 #: string parsing / struct packing.
 _ETH_HDR_TO_STACK = _eth_header(_STACK_MAC, _PEER_MAC)
 _ETH_IPV6_BYTES = struct.pack("!H", _ETH_IPV6)
+
+
+def _grow_relay_buffers(sock: Any) -> None:
+    """Raise a unix relay socket's buffers to :data:`RELAY_SOCKET_BUFFER_SIZE` (no-op for other families)."""
+    if sock is None or sock.family != getattr(socket, "AF_UNIX", None):
+        return
+    for option in (socket.SO_SNDBUF, socket.SO_RCVBUF):
+        with suppress(OSError):
+            sock.setsockopt(socket.SOL_SOCKET, option, RELAY_SOCKET_BUFFER_SIZE)
 
 
 def _packet_socketpair() -> tuple[socket.socket, socket.socket]:
@@ -464,6 +480,8 @@ class UserspaceDialPlane:
             path = os.path.join(self._socket_dir, "relay.sock")
             try:
                 self._server = await _bind_listener(asyncio.start_unix_server(self._handle, path))
+                # Accepted connections inherit the listener's buffer sizes; each dial sets its own.
+                _grow_relay_buffers(self._server.sockets[0])
             except OSError as e:
                 # e.g. sun_path length exceeded by an unusually long TMPDIR. The fallback is a
                 # loopback TCP port any local process can connect to — losing the unix socket's
@@ -674,6 +692,7 @@ class UserspaceDialPlane:
             if self._closing:
                 writer.close()
                 raise ConnectionError("userspace dial plane is closed")
+            _grow_relay_buffers(writer.get_extra_info("socket"))
             writer.write(port.to_bytes(2, "big"))  # header for _handle; flushed with first payload
             return reader, writer
         return await asyncio.open_connection(host, port, **kwargs)
