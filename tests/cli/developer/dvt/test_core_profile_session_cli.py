@@ -136,3 +136,25 @@ def test_event_eventids() -> None:
     assert len(core_profile_session.event_eventids(["CPUPM_FORCED_IDLE"])) > 1
     with pytest.raises(ValueError, match="unknown events: nosuch"):
         core_profile_session.event_eventids(["BSC_open", "nosuch"])
+
+
+def test_mach_trap_groups_are_known_events() -> None:
+    for group, members in core_profile_session.MACH_TRAP_GROUPS.items():
+        assert group in core_profile_session.SYSCALL_GROUPS, group
+        assert all(name.startswith("MSC_") for name in members), group
+        core_profile_session.event_eventids(list(members))
+
+
+def test_parse_live_groups_add_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    filters, parser = _run_parse_live(monkeypatch, fs=True, io=True, mach=True)
+
+    syscalls = [*core_profile_session.SYSCALL_GROUPS["fs"], *core_profile_session.SYSCALL_GROUPS["io"]]
+    traps = core_profile_session.event_eventids(list(core_profile_session.MACH_TRAP_GROUPS["mach"]))
+    assert parser.filter_eventid == syscall_eventids(syscalls) | traps
+    # Syscalls come in their subclass, Mach traps in theirs.
+    assert filters == {
+        core_profile_session.BSC_SUBCLASS << 16,
+        *core_profile_session.VFS_AND_TRACES_SET,
+        0x010C0000,
+        core_profile_session.TRACE_CLASS_FILTER,
+    }

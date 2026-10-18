@@ -162,6 +162,204 @@ SYSCALL_GROUPS: dict[str, tuple[str, ...]] = {
         "wait4",
         "waitid",
     ),
+    # Syscalls on file descriptors: reads and writes, and the descriptors themselves.
+    "io": (
+        "fchflags",
+        "fchmod",
+        "fchown",
+        "fdatasync",
+        "fgetattrlist",
+        "fgetxattr",
+        "flistxattr",
+        "fremovexattr",
+        "fsetattrlist",
+        "fsetxattr",
+        "fstatfs",
+        "fstatfs64",
+        "fsync",
+        "ftruncate",
+        "futimes",
+        "getattrlistbulk",
+        "getdirentries64",
+        "getdirentriesattr",
+        "guarded_close_np",
+        "guarded_pwrite_np",
+        "guarded_write_np",
+        "guarded_writev_np",
+        "ioctl",
+        "lseek",
+        "pipe",
+        "pipe2",
+        "pread",
+        "pwrite",
+        "read",
+        "readv",
+        "sendfile",
+        "sys_close",
+        "sys_dup",
+        "sys_dup2",
+        "sys_dup3",
+        "sys_fcntl",
+        "sys_fileport_makefd",
+        "sys_fileport_makeport",
+        "sys_flock",
+        "sys_fstat64",
+        "sys_preadv",
+        "sys_pwritev",
+        "write",
+        "writev",
+    ),
+    # Memory mappings and their protections.
+    "mem": (
+        "madvise",
+        "map_with_linking_np",
+        "mincore",
+        "minherit",
+        "mlock",
+        "mlockall",
+        "mmap",
+        "mprotect",
+        "mremap_encrypted",
+        "msync",
+        "munlock",
+        "munlockall",
+        "munmap",
+        "shared_region_check_np",
+        "shared_region_map_and_slide_2_np",
+        "shared_region_map_and_slide_np",
+    ),
+    # Sending, handling and masking signals.
+    "signal": (
+        "disable_threadsignal",
+        "kill",
+        "pthread_kill",
+        "pthread_sigmask",
+        "sigaction",
+        "sigaltstack",
+        "sigpending",
+        "sigprocmask",
+        "sigreturn",
+        "sigsuspend",
+        "sigwait",
+    ),
+    # Credentials, code signing and policy (Sandbox, AMFI) checks, and access to other tasks.
+    "cred": (
+        "audit_session_port",
+        "csops",
+        "csops_audittoken",
+        "csrctl",
+        "initgroups",
+        "issetugid",
+        "mac_syscall",
+        "persona",
+        "setauid",
+        "setegid",
+        "seteuid",
+        "setgid",
+        "setgroups",
+        "setlogin",
+        "setregid",
+        "setreuid",
+        "setuid",
+        "task_inspect_for_pid",
+        "task_read_for_pid",
+    ),
+    # Waiting and waking: locks, condition variables, kqueues and workqueues.
+    "sync": (
+        "kevent",
+        "kevent64",
+        "kevent_id",
+        "kevent_qos",
+        "kqueue",
+        "kqueue_workloop_ctl",
+        "poll",
+        "pselect",
+        "psynch_cvbroad",
+        "psynch_cvclrprepost",
+        "psynch_cvsignal",
+        "psynch_cvwait",
+        "psynch_mutexdrop",
+        "psynch_mutexwait",
+        "select",
+        "sem_close",
+        "sem_open",
+        "sem_post",
+        "sem_trywait",
+        "sem_unlink",
+        "sem_wait",
+        "semwait_signal",
+        "ulock_wait",
+        "ulock_wait2",
+        "ulock_wake",
+        "workq_kernreturn",
+    ),
+    # Mach traps only (`MACH_TRAP_GROUPS`).
+    "mach": (),
+}
+#: The Mach traps of a parse-live group, by trace code name (they are events, as `--event` takes them). The device
+#: sends Mach traps in their own subclass.
+MACH_TRAP_GROUPS: dict[str, tuple[str, ...]] = {
+    "mach": (
+        "MSC_host_create_mach_voucher_trap",
+        "MSC_host_self_trap",
+        "MSC_iokit_user_client",
+        "MSC_kern_mach_vm_purgable_control_trap",
+        "MSC_mach_generate_activity_id",
+        "MSC_mach_msg2_trap",
+        "MSC_mach_port_allocate_trap",
+        "MSC_mach_port_construct_trap",
+        "MSC_mach_port_deallocate_trap",
+        "MSC_mach_port_destruct_trap",
+        "MSC_mach_port_extract_member_trap",
+        "MSC_mach_port_get_attributes_trap",
+        "MSC_mach_port_guard_trap",
+        "MSC_mach_port_insert_member_trap",
+        "MSC_mach_port_insert_right_trap",
+        "MSC_mach_port_mod_refs_trap",
+        "MSC_mach_port_request_notification_trap",
+        "MSC_mach_port_type_trap",
+        "MSC_mach_port_unguard_trap",
+        "MSC_mach_reply_port",
+        "MSC_mach_timebase_info",
+        "MSC_mach_vm_allocate_trap",
+        "MSC_mach_vm_deallocate_trap",
+        "MSC_mach_vm_map_trap",
+        "MSC_mach_vm_protect_trap",
+        "MSC_mach_wait_until",
+        "MSC_mk_timer_arm",
+        "MSC_mk_timer_arm_leeway",
+        "MSC_mk_timer_cancel",
+        "MSC_mk_timer_create",
+        "MSC_mk_timer_destroy",
+        "MSC_pid_for_task",
+        "MSC_semaphore_signal_trap",
+        "MSC_semaphore_timedwait_trap",
+        "MSC_semaphore_wait_trap",
+        "MSC_task_for_pid",
+        "MSC_task_name_for_pid",
+        "MSC_task_self_trap",
+        "MSC_thread_get_special_reply_port",
+        "MSC_thread_self_trap",
+        "MSC_thread_switch",
+    ),
+    "mem": (
+        "MSC_kern_mach_vm_purgable_control_trap",
+        "MSC_mach_vm_allocate_trap",
+        "MSC_mach_vm_deallocate_trap",
+        "MSC_mach_vm_map_trap",
+        "MSC_mach_vm_protect_trap",
+    ),
+    "cred": (
+        "MSC_pid_for_task",
+        "MSC_task_for_pid",
+        "MSC_task_name_for_pid",
+    ),
+    "sync": (
+        "MSC_mach_wait_until",
+        "MSC_semaphore_signal_trap",
+        "MSC_semaphore_timedwait_trap",
+        "MSC_semaphore_wait_trap",
+    ),
 }
 # How far (in seconds) parse-live may fall behind the device before it skips ahead to recent events.
 PARSE_LIVE_MAX_LAG = 2.0
@@ -671,6 +869,30 @@ async def parse_live_profile_session(
     proc: Annotated[
         bool, typer.Option("--proc", help="Print the process lifecycle syscalls (`syscalls --group proc`).")
     ] = False,
+    io: Annotated[
+        bool,
+        typer.Option("--io", help="Print the syscalls on file descriptors: read, write, ... (`syscalls --group io`)."),
+    ] = False,
+    mem: Annotated[
+        bool, typer.Option("--mem", help="Print memory mapping syscalls and Mach traps (`syscalls --group mem`).")
+    ] = False,
+    signal: Annotated[
+        bool, typer.Option("--signal", help="Print the signal syscalls (`syscalls --group signal`).")
+    ] = False,
+    cred: Annotated[
+        bool,
+        typer.Option(
+            "--cred",
+            help="Print credential, code signing and policy checks, and access to other tasks (`syscalls --group cred`).",
+        ),
+    ] = False,
+    sync: Annotated[
+        bool,
+        typer.Option(
+            "--sync", help="Print locks, condition variables, kqueues and workqueues (`syscalls --group sync`)."
+        ),
+    ] = False,
+    mach: Annotated[bool, typer.Option("--mach", help="Print the Mach traps (`syscalls --group mach`).")] = False,
     dyld: Annotated[
         bool,
         typer.Option("--dyld", help="Print dyld events (image loads, dlopen, dlsym, ...), filtered on the device."),
@@ -691,9 +913,12 @@ async def parse_live_profile_session(
     ] = True,
 ) -> None:
     """Print traces (syscalls, thread events, etc.) received from the device in real time."""
-    groups = [group for group, enabled in (("fs", fs), ("net", net), ("proc", proc)) if enabled]
+    enabled = {"fs": fs, "net": net, "proc": proc, "io": io, "mem": mem, "signal": signal, "cred": cred, "sync": sync}
+    enabled["mach"] = mach
+    # Groups add up: each one adds its syscalls and Mach traps to what is printed.
+    groups = [group for group, on in enabled.items() if on]
     syscall_ids = syscall_eventids([*syscalls, *(name for group in groups for name in SYSCALL_GROUPS[group])])
-    event_ids = event_eventids(events)
+    event_ids = event_eventids([*events, *(name for group in groups for name in MACH_TRAP_GROUPS.get(group, ()))])
     async with DvtProvider(service_provider) as dvt:
         print("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
@@ -770,16 +995,24 @@ class SyscallGroup(str, Enum):
     FS = "fs"
     NET = "net"
     PROC = "proc"
+    IO = "io"
+    MEM = "mem"
+    SIGNAL = "signal"
+    CRED = "cred"
+    SYNC = "sync"
+    MACH = "mach"
 
 
 @cli.command("syscalls")
 def list_syscalls(
     group: Annotated[
-        Optional[SyscallGroup], typer.Option(help="Only list the syscalls of this parse-live group (--fs, ...).")
+        Optional[SyscallGroup],
+        typer.Option(help="Only list the syscalls and Mach traps of this parse-live group (--fs, ...)."),
     ] = None,
 ) -> None:
-    """List the syscall names that `parse-live --syscall` accepts."""
-    for name in syscall_names() if group is None else SYSCALL_GROUPS[group.value]:
+    """List the syscall names that `parse-live --syscall` accepts, or the syscalls and Mach traps of a group."""
+    names = syscall_names() if group is None else [*SYSCALL_GROUPS[group.value], *MACH_TRAP_GROUPS.get(group.value, ())]
+    for name in names:
         print(name)
 
 
