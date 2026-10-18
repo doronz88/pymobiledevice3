@@ -426,6 +426,10 @@ pymobiledevice3 developer dvt core-profile-session syscalls --group io
 # dyld events (image loads, dlopen, dlsym, ...); unlike the syscall groups, filtered on the device
 pymobiledevice3 developer dvt core-profile-session parse-live --dyld
 
+# One JSON object per trace (time, thread, pid, process, event, parsed fields and text), e.g. for jq.
+# On a terminal, traces are otherwise colored by what they show; --color-mode fast colors only the columns
+pymobiledevice3 developer dvt core-profile-session parse-live --fs --json | jq -c 'select(.process == "MobileSafari")'
+
 # Any events by their trace code name; the device filters each event's subclass, and the other events
 # in it are dropped right after decoding. `events` lists the names
 pymobiledevice3 developer dvt core-profile-session parse-live -e DBG_DYLD_TIMING_DLOPEN -e DBG_DYLD_TIMING_DLSYM
