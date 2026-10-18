@@ -878,10 +878,11 @@ async def parse_live_profile_session(
     color_mode: Annotated[
         TraceColorMode,
         typer.Option(
-            help="Trace color style. 'fast' uses low-overhead ANSI coloring, 'rich' uses syntax highlighting.",
+            help="Trace color style: 'rich' also colors the event by what it shows (call, strings, numbers, errors, "
+            "...), 'fast' colors only the columns.",
             case_sensitive=False,
         ),
-    ] = TraceColorMode.FAST,
+    ] = TraceColorMode.RICH,
     skip_behind: Annotated[
         bool,
         typer.Option(
