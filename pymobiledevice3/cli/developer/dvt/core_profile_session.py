@@ -148,8 +148,10 @@ def parse_filters(subclasses: list[int], classes: list[int]) -> Optional[set[int
     return parsed
 
 
-def _validate_syscalls(names: list[str]) -> list[str]:
+def _validate_syscalls(names: Any) -> list[str]:
     # An option callback runs while the arguments are parsed, so a typo fails before connecting to the device.
+    # `names` is annotated `Any`: typer runs `issubclass()` on callback annotations, which fails for `list[str]`
+    # on Python <= 3.10.
     try:
         syscall_eventids(names)
     except ValueError as e:
