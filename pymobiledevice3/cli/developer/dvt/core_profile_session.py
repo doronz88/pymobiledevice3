@@ -62,6 +62,7 @@ SYSCALL_GROUPS: dict[str, tuple[str, ...]] = {
         "clonefileat",
         "exchangedata",
         "faccessat",
+        "fchflagsat",
         "fchmodat",
         "fchownat",
         "fstatat",
