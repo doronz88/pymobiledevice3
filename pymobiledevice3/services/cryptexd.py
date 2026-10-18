@@ -20,6 +20,7 @@ from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import FileTransferType, XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.restore.tss import TSSRequest
+from pymobiledevice3.safe_paths import resolve_device_path
 from pymobiledevice3.services.mobile_image_mounter import LATEST_DDI_BUILD_ID, PersonalizedImageMounter
 
 logger = logging.getLogger(__name__)
@@ -211,7 +212,8 @@ def fetch_cryptex_ddi() -> Path:
     missing or when its build id does not match `LATEST_DDI_BUILD_ID`.
 
     Each payload is written to the relative path the downloaded ``BuildManifest.plist`` declares
-    for it, which makes the cache a `Restore` directory `load_cryptex1_assets` reads directly.
+    for it, which makes the cache a `Restore` directory `load_cryptex1_assets` reads directly. A
+    path that would leave the cache directory raises `DevicePathError` before anything is written.
 
     :returns: path to the cached ``Restore`` directory.
     """
@@ -226,12 +228,17 @@ def fetch_cryptex_ddi() -> Path:
         logger.info("Downloading the Cryptex1 DeveloperDiskImage")
         cryptex_image = DeveloperDiskImageRepository.create().get_cryptex_disk_image()
 
-        build_manifest.write_bytes(cryptex_image.build_manifest)
         identity = _cryptex_build_identity(plistlib.loads(cryptex_image.build_manifest), build_manifest)
-        for key, field in CRYPTEX1_PAYLOAD_KEYS.items():
-            payload = local_path / identity["Manifest"][key]["Info"]["Path"]
+        # The manifest is downloaded data: check every destination before writing anything, and
+        # write the manifest last so an interrupted download is not mistaken for a complete cache.
+        payloads = {
+            resolve_device_path(local_path, identity["Manifest"][key]["Info"]["Path"]): getattr(cryptex_image, field)
+            for key, field in CRYPTEX1_PAYLOAD_KEYS.items()
+        }
+        for payload, data in payloads.items():
             payload.parent.mkdir(parents=True, exist_ok=True)
-            payload.write_bytes(getattr(cryptex_image, field))
+            payload.write_bytes(data)
+        build_manifest.write_bytes(cryptex_image.build_manifest)
 
         downloaded_build_id = plistlib.loads(cryptex_image.build_manifest).get("ProductBuildVersion")
         if downloaded_build_id != LATEST_DDI_BUILD_ID:
@@ -341,7 +348,7 @@ def load_cryptex1_assets(restore_dir: Optional[Path] = None) -> Cryptex1Assets:
     manifest = build_identity["Manifest"]
 
     def read(key: str) -> bytes:
-        return (restore_dir / manifest[key]["Info"]["Path"]).read_bytes()
+        return resolve_device_path(restore_dir, manifest[key]["Info"]["Path"]).read_bytes()
 
     # Mirrors the dict Xcode sends; the integers must be uint64 or the daemon rejects them.
     cryptex1_properties: dict[str, Any] = {
