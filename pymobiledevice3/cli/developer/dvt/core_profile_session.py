@@ -74,6 +74,8 @@ SYSCALL_GROUPS: dict[str, tuple[str, ...]] = {
         "getattrlist",
         "getattrlistat",
         "getxattr",
+        "guarded_open_dprotected_np",
+        "guarded_open_np",
         "lchown",
         "link",
         "linkat",
