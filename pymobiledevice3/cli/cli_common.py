@@ -15,7 +15,7 @@ from functools import wraps
 from textwrap import dedent
 from typing import Annotated, Any, Callable, Optional, TypeVar, cast
 
-import coloredlogs
+import ansilogs
 import questionary
 import typer
 from pygments import formatters, highlight, lexers
@@ -136,7 +136,7 @@ def print_hex(data: bytes, colored: bool = True) -> None:
 
 
 def set_verbosity(level: int) -> None:
-    cast(Any, coloredlogs).set_level(logging.INFO - (level * 10))
+    ansilogs.set_level(logging.INFO - (level * 10))
     # DTX message traffic is very chatty -- require -vv to see it
     logging.getLogger("pymobiledevice3.dtx").setLevel(logging.DEBUG if level >= 2 else logging.INFO)
 

@@ -12,7 +12,7 @@ import traceback
 import warnings
 from typing import Annotated, Any, Callable, Optional, Union, cast
 
-import coloredlogs
+import ansilogs
 import typer
 from packaging.version import Version
 from typer.core import TyperGroup
@@ -82,12 +82,11 @@ from pymobiledevice3.exceptions import (
 from pymobiledevice3.lockdown import retry_create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
 
-cast(Any, coloredlogs).install(level=logging.INFO)
+ansilogs.install(logging.INFO)
 
 logging.getLogger("quic").setLevel(logging.CRITICAL + 1)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL + 1)
 logging.getLogger("parso").setLevel(logging.CRITICAL + 1)
-logging.getLogger("humanfriendly").setLevel(logging.CRITICAL + 1)
 logging.getLogger("blib2to3").setLevel(logging.CRITICAL + 1)
 logging.getLogger("urllib3").setLevel(logging.CRITICAL + 1)
 
