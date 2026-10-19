@@ -168,6 +168,20 @@ class MuxDevice:
     def matches_udid(self, udid: str) -> bool:
         return self.serial.replace("-", "") == udid.replace("-", "")
 
+    @property
+    def ecid(self) -> Optional[int]:
+        """The ECID encoded in the UDID, or None for a legacy (40-hex-digit) UDID that doesn't carry one.
+
+        A UDID is ``<ChipID:08X>-<ECID:016X>`` on devices from the A12 on; usbmuxd may drop the dash.
+        """
+        digits = self.serial.replace("-", "")
+        if len(digits) != 24:
+            return None
+        try:
+            return int(digits[8:], 16)
+        except ValueError:
+            return None
+
 
 class MuxConnection:
     ITUNES_HOST = ITUNES_HOST

@@ -341,11 +341,14 @@ class IRecv:
                     continue
 
                 if self._device is not None:
-                    raise IRecvError("More then one connected device was found connected in recovery mode")
+                    raise IRecvError(
+                        "More than one device was found connected in recovery mode; select one by its ECID"
+                    )
 
                 try:
                     self._device = device
                     self._mode = mode
+                    self._device_info = {}
                     self._populate_device_info()
 
                     if ecid is not None:
@@ -353,12 +356,17 @@ class IRecv:
                         if found_ecid != ecid:
                             # wrong device - move on
                             self._device = None
+                            self._mode = None
                             continue
                 except (ValueError, NotImplementedError, USBError):
                     # unreadable device (e.g. missing driver or permissions) - move on
                     self._device = None
                     self._mode = None
                     continue
+
+                if ecid is not None:
+                    # Other devices may be in Recovery/DFU too, e.g. while another restore runs.
+                    break
 
     def _populate_device_info(self):
         serial_number = cast(Optional[str], self.device.serial_number)

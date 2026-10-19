@@ -74,8 +74,12 @@ async def _device_dependency_async(
     try:
         logger.debug("searching among connected devices via lockdownd")
         devices = [dev for dev in await usbmux.list_devices() if dev.connection_type == "USB"]
-        if len(devices) > 1:
-            typer.echo(typer.style("Multiple device detected", fg="red"))
+        if ecid_value is not None:
+            # Leave devices whose UDID names another ECID alone: one may be in the middle of its own
+            # restore, where even a probing connection reaches its restored.
+            devices = [dev for dev in devices if dev.ecid is None or dev.ecid == ecid_value]
+        elif len(devices) > 1:
+            typer.echo(typer.style("Multiple devices detected; select one with --ecid", fg="red"))
             raise typer.Exit(code=1)
         for device in devices:
             try:
