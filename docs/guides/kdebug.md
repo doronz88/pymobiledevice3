@@ -13,7 +13,7 @@ get at it.
 
 | Command | Prints |
 | --- | --- |
-| `parse-live` | Decoded traces (strace-like): syscalls with their arguments and paths, dyld image loads, process and thread lifecycle. Selects events by name (`-e`, `-s`, `--fs`, ...). |
+| `parse-live` | Decoded traces (strace-like): syscalls with their arguments and paths, dyld image loads, process and thread lifecycle. Selects events by group and name (`--fs`, `--xpc`, `-s`, `-e`, ...; see below). |
 | `live` | Every raw event: time, event name, start/end, thread, process and the four raw arguments. Selects events by class and subclass. |
 | `callstacks-live` | User space call stacks sampled from the running threads. |
 | `save` | The raw trace, to parse later. |
@@ -42,6 +42,29 @@ pymobiledevice3 developer dvt core-profile-session live -cf 0x29 -cf 0x2e
 
 # file lookups only (VFS_LOOKUP lives in class 0x03, subclass 0x01)
 pymobiledevice3 developer dvt core-profile-session live -sf 0x0301
+```
+
+## Selecting events in parse-live
+
+| Option | Selects |
+| --- | --- |
+| `--fs`, `--net`, `--proc`, `--io`, `--mem`, `--signal`, `--cred`, `--sync`, `--mach` | A group of syscalls and Mach traps |
+| `--dyld` | dyld image loads and timing (`dlopen`, `dlsym`, ...) |
+| `--xpc`, `--dispatch`, `--runloop` | The XPC, libdispatch and CoreFoundation run loop events of every process, printed as their name and raw arguments |
+| `-s NAME` | One syscall, with its `_nocancel` variant (`-s open`) |
+| `-e NAME` | One event, by its trace code name (`-e DBG_DYLD_TIMING_DLSYM`) |
+
+They all add up, and `--process` narrows the result to one process. The device filters by subclass
+at best, so the host drops the rest right after decoding. `events` lists the names: `events dlsym`
+finds them by text, and `events --group NAME` lists exactly what a group prints.
+
+```shell
+# the XPC traffic of SpringBoard
+pymobiledevice3 developer dvt core-profile-session parse-live --xpc --process SpringBoard
+
+# every dlsym, in every process
+pymobiledevice3 developer dvt core-profile-session events dlsym
+pymobiledevice3 developer dvt core-profile-session parse-live -e DBG_DYLD_TIMING_DLSYM
 ```
 
 ## Events every process emits

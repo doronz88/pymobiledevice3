@@ -410,21 +410,28 @@ pymobiledevice3 developer dvt core-profile-session parse-live --bsc
 
 # Only some syscalls, with their paths (each also matches its _nocancel variant). The device still
 # sends every syscall; the others are dropped right after decoding, which keeps up over any tunnel.
-# `syscalls` lists the names
 pymobiledevice3 developer dvt core-profile-session parse-live -s open -s openat
-pymobiledevice3 developer dvt core-profile-session syscalls
 
 # Syscalls by subsystem: --fs (syscalls that take a path), --net (sockets), --proc (process lifecycle),
 # --io (reads, writes and the other syscalls on file descriptors), --mem (memory mappings), --signal,
 # --cred (credentials, code signing and policy checks, access to other tasks), --sync (locks, kqueues,
 # workqueues) and --mach (Mach traps). Groups add up, and combine with -s and -e: `--fs --io` prints both.
-# `syscalls --group io` lists a group
+# `events --group io` lists exactly what a group prints
 pymobiledevice3 developer dvt core-profile-session parse-live --fs --io
 pymobiledevice3 developer dvt core-profile-session parse-live --mem --signal --cred
-pymobiledevice3 developer dvt core-profile-session syscalls --group io
+pymobiledevice3 developer dvt core-profile-session events --group io
 
 # dyld events (image loads, dlopen, dlsym, ...); unlike the syscall groups, filtered on the device
 pymobiledevice3 developer dvt core-profile-session parse-live --dyld
+
+# XPC messages and transactions, libdispatch Mach messages, CoreFoundation run loop activity, of every
+# process (printed as their name and raw arguments)
+pymobiledevice3 developer dvt core-profile-session parse-live --xpc --process SpringBoard
+pymobiledevice3 developer dvt core-profile-session parse-live --dispatch --runloop
+
+# One event by its trace code name; `events TEXT` finds the name
+pymobiledevice3 developer dvt core-profile-session events dlsym
+pymobiledevice3 developer dvt core-profile-session parse-live -e DBG_DYLD_TIMING_DLSYM
 
 # One JSON object per trace (time, thread, pid, process, event, parsed fields and text), e.g. for jq.
 # On a terminal, traces are otherwise colored by what they show; --color-mode fast colors only the columns
