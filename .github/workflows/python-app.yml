@@ -20,6 +20,9 @@ jobs:
   test:
     if: '! github.event.pull_request.draft'
     runs-on: ${{ matrix.os }}
+    # A healthy job takes a few minutes. Without a cap, a hung test holds its runner for GitHub's
+    # 6-hour default and starves every other workflow run of runners.
+    timeout-minutes: 20
 
     # Pin uv to the interpreter it provisioned. Without this it prefers an already-installed
     # system Python, and macOS runners ship 3.9.6 linked against LibreSSL 2.8.3 -- urllib3 v2
