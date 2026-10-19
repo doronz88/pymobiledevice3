@@ -43,6 +43,9 @@ GLOBAL_MANIFEST_DEFAULT_PREFIX = "apticket"
 # Apple's host never streams FirmwareData in chunks larger than this, whatever restored asks for
 # (MobileDevice `_handleFirmwareUpdaterRequest`).
 FIRMWARE_DATA_MAX_CHUNK_SIZE = 0x40000
+# Component data goes out as binary plists: XML base64-encodes each chunk, inflating it by ~40%
+# on the wire, which caps component uploads well below the link rate. restored parses either.
+FILE_DATA_FORMAT = plistlib.FMT_BINARY
 
 
 def firmware_response_messages(fwdict: dict[str, Any], chunk_size: Optional[int]) -> list[dict[str, Any]]:
@@ -361,7 +364,7 @@ class Restore(BaseRestore):
         self.logger.info(f"Sending {component_name} now...")
         chunk_size = 8192
         for i in trange(0, len(data), chunk_size, dynamic_ncols=True):
-            await service.send_plist({"FileData": data[i : i + chunk_size]})
+            await service.send_plist({"FileData": data[i : i + chunk_size]}, fmt=FILE_DATA_FORMAT)
 
         # Send FileDataDone
         await service.send_plist({"FileDataDone": True})
@@ -400,7 +403,7 @@ class Restore(BaseRestore):
         chunk_size = 8192
         for i in trange(0, len(data), chunk_size, dynamic_ncols=True):
             chunk = data[i : i + chunk_size]
-            await service.send_plist({"FileData": chunk})
+            await service.send_plist({"FileData": chunk}, fmt=FILE_DATA_FORMAT)
             if i == 0 and chunk.startswith(b"AEA1"):
                 self.logger.debug("First chunk in a AEA")
                 try:
