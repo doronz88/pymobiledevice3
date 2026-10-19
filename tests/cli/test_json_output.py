@@ -1,11 +1,13 @@
 import datetime
 import json
+import logging
 import uuid
 
+import ansilogs
 import pytest
 
 from pymobiledevice3.cli import cli_common
-from pymobiledevice3.cli.cli_common import default_json_encoder, print_json
+from pymobiledevice3.cli.cli_common import default_json_encoder, print_json, set_color_flag
 
 pytestmark = [pytest.mark.cli]
 
@@ -60,3 +62,20 @@ def test_print_json_ends_with_a_single_newline(colored_tty, capsys: pytest.Captu
     assert out.endswith("\n")
     assert not out.endswith("\n\n")
     assert ("\x1b[" in out) == colored
+
+
+def test_no_color_env_disables_colored_output(colored_tty, monkeypatch: pytest.MonkeyPatch):
+    assert cli_common.user_requested_colored_output()
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert not cli_common.user_requested_colored_output()
+
+
+def test_no_color_flag_turns_off_log_colors(monkeypatch: pytest.MonkeyPatch):
+    handler = ansilogs.StderrHandler()
+    handler.setFormatter(ansilogs.ColoredFormatter(colors=True))
+    monkeypatch.setattr(logging.getLogger(), "handlers", [handler])
+    monkeypatch.setattr(cli_common, "COLORED_OUTPUT", True)
+    set_color_flag(False)
+    formatter = handler.formatter
+    assert isinstance(formatter, ansilogs.ColoredFormatter)
+    assert not formatter.colors

@@ -145,6 +145,10 @@ def set_verbosity(level: int) -> None:
 def set_color_flag(value: bool) -> None:
     global COLORED_OUTPUT
     COLORED_OUTPUT = value
+    if not value:
+        for handler in logging.getLogger().handlers:
+            if isinstance(handler, ansilogs.StderrHandler):
+                handler.setFormatter(ansilogs.ColoredFormatter(colors=False))
 
 
 def isatty() -> bool:
@@ -160,7 +164,8 @@ def isatty() -> bool:
 
 
 def user_requested_colored_output() -> bool:
-    return COLORED_OUTPUT and isatty()
+    # NO_COLOR (https://no-color.org): any non-empty value disables colors, as it does for the logs.
+    return COLORED_OUTPUT and not os.environ.get("NO_COLOR") and isatty()
 
 
 def sudo_required(func: Callable[..., Any]) -> Callable[..., Any]:
