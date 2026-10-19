@@ -2,8 +2,9 @@
 # /// script
 # requires-python = ">=3.9"
 # dependencies = [
+#     "ansilogs",
+#     "bytestruct",
 #     "click",
-#     "coloredlogs",
 #     "hyperframe",
 #     "pymobiledevice3",
 #     "scapy",
@@ -13,15 +14,15 @@ import logging
 from pprint import pformat
 from typing import Optional
 
+import ansilogs
 import click
-import coloredlogs
+from bytestruct import TruncatedDataError, UnexpectedConstantError
 from hyperframe.frame import DataFrame, Frame, GoAwayFrame, HeadersFrame
 from scapy.layers.inet import IP, TCP
 from scapy.layers.inet6 import IPv6
 from scapy.packet import Packet
 from scapy.sendrecv import sniff
 
-from pymobiledevice3.exceptions import TruncatedDataError, UnexpectedConstantError
 from pymobiledevice3.remote.remotexpc import HTTP2_MAGIC
 from pymobiledevice3.remote.tunnel_service import PairingDataComponentTLVBuf
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type, XpcWrapper, decode_xpc_object
@@ -222,5 +223,5 @@ def live(iface: str):
 
 
 if __name__ == "__main__":
-    coloredlogs.install(level=logging.DEBUG)
+    ansilogs.install(logging.DEBUG)
     cli()
