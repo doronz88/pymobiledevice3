@@ -2,6 +2,7 @@
 # /// script
 # requires-python = ">=3.9"
 # dependencies = [
+#     "bytestruct",
 #     "click",
 #     "coloredlogs",
 #     "hyperframe",
@@ -15,13 +16,13 @@ from typing import Optional
 
 import click
 import coloredlogs
+from bytestruct import TruncatedDataError, UnexpectedConstantError
 from hyperframe.frame import DataFrame, Frame, GoAwayFrame, HeadersFrame
 from scapy.layers.inet import IP, TCP
 from scapy.layers.inet6 import IPv6
 from scapy.packet import Packet
 from scapy.sendrecv import sniff
 
-from pymobiledevice3.exceptions import TruncatedDataError, UnexpectedConstantError
 from pymobiledevice3.remote.remotexpc import HTTP2_MAGIC
 from pymobiledevice3.remote.tunnel_service import PairingDataComponentTLVBuf
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type, XpcWrapper, decode_xpc_object
