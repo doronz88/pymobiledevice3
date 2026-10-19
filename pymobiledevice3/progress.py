@@ -4,8 +4,8 @@ tqdm-shaped progress bars rendered with rich.
 Every bar is a task on one shared rich ``Progress`` display on stderr, so concurrent bars stack
 instead of fighting over the terminal, and the whole CLI renders progress the same way. While
 any bar is visible, log records and ``print()`` output are drawn above the bars instead of
-tearing through them: rich redirects ``sys.stdout``/``sys.stderr`` (which coloredlogs' handler
-resolves on every record), and logging handlers bound to a fixed stdio stream are pointed at
+tearing through them: rich redirects ``sys.stdout``/``sys.stderr`` (which the CLI's ansilogs
+handler resolves on every record), and logging handlers bound to a fixed stdio stream are pointed at
 those redirections until the last bar closes.
 """
 

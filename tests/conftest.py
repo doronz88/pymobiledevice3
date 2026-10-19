@@ -24,7 +24,6 @@ from pymobiledevice3.tunneld.api import get_tunneld_devices
 logging.getLogger("quic").setLevel(logging.CRITICAL + 1)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL + 1)
 logging.getLogger("parso").setLevel(logging.CRITICAL + 1)
-logging.getLogger("humanfriendly").setLevel(logging.CRITICAL + 1)
 logging.getLogger("blib2to3").setLevel(logging.CRITICAL + 1)
 logging.getLogger("urllib3").setLevel(logging.CRITICAL + 1)
 

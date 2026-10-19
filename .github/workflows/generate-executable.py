@@ -4,14 +4,14 @@ import site
 import sys
 from pathlib import Path
 
-import coloredlogs
+import ansilogs
 import PyInstaller.__main__
 
 import pymobiledevice3.__main__
 import pymobiledevice3.cli
 import pymobiledevice3.resources
 
-coloredlogs.install(level=logging.DEBUG)
+ansilogs.set_level(logging.DEBUG)
 
 ROOT = Path(__file__).parent.parent.parent
 DEFAULT_OUTPUT = ROOT / Path("dist/__main__").with_suffix(".exe" if sys.platform == "win32" else "")

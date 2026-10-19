@@ -100,3 +100,28 @@ def test_reaching_total_is_pushed_immediately(monkeypatch: pytest.MonkeyPatch) -
         bar.update(1)
         bar.update(9)
         assert [task.completed for task in display.tasks] == [10]
+
+
+def test_ansilogs_records_go_through_the_live_display(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    import ansilogs
+
+    # Rich only redirects stdio for terminals.
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setenv("TTY_COMPATIBLE", "1")
+    terminal = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", terminal)
+    logger = logging.getLogger("pymobiledevice3.tests.progress.ansilogs")
+    handler = ansilogs.StderrHandler()
+    handler.setFormatter(ansilogs.ColoredFormatter(colors=False))
+    logger.addHandler(handler)
+    try:
+        with ProgressBar(total=1, desc="bar"):
+            proxy = sys.stderr
+            assert proxy is not terminal
+            logger.warning("above the bar")
+        assert sys.stderr is terminal
+    finally:
+        logger.removeHandler(handler)
+    assert "WARNING above the bar" in terminal.getvalue()
