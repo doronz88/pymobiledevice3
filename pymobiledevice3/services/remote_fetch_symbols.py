@@ -3,10 +3,8 @@ import dataclasses
 import logging
 import uuid
 from pathlib import Path
-from typing import Any
 
-from tqdm import tqdm
-
+from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.safe_paths import resolve_device_path
@@ -74,7 +72,7 @@ class RemoteFetchSymbolsService(RemoteService):
         Download all DSC files into a local directory, reproducing their device paths.
 
         Each file is written under `out` at its device-relative path (the leading "/" is
-        stripped), and progress is shown via a tqdm bar.
+        stripped), and progress is shown via a progress bar.
 
         :param out: Destination directory; intermediate parent directories are created as needed.
         :param force: Download files which already exist in `out` with the size the device reports,
@@ -94,18 +92,12 @@ class RemoteFetchSymbolsService(RemoteService):
         if file_indexes.empty():
             return
 
-        with tqdm(
-            total=total,
-            unit="B",
-            unit_scale=True,
-            dynamic_ncols=True,
-            desc="Downloading DSC",
-        ) as pb:
+        with ProgressBar(total=total, desc="dyld_shared_cache", unit=BYTES_UNIT) as pb:
             workers = [self._download_files(files, file_indexes, out, pb) for _ in files[:MAX_CONCURRENT_DOWNLOADS]]
             await asyncio.gather(*workers)
 
     async def _download_files(
-        self, files: list[DSCFile], file_indexes: asyncio.Queue[int], out: Path, pb: "tqdm[Any]"
+        self, files: list[DSCFile], file_indexes: asyncio.Queue[int], out: Path, pb: ProgressBar
     ) -> None:
         while True:
             try:

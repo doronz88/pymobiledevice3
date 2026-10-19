@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import Annotated, Literal, Optional
 
 import typer
-from tqdm import tqdm
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command
+from pymobiledevice3.progress import ProgressBar
 from pymobiledevice3.services.mobilebackup2 import BackupSelection, Mobilebackup2Service
 
 logger = logging.getLogger(__name__)
@@ -150,11 +150,10 @@ async def backup(
                 param_hint="--password",
             )
 
-        with tqdm(total=100, dynamic_ncols=True) as pbar:
+        with ProgressBar(total=100, desc="backup") as pbar:
 
             def update_bar(percentage: float) -> None:
                 pbar.n = percentage
-                pbar.refresh()
 
             await backup_client.backup(
                 full=full,
@@ -205,11 +204,10 @@ async def restore(
     The backup will be restored from a directory with the device udid under BACKUP_DIRECTORY.
     """
     async with Mobilebackup2Service(service_provider) as backup_client:
-        with tqdm(total=100, dynamic_ncols=True) as pbar:
+        with ProgressBar(total=100, desc="restore") as pbar:
 
             def update_bar(percentage: float) -> None:
                 pbar.n = percentage
-                pbar.refresh()
 
             await backup_client.restore(
                 backup_directory=str(backup_directory),
