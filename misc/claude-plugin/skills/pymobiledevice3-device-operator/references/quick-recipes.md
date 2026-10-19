@@ -50,6 +50,35 @@ uvx --from . pymobiledevice3 syslog live -m <bundle-id-or-daemon-or-error-term>
 Filter by the daemon that owns the failing service (`--process-name`) when you know it.
 The device-side error message is frequently more specific than the host-side exception.
 
+## Trace What The System Is Doing (strace-like)
+
+When the syslog does not explain it, trace the syscalls and system library events of every
+process, Apple's daemons included, live and decoded: paths, arguments, errnos. No jailbreak and no
+change to the traced processes. Reproduce the failure while tracing:
+
+```shell
+# Every syscall of every process; keeps pace with the device even while apps launch
+uvx --from . pymobiledevice3 developer dvt core-profile-session parse-live --bsc
+
+# One process, the syscalls that take a path: which file does it fail to open (errno: ENOENT)?
+uvx --from . pymobiledevice3 developer dvt core-profile-session parse-live --fs --process <name-or-pid>
+
+# Who talks to whom: XPC messages and transactions (also --dispatch, --runloop, --dyld)
+uvx --from . pymobiledevice3 developer dvt core-profile-session parse-live --xpc --process <name>
+
+# One syscall (with its _nocancel variant), or one event by its trace code name
+uvx --from . pymobiledevice3 developer dvt core-profile-session parse-live -s open -s openat
+uvx --from . pymobiledevice3 developer dvt core-profile-session events dlsym    # finds the name
+uvx --from . pymobiledevice3 developer dvt core-profile-session parse-live -e DBG_DYLD_TIMING_DLSYM
+```
+
+Groups (`--fs`, `--net`, `--proc`, `--io`, `--mem`, `--signal`, `--cred`, `--sync`, `--mach`,
+`--dyld`, `--xpc`, `--dispatch`, `--runloop`), `-s` and `-e` add up; `events --group NAME` lists
+what a group prints. Add `--json` for one JSON object per trace, and `-c N` to stop after N traces.
+Without any filter the output falls behind and skips ahead, with a `Skipped N events` warning on
+stderr; narrow the trace instead of passing `--no-skip-behind`. What a trace contains:
+`docs/guides/kdebug.md`.
+
 ## Crash Reports
 
 ```shell
