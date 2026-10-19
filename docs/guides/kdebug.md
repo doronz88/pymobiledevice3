@@ -55,8 +55,11 @@ pymobiledevice3 developer dvt core-profile-session live -sf 0x0301
 | `-e NAME` | One event, by its trace code name (`-e DBG_DYLD_TIMING_DLSYM`) |
 
 They all add up, and `--process` narrows the result to one process. The device filters by subclass
-at best, so the host drops the rest right after decoding. `events` lists the names: `events dlsym`
-finds them by text, and `events --group NAME` lists exactly what a group prints.
+at best, so the host drops the rest right after decoding. `events` takes the same options and lists
+exactly the events `parse-live` prints with them (`events --fs`, `events -s open`), and
+`events dlsym` finds a name by text. A class or subclass filter (`--bsc`, `-cf`, `-sf`, `--dyld`)
+prints only the events pykdebugparser decodes: `events -cf 0x29` lists nothing, while `--xpc`
+selects the same XPC events by id.
 
 ```shell
 # the XPC traffic of SpringBoard
