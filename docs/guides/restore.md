@@ -51,6 +51,21 @@ usable data volume, or to wipe it.
 `--ignore-fdr` is a debugging option: the host connects to the FDR service but
 does not proxy its traffic.
 
+## Several devices at once
+
+Each restore stays on its own device, so several can run side by side: start
+one `restore update` per device, each with its own `--ecid`. With more than one
+device connected, `--ecid` is required. On devices from the A12 on, the UDID
+is `<ChipID>-<ECID>`, so the ECID is the part after the dash:
+
+```shell
+# UDID 00008150-001074523440401C
+pymobiledevice3 restore update --ecid 0x001074523440401C -i iPhone18,4_Restore.ipsw
+```
+
+`lockdown info` reports it as `UniqueChipID` (decimal), and the `--ecid`
+option takes either form.
+
 ## The helper commands
 
 - `restore enter` puts a normal-mode device into recovery; `restore exit`

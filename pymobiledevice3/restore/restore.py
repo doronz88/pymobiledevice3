@@ -1809,9 +1809,7 @@ class Restore(BaseRestore):
     async def _connect_to_restored_service(self):
         while True:
             try:
-                ecid = await self.device.get_ecid()
-                # RestoredClient.create's ecid parameter is mis-annotated as str; it is compared against an int ECID
-                self._restored = await RestoredClient.create(ecid)  # pyright: ignore[reportArgumentType]
+                self._restored = await RestoredClient.create(await self.device.get_ecid())
                 break
             except (ConnectionFailedError, NoDeviceConnectedError):
                 await asyncio.sleep(1)
@@ -1837,7 +1835,7 @@ class Restore(BaseRestore):
             )
         else:
             self.logger.info("Starting FDR listener task")
-            self._tasks.append(start_fdr_task(fdr_type.FDR_CTRL))
+            self._tasks.append(start_fdr_task(fdr_type.FDR_CTRL, udid=self._restored.udid))
 
         sep = typing.cast(dict[str, Any], self.build_identity["Manifest"]["SEP"]).get("Info")
         spp = typing.cast(dict[str, Any], self.build_identity["Info"]).get("SystemPartitionPadding")

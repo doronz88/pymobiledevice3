@@ -16,9 +16,13 @@ class RestoredClient:
     SERVICE_PORT = 62078
 
     @classmethod
-    async def create(cls, ecid: str) -> "RestoredClient":
+    async def create(cls, ecid: int) -> "RestoredClient":
         for mux_device in await select_devices_by_connection_type("USB"):
             logger.debug(f"Iterating: {mux_device}")
+            if mux_device.ecid is not None and mux_device.ecid != ecid:
+                # Another device, possibly mid-restore: don't open a connection to its restored.
+                logger.debug(f"Skipping: {mux_device.serial} as its UDID doesn't carry ECID {ecid:#x}")
+                continue
             service = await ServiceConnection.create_using_usbmux(
                 mux_device.serial, cls.SERVICE_PORT, connection_type=mux_device.connection_type
             )

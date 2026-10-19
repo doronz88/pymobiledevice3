@@ -45,8 +45,9 @@ class FDRClient:
     SERVICE_PORT = CTRL_PORT
     ctrlprotoversion = 2
 
-    def __init__(self, service: ServiceConnection) -> None:
+    def __init__(self, service: ServiceConnection, udid: str) -> None:
         self.service = service
+        self.udid = udid
         self._conn_listener_task: Optional[asyncio.Task[None]] = None
 
     @classmethod
@@ -67,7 +68,7 @@ class FDRClient:
                 raise PyMobileDevice3Exception("FDR connection port is unavailable")
             service = await ServiceConnection.create_using_usbmux(device.serial, conn_port, connection_type="USB")
 
-        client = cls(service)
+        client = cls(service, device.serial)
         if type_ == fdr_type.FDR_CTRL:
             await client.ctrl_handshake()
         else:
@@ -118,7 +119,9 @@ class FDRClient:
     async def handle_sync_cmd(self) -> None:
         await self.service.recvall(2)
         logger.debug("FDR connected in reply to sync message, starting command task")
-        self._conn_listener_task = asyncio.create_task(run_fdr_listener(fdr_type.FDR_CONN), name="FDR-CONN")
+        self._conn_listener_task = asyncio.create_task(
+            run_fdr_listener(fdr_type.FDR_CONN, udid=self.udid), name="FDR-CONN"
+        )
 
     async def _proxy_service_to_host(self, host_socket: socket.socket) -> None:
         loop = asyncio.get_running_loop()
