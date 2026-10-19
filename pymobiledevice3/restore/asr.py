@@ -5,9 +5,8 @@ import os
 import plistlib
 import typing
 
-from tqdm import trange
-
 from pymobiledevice3.exceptions import ConnectionFailedError, NotConnectedError, PyMobileDevice3Exception
+from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.utils import current_task_name
 
@@ -138,13 +137,15 @@ class ASRClient:
         length = filesystem.tell()
         filesystem.seek(0, os.SEEK_SET)
 
-        for _ in trange(0, length, ASR_PAYLOAD_CHUNK_SIZE, dynamic_ncols=True):
-            chunk = filesystem.read(ASR_PAYLOAD_CHUNK_SIZE)
+        with ProgressBar(total=length, desc="filesystem", unit=BYTES_UNIT) as bar:
+            for _ in range(0, length, ASR_PAYLOAD_CHUNK_SIZE):
+                chunk = filesystem.read(ASR_PAYLOAD_CHUNK_SIZE)
+                bar.update(len(chunk))
 
-            if self.checksum_chunks:
-                chunk += hashlib.sha1(chunk).digest()
+                if self.checksum_chunks:
+                    chunk += hashlib.sha1(chunk).digest()
 
-            await self.send_buffer(chunk)
+                await self.send_buffer(chunk)
 
     async def close(self) -> None:
         # Tolerant of never-connected instances.

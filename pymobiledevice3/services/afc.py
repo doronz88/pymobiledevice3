@@ -43,13 +43,13 @@ from prompt_toolkit import HTML, print_formatted_text
 from pygnuutils.cli.ls import click as _ls_cli_click
 from pygnuutils.cli.ls import ls as ls_cli
 from pygnuutils.ls import Ls, LsStub
-from tqdm.auto import tqdm
 
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError, ConnectionTerminatedError
 from pymobiledevice3.interactive_shell import Arg, CompletionContext, InteractiveShell, shell_command
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 from pymobiledevice3.safe_paths import device_file_path, validate_device_filename
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.utils import get_asyncio_loop, hexdump, path_to_str
@@ -406,7 +406,7 @@ class AfcService(LockdownService):
         :param src_dir: Base directory on the device against which ``relative_src`` is joined.
         :param ignore_errors: If True, per-entry errors during directory recursion are logged
             and skipped instead of propagated.
-        :param progress_bar: If True, display a tqdm progress bar while streaming large files.
+        :param progress_bar: If True, display a progress bar while streaming large files.
         """
         src = await self.resolve_path(posixpath.join(src_dir, relative_src))
 
@@ -425,13 +425,8 @@ class AfcService(LockdownService):
                     handle = await self.fopen(src)
                     # Bytes-scaled bar (B/KB/MB with a live rate) rather than a chunk
                     # counter — the rate readout doubles as a transfer benchmark.
-                    with tqdm(
-                        total=src_size,
-                        unit="B",
-                        unit_scale=True,
-                        unit_divisor=1024,
-                        desc=posixpath.basename(src),
-                        disable=not progress_bar,
+                    with ProgressBar(
+                        total=src_size, desc=posixpath.basename(src), unit=BYTES_UNIT, disable=not progress_bar
                     ) as pbar:
                         for offset in range(0, src_size, MAXIMUM_READ_SIZE):
                             to_read = min(MAXIMUM_READ_SIZE, src_size - offset)
@@ -530,7 +525,7 @@ class AfcService(LockdownService):
         :param local_path: Local file or directory path
         :param remote_path: Remote destination path on the device
         :param callback: Optional callback function called for each file copied (src, dst)
-        :param progress_bar: If True, display a tqdm progress bar while streaming large files.
+        :param progress_bar: If True, display a progress bar while streaming large files.
         """
         if callback is not None:
             callback(local_path, remote_path)
@@ -559,13 +554,8 @@ class AfcService(LockdownService):
                 try:
                     with (
                         open(local_path, "rb") as f,
-                        tqdm(
-                            total=src_size,
-                            unit="B",
-                            unit_scale=True,
-                            unit_divisor=1024,
-                            desc=os.path.basename(local_path),
-                            disable=not progress_bar,
+                        ProgressBar(
+                            total=src_size, desc=os.path.basename(local_path), unit=BYTES_UNIT, disable=not progress_bar
                         ) as pbar,
                     ):
                         while True:
@@ -616,7 +606,7 @@ class AfcService(LockdownService):
         :param remote_path: Destination path on the device.
         :param callback: Optional callable invoked as ``callback(local_path, remote_path)``
             before each entry is transferred.
-        :param progress_bar: If True, display a tqdm progress bar while streaming large files.
+        :param progress_bar: If True, display a progress bar while streaming large files.
         """
         if os.path.isdir(local_path):
             remote_path = posixpath.join(remote_path, os.path.basename(local_path))

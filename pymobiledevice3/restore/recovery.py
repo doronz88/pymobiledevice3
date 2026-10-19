@@ -306,7 +306,7 @@ class Recovery(BaseRestore):
         data = await self.get_personalized_data(name, data=data, tss=tss)
         self.logger.info(f"Sending {name} ({len(data)} bytes)...")
         assert self.device.irecv is not None
-        self.device.irecv.send_buffer(data)
+        self.device.irecv.send_buffer(data, desc=name)
 
     async def send_component_and_command(self, name: str, command: str):
         await self.send_component(name)

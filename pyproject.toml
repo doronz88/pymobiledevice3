@@ -43,7 +43,7 @@ dependencies = [
     "daemonize",
     "pykdebugparser>=1.6.1",
     "pyusb>=1.2.1",
-    "tqdm",
+    "rich>=13.0.0",
     "requests",
     "packaging",
     "typing_extensions>=4.1.0",

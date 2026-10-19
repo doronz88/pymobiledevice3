@@ -16,9 +16,9 @@ from zipfile import ZipFile, ZipInfo
 import requests
 from ipsw_parser.build_identity import BuildIdentity
 from ipsw_parser.ipsw import IPSW
-from tqdm import tqdm, trange
 
 from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError, PyMobileDevice3Exception
+from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 from pymobiledevice3.restore.asr import DEFAULT_ASR_SYNC_PORT, ASRClient
 from pymobiledevice3.restore.base_restore import (
     RESTORE_VARIANT_ERASE_INSTALL,
@@ -161,8 +161,7 @@ class Restore(BaseRestore):
         self._tss_prefetch_outcomes: list[tuple[str, str]] = []
 
         # prepare progress bar for OS component verify
-        self._pb_verify_restore = None
-        self._pb_verify_restore_old_value = None
+        self._pb_verify_restore: Optional[ProgressBar] = None
 
         # cache for already downloaded url-assets
         self._url_assets_cache: dict[str, requests.Response] = {}
@@ -363,8 +362,11 @@ class Restore(BaseRestore):
 
         self.logger.info(f"Sending {component_name} now...")
         chunk_size = 8192
-        for i in trange(0, len(data), chunk_size, dynamic_ncols=True):
-            await service.send_plist({"FileData": data[i : i + chunk_size]}, fmt=FILE_DATA_FORMAT)
+        with ProgressBar(total=len(data), desc=component_name, unit=BYTES_UNIT) as bar:
+            for i in range(0, len(data), chunk_size):
+                chunk = data[i : i + chunk_size]
+                await service.send_plist({"FileData": chunk}, fmt=FILE_DATA_FORMAT)
+                bar.update(len(chunk))
 
         # Send FileDataDone
         await service.send_plist({"FileDataDone": True})
@@ -401,18 +403,20 @@ class Restore(BaseRestore):
 
         self.logger.info(f"Sending {component_name} now...")
         chunk_size = 8192
-        for i in trange(0, len(data), chunk_size, dynamic_ncols=True):
-            chunk = data[i : i + chunk_size]
-            await service.send_plist({"FileData": chunk}, fmt=FILE_DATA_FORMAT)
-            if i == 0 and chunk.startswith(b"AEA1"):
-                self.logger.debug("First chunk in a AEA")
-                try:
-                    message = await asyncio.wait_for(service.recv_plist(), timeout=3)
-                    if message["MsgType"] != "URLAsset":
-                        raise asyncio.exceptions.TimeoutError()
-                    await self.send_url_asset(message)
-                except asyncio.exceptions.TimeoutError:
-                    self.logger.debug("No URLAsset was requested. Assuming it is not necessary")
+        with ProgressBar(total=len(data), desc=component_name, unit=BYTES_UNIT) as bar:
+            for i in range(0, len(data), chunk_size):
+                chunk = data[i : i + chunk_size]
+                await service.send_plist({"FileData": chunk}, fmt=FILE_DATA_FORMAT)
+                bar.update(len(chunk))
+                if i == 0 and chunk.startswith(b"AEA1"):
+                    self.logger.debug("First chunk in a AEA")
+                    try:
+                        message = await asyncio.wait_for(service.recv_plist(), timeout=3)
+                        if message["MsgType"] != "URLAsset":
+                            raise asyncio.exceptions.TimeoutError()
+                        await self.send_url_asset(message)
+                    except asyncio.exceptions.TimeoutError:
+                        self.logger.debug("No URLAsset was requested. Assuming it is not necessary")
 
         # Send FileDataDone
         await service.send_plist({"FileDataDone": True})
@@ -1667,11 +1671,9 @@ class Restore(BaseRestore):
             progress = message["Progress"]
 
             if self._pb_verify_restore is None:
-                self._pb_verify_restore = tqdm(total=100, desc="verify-restore", dynamic_ncols=True)
-                self._pb_verify_restore_old_value = 0
+                self._pb_verify_restore = ProgressBar(total=100, desc="verify restore")
 
-            self._pb_verify_restore.update(progress - self._pb_verify_restore_old_value)
-            self._pb_verify_restore_old_value = progress
+            self._pb_verify_restore.n = progress
 
             if progress == 100:
                 self._pb_verify_restore.close()

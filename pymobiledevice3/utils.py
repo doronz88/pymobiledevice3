@@ -12,7 +12,8 @@ from typing import Any, Callable, Optional, TypeVar, Union, cast, overload
 import questionary
 import requests
 from bytestruct import BinaryParseError
-from tqdm import tqdm
+
+from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 
 _F = TypeVar("_F", bound=Callable[..., Any])
 
@@ -215,13 +216,7 @@ def file_download(url: str, outfile: Path, chunk_size: int = 1024) -> None:
     total = int(resp.headers.get("content-length", 0))
     with (
         outfile.open("wb") as file,
-        tqdm(
-            desc=outfile.name,
-            total=total,
-            unit="iB",
-            unit_scale=True,
-            unit_divisor=1024,
-        ) as bar,
+        ProgressBar(total=total, desc=outfile.name, unit=BYTES_UNIT) as bar,
     ):
         for data in resp.iter_content(chunk_size=chunk_size):
             size = file.write(data)
