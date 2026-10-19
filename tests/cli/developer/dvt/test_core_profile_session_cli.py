@@ -24,6 +24,14 @@ def test_live_commands_stream_endlessly_by_default(command: str) -> None:
 LOCKDOWN = cast(LockdownServiceProvider, object())
 
 
+def test_live_trace_codes_fall_back_to_pykdebugparser() -> None:
+    codes = core_profile_session.live_trace_codes({0x29000044: "DEVICE_NAME", 0x40C0014: "BSC_open"})
+    # The device's names win; the events its table does not name get pykdebugparser's.
+    assert codes[0x29000044] == "DEVICE_NAME"
+    assert codes[0x40C0014] == "BSC_open"
+    assert codes[0x2E030004] == "DISPATCH_MACH_MSG_hdr_move"
+
+
 def test_parse_live_rejects_an_unknown_syscall_before_connecting(monkeypatch: pytest.MonkeyPatch) -> None:
     def no_device(_service_provider: object) -> None:
         raise AssertionError("connected to the device")

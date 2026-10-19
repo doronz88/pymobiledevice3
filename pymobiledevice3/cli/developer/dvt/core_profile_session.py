@@ -484,6 +484,14 @@ def syscall_names() -> list[str]:
     return sorted(name for name in names if not (name.endswith("_nocancel") and name[: -len("_nocancel")] in names))
 
 
+def live_trace_codes(device_trace_codes: dict[int, str]) -> dict[int, str]:
+    """
+    The trace codes `live` names events with: the device's, plus pykdebugparser's for the events the device's
+    table does not name (such as the XPC, dispatch and CFRunLoop events of user space).
+    """
+    return {**default_trace_codes(), **device_trace_codes}
+
+
 @cli.command("live")
 @async_command
 async def live_profile_session(
@@ -535,7 +543,7 @@ async def live_profile_session(
     parser.show_process = process_name
     parser.show_args = args
     async with DvtProvider(service_provider) as dvt:
-        trace_codes_map = await CoreProfileSessionTap.get_trace_codes(dvt)
+        trace_codes_map = live_trace_codes(await CoreProfileSessionTap.get_trace_codes(dvt))
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
         parser.numer = time_config["numer"]
         parser.denom = time_config["denom"]
