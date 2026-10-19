@@ -836,7 +836,7 @@ SyscallSelect = Annotated[
         default_factory=list,
         callback=_validate_syscalls,
         show_default=False,
-        help="This syscall (e.g. open, openat; with its _nocancel variant), with its paths. Can be "
+        help="This syscall (e.g. open, openat; with its _nocancel and _dprotected_np variants), with its paths. Can be "
         "specified multiple times.",
     ),
 ]

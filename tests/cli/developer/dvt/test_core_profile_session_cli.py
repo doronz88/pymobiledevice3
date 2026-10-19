@@ -230,7 +230,8 @@ def test_events_lists_the_dyld_events_dyld_prints() -> None:
 
 
 def test_events_lists_what_a_syscall_selects() -> None:
-    assert {"BSC_open", "BSC_open_nocancel"} <= set(_events("-s", "open"))
+    # Opening with a data protection class is the same call.
+    assert _events("-s", "open") == ["BSC_open", "BSC_open_dprotected_np", "BSC_open_nocancel"]
 
 
 def test_events_shows_that_a_class_filter_drops_undecoded_events() -> None:
