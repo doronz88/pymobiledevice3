@@ -74,6 +74,8 @@ SYSCALL_GROUPS: dict[str, tuple[str, ...]] = {
         "getattrlist",
         "getattrlistat",
         "getxattr",
+        "guarded_open_dprotected_np",
+        "guarded_open_np",
         "lchown",
         "link",
         "linkat",
@@ -325,18 +327,44 @@ MACH_TRAP_GROUPS: dict[str, tuple[str, ...]] = {
 
 
 @functools.cache
+def _parsed_events() -> frozenset[str]:
+    """The trace code names of the events pykdebugparser parses (the others print only when asked for by id)."""
+    # pykdebugparser is not annotated
+    parser: Any = TracesParser(default_trace_codes(), dict[int, int](), dict[int, str]())
+    handlers: dict[str, object] = parser.handlers
+    return frozenset(handlers)
+
+
+@functools.cache
 def _parsed_mach_traps() -> tuple[str, ...]:
     """The trace code names of the Mach traps pykdebugparser parses."""
+    parsed = _parsed_events()
+    return tuple(
+        sorted({name for name in default_trace_codes().values() if name.startswith("MSC_") and name in parsed})
+    )
+
+
+def _parsed_dyld_events() -> tuple[str, ...]:
+    """The dyld events `--dyld` prints: those pykdebugparser parses (the others are dropped)."""
+    parsed = _parsed_events()
     codes = default_trace_codes()
-    # pykdebugparser is not annotated
-    parser: Any = TracesParser(codes, dict[int, int](), dict[int, str]())
-    handlers: dict[str, object] = parser.handlers
-    return tuple(sorted({name for name in codes.values() if name.startswith("MSC_") and name in handlers}))
+    return tuple(sorted({name for eventid, name in codes.items() if eventid >> 24 == DBG_DYLD and name in parsed}))
 
 
 def group_mach_traps(group: str) -> tuple[str, ...]:
     """The Mach traps of a parse-live group."""
     return _parsed_mach_traps() if group == "mach" else MACH_TRAP_GROUPS.get(group, ())
+
+
+#: The user space event groups of parse-live (`--xpc`, ...), by the prefix of their trace code names. Their events have
+#: no decoder, so they print as their name and raw arguments.
+EVENT_GROUP_PREFIXES: dict[str, str] = {"xpc": "XPC_", "dispatch": "DISPATCH_", "runloop": "CFRL_"}
+
+
+def group_events(group: str) -> tuple[str, ...]:
+    """The events of a parse-live user space event group."""
+    prefix = EVENT_GROUP_PREFIXES[group]
+    return tuple(sorted({name for name in default_trace_codes().values() if name.startswith(prefix)}))
 
 
 # How far (in seconds) parse-live may fall behind the device before it skips ahead to recent events.
@@ -450,7 +478,7 @@ def _validate_syscalls(names: Any) -> list[str]:
         syscall_eventids(names)
     except ValueError as e:
         raise typer.BadParameter(
-            f"{e} (`pymobiledevice3 developer dvt core-profile-session syscalls` lists them)"
+            f"{e} (`pymobiledevice3 developer dvt core-profile-session events` lists them as BSC_<name>)"
         ) from e
     return names
 
@@ -830,7 +858,7 @@ async def parse_live_profile_session(
             callback=_validate_syscalls,
             show_default=False,
             help="Only print this syscall (e.g. open, openat; with its _nocancel variant), with its paths. Can be "
-            "specified multiple times; the `syscalls` command lists the names. The device can only filter whole "
+            "specified multiple times; the `events` command lists them as BSC_<name>. The device can only filter whole "
             "subclasses, so it sends every syscall and the others are dropped right after decoding, which keeps up "
             "with the device even over --userspace.",
         ),
@@ -849,39 +877,65 @@ async def parse_live_profile_session(
         ),
     ],
     fs: Annotated[
-        bool, typer.Option("--fs", help="Print the syscalls that take a path (`syscalls --group fs`).")
+        bool, typer.Option("--fs", help="Print the syscalls that take a path (`events --group fs`).")
     ] = False,
-    net: Annotated[bool, typer.Option("--net", help="Print the socket syscalls (`syscalls --group net`).")] = False,
+    net: Annotated[bool, typer.Option("--net", help="Print the socket syscalls (`events --group net`).")] = False,
     proc: Annotated[
-        bool, typer.Option("--proc", help="Print the process lifecycle syscalls (`syscalls --group proc`).")
+        bool, typer.Option("--proc", help="Print the process lifecycle syscalls (`events --group proc`).")
     ] = False,
     io: Annotated[
         bool,
-        typer.Option("--io", help="Print the syscalls on file descriptors: read, write, ... (`syscalls --group io`)."),
+        typer.Option("--io", help="Print the syscalls on file descriptors: read, write, ... (`events --group io`)."),
     ] = False,
     mem: Annotated[
-        bool, typer.Option("--mem", help="Print memory mapping syscalls and Mach traps (`syscalls --group mem`).")
+        bool, typer.Option("--mem", help="Print memory mapping syscalls and Mach traps (`events --group mem`).")
     ] = False,
     signal: Annotated[
-        bool, typer.Option("--signal", help="Print the signal syscalls (`syscalls --group signal`).")
+        bool, typer.Option("--signal", help="Print the signal syscalls (`events --group signal`).")
     ] = False,
     cred: Annotated[
         bool,
         typer.Option(
             "--cred",
-            help="Print credential, code signing and policy checks, and access to other tasks (`syscalls --group cred`).",
+            help="Print credential, code signing and policy checks, and access to other tasks (`events --group cred`).",
         ),
     ] = False,
     sync: Annotated[
         bool,
         typer.Option(
-            "--sync", help="Print locks, condition variables, kqueues and workqueues (`syscalls --group sync`)."
+            "--sync", help="Print locks, condition variables, kqueues and workqueues (`events --group sync`)."
         ),
     ] = False,
-    mach: Annotated[bool, typer.Option("--mach", help="Print the Mach traps (`syscalls --group mach`).")] = False,
+    mach: Annotated[bool, typer.Option("--mach", help="Print the Mach traps (`events --group mach`).")] = False,
     dyld: Annotated[
         bool,
-        typer.Option("--dyld", help="Print dyld events (image loads, dlopen, dlsym, ...), filtered on the device."),
+        typer.Option(
+            "--dyld",
+            help="Print dyld events (image loads, dlopen, dlsym, ...), filtered on the device (`events --group dyld`).",
+        ),
+    ] = False,
+    xpc: Annotated[
+        bool,
+        typer.Option(
+            "--xpc",
+            help="Print libxpc events: messages sent and received, replies and transactions (`events --group xpc`).",
+        ),
+    ] = False,
+    dispatch: Annotated[
+        bool,
+        typer.Option(
+            "--dispatch",
+            help="Print libdispatch events: Mach messages received through dispatch and queue misuse "
+            "(`events --group dispatch`).",
+        ),
+    ] = False,
+    runloop: Annotated[
+        bool,
+        typer.Option(
+            "--runloop",
+            help="Print CoreFoundation run loop events: iterations, waits, sources, timers, observers and blocks "
+            "(`events --group runloop`).",
+        ),
     ] = False,
     json_output: Annotated[
         bool,
@@ -910,10 +964,15 @@ async def parse_live_profile_session(
     """Print traces (syscalls, thread events, etc.) received from the device in real time."""
     enabled = {"fs": fs, "net": net, "proc": proc, "io": io, "mem": mem, "signal": signal, "cred": cred, "sync": sync}
     enabled["mach"] = mach
-    # Groups add up: each one adds its syscalls and Mach traps to what is printed.
+    # Groups add up: each one adds its syscalls, Mach traps and user space events to what is printed.
     groups = [group for group, on in enabled.items() if on]
+    event_groups = [group for group, on in {"xpc": xpc, "dispatch": dispatch, "runloop": runloop}.items() if on]
     syscall_ids = syscall_eventids([*syscalls, *(name for group in groups for name in SYSCALL_GROUPS[group])])
-    event_ids = event_eventids([*events, *(name for group in groups for name in group_mach_traps(group))])
+    event_ids = event_eventids([
+        *events,
+        *(name for group in groups for name in group_mach_traps(group)),
+        *(name for group in event_groups for name in group_events(group)),
+    ])
     async with DvtProvider(service_provider) as dvt:
         if not json_output:
             print("Receiving time information")
@@ -999,14 +1058,7 @@ async def parse_live_profile_session(
                     out.reconfigure(line_buffering=True)
 
 
-@cli.command("events")
-def list_events() -> None:
-    """List the event names that `parse-live --event` accepts."""
-    for name in sorted(set(default_trace_codes().values())):
-        print(name)
-
-
-class SyscallGroup(str, Enum):
+class ParseLiveGroup(str, Enum):
     FS = "fs"
     NET = "net"
     PROC = "proc"
@@ -1016,17 +1068,39 @@ class SyscallGroup(str, Enum):
     CRED = "cred"
     SYNC = "sync"
     MACH = "mach"
+    DYLD = "dyld"
+    XPC = "xpc"
+    DISPATCH = "dispatch"
+    RUNLOOP = "runloop"
 
 
-@cli.command("syscalls")
-def list_syscalls(
+def group_event_names(group: str) -> list[str]:
+    """The events a parse-live group prints: its syscalls (with their _nocancel variants), Mach traps, dyld events or
+    user space events."""
+    if group == "dyld":
+        return list(_parsed_dyld_events())
+    if group in EVENT_GROUP_PREFIXES:
+        return list(group_events(group))
+    codes = default_trace_codes()
+    syscalls = {codes[eventid] for eventid in syscall_eventids(SYSCALL_GROUPS[group])}
+    return sorted(syscalls | set(group_mach_traps(group)))
+
+
+@cli.command("events")
+def list_events(
+    pattern: Annotated[
+        Optional[str],
+        typer.Argument(help="Only list the names containing this text, ignoring case (e.g. dlsym)."),
+    ] = None,
     group: Annotated[
-        Optional[SyscallGroup],
-        typer.Option(help="Only list the syscalls and Mach traps of this parse-live group (--fs, ...)."),
+        Optional[ParseLiveGroup],
+        typer.Option(help="Only list the events this parse-live group prints (--fs, ..., --dyld, --xpc, ...)."),
     ] = None,
 ) -> None:
-    """List the syscall names that `parse-live --syscall` accepts, or the syscalls and Mach traps of a group."""
-    names = syscall_names() if group is None else [*SYSCALL_GROUPS[group.value], *group_mach_traps(group.value)]
+    """List the event names that `parse-live --event` accepts (syscalls are `BSC_<name>`), or the events of a group."""
+    names = sorted(set(default_trace_codes().values())) if group is None else group_event_names(group.value)
+    if pattern is not None:
+        names = [name for name in names if pattern.lower() in name.lower()]
     for name in names:
         print(name)
 

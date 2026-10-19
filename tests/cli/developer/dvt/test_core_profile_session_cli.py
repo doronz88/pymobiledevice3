@@ -45,7 +45,7 @@ def test_parse_live_rejects_an_unknown_syscall_before_connecting(monkeypatch: py
 
     assert result.exit_code == 2
     assert "unknown syscalls: nosuch" in result.output
-    assert "core-profile-session syscalls" in result.output
+    assert "core-profile-session events" in result.output
 
 
 def test_syscall_names_are_what_parse_live_accepts() -> None:
@@ -172,6 +172,70 @@ def test_parse_live_groups_add_up(monkeypatch: pytest.MonkeyPatch) -> None:
         0x010C0000,
         core_profile_session.TRACE_CLASS_FILTER,
     }
+
+
+def test_parse_live_user_space_groups(monkeypatch: pytest.MonkeyPatch) -> None:
+    filters, parser = _run_parse_live(monkeypatch, xpc=True, dispatch=True, runloop=True)
+
+    names = [name for group in ("xpc", "dispatch", "runloop") for name in core_profile_session.group_events(group)]
+    # The events have no decoder: asking for them by id is what prints them (as their name and raw arguments).
+    assert parser.filter_eventid == core_profile_session.event_eventids(names)
+    # Only their subclasses are requested from the device.
+    assert filters == {
+        0x29000000,  # libxpc
+        0x2BDC0000,  # libdispatch
+        0x2E020000,
+        0x2E030000,
+        0x14130000,  # CoreFoundation run loop
+        0x21110000,
+        0x21120000,
+        core_profile_session.TRACE_CLASS_FILTER,
+    }
+
+
+def _list_events(capsys: pytest.CaptureFixture[str], pattern: Any = None, group: Any = None) -> list[str]:
+    core_profile_session.list_events(
+        pattern=pattern, group=None if group is None else core_profile_session.ParseLiveGroup(group)
+    )
+    return capsys.readouterr().out.split()
+
+
+@pytest.mark.parametrize(("group", "prefix"), [("xpc", "XPC_"), ("dispatch", "DISPATCH_"), ("runloop", "CFRL_")])
+def test_events_lists_a_user_space_group(group: str, prefix: str, capsys: pytest.CaptureFixture[str]) -> None:
+    names = _list_events(capsys, group=group)
+
+    assert names
+    assert all(name.startswith(prefix) for name in names)
+    assert names == list(core_profile_session.group_events(group))
+
+
+def test_events_lists_what_a_syscall_group_prints(capsys: pytest.CaptureFixture[str]) -> None:
+    names = _list_events(capsys, group="mem")
+
+    # Its syscalls, with their _nocancel variants, and its Mach traps: exactly what --mem filters.
+    assert "BSC_mmap" in names
+    assert "MSC_mach_vm_allocate_trap" in names
+    eventids = syscall_eventids(core_profile_session.SYSCALL_GROUPS["mem"])
+    eventids |= core_profile_session.event_eventids(list(core_profile_session.group_mach_traps("mem")))
+    assert core_profile_session.event_eventids(names) == eventids
+
+
+def test_events_lists_the_dyld_events_dyld_prints(capsys: pytest.CaptureFixture[str]) -> None:
+    names = _list_events(capsys, group="dyld")
+
+    assert "DBG_DYLD_TIMING_DLSYM" in names
+    assert "DYLD_uuid_map_a" in names  # image loads
+    # Events pykdebugparser does not parse are dropped, so they are not listed.
+    assert "DYLD_NSAddImage" not in names
+
+
+def test_events_finds_names_by_text(capsys: pytest.CaptureFixture[str]) -> None:
+    assert _list_events(capsys, pattern="dlsym") == ["DBG_DYLD_TIMING_DLSYM"]
+    assert _list_events(capsys, pattern="send_message", group="xpc") == [
+        "XPC_connection_send_message",
+        "XPC_connection_send_message_with_reply",
+        "XPC_connection_send_message_with_reply_sync",
+    ]
 
 
 def test_parse_live_restores_line_buffered_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
