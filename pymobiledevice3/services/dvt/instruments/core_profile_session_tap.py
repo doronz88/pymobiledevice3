@@ -675,6 +675,7 @@ class KdBufStream:
         self.on_wait = on_wait
         self.skipped_events = 0
         self._started = False
+        self._ended = False  # the end of the stream was dequeued; later reads must not wait for more chunks
         self._min_offset: typing.Optional[float] = None  # smallest (host clock - event clock) seen
         self._skipping = 0  # events skipped in the current catch-up
         self._skipping_lag = 0.0
@@ -691,12 +692,15 @@ class KdBufStream:
         # A read that does not fit in the current chunk therefore drops its short remainder and restarts
         # at the next chunk's first record, which keeps the record stream aligned.
         while size > len(self.current_chunk.getbuffer()) - self.current_chunk.tell():
+            if self._ended:
+                return b""
             if self.on_wait is not None and self.chunk_queue.empty():
                 self.on_wait()
             data = self.chunk_queue.get()
             if isinstance(data, Exception):
                 raise data
             if data is None:
+                self._ended = True
                 return b""
             if data.startswith(b"bplist"):
                 continue
