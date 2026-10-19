@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.9"
 # dependencies = [
-#     "coloredlogs",
+#     "ansilogs",
 #     "typer",
 # ]
 # ///
@@ -9,10 +9,10 @@ import json
 import logging
 import os.path
 from pathlib import Path
-from typing import Annotated, Any, Optional, cast
+from typing import Annotated, Optional
 from uuid import UUID
 
-import coloredlogs
+import ansilogs
 import typer
 
 MAGIC = b"\x0b\x10\x00\x00"
@@ -106,5 +106,5 @@ def main(
 
 
 if __name__ == "__main__":
-    cast(Any, coloredlogs).install(level=logging.DEBUG)
+    ansilogs.install(logging.DEBUG)
     typer.run(main)

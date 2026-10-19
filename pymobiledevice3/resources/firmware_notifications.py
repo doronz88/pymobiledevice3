@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.9"
 # dependencies = [
-#     "coloredlogs",
+#     "ansilogs",
 #     "typer",
 # ]
 # ///
@@ -11,7 +11,7 @@ import plistlib
 from pathlib import Path
 from typing import Annotated, Any, cast
 
-import coloredlogs
+import ansilogs
 import typer
 
 NOTIFICATIONS_FILENAME = os.path.join(os.path.dirname(__file__), "notifications.txt")
@@ -68,5 +68,5 @@ def main(root_fs: Annotated[Path, typer.Argument(dir_okay=True, file_okay=False,
 
 
 if __name__ == "__main__":
-    cast(Any, coloredlogs).install(level=logging.DEBUG)
+    ansilogs.install(logging.DEBUG)
     typer.run(main)
