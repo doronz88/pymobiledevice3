@@ -106,8 +106,9 @@ def print_json_line(obj: Any) -> None:
 def print_json(buf: Any, colored: Optional[bool] = None, default: Callable[[Any], Any] = default_json_encoder) -> str:
     if colored is None:
         colored = user_requested_colored_output()
-    formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default)
+    formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default, ensure_ascii=False)
     if colored and isatty():
+        # pygments terminates its output with a newline of its own.
         colorful_json = cast(
             str,
             highlight(
@@ -115,7 +116,7 @@ def print_json(buf: Any, colored: Optional[bool] = None, default: Callable[[Any]
                 cast(Any, lexers).JsonLexer(),
                 cast(Any, formatters).Terminal256Formatter(style="stata-dark"),
             ),
-        )
+        ).rstrip("\n")
         print(colorful_json)
         return colorful_json
     else:
@@ -144,6 +145,10 @@ def set_verbosity(level: int) -> None:
 def set_color_flag(value: bool) -> None:
     global COLORED_OUTPUT
     COLORED_OUTPUT = value
+    if not value:
+        for handler in logging.getLogger().handlers:
+            if isinstance(handler, ansilogs.StderrHandler):
+                handler.setFormatter(ansilogs.ColoredFormatter(colors=False))
 
 
 def isatty() -> bool:
@@ -159,7 +164,8 @@ def isatty() -> bool:
 
 
 def user_requested_colored_output() -> bool:
-    return COLORED_OUTPUT and isatty()
+    # NO_COLOR (https://no-color.org): any non-empty value disables colors, as it does for the logs.
+    return COLORED_OUTPUT and not os.environ.get("NO_COLOR") and isatty()
 
 
 def sudo_required(func: Callable[..., Any]) -> Callable[..., Any]:
