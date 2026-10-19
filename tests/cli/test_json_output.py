@@ -4,7 +4,8 @@ import uuid
 
 import pytest
 
-from pymobiledevice3.cli.cli_common import default_json_encoder
+from pymobiledevice3.cli import cli_common
+from pymobiledevice3.cli.cli_common import default_json_encoder, print_json
 
 pytestmark = [pytest.mark.cli]
 
@@ -35,3 +36,27 @@ def test_json_encoder_datetime_iso8601():
 def test_json_encoder_uuid():
     value = uuid.UUID("12345678-1234-5678-1234-567812345678")
     assert _roundtrip(value) == "12345678-1234-5678-1234-567812345678"
+
+
+@pytest.fixture
+def colored_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setattr(cli_common, "COLORED_OUTPUT", True)
+    monkeypatch.setattr(cli_common, "isatty", lambda: True)
+
+
+@pytest.mark.parametrize("colored", [False, True])
+def test_print_json_keeps_non_ascii_text(colored_tty, capsys: pytest.CaptureFixture[str], colored: bool):
+    print_json({"DeviceName": "John\u2019s iPhone"}, colored=colored)
+    out = capsys.readouterr().out
+    assert "\u2019" in out
+    assert "\\u2019" not in out
+
+
+@pytest.mark.parametrize("colored", [False, True])
+def test_print_json_ends_with_a_single_newline(colored_tty, capsys: pytest.CaptureFixture[str], colored: bool):
+    print_json({"a": 1}, colored=colored)
+    out = capsys.readouterr().out
+    assert out.endswith("\n")
+    assert not out.endswith("\n\n")
+    assert ("\x1b[" in out) == colored

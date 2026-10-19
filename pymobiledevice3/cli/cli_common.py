@@ -106,8 +106,9 @@ def print_json_line(obj: Any) -> None:
 def print_json(buf: Any, colored: Optional[bool] = None, default: Callable[[Any], Any] = default_json_encoder) -> str:
     if colored is None:
         colored = user_requested_colored_output()
-    formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default)
+    formatted_json = json.dumps(buf, sort_keys=True, indent=4, default=default, ensure_ascii=False)
     if colored and isatty():
+        # pygments terminates its output with a newline of its own.
         colorful_json = cast(
             str,
             highlight(
@@ -115,7 +116,7 @@ def print_json(buf: Any, colored: Optional[bool] = None, default: Callable[[Any]
                 cast(Any, lexers).JsonLexer(),
                 cast(Any, formatters).Terminal256Formatter(style="stata-dark"),
             ),
-        )
+        ).rstrip("\n")
         print(colorful_json)
         return colorful_json
     else:
