@@ -1684,7 +1684,7 @@ class Restore(BaseRestore):
         self.logger.debug(f"progress-bar: {message}")
 
     async def handle_status_msg(self, message: dict[str, Any]):
-        self.logger.debug(f"status message: {message}")
+        self.logger.info(f"status message: {message}")
         status = message["Status"]
         log = message.get("Log")
 
