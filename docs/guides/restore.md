@@ -54,9 +54,10 @@ does not proxy its traffic.
 ## Several devices at once
 
 Each restore stays on its own device, so several can run side by side: start
-one `restore update` per device, each with its own `--ecid`. With more than one
-device connected, `--ecid` is required. On devices from the A12 on, the UDID
-is `<ChipID>-<ECID>`, so the ECID is the part after the dash:
+one `restore update` per device. With more than one device connected, the
+command asks which one to use; `--ecid` picks it non-interactively. On devices
+from the A12 on, the UDID is `<ChipID>-<ECID>`, so the ECID is the part after
+the dash:
 
 ```shell
 # UDID 00008150-001074523440401C

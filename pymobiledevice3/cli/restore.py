@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import logging
 import plistlib
@@ -27,13 +28,16 @@ from pymobiledevice3.exceptions import (
     ConnectionFailedToUsbmuxdError,
     IncorrectModeError,
     MissingValueError,
+    PyMobileDevice3Exception,
 )
 from pymobiledevice3.irecv import IRecv
+from pymobiledevice3.lockdown import SERVICE_PORT as LOCKDOWN_PORT
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.preflight import UPDATER_FIRMWARE_PREFIXES, collect_device_side_preflight
 from pymobiledevice3.restore.recovery import Behavior, Recovery
 from pymobiledevice3.restore.restore import Restore
+from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.diagnostics import DiagnosticsService
 from pymobiledevice3.utils import file_download, start_ipython_shell
 
@@ -53,6 +57,40 @@ cli = InjectingTyper(
     help="Restore/erase IPSWs, fetch blobs, and manage devices in Recovery/DFU.",
     no_args_is_help=True,
 )
+
+# How long the device prompt waits on each device for its description.
+DEVICE_DESCRIPTION_TIMEOUT = 5.0
+RESTORED_TYPE = "com.apple.mobile.restored"
+
+
+async def _query_device_description(device: usbmux.MuxDevice) -> Optional[str]:
+    service = await ServiceConnection.create_using_usbmux(device.serial, LOCKDOWN_PORT, connection_type="USB")
+    try:
+        await service.start()
+        query_type = await service.send_recv_plist({"Label": "pymobiledevice3", "Request": "QueryType"})
+        if query_type.get("Type") == RESTORED_TYPE:
+            return None
+        values: list[Any] = []
+        # lockdownd answers these before a session is started, so an unpaired device shows no Trust prompt.
+        for key in ("DeviceName", "ProductType", "ProductVersion"):
+            reply = await service.send_recv_plist({"Label": "pymobiledevice3", "Request": "GetValue", "Key": key})
+            values.append(reply.get("Value"))
+    finally:
+        await service.close()
+    name, product_type, product_version = values
+    return f"{name} ({product_type}, iOS {product_version}) {device.serial}"
+
+
+async def _describe_device(device: usbmux.MuxDevice) -> Optional[str]:
+    """The device prompt's line for ``device``, or None while it is in restore mode (busy restoring).
+
+    Asking lockdownd's port is the same QueryType Apple's own restore tools send to every device;
+    on a device in restore mode, restored answers it.
+    """
+    try:
+        return await asyncio.wait_for(_query_device_description(device), DEVICE_DESCRIPTION_TIMEOUT)
+    except (OSError, asyncio.TimeoutError, PyMobileDevice3Exception):
+        return device.serial
 
 
 async def _device_dependency_async(
@@ -79,8 +117,21 @@ async def _device_dependency_async(
             # restore, where even a probing connection reaches its restored.
             devices = [dev for dev in devices if dev.ecid is None or dev.ecid == ecid_value]
         elif len(devices) > 1:
-            typer.echo(typer.style("Multiple devices detected; select one with --ecid", fg="red"))
-            raise typer.Exit(code=1)
+            descriptions = await asyncio.gather(*(_describe_device(dev) for dev in devices))
+            # A device in restore mode is in the middle of a restore: leave it out.
+            candidates = [(dev, desc) for dev, desc in zip(devices, descriptions) if desc is not None]
+            if len(candidates) > 1:
+                selected = cast(
+                    int,
+                    prompt_selection(
+                        [desc for _, desc in candidates],
+                        "Choose device",
+                        idx=True,
+                        hint="Pass --ecid to choose a device non-interactively.",
+                    ),
+                )
+                candidates = [candidates[selected]]
+            devices = [dev for dev, _ in candidates]
         for device in devices:
             try:
                 lockdown = await create_using_usbmux(serial=device.serial, connection_type="USB")

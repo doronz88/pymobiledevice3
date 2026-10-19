@@ -4,11 +4,10 @@ import asyncio
 from typing import Any, Optional
 
 import pytest
-import typer
 
 from pymobiledevice3 import irecv
 from pymobiledevice3.cli import restore as restore_cli
-from pymobiledevice3.exceptions import IRecvError
+from pymobiledevice3.exceptions import ConnectionFailedError, IRecvError
 from pymobiledevice3.irecv import IRecv
 from pymobiledevice3.restore import fdr, restored_client
 from pymobiledevice3.restore.restored_client import RestoredClient
@@ -156,12 +155,110 @@ async def test_cli_with_ecid_ignores_other_connected_devices(monkeypatch: pytest
     assert opened == [UDID_A]
 
 
-async def test_cli_without_ecid_refuses_several_devices(monkeypatch: pytest.MonkeyPatch) -> None:
+class _FakeLockdownService:
+    def __init__(self, replies: dict[str, Any]) -> None:
+        self.replies = replies
+
+    async def start(self) -> None:
+        pass
+
+    async def send_recv_plist(self, request: dict[str, Any]) -> dict[str, Any]:
+        if request["Request"] == "QueryType":
+            return {"Type": self.replies["Type"]}
+        return {"Value": self.replies[request["Key"]]}
+
+    async def close(self) -> None:
+        pass
+
+
+def _patch_lockdown_port(monkeypatch: pytest.MonkeyPatch, replies_by_udid: dict[str, dict[str, Any]]) -> None:
+    async def create_using_usbmux(serial: str, port: int, connection_type: str = "USB") -> _FakeLockdownService:
+        if serial not in replies_by_udid:
+            raise ConnectionFailedError()
+        return _FakeLockdownService(replies_by_udid[serial])
+
+    monkeypatch.setattr(restore_cli.ServiceConnection, "create_using_usbmux", create_using_usbmux)
+
+
+NORMAL_A = {
+    "Type": "com.apple.mobile.lockdown",
+    "DeviceName": "Air",
+    "ProductType": "iPhone18,4",
+    "ProductVersion": "27.2",
+}
+NORMAL_B = {
+    "Type": "com.apple.mobile.lockdown",
+    "DeviceName": "Pro",
+    "ProductType": "iPhone16,1",
+    "ProductVersion": "26.4",
+}
+RESTORING = {"Type": "com.apple.mobile.restored"}
+
+
+@pytest.mark.parametrize(
+    ("replies", "description"),
+    [
+        ({UDID_A: NORMAL_A}, f"Air (iPhone18,4, iOS 27.2) {UDID_A}"),
+        ({UDID_A: RESTORING}, None),
+        ({}, UDID_A),  # unreachable: fall back to the UDID
+    ],
+)
+async def test_device_description(
+    monkeypatch: pytest.MonkeyPatch, replies: dict[str, dict[str, Any]], description: Optional[str]
+) -> None:
+    _patch_lockdown_port(monkeypatch, replies)
+    assert await restore_cli._describe_device(MuxDevice(1, UDID_A, "USB")) == description
+
+
+def _patch_cli(monkeypatch: pytest.MonkeyPatch, opened: list[str]) -> None:
     async def list_devices() -> list[MuxDevice]:
         return [MuxDevice(1, UDID_B, "USB"), MuxDevice(2, UDID_A, "USB")]
 
+    async def create_using_usbmux(serial: str, connection_type: str = "USB") -> _FakeLockdown:
+        opened.append(serial)
+        return _FakeLockdown(ECID_A if serial == UDID_A else ECID_B)
+
     monkeypatch.setattr(restore_cli, "is_invoked_for_completion", lambda: False)
     monkeypatch.setattr(restore_cli.usbmux, "list_devices", list_devices)
+    monkeypatch.setattr(restore_cli, "create_using_usbmux", create_using_usbmux)
+    monkeypatch.setattr(restore_cli, "Device", _FakeDevice)
 
-    with pytest.raises(typer.Exit):
-        await restore_cli._device_dependency_async(None)
+
+async def test_cli_without_ecid_prompts_for_the_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened: list[str] = []
+    offered: list[list[str]] = []
+
+    def choose_second(choices: list[str], message: str, idx: bool = False, hint: Optional[str] = None) -> int:
+        offered.append(choices)
+        return 1
+
+    _patch_cli(monkeypatch, opened)
+    _patch_lockdown_port(monkeypatch, {UDID_A: NORMAL_A, UDID_B: NORMAL_B})
+    monkeypatch.setattr(restore_cli, "prompt_selection", choose_second)
+
+    device = await restore_cli._device_dependency_async(None)
+
+    assert offered == [[f"Pro (iPhone16,1, iOS 26.4) {UDID_B}", f"Air (iPhone18,4, iOS 27.2) {UDID_A}"]]
+    # Only the chosen device gets a lockdown session.
+    assert opened == [UDID_A]
+    assert isinstance(device, _FakeDevice)
+    assert device.lockdown is not None
+    assert device.lockdown.ecid == ECID_A
+
+
+async def test_cli_without_ecid_skips_a_device_in_restore_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened: list[str] = []
+
+    def no_prompt(*args: Any, **kwargs: Any) -> int:
+        raise AssertionError("only one device is available, nothing to choose")
+
+    _patch_cli(monkeypatch, opened)
+    _patch_lockdown_port(monkeypatch, {UDID_A: NORMAL_A, UDID_B: RESTORING})
+    monkeypatch.setattr(restore_cli, "prompt_selection", no_prompt)
+
+    device = await restore_cli._device_dependency_async(None)
+
+    assert opened == [UDID_A]
+    assert isinstance(device, _FakeDevice)
+    assert device.lockdown is not None
+    assert device.lockdown.ecid == ECID_A
