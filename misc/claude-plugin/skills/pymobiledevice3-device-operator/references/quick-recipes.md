@@ -73,8 +73,8 @@ uvx --from . pymobiledevice3 developer dvt core-profile-session parse-live -e DB
 ```
 
 Groups (`--fs`, `--net`, `--proc`, `--io`, `--mem`, `--signal`, `--cred`, `--sync`, `--mach`,
-`--dyld`, `--xpc`, `--dispatch`, `--runloop`), `-s` and `-e` add up; `events --group NAME` lists
-what a group prints. Add `--json` for one JSON object per trace, and `-c N` to stop after N traces.
+`--dyld`, `--xpc`, `--dispatch`, `--runloop`), `-s` and `-e` add up. `events` takes the same options
+and lists exactly what will be captured (`events --fs`, `events -s open`), before you trace. Add `--json` for one JSON object per trace, and `-c N` to stop after N traces.
 Without any filter the output falls behind and skips ahead, with a `Skipped N events` warning on
 stderr; narrow the trace instead of passing `--no-skip-behind`. What a trace contains:
 `docs/guides/kdebug.md`.

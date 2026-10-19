@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import dataclasses
 import functools
 import importlib.resources
 import json
@@ -342,13 +343,6 @@ def _parsed_mach_traps() -> tuple[str, ...]:
     return tuple(
         sorted({name for name in default_trace_codes().values() if name.startswith("MSC_") and name in parsed})
     )
-
-
-def _parsed_dyld_events() -> tuple[str, ...]:
-    """The dyld events `--dyld` prints: those pykdebugparser parses (the others are dropped)."""
-    parsed = _parsed_events()
-    codes = default_trace_codes()
-    return tuple(sorted({name for eventid, name in codes.items() if eventid >> 24 == DBG_DYLD and name in parsed}))
 
 
 def group_mach_traps(group: str) -> tuple[str, ...]:
@@ -834,6 +828,118 @@ async def stackshot(
     print(format_stackshot(processes, colored=user_requested_colored_output()))
 
 
+SyscallSelect = Annotated[
+    list[str],
+    typer.Option(
+        "--syscall",
+        "-s",
+        default_factory=list,
+        callback=_validate_syscalls,
+        show_default=False,
+        help="This syscall (e.g. open, openat; with its _nocancel and _dprotected_np variants), with its paths. Can be "
+        "specified multiple times.",
+    ),
+]
+EventSelect = Annotated[
+    list[str],
+    typer.Option(
+        "--event",
+        "-e",
+        default_factory=list,
+        show_default=False,
+        callback=_validate_events,
+        help="This event, by its trace code name (e.g. DBG_DYLD_TIMING_DLSYM; `events TEXT` finds the name). Can be "
+        "specified multiple times.",
+    ),
+]
+FsGroup = Annotated[bool, typer.Option("--fs", help="The syscalls that take a path.")]
+NetGroup = Annotated[bool, typer.Option("--net", help="The socket syscalls.")]
+ProcGroup = Annotated[bool, typer.Option("--proc", help="The process lifecycle syscalls.")]
+IoGroup = Annotated[bool, typer.Option("--io", help="The syscalls on file descriptors: read, write, ...")]
+MemGroup = Annotated[bool, typer.Option("--mem", help="The memory mapping syscalls and Mach traps.")]
+SignalGroup = Annotated[bool, typer.Option("--signal", help="The signal syscalls.")]
+CredGroup = Annotated[
+    bool, typer.Option("--cred", help="Credential, code signing and policy checks, and access to other tasks.")
+]
+SyncGroup = Annotated[bool, typer.Option("--sync", help="Locks, condition variables, kqueues and workqueues.")]
+MachGroup = Annotated[bool, typer.Option("--mach", help="The Mach traps.")]
+DyldGroup = Annotated[
+    bool, typer.Option("--dyld", help="dyld events (image loads, dlopen, dlsym, ...), filtered on the device.")
+]
+XpcGroup = Annotated[
+    bool, typer.Option("--xpc", help="libxpc events: messages sent and received, replies, transactions.")
+]
+DispatchGroup = Annotated[
+    bool, typer.Option("--dispatch", help="libdispatch events: Mach messages received through dispatch, queue misuse.")
+]
+RunloopGroup = Annotated[
+    bool,
+    typer.Option(
+        "--runloop", help="CoreFoundation run loop events: iterations, waits, sources, timers, observers and blocks."
+    ),
+]
+
+
+def _enabled_groups(**groups: bool) -> list[str]:
+    return [group for group, on in groups.items() if on]
+
+
+@dataclasses.dataclass
+class ParseLiveSelection:
+    """What parse-live prints: the events selected by id, and the parsed events of the selected classes/subclasses."""
+
+    classes: list[int]
+    subclasses: list[int]
+    syscall_ids: set[int]
+    event_ids: set[int]
+
+    @property
+    def eventids(self) -> set[int]:
+        return self.syscall_ids | self.event_ids
+
+
+def parse_live_selection(
+    *,
+    bsc: bool,
+    class_filters: list[int],
+    subclass_filters: list[int],
+    syscalls: list[str],
+    events: list[str],
+    groups: list[str],
+    dyld: bool,
+) -> ParseLiveSelection:
+    """The events parse-live prints for its options; groups add their syscalls, Mach traps and user space events."""
+    syscall_groups = [group for group in groups if group in SYSCALL_GROUPS]
+    event_groups = [group for group in groups if group in EVENT_GROUP_PREFIXES]
+    syscall_ids = syscall_eventids([*syscalls, *(name for group in syscall_groups for name in SYSCALL_GROUPS[group])])
+    event_ids = event_eventids([
+        *events,
+        *(name for group in syscall_groups for name in group_mach_traps(group)),
+        *(name for group in event_groups for name in group_events(group)),
+    ])
+    return ParseLiveSelection(
+        classes=[*class_filters, *([DBG_DYLD] if dyld else [])],
+        subclasses=[*subclass_filters, *([BSC_SUBCLASS] if bsc else [])],
+        syscall_ids=syscall_ids,
+        event_ids=event_ids,
+    )
+
+
+def captured_events(selection: ParseLiveSelection) -> list[str]:
+    """
+    The names of the events parse-live prints for a selection: those selected by id (printed even without a
+    decoder), and those of the selected classes and subclasses pykdebugparser decodes (the others are dropped).
+    """
+    parsed = _parsed_events()
+    eventids = selection.eventids
+    return sorted({
+        name
+        for eventid, name in default_trace_codes().items()
+        if eventid in eventids
+        or ((eventid >> 24 in selection.classes or eventid >> 16 in selection.subclasses) and name in parsed)
+    })
+
+
 @cli.command("parse-live")
 @async_command
 async def parse_live_profile_session(
@@ -849,94 +955,21 @@ async def parse_live_profile_session(
         Optional[str],
         typer.Option(help="Process ID / name to filter. Omit for all."),
     ] = None,
-    syscalls: Annotated[
-        list[str],
-        typer.Option(
-            "--syscall",
-            "-s",
-            default_factory=list,
-            callback=_validate_syscalls,
-            show_default=False,
-            help="Only print this syscall (e.g. open, openat; with its _nocancel variant), with its paths. Can be "
-            "specified multiple times; the `events` command lists them as BSC_<name>. The device can only filter whole "
-            "subclasses, so it sends every syscall and the others are dropped right after decoding, which keeps up "
-            "with the device even over --userspace.",
-        ),
-    ],
-    events: Annotated[
-        list[str],
-        typer.Option(
-            "--event",
-            "-e",
-            default_factory=list,
-            show_default=False,
-            callback=_validate_events,
-            help="Only print this event (a trace code name, e.g. DBG_DYLD_TIMING_DLOPEN). Can be specified multiple "
-            "times; the `events` command lists the names. The device filters the event's whole subclass, and the "
-            "other events in it are dropped right after decoding.",
-        ),
-    ],
-    fs: Annotated[
-        bool, typer.Option("--fs", help="Print the syscalls that take a path (`events --group fs`).")
-    ] = False,
-    net: Annotated[bool, typer.Option("--net", help="Print the socket syscalls (`events --group net`).")] = False,
-    proc: Annotated[
-        bool, typer.Option("--proc", help="Print the process lifecycle syscalls (`events --group proc`).")
-    ] = False,
-    io: Annotated[
-        bool,
-        typer.Option("--io", help="Print the syscalls on file descriptors: read, write, ... (`events --group io`)."),
-    ] = False,
-    mem: Annotated[
-        bool, typer.Option("--mem", help="Print memory mapping syscalls and Mach traps (`events --group mem`).")
-    ] = False,
-    signal: Annotated[
-        bool, typer.Option("--signal", help="Print the signal syscalls (`events --group signal`).")
-    ] = False,
-    cred: Annotated[
-        bool,
-        typer.Option(
-            "--cred",
-            help="Print credential, code signing and policy checks, and access to other tasks (`events --group cred`).",
-        ),
-    ] = False,
-    sync: Annotated[
-        bool,
-        typer.Option(
-            "--sync", help="Print locks, condition variables, kqueues and workqueues (`events --group sync`)."
-        ),
-    ] = False,
-    mach: Annotated[bool, typer.Option("--mach", help="Print the Mach traps (`events --group mach`).")] = False,
-    dyld: Annotated[
-        bool,
-        typer.Option(
-            "--dyld",
-            help="Print dyld events (image loads, dlopen, dlsym, ...), filtered on the device (`events --group dyld`).",
-        ),
-    ] = False,
-    xpc: Annotated[
-        bool,
-        typer.Option(
-            "--xpc",
-            help="Print libxpc events: messages sent and received, replies and transactions (`events --group xpc`).",
-        ),
-    ] = False,
-    dispatch: Annotated[
-        bool,
-        typer.Option(
-            "--dispatch",
-            help="Print libdispatch events: Mach messages received through dispatch and queue misuse "
-            "(`events --group dispatch`).",
-        ),
-    ] = False,
-    runloop: Annotated[
-        bool,
-        typer.Option(
-            "--runloop",
-            help="Print CoreFoundation run loop events: iterations, waits, sources, timers, observers and blocks "
-            "(`events --group runloop`).",
-        ),
-    ] = False,
+    syscalls: SyscallSelect,
+    events: EventSelect,
+    fs: FsGroup = False,
+    net: NetGroup = False,
+    proc: ProcGroup = False,
+    io: IoGroup = False,
+    mem: MemGroup = False,
+    signal: SignalGroup = False,
+    cred: CredGroup = False,
+    sync: SyncGroup = False,
+    mach: MachGroup = False,
+    dyld: DyldGroup = False,
+    xpc: XpcGroup = False,
+    dispatch: DispatchGroup = False,
+    runloop: RunloopGroup = False,
     json_output: Annotated[
         bool,
         typer.Option(
@@ -961,36 +994,52 @@ async def parse_live_profile_session(
         ),
     ] = True,
 ) -> None:
-    """Print traces (syscalls, thread events, etc.) received from the device in real time."""
-    enabled = {"fs": fs, "net": net, "proc": proc, "io": io, "mem": mem, "signal": signal, "cred": cred, "sync": sync}
-    enabled["mach"] = mach
-    # Groups add up: each one adds its syscalls, Mach traps and user space events to what is printed.
-    groups = [group for group, on in enabled.items() if on]
-    event_groups = [group for group, on in {"xpc": xpc, "dispatch": dispatch, "runloop": runloop}.items() if on]
-    syscall_ids = syscall_eventids([*syscalls, *(name for group in groups for name in SYSCALL_GROUPS[group])])
-    event_ids = event_eventids([
-        *events,
-        *(name for group in groups for name in group_mach_traps(group)),
-        *(name for group in event_groups for name in group_events(group)),
-    ])
+    """
+    Print traces (syscalls, thread events, etc.) received from the device in real time.
+
+    The selections add up. The device filters by subclass at best, so the events not selected are dropped right
+    after decoding, which keeps up with the device even over --userspace. `events` with the same options lists the
+    events that are printed.
+    """
+    groups = _enabled_groups(
+        fs=fs,
+        net=net,
+        proc=proc,
+        io=io,
+        mem=mem,
+        signal=signal,
+        cred=cred,
+        sync=sync,
+        mach=mach,
+        xpc=xpc,
+        dispatch=dispatch,
+        runloop=runloop,
+    )
+    selection = parse_live_selection(
+        bsc=bsc,
+        class_filters=class_filters,
+        subclass_filters=subclass_filters,
+        syscalls=syscalls,
+        events=events,
+        groups=groups,
+        dyld=dyld,
+    )
     async with DvtProvider(service_provider) as dvt:
         if not json_output:
             print("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
         parser: Any = PyKdebugParser()
-        if dyld:
-            class_filters.append(DBG_DYLD)
-        parser.filter_class = list(class_filters)
-        if bsc:
-            subclass_filters.append(BSC_SUBCLASS)
-        parser.filter_subclass = subclass_filters
-        parser.filter_eventid = syscall_ids | event_ids
+        parser.filter_class = list(selection.classes)
+        parser.filter_subclass = list(selection.subclasses)
+        parser.filter_eventid = selection.eventids
         # The device filters by subclass at best: request every syscall (and the subclass of each event), and
         # filter the chosen ones on the host.
-        device_subclasses = [*subclass_filters, BSC_SUBCLASS] if syscall_ids else list(subclass_filters)
-        device_subclasses += sorted({eventid >> 16 for eventid in event_ids})
-        filters = parse_filters(device_subclasses, class_filters)
-        if (dyld or event_ids) and filters is not None:
+        device_subclasses = (
+            [*selection.subclasses, BSC_SUBCLASS] if selection.syscall_ids else list(selection.subclasses)
+        )
+        device_subclasses += sorted({eventid >> 16 for eventid in selection.event_ids})
+        filters = parse_filters(device_subclasses, selection.classes)
+        if (dyld or selection.event_ids) and filters is not None:
             filters.add(TRACE_CLASS_FILTER)
         parser.numer = time_config["numer"]
         parser.denom = time_config["denom"]
@@ -1058,47 +1107,64 @@ async def parse_live_profile_session(
                     out.reconfigure(line_buffering=True)
 
 
-class ParseLiveGroup(str, Enum):
-    FS = "fs"
-    NET = "net"
-    PROC = "proc"
-    IO = "io"
-    MEM = "mem"
-    SIGNAL = "signal"
-    CRED = "cred"
-    SYNC = "sync"
-    MACH = "mach"
-    DYLD = "dyld"
-    XPC = "xpc"
-    DISPATCH = "dispatch"
-    RUNLOOP = "runloop"
-
-
-def group_event_names(group: str) -> list[str]:
-    """The events a parse-live group prints: its syscalls (with their _nocancel variants), Mach traps, dyld events or
-    user space events."""
-    if group == "dyld":
-        return list(_parsed_dyld_events())
-    if group in EVENT_GROUP_PREFIXES:
-        return list(group_events(group))
-    codes = default_trace_codes()
-    syscalls = {codes[eventid] for eventid in syscall_eventids(SYSCALL_GROUPS[group])}
-    return sorted(syscalls | set(group_mach_traps(group)))
-
-
 @cli.command("events")
 def list_events(
+    *,
     pattern: Annotated[
         Optional[str],
         typer.Argument(help="Only list the names containing this text, ignoring case (e.g. dlsym)."),
     ] = None,
-    group: Annotated[
-        Optional[ParseLiveGroup],
-        typer.Option(help="Only list the events this parse-live group prints (--fs, ..., --dyld, --xpc, ...)."),
-    ] = None,
+    bsc: BSCFilter = False,
+    class_filters: ClassFilter,
+    subclass_filters: SubclassFilter,
+    syscalls: SyscallSelect,
+    events: EventSelect,
+    fs: FsGroup = False,
+    net: NetGroup = False,
+    proc: ProcGroup = False,
+    io: IoGroup = False,
+    mem: MemGroup = False,
+    signal: SignalGroup = False,
+    cred: CredGroup = False,
+    sync: SyncGroup = False,
+    mach: MachGroup = False,
+    dyld: DyldGroup = False,
+    xpc: XpcGroup = False,
+    dispatch: DispatchGroup = False,
+    runloop: RunloopGroup = False,
 ) -> None:
-    """List the event names that `parse-live --event` accepts (syscalls are `BSC_<name>`), or the events of a group."""
-    names = sorted(set(default_trace_codes().values())) if group is None else group_event_names(group.value)
+    """
+    List the events `parse-live` prints with the same options (e.g. `events --fs`, `events -s open`), or every event
+    name `parse-live --event` accepts.
+    """
+    groups = _enabled_groups(
+        fs=fs,
+        net=net,
+        proc=proc,
+        io=io,
+        mem=mem,
+        signal=signal,
+        cred=cred,
+        sync=sync,
+        mach=mach,
+        xpc=xpc,
+        dispatch=dispatch,
+        runloop=runloop,
+    )
+    if bsc or class_filters or subclass_filters or syscalls or events or groups or dyld:
+        names = captured_events(
+            parse_live_selection(
+                bsc=bsc,
+                class_filters=class_filters,
+                subclass_filters=subclass_filters,
+                syscalls=syscalls,
+                events=events,
+                groups=groups,
+                dyld=dyld,
+            )
+        )
+    else:
+        names = sorted(set(default_trace_codes().values()))
     if pattern is not None:
         names = [name for name in names if pattern.lower() in name.lower()]
     for name in names:

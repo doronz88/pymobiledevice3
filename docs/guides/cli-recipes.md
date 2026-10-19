@@ -416,10 +416,11 @@ pymobiledevice3 developer dvt core-profile-session parse-live -s open -s openat
 # --io (reads, writes and the other syscalls on file descriptors), --mem (memory mappings), --signal,
 # --cred (credentials, code signing and policy checks, access to other tasks), --sync (locks, kqueues,
 # workqueues) and --mach (Mach traps). Groups add up, and combine with -s and -e: `--fs --io` prints both.
-# `events --group io` lists exactly what a group prints
+# `events` with the same options lists exactly what is printed
 pymobiledevice3 developer dvt core-profile-session parse-live --fs --io
 pymobiledevice3 developer dvt core-profile-session parse-live --mem --signal --cred
-pymobiledevice3 developer dvt core-profile-session events --group io
+pymobiledevice3 developer dvt core-profile-session events --io
+pymobiledevice3 developer dvt core-profile-session events -s open
 
 # dyld events (image loads, dlopen, dlsym, ...); unlike the syscall groups, filtered on the device
 pymobiledevice3 developer dvt core-profile-session parse-live --dyld
