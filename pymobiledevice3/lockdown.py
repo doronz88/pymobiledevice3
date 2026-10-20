@@ -154,6 +154,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.session_id = None
         self.pairing_records_cache_folder = pairing_records_cache_folder
         self.port = port
+        self._reestablishing_connection = False
 
         self.all_values = {}
         self.udid = None
@@ -1010,12 +1011,16 @@ class LockdownClient(ABC, LockdownServiceProvider):
                 # ServiceConnection streams are loop-bound; reconnect if this client was created in another loop.
                 if isinstance(e, RuntimeError) and "different event loop" not in str(e):
                     raise
+                if self._reestablishing_connection:
+                    raise
                 await self.areestablish_connection()
                 response = await self.service.send_recv_plist(message)
             try:
                 return self._verify_request_response(request, response, verify_request=verify_request)
             except (InvalidConnectionError, LockdownError) as e:
                 if not (isinstance(e, InvalidConnectionError) or str(e) == "SessionInactive"):
+                    raise
+                if self._reestablishing_connection:
                     raise
                 await self.areestablish_connection()
                 response = await self.service.send_recv_plist(message)
@@ -1143,7 +1148,13 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.service = await self.create_service_connection(self.port)
         self.paired = False
         if self.pair_record is not None:
-            await self.validate_pairing()
+            # A failure in the pairing requests below must propagate instead of reconnecting again;
+            # otherwise a device that drops every request recurses until RecursionError.
+            self._reestablishing_connection = True
+            try:
+                await self.validate_pairing()
+            finally:
+                self._reestablishing_connection = False
 
 
 class UsbmuxLockdownClient(LockdownClient):
