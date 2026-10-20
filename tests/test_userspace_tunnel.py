@@ -13,6 +13,7 @@ threads at all — that relaying spawns none.
 """
 
 import asyncio
+import errno
 import os
 import socket
 import sys
@@ -599,3 +600,39 @@ async def test_remotepairing_prefers_an_explicit_serial(mock_tunnel_provider, mo
     await userspace_tunnel._create_no_root_tunnel_provider(serial="EXPLICIT-UDID", autopair=True)
 
     assert asked == ["EXPLICIT-UDID"]
+
+
+class _FailingPeer:
+    def __init__(self, error: OSError) -> None:
+        self.error = error
+
+    def send(self, data: bytes) -> int:
+        raise self.error
+
+
+@pytest.mark.parametrize("error", [BlockingIOError(errno.EAGAIN, "full"), OSError(errno.ENOBUFS, "full")])
+def test_write_drops_silently_when_the_buffer_is_full(error: OSError, caplog: pytest.LogCaptureFixture) -> None:
+    tun = UserspaceTun()
+    real_peer, tun._peer = tun._peer, cast(Any, _FailingPeer(error))
+    try:
+        tun.write(b"\x60" + b"\x00" * 39)
+    finally:
+        real_peer.close()
+        tun._pend.close()
+    assert not caplog.records
+
+
+def test_write_warns_once_about_a_packet_the_stack_never_gets(caplog: pytest.LogCaptureFixture) -> None:
+    # EMSGSIZE fails again on every retransmission, so the connection stalls for good (#2068).
+    error = OSError(errno.EMSGSIZE, "Message too long")
+    tun = UserspaceTun()
+    real_peer, tun._peer = tun._peer, cast(Any, _FailingPeer(error))
+    try:
+        for _ in range(3):
+            tun.write(b"\x60" + b"\x00" * 1499)
+    finally:
+        real_peer.close()
+        tun._pend.close()
+    assert [r.getMessage() for r in caplog.records] == [
+        f"userspace tunnel dropped a 1500-byte packet from the device: {error}"
+    ]
