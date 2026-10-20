@@ -334,7 +334,12 @@ def test_to_daemon_thread_returns_and_raises() -> None:
         with pytest.raises(ZeroDivisionError):
             await core_profile_session._to_daemon_thread(lambda: 1 / 0)  # type: ignore[func-returns-value]
 
-    asyncio.run(run())
+    # Not asyncio.run(): on Python 3.9 it leaves the thread without an event loop, which later tests expect.
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(run())
+    finally:
+        loop.close()
     assert results == [1]
 
 
