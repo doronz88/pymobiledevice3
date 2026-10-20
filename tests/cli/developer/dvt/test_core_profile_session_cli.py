@@ -8,7 +8,17 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from pykdebugparser.trace_codes import MACH_TRAP_GROUPS, default_trace_codes, syscall_eventids, syscall_names
+from pykdebugparser.trace_codes import (
+    MACH_TRAP_GROUPS,
+    SYSCALL_GROUPS,
+    default_trace_codes,
+    event_eventids,
+    group_events,
+    group_mach_traps,
+    parsed_events,
+    syscall_eventids,
+    syscall_names,
+)
 from typer.testing import CliRunner
 
 from pymobiledevice3 import __main__
@@ -122,7 +132,7 @@ def test_parse_live_syscall_filters_on_the_host(monkeypatch: pytest.MonkeyPatch)
 
 def test_syscall_groups_are_known_syscalls() -> None:
     names = set(syscall_names())
-    for group, members in core_profile_session.SYSCALL_GROUPS.items():
+    for group, members in SYSCALL_GROUPS.items():
         assert set(members) <= names, group
 
 
@@ -137,7 +147,7 @@ def test_parse_live_fs_and_dyld(monkeypatch: pytest.MonkeyPatch) -> None:
     }
     assert parser.filter_class == [core_profile_session.DBG_DYLD]
     assert parser.filter_subclass == []
-    assert parser.filter_eventid == syscall_eventids(core_profile_session.SYSCALL_GROUPS["fs"])
+    assert parser.filter_eventid == syscall_eventids(SYSCALL_GROUPS["fs"])
 
 
 def test_parse_live_event(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -150,25 +160,25 @@ def test_parse_live_event(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_event_eventids() -> None:
-    assert core_profile_session.event_eventids(["BSC_open", "VFS_LOOKUP"]) == {0x40C0014, 0x3010090}
+    assert event_eventids(["BSC_open", "VFS_LOOKUP"]) == {0x40C0014, 0x3010090}
     # A name that several codes share gives all of them.
-    assert len(core_profile_session.event_eventids(["CPUPM_FORCED_IDLE"])) > 1
+    assert len(event_eventids(["CPUPM_FORCED_IDLE"])) > 1
     with pytest.raises(ValueError, match="unknown events: nosuch"):
-        core_profile_session.event_eventids(["BSC_open", "nosuch"])
+        event_eventids(["BSC_open", "nosuch"])
 
 
 def test_mach_trap_groups_are_known_events() -> None:
     for group, members in MACH_TRAP_GROUPS.items():
-        assert group in core_profile_session.SYSCALL_GROUPS, group
+        assert group in SYSCALL_GROUPS, group
         assert all(name.startswith("MSC_") for name in members), group
-        core_profile_session.event_eventids(list(members))
+        event_eventids(list(members))
 
 
 def test_parse_live_groups_add_up(monkeypatch: pytest.MonkeyPatch) -> None:
     filters, parser = _run_parse_live(monkeypatch, fs=True, io=True, mach=True)
 
-    syscalls = [*core_profile_session.SYSCALL_GROUPS["fs"], *core_profile_session.SYSCALL_GROUPS["io"]]
-    traps = core_profile_session.event_eventids(list(core_profile_session.group_mach_traps("mach")))
+    syscalls = [*SYSCALL_GROUPS["fs"], *SYSCALL_GROUPS["io"]]
+    traps = event_eventids(list(group_mach_traps("mach")))
     assert parser.filter_eventid == syscall_eventids(syscalls) | traps
     # Syscalls come in their subclass, Mach traps in theirs.
     assert filters == {
@@ -182,9 +192,9 @@ def test_parse_live_groups_add_up(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_parse_live_user_space_groups(monkeypatch: pytest.MonkeyPatch) -> None:
     filters, parser = _run_parse_live(monkeypatch, xpc=True, dispatch=True, runloop=True)
 
-    names = [name for group in ("xpc", "dispatch", "runloop") for name in core_profile_session.group_events(group)]
+    names = [name for group in ("xpc", "dispatch", "runloop") for name in group_events(group)]
     # The events have no decoder: asking for them by id is what prints them (as their name and raw arguments).
-    assert parser.filter_eventid == core_profile_session.event_eventids(names)
+    assert parser.filter_eventid == event_eventids(names)
     # Only their subclasses are requested from the device.
     assert filters == {
         0x29000000,  # libxpc
@@ -210,7 +220,7 @@ def test_events_lists_a_user_space_group(group: str, prefix: str) -> None:
 
     assert names
     assert all(name.startswith(prefix) for name in names)
-    assert names == list(core_profile_session.group_events(group))
+    assert names == list(group_events(group))
 
 
 def test_events_lists_what_a_syscall_group_prints() -> None:
@@ -219,9 +229,9 @@ def test_events_lists_what_a_syscall_group_prints() -> None:
     # Its syscalls, with their _nocancel variants, and its Mach traps: exactly what --mem filters.
     assert "BSC_mmap" in names
     assert "MSC_mach_vm_allocate_trap" in names
-    eventids = syscall_eventids(core_profile_session.SYSCALL_GROUPS["mem"])
-    eventids |= core_profile_session.event_eventids(list(core_profile_session.group_mach_traps("mem")))
-    assert core_profile_session.event_eventids(names) == eventids
+    eventids = syscall_eventids(SYSCALL_GROUPS["mem"])
+    eventids |= event_eventids(list(group_mach_traps("mem")))
+    assert event_eventids(names) == eventids
 
 
 def test_events_lists_the_dyld_events_dyld_prints() -> None:
@@ -269,7 +279,7 @@ def test_events_lists_what_parse_live_prints(monkeypatch: pytest.MonkeyPatch, ar
 
     # What parse-live's parser prints: the events it asks for by id, and the decoded events of its classes and
     # subclasses.
-    parsed = core_profile_session._parsed_events()
+    parsed = parsed_events()
     printed = sorted({
         name
         for eventid, name in default_trace_codes().items()
@@ -288,10 +298,10 @@ def test_parse_live_restores_line_buffered_stdout(monkeypatch: pytest.MonkeyPatc
 
 
 def test_mach_group_is_the_parsed_mach_traps() -> None:
-    traps = core_profile_session.group_mach_traps("mach")
+    traps = group_mach_traps("mach")
     assert {"MSC_mach_msg2_trap", "MSC_task_for_pid"} <= set(traps)
     assert all(name.startswith("MSC_") for name in traps)
-    assert set(core_profile_session.group_mach_traps("mem")) <= set(traps)
+    assert set(group_mach_traps("mem")) <= set(traps)
 
 
 def test_parse_live_json(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
