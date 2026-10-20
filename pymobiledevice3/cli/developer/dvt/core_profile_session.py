@@ -4,6 +4,7 @@ import importlib.resources
 import json
 import logging
 import queue
+import re
 import sys
 import threading
 from collections.abc import Callable, Mapping
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import Annotated, Any, Optional, cast
 
 import typer
+from pykdebugparser.line_filter import MATCH_HELP, LineFilter, emphasize
 from pykdebugparser.pykdebugparser import PyKdebugParser
 from pykdebugparser.selection import GROUP_HELP, captured_events, parse_live_selection
 from pykdebugparser.trace_codes import (
@@ -227,6 +229,16 @@ def _validate_syscalls(names: Any) -> list[str]:
             f"{e} (`pymobiledevice3 developer dvt core-profile-session events` lists them as BSC_<name>)"
         ) from e
     return names
+
+
+def _validate_regexes(regexes: Any) -> list[str]:
+    # See `_validate_syscalls`.
+    for regex in regexes:
+        try:
+            re.compile(regex)
+        except re.error as e:
+            raise typer.BadParameter(f"{regex!r}: {e}") from e
+    return regexes
 
 
 def _validate_max_lag(value: float) -> float:
@@ -644,12 +656,57 @@ async def parse_live_profile_session(
     xpc: XpcGroup = False,
     dispatch: DispatchGroup = False,
     runloop: RunloopGroup = False,
+    match: Annotated[
+        list[str], typer.Option("--match", "-m", default_factory=list, show_default=False, help=MATCH_HELP["match"])
+    ],
+    invert_match: Annotated[
+        list[str],
+        typer.Option("--invert-match", "-v", default_factory=list, show_default=False, help=MATCH_HELP["invert_match"]),
+    ],
+    match_insensitive: Annotated[
+        list[str],
+        typer.Option(
+            "--match-insensitive", "-mi", default_factory=list, show_default=False, help=MATCH_HELP["match_insensitive"]
+        ),
+    ],
+    invert_match_insensitive: Annotated[
+        list[str],
+        typer.Option(
+            "--invert-match-insensitive",
+            "-vi",
+            default_factory=list,
+            show_default=False,
+            help=MATCH_HELP["invert_match_insensitive"],
+        ),
+    ],
+    regex: Annotated[
+        list[str],
+        typer.Option(
+            "--regex",
+            "-r",
+            default_factory=list,
+            show_default=False,
+            callback=_validate_regexes,
+            help=MATCH_HELP["regex"],
+        ),
+    ],
+    insensitive_regex: Annotated[
+        list[str],
+        typer.Option(
+            "--insensitive-regex",
+            "-ri",
+            default_factory=list,
+            show_default=False,
+            callback=_validate_regexes,
+            help=MATCH_HELP["insensitive_regex"],
+        ),
+    ],
     json_output: Annotated[
         bool,
         typer.Option(
             "--json",
             help="Print each trace as a JSON object, one per line: its time, thread, process, event name, parsed fields "
-            "and text.",
+            "and text. The filters match the line it would print.",
         ),
     ] = False,
     color_mode: Annotated[
@@ -714,6 +771,10 @@ async def parse_live_profile_session(
         parser.filter_class = list(selection.classes)
         parser.filter_subclass = list(selection.subclasses)
         parser.filter_eventid = selection.eventids
+        line_filter = LineFilter(
+            match, invert_match, match_insensitive, invert_match_insensitive, regex, insensitive_regex
+        )
+        parser.line_filter = line_filter
         # The device filters by subclass at best: request every syscall (and the subclass of each event), and
         # filter the chosen ones on the host.
         device_subclasses = (
@@ -775,7 +836,10 @@ async def parse_live_profile_session(
                         if stopping.is_set():
                             break
                         if enable_color and color_mode == TraceColorMode.FAST:
+                            plain = line
                             line = _colorize_parse_live_trace(line, show_tid=show_tid)
+                            if line_filter:
+                                line = emphasize(line, line_filter.spans(plain))
                         write(line + "\n")
                 out.flush()
 

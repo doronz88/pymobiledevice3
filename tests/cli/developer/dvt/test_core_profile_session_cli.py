@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+import typer
 from pykdebugparser.trace_codes import (
     MACH_TRAP_GROUPS,
     SYSCALL_GROUPS,
@@ -114,7 +115,19 @@ def _run_parse_live(monkeypatch: pytest.MonkeyPatch, **options: Any) -> tuple[An
 
     core_profile_session.parse_live_profile_session(
         service_provider=LOCKDOWN,
-        **{"class_filters": [], "subclass_filters": [], "syscalls": [], "events": [], **options},
+        **{
+            "class_filters": [],
+            "subclass_filters": [],
+            "syscalls": [],
+            "events": [],
+            "match": [],
+            "invert_match": [],
+            "match_insensitive": [],
+            "invert_match_insensitive": [],
+            "regex": [],
+            "insensitive_regex": [],
+            **options,
+        },
     )
     (parser,) = parsers
     _run_parse_live.requested = requested  # type: ignore[attr-defined]
@@ -383,3 +396,21 @@ def test_an_interrupted_live_thread_stops_writing_before_the_exit() -> None:
             [sys.executable, "-c", code], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=30
         )
         assert result.returncode == 0, result.stderr.decode()
+
+
+def test_parse_live_match_filters(monkeypatch: pytest.MonkeyPatch) -> None:
+    _, parser = _run_parse_live(monkeypatch, bsc=True)
+    assert not parser.line_filter
+
+    _, parser = _run_parse_live(
+        monkeypatch, bsc=True, match=["open"], invert_match_insensitive=["SPRINGBOARD"], insensitive_regex=["fd: [0-9]"]
+    )
+    line = '2026-10-20 09:52:19.519233 ls(87809)  open("/tmp", O_RDONLY), fd: 3'
+    assert parser.line_filter.keep(line)
+    assert not parser.line_filter.keep(line.replace("ls(", "SpringBoard("))
+    assert parser.line_filter.spans(line) == [(38, 42), (62, 67)]
+
+
+def test_parse_live_bad_regex() -> None:
+    with pytest.raises(typer.BadParameter):
+        core_profile_session._validate_regexes(["("])
