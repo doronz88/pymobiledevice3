@@ -14,7 +14,6 @@ threads at all — that relaying spawns none.
 
 import asyncio
 import errno
-import os
 import socket
 import sys
 import threading
@@ -38,7 +37,6 @@ pytest.importorskip("pmd_pytcp")
 
 from pmd_pytcp.stack import sysctl
 
-from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote import userspace_tunnel
 from pymobiledevice3.remote.userspace_tunnel import UserspaceDialPlane, UserspaceTun
 from pymobiledevice3.service_connection import close_stream_writer
@@ -239,13 +237,9 @@ async def test_relaying_spawns_no_threads():
 
 
 async def test_dial_plane_exit_completes_when_dial_races_teardown():
-    # A dial's connect completes in the kernel before the server's accept callback has
-    # spawned the handler. If teardown then begins — e.g. the dialer's caller raised during
-    # connection setup — __aexit__'s cancel loop snapshots _relay_tasks before that handler
-    # registers, so nothing cancelled it: its pumps parked forever on an abandoned client
-    # connection and __aexit__ hung in Server.wait_closed() (which waits for all attached
-    # connections since Python 3.12.1). Reproduced live against a device; exit must complete
-    # promptly with no relay task left behind.
+    # Teardown right after a dial — e.g. the dialer's caller raised during connection setup —
+    # cancels the relay before it has run a single step, so its own cleanup never runs. Exit must
+    # still complete promptly with no relay task left behind, and the caller's stream must end.
     class StallingTun:
         async def connect_tcp(self, addr: str, port: int) -> FakePyTcpSocket:
             await asyncio.Event().wait()
@@ -253,23 +247,19 @@ async def test_dial_plane_exit_completes_when_dial_races_teardown():
 
     dial_plane = UserspaceDialPlane(cast(UserspaceTun, StallingTun()), DEVICE_ADDR)
     await dial_plane.__aenter__()
-    _reader, writer = await dial_plane.dial(DEVICE_ADDR, 3333)
+    reader, writer = await dial_plane.dial(DEVICE_ADDR, 3333)
 
-    # No yield to the loop between dial and teardown: the handler must not be registered yet.
+    # No yield to the loop between dial and teardown: the relay must not have started yet.
     await asyncio.wait_for(dial_plane.__aexit__(None, None, None), timeout=5)
 
     assert not dial_plane._relay_tasks
+    assert await asyncio.wait_for(reader.read(), timeout=5) == b""
     await close_stream_writer(writer)
-    # Drain the loop so the gate handler for the raced connection finishes closing its
-    # transport; otherwise the accepted socket is finalized by GC and flagged unraisable.
-    for _ in range(5):
-        await asyncio.sleep(0)
 
 
 async def test_dial_after_close_raises():
-    # A dial racing (or following) teardown must fail loudly: letting it through re-created
-    # the socket dir and registered a live relay server after teardown had cleared both —
-    # leaked until process exit — and handed the caller a stream that only ever yields EOF.
+    # A dial racing (or following) teardown must fail loudly: letting it through started a
+    # relay nothing would ever cancel and handed the caller a stream that only ever yields EOF.
     # The window is real since the transport watcher runs teardown concurrently with dials.
     tun = FakeTun()
     dial_plane = UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR)
@@ -277,27 +267,22 @@ async def test_dial_after_close_raises():
         pass
     with pytest.raises(ConnectionError):
         await dial_plane.dial(DEVICE_ADDR, 5555)
-    assert dial_plane._socket_dir is None
-    assert dial_plane._server is None
+    assert not tun.socks
 
 
-@pytest.mark.skipif(not get_os_utils().supports_unix_sockets, reason="platform has no AF_UNIX")
-async def test_relay_uses_unix_sockets_and_removes_them_on_exit():
-    # Where AF_UNIX exists the relay must listen on unix sockets, not loopback TCP: the
-    # socket dir's 0700 mode decides who may connect, instead of exposing the device's
-    # services on a port any local process can reach. Also pin the cleanup: asyncio only
-    # unlinks unix server sockets from 3.13, so the dial plane removes its socket directory
-    # itself.
+@pytest.mark.skipif(sys.platform == "win32", reason="CPython emulates socketpair() over loopback TCP on Windows")
+async def test_relay_has_no_listener():
+    # Each dial is a socketpair: an unbound AF_UNIX socket no other process can connect to, so the
+    # device's services are never reachable through the relay from outside this process.
     tun = FakeTun()
     async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
         _reader, writer = await dial_plane.dial(DEVICE_ADDR, 2222)
-        assert writer.get_extra_info("socket").family == socket.AF_UNIX
-        socket_dir = dial_plane._socket_dir
-        assert socket_dir is not None and os.path.isdir(socket_dir)
+        sock = writer.get_extra_info("socket")
+        assert sock.family == socket.AF_UNIX
+        assert not sock.getsockname()
 
         await close_stream_writer(writer)
         await _poll_until(lambda: not dial_plane._relay_tasks)
-    assert not os.path.exists(socket_dir)
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS defaults unix stream sockets to 8 KiB buffers")
@@ -322,32 +307,11 @@ async def test_unix_relay_buffers_are_raised(monkeypatch):
         sock = writer.get_extra_info("socket")
         for option in (socket.SO_SNDBUF, socket.SO_RCVBUF):
             assert sock.getsockopt(socket.SOL_SOCKET, option) >= userspace_tunnel.RELAY_SOCKET_BUFFER_SIZE
-        await writer.drain()  # sends the port header, so the relay handler starts
         server_buffers = (await _poll_until(lambda: relay_buffers))[0]
         assert min(server_buffers) >= userspace_tunnel.RELAY_SOCKET_BUFFER_SIZE
 
         await close_stream_writer(writer)
         await _poll_until(lambda: not dial_plane._relay_tasks)
-
-
-async def test_tcp_relay_forced_by_env_var(monkeypatch):
-    # PYMOBILEDEVICE3_USERSPACE_TCP_RELAY reproduces the Windows relay path on any platform:
-    # the relay must bind loopback TCP and never create a socket directory. This also gives the
-    # TCP relay path POSIX CI coverage (it is otherwise exercised only on Windows runners).
-    monkeypatch.setenv(userspace_tunnel.TCP_RELAY_ENV_VAR, "1")
-    tun = FakeTun()
-    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
-        reader, writer = await dial_plane.dial(DEVICE_ADDR, 4444)
-        assert writer.get_extra_info("socket").family == socket.AF_INET
-        assert dial_plane._socket_dir is None
-
-        psock = (await _poll_until(lambda: tun.socks))[0]
-        writer.write(b"ping")
-        await writer.drain()
-        await _poll_until(lambda: psock.sent == [b"ping"])
-        psock.feed(b"pong")
-        assert await reader.readexactly(4) == b"pong"
-        writer.close()
 
 
 async def test_transport_watcher_tears_down_on_transport_death():
@@ -395,22 +359,6 @@ async def test_teardown_waits_for_closed_connections_to_emit_their_fin():
     assert psock.state.name == "FIN_WAIT_1"
     assert loop.time() - started >= 0.05
     await close_stream_writer(writer)
-
-
-async def test_stray_connection_without_header_is_shed(monkeypatch):
-    # Only dial() speaks the 2-byte port-header protocol; a stray local connection that
-    # sends nothing (trivial on the TCP fallback, where any local process can connect) must
-    # be shed by the header timeout instead of pinning a handler and its transport until
-    # tunnel close.
-    monkeypatch.setattr(userspace_tunnel, "RELAY_HEADER_TIMEOUT", 0.2)
-    tun = FakeTun()
-    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
-        assert dial_plane._opener is not None
-        reader, writer = await dial_plane._opener()  # no header
-        assert await asyncio.wait_for(reader.read(), timeout=5) == b""  # shed with EOF
-        assert not tun.socks  # never touched the stack
-        await _poll_until(lambda: not dial_plane._relay_tasks)
-        await close_stream_writer(writer)
 
 
 async def test_aclose_waits_for_watcher_teardown():

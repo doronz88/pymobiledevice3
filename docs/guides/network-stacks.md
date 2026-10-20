@@ -131,25 +131,21 @@ Key properties that fall out of this shape:
 
 ### Dialing a service connection
 
-Services call the RSD's injected `open_connection`, which relays through a single
-pre-bound listener; the target port travels in-band as a 2-byte header, so nothing ever
-binds on the dial path:
+Services call the RSD's injected `open_connection`, which creates a `socketpair()`, hands
+one end to the caller and starts a relay task on the other:
 
 ```mermaid
 sequenceDiagram
     participant S as ServiceConnection
     participant D as dial()
-    participant L as relay listener
-    participant H as handler
+    participant H as relay task
     participant P as pytcp socket
     participant Dev as device service
 
     S->>D: open_connection(fdxx::1, port)
-    D->>L: connect (unix socket)
-    D->>L: 2-byte port header
+    D->>D: socketpair()
+    D->>H: spawn relay task (port, other end)
     D-->>S: (reader, writer)
-    L->>H: spawn per-connection handler
-    H->>H: read port header
     H->>P: connect_tcp(fdxx::1, port)
     P->>Dev: SYN ... over the tunnel
     loop two pump tasks
@@ -159,12 +155,12 @@ sequenceDiagram
     Note over H,P: client EOF fully closes the pytcp socket<br/>(FIN reaches the device — orphan reaper owns the tail)<br/>device EOF reaches the client as write_eof
 ```
 
-Why a unix socket for the hand-off: it lives in a `0700` temp directory, so filesystem
-permissions decide who may connect — a loopback TCP port would be connectable by any local
-process for the tunnel's whole lifetime. Loopback TCP remains the fallback where `AF_UNIX`
-does not exist (Windows), and `PYMOBILEDEVICE3_USERSPACE_TCP_RELAY` forces it anywhere for
-debugging. A connection that never sends its port header is shed after a timeout instead
-of pinning a handler.
+Why a socketpair for the hand-off: nothing listens, so no other process can reach the
+device's services through the relay (a loopback TCP listener was connectable by any local
+process for the tunnel's whole lifetime). It also never depends on how the platform
+completes a connect: iSH's `AF_UNIX` connect blocks until the peer accepts, which deadlocked
+the event loop when the dial plane accepted its own connections (#2068). On Windows CPython
+emulates `socketpair()` over loopback TCP and verifies the peer before returning it.
 
 ### Device disconnect and teardown
 
