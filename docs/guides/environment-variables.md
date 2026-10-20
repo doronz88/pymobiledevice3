@@ -40,7 +40,6 @@ export PYMOBILEDEVICE3_DEFAULT_FALLBACK=native
 | Variable | Value | Effect |
 | --- | --- | --- |
 | `PYMOBILEDEVICE3_NATIVE_TARGET_UID` | numeric uid | Which login user's `remotepairingd` the native tunnel talks to. `remotepairingd` is registered per-user, so a **root** process (CI runner, LaunchDaemon) needs this to reach the pairing owned by the logged-in user. Ignored (with a warning) when not running as root. |
-| `PYMOBILEDEVICE3_USERSPACE_TCP_RELAY` | any non-empty value | Debug: force the userspace tunnel's relays onto loopback TCP even where `AF_UNIX` exists, reproducing the Windows relay path on any platform. |
 
 ## Set by your environment, not by you
 
