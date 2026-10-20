@@ -1,13 +1,12 @@
 import asyncio
 import contextlib
-import dataclasses
-import functools
 import importlib.resources
 import json
 import logging
 import queue
 import sys
-from collections.abc import Mapping
+import threading
+from collections.abc import Callable, Mapping
 from enum import Enum
 from io import TextIOWrapper
 from itertools import islice
@@ -16,8 +15,12 @@ from typing import Annotated, Any, Optional, cast
 
 import typer
 from pykdebugparser.pykdebugparser import PyKdebugParser
-from pykdebugparser.trace_codes import default_trace_codes, syscall_eventids
-from pykdebugparser.traces_parser import TracesParser
+from pykdebugparser.selection import GROUP_HELP, captured_events, parse_live_selection
+from pykdebugparser.trace_codes import (
+    default_trace_codes,
+    event_eventids,
+    syscall_eventids,
+)
 from typer_injector import InjectingTyper
 
 import pymobiledevice3.resources
@@ -53,316 +56,40 @@ VFS_AND_TRACES_SET = {0x03010000, 0x07FF0000}
 DBG_DYLD = 0x1F
 # DBG_TRACE: thread names and the strings dyld events refer to.
 TRACE_CLASS_FILTER = 0x07FF0000
-# Syscall groups for parse-live, by subsystem (each name also matches its _nocancel variant).
-SYSCALL_GROUPS: dict[str, tuple[str, ...]] = {
-    # Syscalls that take a path.
-    "fs": (
-        "access",
-        "access_extended",
-        "chdir",
-        "chmod",
-        "chmod_extended",
-        "chown",
-        "chroot",
-        "clonefileat",
-        "exchangedata",
-        "faccessat",
-        "fchflagsat",
-        "fchmodat",
-        "fchownat",
-        "fstatat",
-        "fstatat64",
-        "getattrlist",
-        "getattrlistat",
-        "getxattr",
-        "guarded_open_dprotected_np",
-        "guarded_open_np",
-        "lchown",
-        "link",
-        "linkat",
-        "listxattr",
-        "lstat",
-        "lstat64",
-        "lstat64_extended",
-        "lstat_extended",
-        "mkdir",
-        "mkdir_extended",
-        "mkdirat",
-        "mkfifo",
-        "mkfifo_extended",
-        "mkfifoat",
-        "mknod",
-        "mknodat",
-        "mount",
-        "open",
-        "open_dprotected_np",
-        "open_extended",
-        "openat",
-        "openat_dprotected_np",
-        "openbyid_np",
-        "pathconf",
-        "readlink",
-        "readlinkat",
-        "removexattr",
-        "rename",
-        "renameat",
-        "renameatx_np",
-        "revoke",
-        "rmdir",
-        "searchfs",
-        "setattrlist",
-        "setattrlistat",
-        "setxattr",
-        "stat",
-        "stat64",
-        "stat64_extended",
-        "stat_extended",
-        "statfs",
-        "statfs64",
-        "symlink",
-        "symlinkat",
-        "truncate",
-        "undelete",
-        "unlink",
-        "unlinkat",
-        "unmount",
-        "utimes",
-    ),
-    "net": (
-        "accept",
-        "bind",
-        "connect",
-        "connectx",
-        "disconnectx",
-        "getpeername",
-        "getsockname",
-        "getsockopt",
-        "listen",
-        "peeloff",
-        "recvfrom",
-        "recvmsg",
-        "recvmsg_x",
-        "sendfile",
-        "sendmsg",
-        "sendmsg_x",
-        "sendto",
-        "setsockopt",
-        "shutdown",
-        "socket",
-        "socket_delegate",
-        "socketpair",
-    ),
-    "proc": (
-        "abort_with_payload",
-        "execve",
-        "exit",
-        "fork",
-        "kill",
-        "pid_resume",
-        "pid_suspend",
-        "posix_spawn",
-        "ptrace",
-        "setpgid",
-        "setsid",
-        "terminate_with_payload",
-        "vfork",
-        "wait4",
-        "waitid",
-    ),
-    # Syscalls on file descriptors: reads and writes, and the descriptors themselves.
-    "io": (
-        "fchflags",
-        "fchmod",
-        "fchown",
-        "fdatasync",
-        "fgetattrlist",
-        "fgetxattr",
-        "flistxattr",
-        "fremovexattr",
-        "fsetattrlist",
-        "fsetxattr",
-        "fstatfs",
-        "fstatfs64",
-        "fsync",
-        "ftruncate",
-        "futimes",
-        "getattrlistbulk",
-        "getdirentries64",
-        "getdirentriesattr",
-        "guarded_close_np",
-        "guarded_pwrite_np",
-        "guarded_write_np",
-        "guarded_writev_np",
-        "ioctl",
-        "lseek",
-        "pipe",
-        "pipe2",
-        "pread",
-        "pwrite",
-        "read",
-        "readv",
-        "sendfile",
-        "sys_close",
-        "sys_dup",
-        "sys_dup2",
-        "sys_dup3",
-        "sys_fcntl",
-        "sys_fileport_makefd",
-        "sys_fileport_makeport",
-        "sys_flock",
-        "sys_fstat64",
-        "sys_preadv",
-        "sys_pwritev",
-        "write",
-        "writev",
-    ),
-    # Memory mappings and their protections.
-    "mem": (
-        "madvise",
-        "map_with_linking_np",
-        "mincore",
-        "minherit",
-        "mlock",
-        "mlockall",
-        "mmap",
-        "mprotect",
-        "mremap_encrypted",
-        "msync",
-        "munlock",
-        "munlockall",
-        "munmap",
-        "shared_region_check_np",
-        "shared_region_map_and_slide_2_np",
-        "shared_region_map_and_slide_np",
-    ),
-    # Sending, handling and masking signals.
-    "signal": (
-        "disable_threadsignal",
-        "kill",
-        "pthread_kill",
-        "pthread_sigmask",
-        "sigaction",
-        "sigaltstack",
-        "sigpending",
-        "sigprocmask",
-        "sigreturn",
-        "sigsuspend",
-        "sigwait",
-    ),
-    # Credentials, code signing and policy (Sandbox, AMFI) checks, and access to other tasks.
-    "cred": (
-        "audit_session_port",
-        "csops",
-        "csops_audittoken",
-        "csrctl",
-        "initgroups",
-        "issetugid",
-        "mac_syscall",
-        "persona",
-        "setauid",
-        "setegid",
-        "seteuid",
-        "setgid",
-        "setgroups",
-        "setlogin",
-        "setregid",
-        "setreuid",
-        "setuid",
-        "task_inspect_for_pid",
-        "task_read_for_pid",
-    ),
-    # Waiting and waking: locks, condition variables, kqueues and workqueues.
-    "sync": (
-        "kevent",
-        "kevent64",
-        "kevent_id",
-        "kevent_qos",
-        "kqueue",
-        "kqueue_workloop_ctl",
-        "poll",
-        "pselect",
-        "psynch_cvbroad",
-        "psynch_cvclrprepost",
-        "psynch_cvsignal",
-        "psynch_cvwait",
-        "psynch_mutexdrop",
-        "psynch_mutexwait",
-        "select",
-        "sem_close",
-        "sem_open",
-        "sem_post",
-        "sem_trywait",
-        "sem_unlink",
-        "sem_wait",
-        "semwait_signal",
-        "ulock_wait",
-        "ulock_wait2",
-        "ulock_wake",
-        "workq_kernreturn",
-    ),
-    # Mach traps only (`group_mach_traps`).
-    "mach": (),
-}
-#: The Mach traps of a parse-live group, by trace code name (they are events, as `--event` takes them). The device
-#: sends Mach traps in their own subclass. `--mach` is every Mach trap pykdebugparser parses (`group_mach_traps`).
-MACH_TRAP_GROUPS: dict[str, tuple[str, ...]] = {
-    "mem": (
-        "MSC_kern_mach_vm_purgable_control_trap",
-        "MSC_mach_vm_allocate_trap",
-        "MSC_mach_vm_deallocate_trap",
-        "MSC_mach_vm_map_trap",
-        "MSC_mach_vm_protect_trap",
-    ),
-    "cred": (
-        "MSC_pid_for_task",
-        "MSC_task_for_pid",
-        "MSC_task_name_for_pid",
-    ),
-    "sync": (
-        "MSC_mach_wait_until",
-        "MSC_semaphore_signal_trap",
-        "MSC_semaphore_timedwait_trap",
-        "MSC_semaphore_wait_trap",
-    ),
-}
-
-
-@functools.cache
-def _parsed_events() -> frozenset[str]:
-    """The trace code names of the events pykdebugparser parses (the others print only when asked for by id)."""
-    # pykdebugparser is not annotated
-    parser: Any = TracesParser(default_trace_codes(), dict[int, int](), dict[int, str]())
-    handlers: dict[str, object] = parser.handlers
-    return frozenset(handlers)
-
-
-@functools.cache
-def _parsed_mach_traps() -> tuple[str, ...]:
-    """The trace code names of the Mach traps pykdebugparser parses."""
-    parsed = _parsed_events()
-    return tuple(
-        sorted({name for name in default_trace_codes().values() if name.startswith("MSC_") and name in parsed})
-    )
-
-
-def group_mach_traps(group: str) -> tuple[str, ...]:
-    """The Mach traps of a parse-live group."""
-    return _parsed_mach_traps() if group == "mach" else MACH_TRAP_GROUPS.get(group, ())
-
-
-#: The user space event groups of parse-live (`--xpc`, ...), by the prefix of their trace code names. Their events have
-#: no decoder, so they print as their name and raw arguments.
-EVENT_GROUP_PREFIXES: dict[str, str] = {"xpc": "XPC_", "dispatch": "DISPATCH_", "runloop": "CFRL_"}
-
-
-def group_events(group: str) -> tuple[str, ...]:
-    """The events of a parse-live user space event group."""
-    prefix = EVENT_GROUP_PREFIXES[group]
-    return tuple(sorted({name for name in default_trace_codes().values() if name.startswith(prefix)}))
 
 
 # How far (in seconds) parse-live may fall behind the device before it skips ahead to recent events.
 PARSE_LIVE_MAX_LAG = 2.0
+
+
+async def _to_daemon_thread(func: Callable[[], None]) -> None:
+    """
+    Run `func` in a daemon thread, like `asyncio.to_thread`. A live command's thread waits for the device's chunks,
+    and if the command is interrupted before it ends the stream, a non-daemon thread would block the exit forever.
+    """
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[None] = loop.create_future()
+
+    def settle(error: Optional[BaseException]) -> None:
+        if future.done():
+            return
+        if error is None:
+            future.set_result(None)
+        else:
+            future.set_exception(error)
+
+    def run() -> None:
+        error: Optional[BaseException] = None
+        try:
+            func()
+        except BaseException as e:
+            error = e
+        # The loop is closed if the command was abandoned.
+        with contextlib.suppress(RuntimeError):
+            loop.call_soon_threadsafe(settle, error)
+
+    threading.Thread(target=run, daemon=True).start()
+    await future
 
 
 cli = InjectingTyper(
@@ -477,15 +204,10 @@ def _validate_syscalls(names: Any) -> list[str]:
     return names
 
 
-def event_eventids(names: list[str]) -> set[int]:
-    """The event ids of trace code names (a name some codes share gives all of them)."""
-    codes: dict[str, set[int]] = {}
-    for code, name in default_trace_codes().items():
-        codes.setdefault(name, set()).add(code)
-    unknown = [name for name in names if name not in codes]
-    if unknown:
-        raise ValueError(f"unknown events: {', '.join(unknown)}")
-    return {code for name in names for code in codes[name]}
+def _validate_max_lag(value: float) -> float:
+    if value <= 0:
+        raise typer.BadParameter("must be positive")
+    return value
 
 
 def _validate_events(names: Any) -> list[str]:
@@ -495,15 +217,6 @@ def _validate_events(names: Any) -> list[str]:
     except ValueError as e:
         raise typer.BadParameter(f"{e} (`pymobiledevice3 developer dvt core-profile-session events` lists them)") from e
     return names
-
-
-def syscall_names() -> list[str]:
-    """The syscall names `parse-live --syscall` accepts; a `_nocancel` variant is covered by its base name."""
-    # `BSC_#123`-style names are placeholders for syscall numbers without a name.
-    names = {
-        name[len("BSC_") :] for name in default_trace_codes().values() if name.startswith("BSC_") and "#" not in name
-    }
-    return sorted(name for name in names if not (name.endswith("_nocancel") and name[: -len("_nocancel")] in names))
 
 
 def live_trace_codes(device_trace_codes: dict[int, str]) -> dict[int, str]:
@@ -587,7 +300,7 @@ async def live_profile_session(
                         break
 
             try:
-                await asyncio.to_thread(_print_events)
+                await _to_daemon_thread(_print_events)
             finally:
                 producer_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -852,92 +565,25 @@ EventSelect = Annotated[
         "specified multiple times.",
     ),
 ]
-FsGroup = Annotated[bool, typer.Option("--fs", help="The syscalls that take a path.")]
-NetGroup = Annotated[bool, typer.Option("--net", help="The socket syscalls.")]
-ProcGroup = Annotated[bool, typer.Option("--proc", help="The process lifecycle syscalls.")]
-IoGroup = Annotated[bool, typer.Option("--io", help="The syscalls on file descriptors: read, write, ...")]
-MemGroup = Annotated[bool, typer.Option("--mem", help="The memory mapping syscalls and Mach traps.")]
-SignalGroup = Annotated[bool, typer.Option("--signal", help="The signal syscalls.")]
-CredGroup = Annotated[
-    bool, typer.Option("--cred", help="Credential, code signing and policy checks, and access to other tasks.")
-]
-SyncGroup = Annotated[bool, typer.Option("--sync", help="Locks, condition variables, kqueues and workqueues.")]
-MachGroup = Annotated[bool, typer.Option("--mach", help="The Mach traps.")]
+FsGroup = Annotated[bool, typer.Option("--fs", help=GROUP_HELP["fs"])]
+NetGroup = Annotated[bool, typer.Option("--net", help=GROUP_HELP["net"])]
+ProcGroup = Annotated[bool, typer.Option("--proc", help=GROUP_HELP["proc"])]
+IoGroup = Annotated[bool, typer.Option("--io", help=GROUP_HELP["io"])]
+MemGroup = Annotated[bool, typer.Option("--mem", help=GROUP_HELP["mem"])]
+SignalGroup = Annotated[bool, typer.Option("--signal", help=GROUP_HELP["signal"])]
+CredGroup = Annotated[bool, typer.Option("--cred", help=GROUP_HELP["cred"])]
+SyncGroup = Annotated[bool, typer.Option("--sync", help=GROUP_HELP["sync"])]
+MachGroup = Annotated[bool, typer.Option("--mach", help=GROUP_HELP["mach"])]
 DyldGroup = Annotated[
     bool, typer.Option("--dyld", help="dyld events (image loads, dlopen, dlsym, ...), filtered on the device.")
 ]
-XpcGroup = Annotated[
-    bool, typer.Option("--xpc", help="libxpc events: messages sent and received, replies, transactions.")
-]
-DispatchGroup = Annotated[
-    bool, typer.Option("--dispatch", help="libdispatch events: Mach messages received through dispatch, queue misuse.")
-]
-RunloopGroup = Annotated[
-    bool,
-    typer.Option(
-        "--runloop", help="CoreFoundation run loop events: iterations, waits, sources, timers, observers and blocks."
-    ),
-]
+XpcGroup = Annotated[bool, typer.Option("--xpc", help=GROUP_HELP["xpc"])]
+DispatchGroup = Annotated[bool, typer.Option("--dispatch", help=GROUP_HELP["dispatch"])]
+RunloopGroup = Annotated[bool, typer.Option("--runloop", help=GROUP_HELP["runloop"])]
 
 
 def _enabled_groups(**groups: bool) -> list[str]:
     return [group for group, on in groups.items() if on]
-
-
-@dataclasses.dataclass
-class ParseLiveSelection:
-    """What parse-live prints: the events selected by id, and the parsed events of the selected classes/subclasses."""
-
-    classes: list[int]
-    subclasses: list[int]
-    syscall_ids: set[int]
-    event_ids: set[int]
-
-    @property
-    def eventids(self) -> set[int]:
-        return self.syscall_ids | self.event_ids
-
-
-def parse_live_selection(
-    *,
-    bsc: bool,
-    class_filters: list[int],
-    subclass_filters: list[int],
-    syscalls: list[str],
-    events: list[str],
-    groups: list[str],
-    dyld: bool,
-) -> ParseLiveSelection:
-    """The events parse-live prints for its options; groups add their syscalls, Mach traps and user space events."""
-    syscall_groups = [group for group in groups if group in SYSCALL_GROUPS]
-    event_groups = [group for group in groups if group in EVENT_GROUP_PREFIXES]
-    syscall_ids = syscall_eventids([*syscalls, *(name for group in syscall_groups for name in SYSCALL_GROUPS[group])])
-    event_ids = event_eventids([
-        *events,
-        *(name for group in syscall_groups for name in group_mach_traps(group)),
-        *(name for group in event_groups for name in group_events(group)),
-    ])
-    return ParseLiveSelection(
-        classes=[*class_filters, *([DBG_DYLD] if dyld else [])],
-        subclasses=[*subclass_filters, *([BSC_SUBCLASS] if bsc else [])],
-        syscall_ids=syscall_ids,
-        event_ids=event_ids,
-    )
-
-
-def captured_events(selection: ParseLiveSelection) -> list[str]:
-    """
-    The names of the events parse-live prints for a selection: those selected by id (printed even without a
-    decoder), and those of the selected classes and subclasses pykdebugparser decodes (the others are dropped).
-    """
-    parsed = _parsed_events()
-    eventids = selection.eventids
-    return sorted({
-        name
-        for eventid, name in default_trace_codes().items()
-        if eventid in eventids
-        or ((eventid >> 24 in selection.classes or eventid >> 16 in selection.subclasses) and name in parsed)
-    })
 
 
 @cli.command("parse-live")
@@ -989,10 +635,18 @@ async def parse_live_profile_session(
     skip_behind: Annotated[
         bool,
         typer.Option(
-            help=f"Skip ahead to recent events whenever output falls more than {PARSE_LIVE_MAX_LAG:g}s behind the "
-            "device. Without class/subclass filters the device can emit events faster than they can be parsed.",
+            help="Skip ahead to recent events whenever output falls more than --max-lag behind the device, instead of "
+            "failing. Without class/subclass filters the device can emit events faster than they can be parsed.",
         ),
-    ] = True,
+    ] = False,
+    max_lag: Annotated[
+        float,
+        typer.Option(
+            callback=_validate_max_lag,
+            help="How far (in seconds) output may fall behind the device before it skips ahead (--skip-behind) or "
+            "fails (--no-skip-behind).",
+        ),
+    ] = PARSE_LIVE_MAX_LAG,
 ) -> None:
     """
     Print traces (syscalls, thread events, etc.) received from the device in real time.
@@ -1073,9 +727,10 @@ async def parse_live_profile_session(
             chunk_queue: queue.Queue[Any] = queue.Queue()
             stream = tap.get_kdbuf_stream(
                 chunk_queue,
-                max_lag=PARSE_LIVE_MAX_LAG if skip_behind else None,
+                max_lag=max_lag,
                 on_skip=_warn_skipped,
                 on_wait=out.flush,
+                skip_behind=skip_behind,
             )
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
@@ -1096,7 +751,7 @@ async def parse_live_profile_session(
             if line_buffering and isinstance(out, TextIOWrapper):
                 out.reconfigure(line_buffering=False)
             try:
-                await asyncio.to_thread(_print_traces)
+                await _to_daemon_thread(_print_traces)
             finally:
                 producer_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -1105,6 +760,12 @@ async def parse_live_profile_session(
                 if line_buffering and isinstance(out, TextIOWrapper):
                     out.flush()
                     out.reconfigure(line_buffering=True)
+                # Whether the trace kept up with the device: nothing dropped by its kernel, nothing skipped.
+                print(
+                    f"Read {stream.events} events, the kernel dropped events {stream.lost_events} times, "
+                    f"{stream.skipped_events} events were skipped to catch up",
+                    file=sys.stderr,
+                )
 
 
 @cli.command("events")
@@ -1233,7 +894,7 @@ async def callstacks_live_profile_session(
                     print(format_callstack(callstack, dsc_uuid_map, current_dsc_map))
 
             try:
-                await asyncio.to_thread(_print_callstacks)
+                await _to_daemon_thread(_print_callstacks)
             finally:
                 producer_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

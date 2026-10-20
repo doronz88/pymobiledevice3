@@ -72,6 +72,7 @@ __all__ = [
     "StartServiceError",
     "SysdiagnoseTimeoutError",
     "TSSError",
+    "TraceLagError",
     "TunneldConnectionError",
     "UnrecognizedSelectorError",
     "UnsupportedCommandError",
@@ -265,6 +266,18 @@ class UnsupportedCommandError(PyMobileDevice3Exception):
     """Given command isn't supported for this iOS version"""
 
     pass
+
+
+class TraceLagError(PyMobileDevice3Exception):
+    """Raised when a live trace falls further behind the device than it may."""
+
+    def __init__(self, lag: float, max_lag: float) -> None:
+        super().__init__(lag, max_lag)
+        self.lag = lag
+        self.max_lag = max_lag
+
+    def __str__(self) -> str:
+        return f"Fell {self.lag:.2f}s behind, more than the max lag ({self.max_lag:g}s)"
 
 
 class ExtractingStackshotError(PyMobileDevice3Exception):

@@ -401,10 +401,10 @@ pymobiledevice3 developer dvt ls PATH
 pymobiledevice3 developer dvt launch com.apple.mobilesafari
 
 # Live KDebug parsing (strace-like). Unfiltered, the device emits events faster than they can
-# be parsed, so output skips ahead (with a warning on stderr) whenever it falls 2s behind;
-# --bsc / --class-filters / --subclass-filters filter on the device (by subclass at most), and
-# --no-skip-behind keeps every event at the cost of falling ever further behind. While apps launch,
-# --bsc keeps up over any tunnel
+# be parsed, so output fails once it falls --max-lag (2s) behind, or skips ahead (with a warning on
+# stderr) with --skip-behind; --bsc / --class-filters / --subclass-filters filter on the device (by
+# subclass at most). On exit it prints how many events were read, dropped by the device and
+# skipped. While apps launch, --bsc keeps up over any tunnel
 pymobiledevice3 developer dvt core-profile-session parse-live
 pymobiledevice3 developer dvt core-profile-session parse-live --bsc
 

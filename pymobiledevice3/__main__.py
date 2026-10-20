@@ -75,6 +75,7 @@ from pymobiledevice3.exceptions import (
     RSDRequiredError,
     SetProhibitedError,
     StartServiceError,
+    TraceLagError,
     TunneldConnectionError,
     UserDeniedPairingError,
     UserspaceTunnelUnavailableError,
@@ -355,6 +356,11 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
         reconnectable = True
     except DvtException as e:
         logger.error(str(e))
+    except TraceLagError as e:
+        logger.error(
+            f"{e}. To skip ahead to recent events instead, pass --skip-behind (or allow more lag with --max-lag, or "
+            "narrow the trace)"
+        )
     except RemoteXPCHandshakeTimeoutError as e:
         logger.error(
             f"{e.args[0].capitalize()}. The service either refuses this host or its daemon is stuck; "

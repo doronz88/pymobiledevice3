@@ -28,12 +28,24 @@ from bytestruct import (
     u64,
     uuid_t,
 )
-from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES
+from pykdebugparser.kd_buf_parser import (
+    RAW_VERSION2_BYTES,
+    RAW_VERSION_SIZE,
+    V2_EVENTS_ALIGNMENT,
+    KdHeaderV2,
+    KdThreadmap,
+)
+from pykdebugparser.trace_handlers.trace import TRACE_LOST_EVENTS
 
 from pymobiledevice3.dtx import DTXContext, DTXQueue, DTXService, dtx_method, dtx_on_data, dtx_on_notification
 from pymobiledevice3.dtx_service import DtxService
 from pymobiledevice3.dtx_service_provider import DtxServiceProvider
-from pymobiledevice3.exceptions import ConnectionTerminatedError, DvtException, ExtractingStackshotError
+from pymobiledevice3.exceptions import (
+    ConnectionTerminatedError,
+    DvtException,
+    ExtractingStackshotError,
+    TraceLagError,
+)
 from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.tap import TapMessageChannel
@@ -639,6 +651,8 @@ STACKSHOT_HEADER = U32_LE.pack(kcdata_types["KCDATA_BUFFER_BEGIN_STACKSHOT"])
 
 
 KD_BUF_SIZE = 64
+_DEBUGID_OFFSET = 48
+_LOST_EVENTS_DEBUGID = U32_LE.pack(TRACE_LOST_EVENTS)
 
 
 class KdBufStream:
@@ -647,9 +661,10 @@ class KdBufStream:
 
     :param chunk_queue: Queue being fed by `pump_kdbuf_chunks`.
     :param max_lag: Skip whole chunks whose newest event is more than this many seconds behind real time, so
-        a reader slower than the device catches up instead of falling ever further behind. `None` never skips.
+        a reader slower than the device catches up instead of falling ever further behind. `None` never checks.
         The lag is measured against the smallest lag seen so far, which absorbs the delivery delay and any
         device/host clock offset. The first (header) chunk is never skipped.
+    :param skip_behind: Whether to skip the chunks that are more than `max_lag` behind, or raise `TraceLagError`.
     :param event_seconds: Converts a kd_buf timestamp (mach ticks) to seconds; required with `max_lag`.
     :param on_skip: Called with the number of skipped events and how far behind the stream was, once per
         catch-up.
@@ -664,6 +679,7 @@ class KdBufStream:
         event_seconds: typing.Optional[typing.Callable[[int], float]] = None,
         on_skip: typing.Optional[typing.Callable[[int, float], None]] = None,
         on_wait: typing.Optional[typing.Callable[[], None]] = None,
+        skip_behind: bool = True,
     ):
         if max_lag is not None and event_seconds is None:
             raise ValueError("max_lag requires event_seconds")
@@ -673,6 +689,11 @@ class KdBufStream:
         self.event_seconds = event_seconds
         self.on_skip = on_skip
         self.on_wait = on_wait
+        self.skip_behind = skip_behind
+        # Records received (skipped ones included), and gaps the device reported (a TRACE_LOST_EVENTS record each):
+        # its kernel buffer wrapped before the events were sent.
+        self.events = 0
+        self.lost_events = 0
         self.skipped_events = 0
         self._started = False
         self._ended = False  # the end of the stream was dequeued; later reads must not wait for more chunks
@@ -706,6 +727,7 @@ class KdBufStream:
                 continue
             if data.startswith(STACKSHOT_HEADER):
                 continue
+            self._count(data)
             if self._started and self._is_behind(data):
                 continue
             self._started = True
@@ -713,6 +735,21 @@ class KdBufStream:
             self.current_chunk = BytesIO(data)
 
         return self.current_chunk.read(size)
+
+    def _count(self, data: bytes) -> None:
+        """Count the records of a data chunk, and the gaps the device reported among them."""
+        start = 0
+        if not self._started and data.startswith(RAW_VERSION2_BYTES):
+            # The header chunk: its records start after the header and threadmap, padded to 4 KiB.
+            header = KdHeaderV2.parse(data[RAW_VERSION_SIZE : RAW_VERSION_SIZE + KdHeaderV2.SIZE])
+            start = RAW_VERSION_SIZE + KdHeaderV2.SIZE + header.number_of_threads * KdThreadmap.SIZE
+            start += -start % V2_EVENTS_ALIGNMENT
+        self.events += max(len(data) - start, 0) // KD_BUF_SIZE
+        index = data.find(_LOST_EVENTS_DEBUGID, start)
+        while index != -1:
+            if (index - start) % KD_BUF_SIZE == _DEBUGID_OFFSET:
+                self.lost_events += 1
+            index = data.find(_LOST_EVENTS_DEBUGID, index + 1)
 
     def _is_behind(self, data: bytes) -> bool:
         """Whether this data chunk's newest event is more than `max_lag` behind; counts it as skipped if so."""
@@ -726,6 +763,8 @@ class KdBufStream:
         lag = offset - self._min_offset
         if lag <= self.max_lag:
             return False
+        if not self.skip_behind:
+            raise TraceLagError(lag, self.max_lag)
         self._skipping += len(data) // KD_BUF_SIZE
         self._skipping_lag = max(self._skipping_lag, lag)
         return True
@@ -998,6 +1037,7 @@ class CoreProfileSessionTap:
         max_lag: typing.Optional[float] = None,
         on_skip: typing.Optional[typing.Callable[[int, float], None]] = None,
         on_wait: typing.Optional[typing.Callable[[], None]] = None,
+        skip_behind: bool = True,
     ) -> KdBufStream:
         """
         Wrap a chunk queue in a file-like `KdBufStream` for reading the kd_buf trace.
@@ -1007,6 +1047,7 @@ class CoreProfileSessionTap:
             ``numer``/``denom`` timebase in this tap's ``time_config``. `None` never skips.
         :param on_skip: Called with the number of skipped events and the lag in seconds, once per catch-up.
         :param on_wait: Called before the stream waits for the next chunk (see `KdBufStream`).
+        :param skip_behind: Whether to skip the events more than `max_lag` behind, or raise `TraceLagError`.
         :returns: A seekable, readable stream over the queued kd_buf chunks.
         """
         event_seconds: typing.Optional[typing.Callable[[int], float]] = None
@@ -1017,7 +1058,14 @@ class CoreProfileSessionTap:
                 return timestamp * seconds_per_tick
 
             event_seconds = ticks_to_seconds
-        return KdBufStream(chunk_queue, max_lag=max_lag, event_seconds=event_seconds, on_skip=on_skip, on_wait=on_wait)
+        return KdBufStream(
+            chunk_queue,
+            max_lag=max_lag,
+            event_seconds=event_seconds,
+            on_skip=on_skip,
+            on_wait=on_wait,
+            skip_behind=skip_behind,
+        )
 
     @staticmethod
     def parse_stackshot(data: bytes) -> dict[str, typing.Any]:
