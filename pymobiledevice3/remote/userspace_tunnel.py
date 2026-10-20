@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import errno
 import logging
 import os
 import shutil
@@ -277,6 +278,7 @@ class UserspaceTun:
         self._addr: Optional[str] = None
         self._ifidx: Optional[int] = None
         self._closed = False
+        self._send_error_logged = False
         self._peer, self._pend = _packet_socketpair()
         for s in (self._peer, self._pend):
             s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, SOCKET_BUFFER_SIZE)
@@ -348,8 +350,18 @@ class UserspaceTun:
         # inbound (device -> stack): strip pmd3 loopback header, add Ethernet, enqueue. The
         # socket is non-blocking; a full buffer drops the packet (tunnel loss, TCP recovers).
         ipv6 = data[len(LOOPBACK_HEADER) :] if data[: len(LOOPBACK_HEADER)] == LOOPBACK_HEADER else data
-        with suppress(OSError):
+        try:
             self._peer.send(_ETH_HDR_TO_STACK + ipv6)
+        except BlockingIOError:
+            pass  # Linux: the buffer is full
+        except OSError as e:
+            if e.errno == errno.ENOBUFS:
+                return  # macOS: the buffer is full
+            # Any other error (e.g. EMSGSIZE) fails again on every retransmission, so the
+            # connection stalls for good: say why, once.
+            if not self._send_error_logged:
+                self._send_error_logged = True
+                logger.warning("userspace tunnel dropped a %d-byte packet from the device: %s", len(ipv6), e)
 
     async def async_read(self) -> bytes:
         # outbound (stack -> device): await an Ethernet frame off the stack's socketpair and
