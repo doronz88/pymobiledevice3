@@ -21,6 +21,19 @@ The pre-commit hooks include ruff and pyright (pinned to the same version CI use
 local run means a clean CI run. The pyright hook resolves imports from your `.venv`, so make sure
 the editable install above ran inside it.
 
+### Testing on Linux from a Mac
+
+`misc/linux-vm/run.sh` runs a command inside a Linux VM ([Lima](https://lima-vm.io)) against the
+devices plugged into the Mac, with your working tree installed:
+
+```shell
+misc/linux-vm/run.sh pymobiledevice3 developer dvt ls /
+misc/linux-vm/run.sh pytest -m device tests/services/instruments
+```
+
+The VM reaches the devices through the Mac's usbmuxd, exposed on a loopback TCP port only while the
+command runs.
+
 ## Style Notes
 
 - Keep changes focused and include tests when behavior changes.
