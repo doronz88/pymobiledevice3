@@ -15,8 +15,10 @@ threads at all — that relaying spawns none.
 import asyncio
 import errno
 import os
+import select
 import socket
 import sys
+import tempfile
 import threading
 from contextlib import AsyncExitStack
 from typing import Any, cast
@@ -348,6 +350,39 @@ async def test_tcp_relay_forced_by_env_var(monkeypatch):
         psock.feed(b"pong")
         assert await reader.readexactly(4) == b"pong"
         writer.close()
+
+
+@pytest.mark.skipif(not get_os_utils().supports_unix_sockets, reason="platform has no AF_UNIX")
+async def test_unix_connect_probe(monkeypatch):
+    # iSH's AF_UNIX connect() ignores O_NONBLOCK and waits for the peer to accept (#2068), so a
+    # relay dial froze the whole event loop. The probe must flag that without hanging, reap its
+    # thread, and pass a normal platform.
+    socket_dir = tempfile.mkdtemp(prefix="pmd3-")  # pytest's tmp_path overflows macOS sun_path
+    baseline = set(threading.enumerate())
+    assert not await userspace_tunnel._unix_connect_blocks(socket_dir)
+
+    class AcceptWaitingSocket(socket.socket):
+        def connect(self, address: Any) -> None:
+            super().connect(address)
+            select.select([self], [], [])  # the probe closes the accepted socket: EOF wakes us
+
+    monkeypatch.setattr(userspace_tunnel, "UNIX_CONNECT_PROBE_TIMEOUT", 0.2)
+    monkeypatch.setattr(socket, "socket", AcceptWaitingSocket)
+    assert await userspace_tunnel._unix_connect_blocks(socket_dir)
+    assert set(threading.enumerate()) == baseline
+    assert not os.listdir(socket_dir)
+    os.rmdir(socket_dir)
+
+
+async def test_relay_falls_back_to_tcp_when_unix_connect_blocks(monkeypatch):
+    monkeypatch.setattr(userspace_tunnel, "_unix_connect_blocks", AsyncMock(return_value=True))
+    tun = FakeTun()
+    async with UserspaceDialPlane(cast(UserspaceTun, tun), DEVICE_ADDR) as dial_plane:
+        _reader, writer = await dial_plane.dial(DEVICE_ADDR, 4444)
+        assert writer.get_extra_info("socket").family == socket.AF_INET
+        assert dial_plane._socket_dir is None
+        await close_stream_writer(writer)
+        await _poll_until(lambda: not dial_plane._relay_tasks)
 
 
 async def test_transport_watcher_tears_down_on_transport_death():

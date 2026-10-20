@@ -41,6 +41,7 @@ import shutil
 import socket
 import struct
 import tempfile
+import threading
 import weakref
 from collections.abc import Coroutine
 from contextlib import AsyncExitStack, suppress
@@ -131,6 +132,10 @@ RELAY_HEADER_TIMEOUT = 10
 #: Set (to any non-empty value) to force the dial plane's relays onto loopback TCP even where
 #: AF_UNIX exists — reproduces the Windows relay path on any platform for debugging.
 TCP_RELAY_ENV_VAR = "PYMOBILEDEVICE3_USERSPACE_TCP_RELAY"
+
+#: How long :func:`_unix_connect_blocks` gives a unix-socket connect to return before concluding
+#: the platform holds it until the peer accepts.
+UNIX_CONNECT_PROBE_TIMEOUT = 1.0
 
 
 def throughput_sysctls() -> dict[str, int]:
@@ -245,6 +250,50 @@ def _grow_relay_buffers(sock: Any) -> None:
     for option in (socket.SO_SNDBUF, socket.SO_RCVBUF):
         with suppress(OSError):
             sock.setsockopt(socket.SOL_SOCKET, option, RELAY_SOCKET_BUFFER_SIZE)
+
+
+async def _unix_connect_blocks(socket_dir: str) -> bool:
+    """Whether a non-blocking unix-socket connect() blocks until the peer accepts.
+
+    iSH's syscall emulation does (#2068): its AF_UNIX connect waits for the accepting side to
+    exchange peer pointers, ignoring O_NONBLOCK. The relay dials and accepts on the same event
+    loop thread, so there the first dial deadlocks the whole loop — no timeout can ever fire.
+    Probe a listener that never accepts, from a short-lived thread so the loop stays free."""
+    path = os.path.join(socket_dir, "probe.sock")
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    loop = asyncio.get_running_loop()
+    returned: asyncio.Future[None] = loop.create_future()
+
+    def connect() -> None:
+        with suppress(OSError):
+            client.connect(path)
+        loop.call_soon_threadsafe(lambda: returned.done() or returned.set_result(None))
+
+    try:
+        listener.bind(path)
+        listener.listen(1)
+        client.setblocking(False)
+        thread = threading.Thread(target=connect, name="pmd3-unix-connect-probe", daemon=True)
+        thread.start()
+        try:
+            await asyncio.wait_for(returned, UNIX_CONNECT_PROBE_TIMEOUT)
+        except asyncio.TimeoutError:
+            return True
+        else:
+            return False
+        finally:
+            if thread.is_alive():
+                # Accepting is what releases a connect parked waiting for its peer.
+                listener.settimeout(UNIX_CONNECT_PROBE_TIMEOUT)
+                with suppress(OSError):
+                    listener.accept()[0].close()
+            thread.join(UNIX_CONNECT_PROBE_TIMEOUT)
+    finally:
+        client.close()
+        listener.close()
+        with suppress(OSError):
+            os.unlink(path)
 
 
 def _packet_socketpair() -> tuple[socket.socket, socket.socket]:
@@ -491,14 +540,16 @@ class UserspaceDialPlane:
             self._socket_dir = tempfile.mkdtemp(prefix="pmd3-")
             path = os.path.join(self._socket_dir, "relay.sock")
             try:
+                if await _unix_connect_blocks(self._socket_dir):
+                    raise OSError("connect() blocks until the peer accepts, which would deadlock the event loop")
                 self._server = await _bind_listener(asyncio.start_unix_server(self._handle, path))
                 # Accepted connections inherit the listener's buffer sizes; each dial sets its own.
                 _grow_relay_buffers(self._server.sockets[0])
             except OSError as e:
-                # e.g. sun_path length exceeded by an unusually long TMPDIR. The fallback is a
-                # loopback TCP port any local process can connect to — losing the unix socket's
-                # filesystem access control — so say so visibly.
-                logger.warning("unix-socket relay bind failed (%s); falling back to loopback TCP", e)
+                # e.g. sun_path length exceeded by an unusually long TMPDIR, or iSH's blocking
+                # unix connect. The fallback is a loopback TCP port any local process can connect
+                # to — losing the unix socket's filesystem access control — so say so visibly.
+                logger.warning("unix-socket relay unusable (%s); falling back to loopback TCP", e)
                 shutil.rmtree(self._socket_dir, ignore_errors=True)
                 self._socket_dir = None
             else:
