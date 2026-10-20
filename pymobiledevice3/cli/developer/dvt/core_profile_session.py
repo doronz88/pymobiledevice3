@@ -7,7 +7,8 @@ import json
 import logging
 import queue
 import sys
-from collections.abc import Mapping
+import threading
+from collections.abc import Callable, Mapping
 from enum import Enum
 from io import TextIOWrapper
 from itertools import islice
@@ -365,6 +366,36 @@ def group_events(group: str) -> tuple[str, ...]:
 PARSE_LIVE_MAX_LAG = 2.0
 
 
+async def _to_daemon_thread(func: Callable[[], None]) -> None:
+    """
+    Run `func` in a daemon thread, like `asyncio.to_thread`. A live command's thread waits for the device's chunks,
+    and if the command is interrupted before it ends the stream, a non-daemon thread would block the exit forever.
+    """
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[None] = loop.create_future()
+
+    def settle(error: Optional[BaseException]) -> None:
+        if future.done():
+            return
+        if error is None:
+            future.set_result(None)
+        else:
+            future.set_exception(error)
+
+    def run() -> None:
+        error: Optional[BaseException] = None
+        try:
+            func()
+        except BaseException as e:
+            error = e
+        # The loop is closed if the command was abandoned.
+        with contextlib.suppress(RuntimeError):
+            loop.call_soon_threadsafe(settle, error)
+
+    threading.Thread(target=run, daemon=True).start()
+    await future
+
+
 cli = InjectingTyper(
     name="core-profile-session",
     help="Access tailspin features",
@@ -587,7 +618,7 @@ async def live_profile_session(
                         break
 
             try:
-                await asyncio.to_thread(_print_events)
+                await _to_daemon_thread(_print_events)
             finally:
                 producer_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -1096,7 +1127,7 @@ async def parse_live_profile_session(
             if line_buffering and isinstance(out, TextIOWrapper):
                 out.reconfigure(line_buffering=False)
             try:
-                await asyncio.to_thread(_print_traces)
+                await _to_daemon_thread(_print_traces)
             finally:
                 producer_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -1233,7 +1264,7 @@ async def callstacks_live_profile_session(
                     print(format_callstack(callstack, dsc_uuid_map, current_dsc_map))
 
             try:
-                await asyncio.to_thread(_print_callstacks)
+                await _to_daemon_thread(_print_callstacks)
             finally:
                 producer_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

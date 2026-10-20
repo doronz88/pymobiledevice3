@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import io
 import json
+import subprocess
 import sys
 from typing import Any, cast
 
@@ -297,3 +298,28 @@ def test_parse_live_json(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Capture
     assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
         {"event": "BSC_open", "fields": {"fd": 3}, "text": "open(), fd: 3"}
     ]
+
+
+def test_to_daemon_thread_returns_and_raises() -> None:
+    results: list[int] = []
+
+    async def run() -> None:
+        await core_profile_session._to_daemon_thread(lambda: results.append(1))
+        with pytest.raises(ZeroDivisionError):
+            await core_profile_session._to_daemon_thread(lambda: 1 / 0)  # type: ignore[func-returns-value]
+
+    asyncio.run(run())
+    assert results == [1]
+
+
+def test_a_stuck_live_thread_does_not_block_the_exit() -> None:
+    # The command is abandoned while its thread still waits for a chunk that never comes.
+    code = (
+        "import asyncio, queue\n"
+        "from pymobiledevice3.cli.developer.dvt.core_profile_session import _to_daemon_thread\n"
+        "async def main():\n"
+        "    asyncio.ensure_future(_to_daemon_thread(queue.Queue().get))\n"
+        "    await asyncio.sleep(0.1)\n"
+        "asyncio.run(main())\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True, timeout=30)
