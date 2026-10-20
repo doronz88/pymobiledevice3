@@ -62,34 +62,59 @@ TRACE_CLASS_FILTER = 0x07FF0000
 PARSE_LIVE_MAX_LAG = 2.0
 
 
-async def _to_daemon_thread(func: Callable[[], None]) -> None:
+class _LiveWorker:
     """
-    Run `func` in a daemon thread, like `asyncio.to_thread`. A live command's thread waits for the device's chunks,
-    and if the command is interrupted before it ends the stream, a non-daemon thread would block the exit forever.
+    Runs a live command's printing loop in a daemon thread, and stops it before the command returns.
+
+    `asyncio.to_thread` joins its threads at exit, which hangs the exit when an interrupted command's thread still
+    waits for the device's chunks; and a daemon thread still writing to stdout at interpreter shutdown aborts it. The
+    loop gets a `threading.Event` that is set when it should stop, and checks it before each line it writes.
     """
-    loop = asyncio.get_running_loop()
-    future: asyncio.Future[None] = loop.create_future()
 
-    def settle(error: Optional[BaseException]) -> None:
-        if future.done():
-            return
-        if error is None:
-            future.set_result(None)
-        else:
-            future.set_exception(error)
+    def __init__(self, func: Callable[[threading.Event], None]) -> None:
+        self._func = func
+        self.stopping = threading.Event()
+        self._thread: Optional[threading.Thread] = None
 
-    def run() -> None:
-        error: Optional[BaseException] = None
-        try:
-            func()
-        except BaseException as e:
-            error = e
-        # The loop is closed if the command was abandoned.
-        with contextlib.suppress(RuntimeError):
-            loop.call_soon_threadsafe(settle, error)
+    async def run(self) -> None:
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[None] = loop.create_future()
 
-    threading.Thread(target=run, daemon=True).start()
-    await future
+        def settle(error: Optional[BaseException]) -> None:
+            if future.done():
+                return
+            if error is None:
+                future.set_result(None)
+            else:
+                future.set_exception(error)
+
+        def run() -> None:
+            error: Optional[BaseException] = None
+            try:
+                self._func(self.stopping)
+            except BaseException as e:
+                error = e
+            # The loop is closed if the command was abandoned.
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(settle, error)
+
+        self._thread = threading.Thread(target=run, daemon=True)
+        self._thread.start()
+        await future
+
+    def stop(self, chunk_queue: "queue.Queue[Any]", timeout: float = 5.0) -> None:
+        """
+        Stop the loop and wait for it: it stops before its next line, or at the end of the stream, which the chunks it
+        has yet to parse are dropped from. Call it first when the command ends: it doesn't await, so a second
+        cancellation of the command can't skip it.
+        """
+        self.stopping.set()
+        with contextlib.suppress(queue.Empty):
+            while True:
+                chunk_queue.get_nowait()
+        chunk_queue.put(None)
+        if self._thread is not None:
+            self._thread.join(timeout)
 
 
 cli = InjectingTyper(
@@ -290,22 +315,25 @@ async def live_profile_session(
             stream = tap.get_kdbuf_stream(chunk_queue)
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
-            def _print_events() -> None:
+            def _print_events(stopping: threading.Event) -> None:
                 # KdBufStream is a duck-typed stream; pykdebugparser annotates the parameter as io.IOBase
                 for i, event in enumerate(
                     parser.formatted_kevents(stream, trace_codes_map)  # pyright: ignore[reportArgumentType]
                 ):
+                    if stopping.is_set():
+                        break
                     print(event)
                     if i == count:
                         break
 
+            worker = _LiveWorker(_print_events)
             try:
-                await _to_daemon_thread(_print_events)
+                await worker.run()
             finally:
                 producer_task.cancel()
+                worker.stop(chunk_queue)
                 with contextlib.suppress(asyncio.CancelledError):
                     await producer_task
-                chunk_queue.put(None)
 
 
 @cli.command("save")
@@ -734,14 +762,18 @@ async def parse_live_profile_session(
             )
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
-            def _print_traces() -> None:
+            def _print_traces(stopping: threading.Event) -> None:
                 write = out.write
                 # KdBufStream is a duck-typed stream; pykdebugparser annotates the parameter as io.IOBase
                 if json_output:
                     for trace in islice(parser.dict_traces(stream), count):  # pyright: ignore[reportArgumentType]
+                        if stopping.is_set():
+                            break
                         write(json.dumps(trace) + "\n")
                 else:
                     for line in islice(parser.formatted_traces(stream), count):  # pyright: ignore[reportArgumentType]
+                        if stopping.is_set():
+                            break
                         if enable_color and color_mode == TraceColorMode.FAST:
                             line = _colorize_parse_live_trace(line, show_tid=show_tid)
                         write(line + "\n")
@@ -750,13 +782,14 @@ async def parse_live_profile_session(
             line_buffering = getattr(out, "line_buffering", False)
             if line_buffering and isinstance(out, TextIOWrapper):
                 out.reconfigure(line_buffering=False)
+            worker = _LiveWorker(_print_traces)
             try:
-                await _to_daemon_thread(_print_traces)
+                await worker.run()
             finally:
                 producer_task.cancel()
+                worker.stop(chunk_queue)
                 with contextlib.suppress(asyncio.CancelledError):
                     await producer_task
-                chunk_queue.put(None)
                 if line_buffering and isinstance(out, TextIOWrapper):
                     out.flush()
                     out.reconfigure(line_buffering=True)
@@ -888,15 +921,18 @@ async def callstacks_live_profile_session(
             stream = tap.get_kdbuf_stream(chunk_queue)
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
-            def _print_callstacks() -> None:
+            def _print_callstacks(stopping: threading.Event) -> None:
                 # KdBufStream is a duck-typed stream; pykdebugparser annotates the parameter as io.IOBase
                 for callstack in islice(parser.formatted_callstacks(stream), count):  # pyright: ignore[reportArgumentType]
+                    if stopping.is_set():
+                        break
                     print(format_callstack(callstack, dsc_uuid_map, current_dsc_map))
 
+            worker = _LiveWorker(_print_callstacks)
             try:
-                await _to_daemon_thread(_print_callstacks)
+                await worker.run()
             finally:
                 producer_task.cancel()
+                worker.stop(chunk_queue)
                 with contextlib.suppress(asyncio.CancelledError):
                     await producer_task
-                chunk_queue.put(None)

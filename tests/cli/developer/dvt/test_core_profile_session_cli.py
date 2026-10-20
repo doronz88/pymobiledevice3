@@ -326,13 +326,13 @@ def test_parse_live_max_lag_and_summary(monkeypatch: pytest.MonkeyPatch, capsys:
     assert _run_parse_live.requested["stream"]["skip_behind"] is False  # type: ignore[attr-defined]
 
 
-def test_to_daemon_thread_returns_and_raises() -> None:
+def test_live_worker_returns_and_raises() -> None:
     results: list[int] = []
 
     async def run() -> None:
-        await core_profile_session._to_daemon_thread(lambda: results.append(1))
+        await core_profile_session._LiveWorker(lambda stopping: results.append(1)).run()
         with pytest.raises(ZeroDivisionError):
-            await core_profile_session._to_daemon_thread(lambda: 1 / 0)  # type: ignore[func-returns-value]
+            await core_profile_session._LiveWorker(lambda stopping: 1 / 0).run()  # type: ignore[func-returns-value]
 
     # Not asyncio.run(): on Python 3.9 it leaves the thread without an event loop, which later tests expect.
     loop = asyncio.new_event_loop()
@@ -347,10 +347,39 @@ def test_a_stuck_live_thread_does_not_block_the_exit() -> None:
     # The command is abandoned while its thread still waits for a chunk that never comes.
     code = (
         "import asyncio, queue\n"
-        "from pymobiledevice3.cli.developer.dvt.core_profile_session import _to_daemon_thread\n"
+        "from pymobiledevice3.cli.developer.dvt.core_profile_session import _LiveWorker\n"
         "async def main():\n"
-        "    asyncio.ensure_future(_to_daemon_thread(queue.Queue().get))\n"
+        "    asyncio.ensure_future(_LiveWorker(lambda stopping: queue.Queue().get()).run())\n"
         "    await asyncio.sleep(0.1)\n"
         "asyncio.run(main())\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True, timeout=30)
+
+
+def test_an_interrupted_live_thread_stops_writing_before_the_exit() -> None:
+    # Ctrl-C while the thread writes: a daemon thread still writing to stdout at shutdown aborts the interpreter
+    # ("could not acquire lock for <stdout> at interpreter shutdown").
+    code = (
+        "import asyncio, queue, sys\n"
+        "from pymobiledevice3.cli.developer.dvt.core_profile_session import _LiveWorker\n"
+        "def write(stopping):\n"
+        "    while not stopping.is_set():\n"
+        "        sys.stdout.write('x' * 200 + '\\n')\n"
+        "async def command():\n"
+        "    worker = _LiveWorker(write)\n"
+        "    try:\n"
+        "        await worker.run()\n"
+        "    finally:\n"
+        "        worker.stop(queue.Queue())\n"
+        "async def main():\n"
+        "    task = asyncio.ensure_future(command())\n"
+        "    await asyncio.sleep(0.2)\n"
+        "    task.cancel()\n"
+        "    await asyncio.gather(task, return_exceptions=True)\n"
+        "asyncio.run(main())\n"
+    )
+    for _ in range(3):
+        result = subprocess.run(
+            [sys.executable, "-c", code], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=30
+        )
+        assert result.returncode == 0, result.stderr.decode()
