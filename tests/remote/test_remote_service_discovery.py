@@ -1,8 +1,15 @@
+import asyncio
 from typing import Any, Optional
 
 import pytest
 
-from pymobiledevice3.exceptions import DeviceFeatureNotSupportedError, InvalidServiceError, NotConnectedError
+from pymobiledevice3.exceptions import (
+    DeviceFeatureNotSupportedError,
+    InvalidServiceError,
+    NotConnectedError,
+    RemoteXPCHandshakeTimeoutError,
+)
+from pymobiledevice3.remote import remote_service_discovery
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 APP_SERVICE = "com.apple.coredevice.appservice"
@@ -75,6 +82,33 @@ def test_require_feature_missing_service_raises_invalid_service() -> None:
     rsd = make_rsd({})
     with pytest.raises(InvalidServiceError):
         rsd.require_feature(APP_SERVICE, "com.apple.coredevice.feature.listapps")
+
+
+async def test_connect_times_out_when_the_peer_info_never_arrives(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A tunnel that loses large packets passes the small RemoteXPC handshake and then stalls on
+    # the multi-KB peer info; connect() must fail instead of hanging.
+    rsd = RemoteServiceDiscoveryService(("fd00::1", 1234))
+    closed = []
+
+    async def noop(*args: Any) -> None:
+        pass
+
+    async def never() -> dict[str, Any]:
+        await asyncio.sleep(3600)
+        return {}
+
+    async def close() -> None:
+        closed.append(True)
+
+    monkeypatch.setattr(rsd.service, "connect", noop)
+    monkeypatch.setattr(rsd.service, "send_device_handshake", noop)
+    monkeypatch.setattr(rsd.service, "receive_response", never)
+    monkeypatch.setattr(rsd.service, "close", close)
+    monkeypatch.setattr(remote_service_discovery, "PEER_INFO_TIMEOUT", 0.05)
+
+    with pytest.raises(RemoteXPCHandshakeTimeoutError, match="fd00::1:1234 did not send its peer info"):
+        await rsd.connect()
+    assert closed
 
 
 async def test_another_rsd_peer_leaves_advertised_services_reachable(service_provider) -> None:

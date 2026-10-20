@@ -17,6 +17,7 @@ from pymobiledevice3.exceptions import (
     NotConnectedError,
     NotPairedError,
     PyMobileDevice3Exception,
+    RemoteXPCHandshakeTimeoutError,
     StartServiceError,
 )
 from pymobiledevice3.lockdown import LockdownClient, create_using_remote
@@ -36,6 +37,10 @@ class RSDDevice:
 
 # from remoted ([RSDRemoteNCMDeviceDevice createPortListener])
 RSD_PORT = 58783
+
+#: How long the device gets to send its peer info after our device handshake. It is the first
+#: multi-KB reply on the connection, so a tunnel that loses large packets stalls exactly here.
+PEER_INFO_TIMEOUT = 10
 
 logger = logging.getLogger(__name__)
 
@@ -314,7 +319,13 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         await self.service.connect()
         try:
             await self.service.send_device_handshake(self.handshake_uuid)
-            self.peer_info = await self.service.receive_response()
+            try:
+                self.peer_info = await asyncio.wait_for(self.service.receive_response(), PEER_INFO_TIMEOUT)
+            except asyncio.TimeoutError as e:
+                address = self.service.address
+                raise RemoteXPCHandshakeTimeoutError(
+                    f"the service at {address[0]}:{address[1]} did not send its peer info"
+                ) from e
             self.udid = self.peer_info["Properties"]["UniqueDeviceID"]
             self.product_type = self.peer_info["Properties"]["ProductType"]
 
