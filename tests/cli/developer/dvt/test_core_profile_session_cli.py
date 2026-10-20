@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from pykdebugparser.trace_codes import default_trace_codes, syscall_eventids
+from pykdebugparser.trace_codes import MACH_TRAP_GROUPS, default_trace_codes, syscall_eventids, syscall_names
 from typer.testing import CliRunner
 
 from pymobiledevice3 import __main__
@@ -51,7 +51,7 @@ def test_parse_live_rejects_an_unknown_syscall_before_connecting(monkeypatch: py
 
 
 def test_syscall_names_are_what_parse_live_accepts() -> None:
-    names = core_profile_session.syscall_names()
+    names = syscall_names()
     assert {"open", "openat", "read"} <= set(names)
     assert "open_nocancel" not in names  # covered by `open`
     assert not [name for name in names if "#" in name]
@@ -121,7 +121,7 @@ def test_parse_live_syscall_filters_on_the_host(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_syscall_groups_are_known_syscalls() -> None:
-    names = set(core_profile_session.syscall_names())
+    names = set(syscall_names())
     for group, members in core_profile_session.SYSCALL_GROUPS.items():
         assert set(members) <= names, group
 
@@ -158,7 +158,7 @@ def test_event_eventids() -> None:
 
 
 def test_mach_trap_groups_are_known_events() -> None:
-    for group, members in core_profile_session.MACH_TRAP_GROUPS.items():
+    for group, members in MACH_TRAP_GROUPS.items():
         assert group in core_profile_session.SYSCALL_GROUPS, group
         assert all(name.startswith("MSC_") for name in members), group
         core_profile_session.event_eventids(list(members))

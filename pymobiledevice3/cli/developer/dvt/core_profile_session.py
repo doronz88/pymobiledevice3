@@ -17,7 +17,12 @@ from typing import Annotated, Any, Optional, cast
 
 import typer
 from pykdebugparser.pykdebugparser import PyKdebugParser
-from pykdebugparser.trace_codes import default_trace_codes, syscall_eventids
+from pykdebugparser.trace_codes import (
+    default_trace_codes,
+    event_eventids,
+    group_mach_traps,
+    syscall_eventids,
+)
 from pykdebugparser.traces_parser import TracesParser
 from typer_injector import InjectingTyper
 
@@ -304,28 +309,6 @@ SYSCALL_GROUPS: dict[str, tuple[str, ...]] = {
     # Mach traps only (`group_mach_traps`).
     "mach": (),
 }
-#: The Mach traps of a parse-live group, by trace code name (they are events, as `--event` takes them). The device
-#: sends Mach traps in their own subclass. `--mach` is every Mach trap pykdebugparser parses (`group_mach_traps`).
-MACH_TRAP_GROUPS: dict[str, tuple[str, ...]] = {
-    "mem": (
-        "MSC_kern_mach_vm_purgable_control_trap",
-        "MSC_mach_vm_allocate_trap",
-        "MSC_mach_vm_deallocate_trap",
-        "MSC_mach_vm_map_trap",
-        "MSC_mach_vm_protect_trap",
-    ),
-    "cred": (
-        "MSC_pid_for_task",
-        "MSC_task_for_pid",
-        "MSC_task_name_for_pid",
-    ),
-    "sync": (
-        "MSC_mach_wait_until",
-        "MSC_semaphore_signal_trap",
-        "MSC_semaphore_timedwait_trap",
-        "MSC_semaphore_wait_trap",
-    ),
-}
 
 
 @functools.cache
@@ -335,20 +318,6 @@ def _parsed_events() -> frozenset[str]:
     parser: Any = TracesParser(default_trace_codes(), dict[int, int](), dict[int, str]())
     handlers: dict[str, object] = parser.handlers
     return frozenset(handlers)
-
-
-@functools.cache
-def _parsed_mach_traps() -> tuple[str, ...]:
-    """The trace code names of the Mach traps pykdebugparser parses."""
-    parsed = _parsed_events()
-    return tuple(
-        sorted({name for name in default_trace_codes().values() if name.startswith("MSC_") and name in parsed})
-    )
-
-
-def group_mach_traps(group: str) -> tuple[str, ...]:
-    """The Mach traps of a parse-live group."""
-    return _parsed_mach_traps() if group == "mach" else MACH_TRAP_GROUPS.get(group, ())
 
 
 #: The user space event groups of parse-live (`--xpc`, ...), by the prefix of their trace code names. Their events have
@@ -508,17 +477,6 @@ def _validate_syscalls(names: Any) -> list[str]:
     return names
 
 
-def event_eventids(names: list[str]) -> set[int]:
-    """The event ids of trace code names (a name some codes share gives all of them)."""
-    codes: dict[str, set[int]] = {}
-    for code, name in default_trace_codes().items():
-        codes.setdefault(name, set()).add(code)
-    unknown = [name for name in names if name not in codes]
-    if unknown:
-        raise ValueError(f"unknown events: {', '.join(unknown)}")
-    return {code for name in names for code in codes[name]}
-
-
 def _validate_max_lag(value: float) -> float:
     if value <= 0:
         raise typer.BadParameter("must be positive")
@@ -532,15 +490,6 @@ def _validate_events(names: Any) -> list[str]:
     except ValueError as e:
         raise typer.BadParameter(f"{e} (`pymobiledevice3 developer dvt core-profile-session events` lists them)") from e
     return names
-
-
-def syscall_names() -> list[str]:
-    """The syscall names `parse-live --syscall` accepts; a `_nocancel` variant is covered by its base name."""
-    # `BSC_#123`-style names are placeholders for syscall numbers without a name.
-    names = {
-        name[len("BSC_") :] for name in default_trace_codes().values() if name.startswith("BSC_") and "#" not in name
-    }
-    return sorted(name for name in names if not (name.endswith("_nocancel") and name[: -len("_nocancel")] in names))
 
 
 def live_trace_codes(device_trace_codes: dict[int, str]) -> dict[int, str]:
