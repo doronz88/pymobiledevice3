@@ -4,6 +4,7 @@ import io
 import json
 import subprocess
 import sys
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -81,7 +82,8 @@ def _run_parse_live(monkeypatch: pytest.MonkeyPatch, **options: Any) -> tuple[An
             return {"numer": 1, "denom": 1, "mach_absolute_time": 0, "usecs_since_epoch": 0, "timezone": None}
 
         def get_kdbuf_stream(self, chunk_queue: object, **kwargs: object) -> object:
-            return object()
+            requested["stream"] = kwargs
+            return SimpleNamespace(events=5, lost_events=1, skipped_events=2)
 
         async def pump_kdbuf_chunks(self, chunk_queue: object) -> None:
             await asyncio.Event().wait()
@@ -105,6 +107,7 @@ def _run_parse_live(monkeypatch: pytest.MonkeyPatch, **options: Any) -> tuple[An
         **{"class_filters": [], "subclass_filters": [], "syscalls": [], "events": [], **options},
     )
     (parser,) = parsers
+    _run_parse_live.requested = requested  # type: ignore[attr-defined]
     return requested["filters"], parser
 
 
@@ -298,6 +301,19 @@ def test_parse_live_json(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Capture
     assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
         {"event": "BSC_open", "fields": {"fd": 3}, "text": "open(), fd: 3"}
     ]
+
+
+def test_parse_live_max_lag_and_summary(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    _run_parse_live(monkeypatch, bsc=True, max_lag=0.5)
+    assert _run_parse_live.requested["stream"]["max_lag"] == 0.5  # type: ignore[attr-defined]
+    # Whether the trace kept up, the same summary line as pykdebugparser's parse-live.
+    assert capsys.readouterr().err.splitlines()[-1] == (
+        "Read 5 events, the kernel dropped events 1 times, 2 events were skipped to catch up"
+    )
+
+    _run_parse_live(monkeypatch, bsc=True, max_lag=0.5, skip_behind=False)
+    assert _run_parse_live.requested["stream"]["max_lag"] == 0.5  # type: ignore[attr-defined]
+    assert _run_parse_live.requested["stream"]["skip_behind"] is False  # type: ignore[attr-defined]
 
 
 def test_to_daemon_thread_returns_and_raises() -> None:

@@ -7,7 +7,9 @@ from typing import Any
 import pytest
 from pykdebugparser.kd_buf_parser import RAW_VERSION2_BYTES, V2_EVENTS_ALIGNMENT
 from pykdebugparser.pykdebugparser import PyKdebugParser
+from pykdebugparser.trace_handlers.trace import TRACE_LOST_EVENTS
 
+from pymobiledevice3.exceptions import TraceLagError
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import (
     KD_BUF_SIZE,
     STACKSHOT_HEADER,
@@ -158,3 +160,29 @@ def test_traces_survive_skipping_unmatched_start_and_end() -> None:
     # tid 1's END was skipped; tid 2 and tid 3 complete (the process column reads "Error: tid N" without a threadmap).
     assert [trace.split("tid ")[1][0] for trace in traces] == ["2", "3"]
     assert all("getpid()" in trace for trace in traces)
+
+
+def test_counts_events_and_lost_events() -> None:
+    lost = kd_buf(ms_ago(0), debugid=TRACE_LOST_EVENTS)
+    # An argument that happens to hold the lost events debugid isn't counted.
+    decoy = struct.pack("<Q32sQIIQ", ms_ago(0), struct.pack("<I", TRACE_LOST_EVENTS) * 8, 0, 0, 0, 0)
+    stale = ms_ago(10)
+    stream = make_stream(
+        HEADER_CHUNK + kd_buf(ms_ago(0)),
+        lost + decoy,
+        kd_buf(stale) + kd_buf(stale),
+        kd_buf(ms_ago(0)),
+        max_lag=2.0,
+    )
+    read_timestamps(stream)
+    # The header chunk's records start after its 4 KiB of header and threadmap; skipped records count too.
+    assert (stream.events, stream.lost_events, stream.skipped_events) == (6, 1, 2)
+
+
+def test_raises_when_behind_without_skip_behind() -> None:
+    stream = make_stream(kd_buf(0), kd_buf(ms_ago(0)), kd_buf(ms_ago(10)), max_lag=2.0, skip_behind=False)
+    assert stream.read(KD_BUF_SIZE) and stream.read(KD_BUF_SIZE)
+    with pytest.raises(TraceLagError) as e:
+        stream.read(KD_BUF_SIZE)
+    assert e.value.max_lag == 2.0 and e.value.lag > 2.0
+    assert str(e.value).startswith("Fell ") and "max lag (2s)" in str(e.value)

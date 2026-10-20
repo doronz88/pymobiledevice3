@@ -519,6 +519,12 @@ def event_eventids(names: list[str]) -> set[int]:
     return {code for name in names for code in codes[name]}
 
 
+def _validate_max_lag(value: float) -> float:
+    if value <= 0:
+        raise typer.BadParameter("must be positive")
+    return value
+
+
 def _validate_events(names: Any) -> list[str]:
     # See `_validate_syscalls`.
     try:
@@ -1020,10 +1026,18 @@ async def parse_live_profile_session(
     skip_behind: Annotated[
         bool,
         typer.Option(
-            help=f"Skip ahead to recent events whenever output falls more than {PARSE_LIVE_MAX_LAG:g}s behind the "
-            "device. Without class/subclass filters the device can emit events faster than they can be parsed.",
+            help="Skip ahead to recent events whenever output falls more than --max-lag behind the device, instead of "
+            "failing. Without class/subclass filters the device can emit events faster than they can be parsed.",
         ),
-    ] = True,
+    ] = False,
+    max_lag: Annotated[
+        float,
+        typer.Option(
+            callback=_validate_max_lag,
+            help="How far (in seconds) output may fall behind the device before it skips ahead (--skip-behind) or "
+            "fails (--no-skip-behind).",
+        ),
+    ] = PARSE_LIVE_MAX_LAG,
 ) -> None:
     """
     Print traces (syscalls, thread events, etc.) received from the device in real time.
@@ -1104,9 +1118,10 @@ async def parse_live_profile_session(
             chunk_queue: queue.Queue[Any] = queue.Queue()
             stream = tap.get_kdbuf_stream(
                 chunk_queue,
-                max_lag=PARSE_LIVE_MAX_LAG if skip_behind else None,
+                max_lag=max_lag,
                 on_skip=_warn_skipped,
                 on_wait=out.flush,
+                skip_behind=skip_behind,
             )
             producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
@@ -1136,6 +1151,12 @@ async def parse_live_profile_session(
                 if line_buffering and isinstance(out, TextIOWrapper):
                     out.flush()
                     out.reconfigure(line_buffering=True)
+                # Whether the trace kept up with the device: nothing dropped by its kernel, nothing skipped.
+                print(
+                    f"Read {stream.events} events, the kernel dropped events {stream.lost_events} times, "
+                    f"{stream.skipped_events} events were skipped to catch up",
+                    file=sys.stderr,
+                )
 
 
 @cli.command("events")
