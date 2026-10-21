@@ -76,3 +76,25 @@ async def test_shutdown_leaves_other_tasks_running_and_stops_its_clients(monkeyp
         writer.close()
         with contextlib.suppress(OSError):
             await writer.wait_closed()
+
+
+async def test_audio_keepalive_starts_before_any_audio_arrives() -> None:
+    server = VncStreamServer(RemoteServiceDiscoveryService(("127.0.0.1", 0)))
+    server._audio_rtcp_dest = ("fd00::1", 5000)
+    server._audio_local_ssrc = 1
+    server._audio_remote_ssrc = 2
+    transport = _Transport()
+    loop_task = asyncio.create_task(server._audio_rtcp_send_loop(transport))  # type: ignore[arg-type]
+    try:
+        # a silent screen sends no audio, and the device reaps a session without RRs after ~20 s
+        await asyncio.wait_for(_first_send(transport), timeout=3.0)
+    finally:
+        loop_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await loop_task
+    assert transport.sent[0][1:] == ("fd00::1", 5000)
+
+
+async def _first_send(transport: _Transport) -> None:
+    while not transport.sent:
+        await asyncio.sleep(0.05)

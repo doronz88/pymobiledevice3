@@ -942,7 +942,10 @@ class VncStreamServer:
                 await asyncio.sleep(1.0)
             except asyncio.CancelledError:
                 return
-            if self._audio_rtcp_dest is None or self._audio_rtp_packets_received == 0:
+            # Not gated on a first audio packet: the screen usually starts silent, and the device reaps an
+            # audio session that gets no RR for ~20 s. The SSRCs are known from negotiation, so a
+            # highest-seq=0 RR is a valid keepalive (as in serve-web).
+            if self._audio_rtcp_dest is None:
                 continue
             try:
                 await transport.sendto(self._build_audio_rtcp_rr(), *self._audio_rtcp_dest)
