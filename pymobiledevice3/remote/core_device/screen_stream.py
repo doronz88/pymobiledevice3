@@ -640,6 +640,22 @@ _STALL_RESTART_COOLDOWN_SECS = 15.0
 _MAX_STALL_RESTARTS = 3
 
 
+def _respond(
+    writer: asyncio.StreamWriter,
+    status: bytes,
+    body: bytes = b"",
+    content_type: Optional[bytes] = None,
+    no_store: bool = False,
+) -> None:
+    """Write a complete ``Connection: close`` HTTP response (``status`` is e.g. ``b"404 Not Found"``)."""
+    head = b"HTTP/1.1 " + status + b"\r\n"
+    if content_type is not None:
+        head += b"Content-Type: " + content_type + b"\r\n"
+    if no_store:
+        head += b"Cache-Control: no-store\r\n"
+    writer.write(head + b"Content-Length: " + str(len(body)).encode() + b"\r\nConnection: close\r\n\r\n" + body)
+
+
 class ScreenStreamServer:
     """Pure-stdlib HTTP server that broadcasts the device's screen stream to
     browsers using WebCodecs for in-browser HEVC decode.
@@ -2213,13 +2229,13 @@ class ScreenStreamServer:
             try:
                 await asyncio.wait_for(self._ensure_fresh_stream(force=False), timeout=5.0)
             except asyncio.TimeoutError:
-                writer.write(b"HTTP/1.1 503 Stream Starting\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                _respond(writer, b"503 Stream Starting")
                 await writer.drain()
                 writer.close()
                 return
             except Exception:
                 logger.exception("failed to start device stream")
-                writer.write(b"HTTP/1.1 500 Internal\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                _respond(writer, b"500 Internal")
                 await writer.drain()
                 writer.close()
                 return
@@ -2244,13 +2260,7 @@ class ScreenStreamServer:
             else:
                 body = b""
                 status = b"503 Stream Starting"
-            writer.write(
-                b"HTTP/1.1 " + status + b"\r\n"
-                b"Content-Type: application/json\r\n"
-                b"Cache-Control: no-store\r\n"
-                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-                b"Connection: close\r\n\r\n" + body
-            )
+            _respond(writer, status, body, b"application/json", no_store=True)
             await writer.drain()
             writer.close()
             return
@@ -2272,12 +2282,7 @@ class ScreenStreamServer:
             elif cmd == "idr-off":
                 self._motion_idr = False
             body = f"rctl={self._rctl_enabled} motion_idr={self._motion_idr}".encode()
-            writer.write(
-                b"HTTP/1.1 200 OK\r\nContent-Length: "
-                + str(len(body)).encode()
-                + b"\r\nConnection: close\r\n\r\n"
-                + body
-            )
+            _respond(writer, b"200 OK", body)
             await writer.drain()
             writer.close()
             return
@@ -2306,7 +2311,7 @@ class ScreenStreamServer:
             bg = asyncio.create_task(_restart_bg())
             self._pli_tasks.add(bg)  # piggy-back on the existing keep-alive set
             bg.add_done_callback(self._pli_tasks.discard)
-            writer.write(b"HTTP/1.1 202 Accepted\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            _respond(writer, b"202 Accepted", b"ok")
             await writer.drain()
             writer.close()
             return
@@ -2340,26 +2345,15 @@ class ScreenStreamServer:
                             await self._accessibility_set(key, value)
                     resp_body = b'{"ok":true}'
                 else:
-                    writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    _respond(writer, b"404 Not Found")
                     await writer.drain()
                     writer.close()
                     return
-                writer.write(
-                    b"HTTP/1.1 200 OK\r\n"
-                    b"Content-Type: application/json\r\n"
-                    b"Cache-Control: no-store\r\n"
-                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
-                    b"Connection: close\r\n\r\n" + resp_body
-                )
+                _respond(writer, b"200 OK", resp_body, b"application/json", no_store=True)
             except Exception as exc:
                 logger.exception("accessibility endpoint failed")
                 err = f"accessibility error: {exc}".encode()
-                writer.write(
-                    b"HTTP/1.1 500 Internal\r\n"
-                    b"Content-Type: text/plain\r\n"
-                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
-                    b"Connection: close\r\n\r\n" + err
-                )
+                _respond(writer, b"500 Internal", err, b"text/plain")
             await writer.drain()
             writer.close()
             return
@@ -2370,7 +2364,7 @@ class ScreenStreamServer:
                     try:
                         style = str(json.loads(body)["style"])
                     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-                        writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        _respond(writer, b"400 Bad Request")
                         await writer.drain()
                         writer.close()
                         logger.debug("style POST: bad body %r (%s)", body, exc)
@@ -2382,22 +2376,11 @@ class ScreenStreamServer:
                     async with ConfigurationService(self._rsd) as cfg:
                         style = await cfg.get_user_interface_style()
                     resp_body = json.dumps({"style": style}).encode()
-                writer.write(
-                    b"HTTP/1.1 200 OK\r\n"
-                    b"Content-Type: application/json\r\n"
-                    b"Cache-Control: no-store\r\n"
-                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
-                    b"Connection: close\r\n\r\n" + resp_body
-                )
+                _respond(writer, b"200 OK", resp_body, b"application/json", no_store=True)
             except Exception as exc:
                 logger.exception("style endpoint failed")
                 err = f"style endpoint error: {exc}".encode()
-                writer.write(
-                    b"HTTP/1.1 500 Internal\r\n"
-                    b"Content-Type: text/plain\r\n"
-                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
-                    b"Connection: close\r\n\r\n" + err
-                )
+                _respond(writer, b"500 Internal", err, b"text/plain")
             await writer.drain()
             writer.close()
             return
@@ -2412,20 +2395,9 @@ class ScreenStreamServer:
             except Exception as exc:
                 logger.exception("clipboard events endpoint failed")
                 err = f"clipboard error: {exc}".encode()
-                writer.write(
-                    b"HTTP/1.1 500 Internal\r\n"
-                    b"Content-Type: text/plain\r\n"
-                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
-                    b"Connection: close\r\n\r\n" + err
-                )
+                _respond(writer, b"500 Internal", err, b"text/plain")
             else:
-                writer.write(
-                    b"HTTP/1.1 200 OK\r\n"
-                    b"Content-Type: application/json\r\n"
-                    b"Cache-Control: no-store\r\n"
-                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
-                    b"Connection: close\r\n\r\n" + resp_body
-                )
+                _respond(writer, b"200 OK", resp_body, b"application/json", no_store=True)
             await writer.drain()
             writer.close()
             return
@@ -2449,7 +2421,7 @@ class ScreenStreamServer:
                     try:
                         text = str(json.loads(body)["text"])
                     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-                        writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        _respond(writer, b"400 Bad Request")
                         await writer.drain()
                         writer.close()
                         logger.debug("clipboard POST: bad body %r (%s)", body[:80], exc)
@@ -2459,7 +2431,7 @@ class ScreenStreamServer:
                 elif path == "/clipboard/image" and method == "GET":
                     content = self._clipboard_content
                     if content.image is None:
-                        writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        _respond(writer, b"404 Not Found")
                         await writer.drain()
                         writer.close()
                         return
@@ -2468,7 +2440,7 @@ class ScreenStreamServer:
                 elif path == "/clipboard/image" and method == "POST":
                     body = await self._read_body(reader, headers, limit=_CLIPBOARD_MAX_BODY)
                     if not body.startswith(b"\x89PNG\r\n\x1a\n"):
-                        writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                        _respond(writer, b"400 Bad Request")
                         await writer.drain()
                         writer.close()
                         logger.debug("clipboard image POST: not a (complete) PNG, %d bytes", len(body))
@@ -2476,26 +2448,15 @@ class ScreenStreamServer:
                     await self._clipboard_set(image=body)
                     resp_body = b'{"ok":true}'
                 else:
-                    writer.write(b"HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    _respond(writer, b"405 Method Not Allowed")
                     await writer.drain()
                     writer.close()
                     return
-                writer.write(
-                    b"HTTP/1.1 200 OK\r\n"
-                    b"Content-Type: " + content_type + b"\r\n"
-                    b"Cache-Control: no-store\r\n"
-                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
-                    b"Connection: close\r\n\r\n" + resp_body
-                )
+                _respond(writer, b"200 OK", resp_body, content_type, no_store=True)
             except Exception as exc:
                 logger.exception("clipboard endpoint failed")
                 err = f"clipboard error: {exc}".encode()
-                writer.write(
-                    b"HTTP/1.1 500 Internal\r\n"
-                    b"Content-Type: text/plain\r\n"
-                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
-                    b"Connection: close\r\n\r\n" + err
-                )
+                _respond(writer, b"500 Internal", err, b"text/plain")
             await writer.drain()
             writer.close()
             return
@@ -2508,7 +2469,7 @@ class ScreenStreamServer:
             try:
                 direction = str(json.loads(body)["direction"])
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-                writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                _respond(writer, b"400 Bad Request")
                 await writer.drain()
                 writer.close()
                 logger.debug("rotate POST: bad body %r (%s)", body, exc)
@@ -2517,22 +2478,11 @@ class ScreenStreamServer:
                 async with OrientationService(self._rsd) as svc:
                     state = await svc.rotate(direction)
                 resp_body = json.dumps({k: v for k, v in state.items() if isinstance(v, (str, bool))}).encode()
-                writer.write(
-                    b"HTTP/1.1 200 OK\r\n"
-                    b"Content-Type: application/json\r\n"
-                    b"Cache-Control: no-store\r\n"
-                    b"Content-Length: " + str(len(resp_body)).encode() + b"\r\n"
-                    b"Connection: close\r\n\r\n" + resp_body
-                )
+                _respond(writer, b"200 OK", resp_body, b"application/json", no_store=True)
             except Exception as exc:
                 logger.exception("rotate endpoint failed")
                 err = f"rotate error: {exc}".encode()
-                writer.write(
-                    b"HTTP/1.1 500 Internal\r\n"
-                    b"Content-Type: text/plain\r\n"
-                    b"Content-Length: " + str(len(err)).encode() + b"\r\n"
-                    b"Connection: close\r\n\r\n" + err
-                )
+                _respond(writer, b"500 Internal", err, b"text/plain")
             await writer.drain()
             writer.close()
             return
@@ -2553,7 +2503,7 @@ class ScreenStreamServer:
             # the encoder for the tabs that ARE connected.
             if self._active_service is not None and self._rtcp_dest is not None and self._subscribers:
                 self._request_recovery_idr(reason="browser-pli")
-            writer.write(b"HTTP/1.1 202 Accepted\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            _respond(writer, b"202 Accepted", b"ok")
             await writer.drain()
             writer.close()
             return
@@ -2568,12 +2518,7 @@ class ScreenStreamServer:
                     f"audio disabled: missing python package(s): {', '.join(missing)}.\n"
                     f"reinstall pymobiledevice3 (uv tool install ... --reinstall) or pip install {' '.join(missing)}."
                 ).encode()
-                writer.write(
-                    b"HTTP/1.1 503 Audio Unavailable\r\n"
-                    b"Content-Type: text/plain\r\n"
-                    b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-                    b"Connection: close\r\n\r\n" + body
-                )
+                _respond(writer, b"503 Audio Unavailable", body, b"text/plain")
                 await writer.drain()
                 writer.close()
                 return
@@ -2581,7 +2526,7 @@ class ScreenStreamServer:
                 await self._ensure_audio_stream()
             except Exception:
                 logger.exception("failed to start audio stream")
-                writer.write(b"HTTP/1.1 500 Internal\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                _respond(writer, b"500 Internal")
                 await writer.drain()
                 writer.close()
                 return
@@ -2618,7 +2563,7 @@ class ScreenStreamServer:
                 # (Cleaned up at shutdown by serve()'s finally block.)
             return
         if path != "/stream.bin":
-            writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            _respond(writer, b"404 Not Found")
             await writer.drain()
             writer.close()
             return
@@ -2651,12 +2596,7 @@ class ScreenStreamServer:
 
         if self._init_sequence is None or self._active_service is None:
             body = b"stream not ready -- retry in a moment"
-            writer.write(
-                b"HTTP/1.1 503 Service Unavailable\r\n"
-                b"Content-Type: text/plain\r\n"
-                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-                b"Connection: close\r\n\r\n" + body
-            )
+            _respond(writer, b"503 Service Unavailable", body, b"text/plain")
             await writer.drain()
             writer.close()
             return

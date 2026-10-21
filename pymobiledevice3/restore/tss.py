@@ -154,6 +154,33 @@ class TSSRequest:
                     tss_entry[key] = value
         return tss_entry
 
+    def _copy_uint_values(self, parameters: dict[str, typing.Any], keys: typing.Iterable[str]) -> None:
+        """Copy each of ``keys`` from the device's parameters, as an int when the device sent bytes."""
+        for key in keys:
+            value = get_with_or_without_comma(parameters, key)
+            self._request[key] = bytes_to_uint(value) if isinstance(value, bytes) else value
+
+    def _copy_bool_values(self, parameters: dict[str, typing.Any], keys: typing.Iterable[str]) -> None:
+        """Copy each of ``keys`` from the device's parameters (a byte-encoded flag) as a bool."""
+        for key in keys:
+            self._request[key] = bytes_to_uint(get_with_or_without_comma(parameters, key)) == 1
+
+    def _add_manifest_entries(self, parameters: dict[str, typing.Any], prefix: str) -> None:
+        """Add the build identity's ``prefix`` components to the request, with their RestoreRequestRules
+        applied; a Trusted component gets an empty Digest when it has none."""
+        for comp_name, node in parameters["Manifest"].items():
+            if not comp_name.startswith(prefix):
+                continue
+            manifest_entry = dict(node)
+            rules = manifest_entry["Info"].get("RestoreRequestRules")
+            if rules is not None:
+                self.apply_restore_request_rules(manifest_entry, parameters, rules)
+            if manifest_entry.get("Trusted", False) and manifest_entry.get("Digest") is None:
+                logger.debug(f"No Digest data, using empty value for entry {comp_name}")
+                manifest_entry["Digest"] = b""
+            manifest_entry.pop("Info")
+            self._request[comp_name] = manifest_entry
+
     def add_tags(self, parameters: dict[str, typing.Any]):
         for key, value in parameters.items():
             if isinstance(value, str) and value.startswith("0x"):
@@ -840,8 +867,6 @@ class TSSRequest:
     def add_rose_tags(
         self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None
     ):
-        manifest = parameters["Manifest"]
-
         # add tags indicating we want to get the Rap,Ticket
         self._request["@BBTicket"] = True
         self._request["@Rap,Ticket"] = True
@@ -853,22 +878,14 @@ class TSSRequest:
             "Rap,SecurityDomain",
         )
 
-        for key in keys_to_copy_uint:
-            value = get_with_or_without_comma(parameters, key)
-
-            if isinstance(value, bytes):
-                self._request[key] = bytes_to_uint(value)
-            else:
-                self._request[key] = value
+        self._copy_uint_values(parameters, keys_to_copy_uint)
 
         keys_to_copy_bool = (
             "Rap,ProductionMode",
             "Rap,SecurityMode",
         )
 
-        for key in keys_to_copy_bool:
-            value = get_with_or_without_comma(parameters, key)
-            self._request[key] = bytes_to_uint(value) == 1
+        self._copy_bool_values(parameters, keys_to_copy_bool)
 
         nonce = get_with_or_without_comma(parameters, "Rap,Nonce")
         if nonce is not None:
@@ -878,30 +895,7 @@ class TSSRequest:
         # (ramrod capture, iPhone18,4 / iOS 27.0); PreflightInfo does not expose it.
         self._request["Rap,FdrRootCaDigest"] = get_with_or_without_comma(parameters, "Rap,FdrRootCaDigest") or b""
 
-        for comp_name, node in manifest.items():
-            if not comp_name.startswith("Rap,"):
-                continue
-
-            manifest_entry = dict(node)
-
-            # handle RestoreRequestRules
-            rules = manifest_entry["Info"].get("RestoreRequestRules")
-            if rules is not None:
-                self.apply_restore_request_rules(manifest_entry, parameters, rules)
-
-            # Make sure we have a Digest key for Trusted items even if empty
-            trusted = manifest_entry.get("Trusted", False)
-
-            if trusted:
-                digest = manifest_entry.get("Digest")
-                if digest is None:
-                    logger.debug(f"No Digest data, using empty value for entry {comp_name}")
-                    manifest_entry["Digest"] = b""
-
-            manifest_entry.pop("Info")
-
-            # finally add entry to request
-            self._request[comp_name] = manifest_entry
+        self._add_manifest_entries(parameters, "Rap,")
 
         if overrides is not None:
             self._request.update(overrides)
@@ -913,8 +907,6 @@ class TSSRequest:
         # Rose/Rap: same Wireless1,* field set and the same @Wireless1,Ticket flag. Confirmed
         # by reversing libCentauriUpdater.dylib (response key "Wireless1,Ticket") and
         # libauthinstall.dylib (request flag "@Wireless1,Ticket", Wireless1,FdrRootCaDigest).
-        manifest = parameters["Manifest"]
-
         # add tags indicating we want to get the Wireless1,Ticket
         self._request["@BBTicket"] = True
         self._request["@Wireless1,Ticket"] = True
@@ -926,21 +918,14 @@ class TSSRequest:
             "Wireless1,SecurityDomain",
         )
 
-        for key in keys_to_copy_uint:
-            value = get_with_or_without_comma(parameters, key)
-            if isinstance(value, bytes):
-                self._request[key] = bytes_to_uint(value)
-            else:
-                self._request[key] = value
+        self._copy_uint_values(parameters, keys_to_copy_uint)
 
         keys_to_copy_bool = (
             "Wireless1,ProductionMode",
             "Wireless1,SecurityMode",
         )
 
-        for key in keys_to_copy_bool:
-            value = get_with_or_without_comma(parameters, key)
-            self._request[key] = bytes_to_uint(value) == 1
+        self._copy_bool_values(parameters, keys_to_copy_bool)
 
         nonce = get_with_or_without_comma(parameters, "Wireless1,Nonce")
         if nonce is not None:
@@ -957,30 +942,7 @@ class TSSRequest:
         if unique_build_id is not None:
             self._request["UniqueBuildID"] = unique_build_id
 
-        for comp_name, node in manifest.items():
-            if not comp_name.startswith("Wireless1,"):
-                continue
-
-            manifest_entry = dict(node)
-
-            # handle RestoreRequestRules
-            rules = manifest_entry["Info"].get("RestoreRequestRules")
-            if rules is not None:
-                self.apply_restore_request_rules(manifest_entry, parameters, rules)
-
-            # Make sure we have a Digest key for Trusted items even if empty
-            trusted = manifest_entry.get("Trusted", False)
-
-            if trusted:
-                digest = manifest_entry.get("Digest")
-                if digest is None:
-                    logger.debug(f"No Digest data, using empty value for entry {comp_name}")
-                    manifest_entry["Digest"] = b""
-
-            manifest_entry.pop("Info")
-
-            # finally add entry to request
-            self._request[comp_name] = manifest_entry
+        self._add_manifest_entries(parameters, "Wireless1,")
 
         if overrides is not None:
             self._request.update(overrides)
@@ -992,8 +954,6 @@ class TSSRequest:
         # "Cellular1,Ticket"), structured like Rose/Centauri over the Cellular1,* field set
         # (ramrod capture on iPhone 18,4). The Bb*ManifestKeyHash fields come from the
         # baseband firmware-preflight info when available.
-        manifest = parameters["Manifest"]
-
         self._request["@BBTicket"] = True
         self._request["@Cellular1,Ticket"] = True
 
@@ -1022,17 +982,7 @@ class TSSRequest:
             if value is not None:
                 self._request[f"Cellular1,{key}"] = value
 
-        for comp_name, node in manifest.items():
-            if not comp_name.startswith("Cellular1,"):
-                continue
-            manifest_entry = dict(node)
-            rules = manifest_entry["Info"].get("RestoreRequestRules")
-            if rules is not None:
-                self.apply_restore_request_rules(manifest_entry, parameters, rules)
-            if manifest_entry.get("Trusted", False) and manifest_entry.get("Digest") is None:
-                manifest_entry["Digest"] = b""
-            manifest_entry.pop("Info")
-            self._request[comp_name] = manifest_entry
+        self._add_manifest_entries(parameters, "Cellular1,")
 
         if overrides is not None:
             self._request.update(overrides)
@@ -1040,8 +990,6 @@ class TSSRequest:
     def add_veridian_tags(
         self, parameters: dict[str, typing.Any], overrides: typing.Optional[dict[str, typing.Any]] = None
     ):
-        manifest = parameters["Manifest"]
-
         # add tags indicating we want to get the Rap,Ticket
         self._request["@BBTicket"] = True
         self._request["@BMU,Ticket"] = True
@@ -1059,30 +1007,7 @@ class TSSRequest:
         if nonce is not None:
             self._request["BMU,Nonce"] = nonce
 
-        for comp_name, node in manifest.items():
-            if not comp_name.startswith("BMU,"):
-                continue
-
-            manifest_entry = dict(node)
-
-            # handle RestoreRequestRules
-            rules = manifest_entry["Info"].get("RestoreRequestRules")
-            if rules is not None:
-                self.apply_restore_request_rules(manifest_entry, parameters, rules)
-
-            # Make sure we have a Digest key for Trusted items even if empty
-            trusted = manifest_entry.get("Trusted", False)
-
-            if trusted:
-                digest = manifest_entry.get("Digest")
-                if digest is None:
-                    logger.debug(f"No Digest data, using empty value for entry {comp_name}")
-                    manifest_entry["Digest"] = b""
-
-            manifest_entry.pop("Info")
-
-            # finally add entry to request
-            self._request[comp_name] = manifest_entry
+        self._add_manifest_entries(parameters, "BMU,")
 
         if overrides is not None:
             self._request.update(overrides)
@@ -1104,13 +1029,7 @@ class TSSRequest:
             "Baobab,SecurityDomain",
         )
 
-        for key in keys_to_copy_uint:
-            value = get_with_or_without_comma(parameters, key)
-
-            if isinstance(value, bytes):
-                self._request[key] = bytes_to_uint(value)
-            else:
-                self._request[key] = value
+        self._copy_uint_values(parameters, keys_to_copy_uint)
 
         isprod = bool(get_with_or_without_comma(parameters, "Baobab,ProductionMode", False))
         self._request["Baobab,ProductionMode"] = isprod

@@ -119,6 +119,27 @@ class _LiveWorker:
             self._thread.join(timeout)
 
 
+async def _run_live(
+    tap: CoreProfileSessionTap, chunk_queue: "queue.Queue[Any]", print_loop: Callable[[threading.Event], None]
+) -> None:
+    """Pump the tap's chunks into ``chunk_queue`` while ``print_loop`` consumes them in a `_LiveWorker`."""
+    producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
+    worker = _LiveWorker(print_loop)
+    try:
+        await worker.run()
+    finally:
+        producer_task.cancel()
+        worker.stop(chunk_queue)
+        with contextlib.suppress(asyncio.CancelledError):
+            await producer_task
+
+
+def _apply_time_config(parser: Any, time_config: dict[str, object]) -> None:
+    """Give the parser the device clock it needs to timestamp events."""
+    for key in ("numer", "denom", "mach_absolute_time", "usecs_since_epoch", "timezone"):
+        setattr(parser, key, time_config[key])
+
+
 cli = InjectingTyper(
     name="core-profile-session",
     help="Access tailspin features",
@@ -317,15 +338,10 @@ async def live_profile_session(
     async with DvtProvider(service_provider) as dvt:
         trace_codes_map = live_trace_codes(await CoreProfileSessionTap.get_trace_codes(dvt))
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
-        parser.numer = time_config["numer"]
-        parser.denom = time_config["denom"]
-        parser.mach_absolute_time = time_config["mach_absolute_time"]
-        parser.usecs_since_epoch = time_config["usecs_since_epoch"]
-        parser.timezone = time_config["timezone"]
+        _apply_time_config(parser, time_config)
         async with CoreProfileSessionTap(dvt, time_config, filters, sample_callstacks=False) as tap:
             chunk_queue: queue.Queue[Any] = queue.Queue()
             stream = tap.get_kdbuf_stream(chunk_queue)
-            producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
             def _print_events(stopping: threading.Event) -> None:
                 # KdBufStream is a duck-typed stream; pykdebugparser annotates the parameter as io.IOBase
@@ -338,14 +354,7 @@ async def live_profile_session(
                     if i == count:
                         break
 
-            worker = _LiveWorker(_print_events)
-            try:
-                await worker.run()
-            finally:
-                producer_task.cancel()
-                worker.stop(chunk_queue)
-                with contextlib.suppress(asyncio.CancelledError):
-                    await producer_task
+            await _run_live(tap, chunk_queue, _print_events)
 
 
 @cli.command("save")
@@ -784,11 +793,7 @@ async def parse_live_profile_session(
         filters = parse_filters(device_subclasses, selection.classes)
         if (dyld or selection.event_ids) and filters is not None:
             filters.add(TRACE_CLASS_FILTER)
-        parser.numer = time_config["numer"]
-        parser.denom = time_config["denom"]
-        parser.mach_absolute_time = time_config["mach_absolute_time"]
-        parser.usecs_since_epoch = time_config["usecs_since_epoch"]
-        parser.timezone = time_config["timezone"]
+        _apply_time_config(parser, time_config)
         # PyKdebugParser initializes its filter attributes to None without annotations,
         # so pyright infers their type as None
         parser.filter_tid = tid  # pyright: ignore[reportAttributeAccessIssue]
@@ -821,7 +826,6 @@ async def parse_live_profile_session(
                 on_wait=out.flush,
                 skip_behind=skip_behind,
             )
-            producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
             def _print_traces(stopping: threading.Event) -> None:
                 write = out.write
@@ -846,14 +850,9 @@ async def parse_live_profile_session(
             line_buffering = getattr(out, "line_buffering", False)
             if line_buffering and isinstance(out, TextIOWrapper):
                 out.reconfigure(line_buffering=False)
-            worker = _LiveWorker(_print_traces)
             try:
-                await worker.run()
+                await _run_live(tap, chunk_queue, _print_traces)
             finally:
-                producer_task.cancel()
-                worker.stop(chunk_queue)
-                with contextlib.suppress(asyncio.CancelledError):
-                    await producer_task
                 if line_buffering and isinstance(out, TextIOWrapper):
                     out.flush()
                     out.reconfigure(line_buffering=True)
@@ -964,11 +963,7 @@ async def callstacks_live_profile_session(
         print("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
         parser: Any = PyKdebugParser()
-        parser.numer = time_config["numer"]
-        parser.denom = time_config["denom"]
-        parser.mach_absolute_time = time_config["mach_absolute_time"]
-        parser.usecs_since_epoch = time_config["usecs_since_epoch"]
-        parser.timezone = time_config["timezone"]
+        _apply_time_config(parser, time_config)
         # PyKdebugParser initializes its filter attributes to None without annotations,
         # so pyright infers their type as None
         parser.filter_tid = tid  # pyright: ignore[reportAttributeAccessIssue]
@@ -983,7 +978,6 @@ async def callstacks_live_profile_session(
         async with CoreProfileSessionTap(dvt, time_config) as tap:
             chunk_queue: queue.Queue[Any] = queue.Queue()
             stream = tap.get_kdbuf_stream(chunk_queue)
-            producer_task = asyncio.create_task(tap.pump_kdbuf_chunks(chunk_queue))
 
             def _print_callstacks(stopping: threading.Event) -> None:
                 # KdBufStream is a duck-typed stream; pykdebugparser annotates the parameter as io.IOBase
@@ -992,11 +986,4 @@ async def callstacks_live_profile_session(
                         break
                     print(format_callstack(callstack, dsc_uuid_map, current_dsc_map))
 
-            worker = _LiveWorker(_print_callstacks)
-            try:
-                await worker.run()
-            finally:
-                producer_task.cancel()
-                worker.stop(chunk_queue)
-                with contextlib.suppress(asyncio.CancelledError):
-                    await producer_task
+            await _run_live(tap, chunk_queue, _print_callstacks)
