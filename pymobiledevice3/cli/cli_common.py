@@ -8,7 +8,7 @@ import platform
 import shutil
 import sys
 import uuid
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from enum import Enum
 from functools import wraps
@@ -635,6 +635,18 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
     return rsd_dependency
 
 
+def _prompt_device(lockdowns: Sequence[LockdownClient]) -> LockdownClient:
+    """Let the user pick one of ``lockdowns``, and close the others."""
+    chosen: Optional[LockdownClient] = None
+    try:
+        chosen = cast(LockdownClient, prompt_device_list(list(lockdowns)))
+        return chosen
+    finally:
+        for lockdown in lockdowns:
+            if lockdown is not chosen:
+                cli_loop.run_until_complete(lockdown.close())
+
+
 def any_service_provider_dependency(
     rsd_service_provider: Annotated[
         Optional[RemoteServiceDiscoveryService],
@@ -679,7 +691,7 @@ def any_service_provider_dependency(
         if len(devices) == 1:
             return _record_resolved(devices[0])
 
-        return _record_resolved(prompt_device_list(devices))
+        return _record_resolved(_prompt_device(devices))
 
     if udid is not None:
         return _record_resolved(cli_loop.run_until_complete(create_using_usbmux(serial=udid, usbmux_address=usbmux)))
@@ -694,7 +706,7 @@ def any_service_provider_dependency(
         cli_loop.run_until_complete(create_using_usbmux(serial=device.serial, usbmux_address=usbmux))
         for device in devices
     ]
-    return _record_resolved(prompt_device_list(lockdownds))
+    return _record_resolved(_prompt_device(lockdownds))
 
 
 def no_autopair_service_provider_dependency(
