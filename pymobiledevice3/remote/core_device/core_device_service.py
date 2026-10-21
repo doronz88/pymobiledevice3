@@ -40,7 +40,7 @@ def _core_device_error(feature_identifier: Optional[str], response: dict[str, An
                 code=code if isinstance(code, int) else None,
                 user_info=user_info,
             )
-    return CoreDeviceError(f"Failed to invoke: {feature_identifier}. Got error: {response}")
+    return CoreDeviceError(f"The device failed the {feature_identifier} request: {response}")
 
 
 # Wire keys for the streaming feature protocol (streamapplist/streamprocesslist), verified
@@ -124,11 +124,11 @@ class CoreDeviceService(RemoteService):
                 response = await self.service.receive_response()
                 status: Any = response.get(STREAM_STATUS_KEY)
                 if status is None:
-                    raise CoreDeviceError(
-                        f"Failed to invoke streaming feature: {feature_identifier}. Got error: {response}"
-                    )
+                    raise CoreDeviceError(f"The device failed the {feature_identifier} streaming request: {response}")
                 if STREAM_RECEIVED_ERROR_KEY in status:
-                    raise CoreDeviceError(f"Stream {feature_identifier} failed: {status[STREAM_RECEIVED_ERROR_KEY]}")
+                    raise CoreDeviceError(
+                        f"The device's {feature_identifier} stream failed: {status[STREAM_RECEIVED_ERROR_KEY]}"
+                    )
                 if STREAM_FINISH_KEY in status:
                     break
                 for element in status[STREAM_PUSHING_KEY][STREAM_ELEMENTS_KEY]:

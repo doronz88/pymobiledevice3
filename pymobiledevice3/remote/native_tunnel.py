@@ -270,7 +270,7 @@ _libxpc_singleton: Optional[_LibXpc] = None
 def _libxpc() -> _LibXpc:
     global _libxpc_singleton
     if not _IS_DARWIN:
-        raise UserspaceTunnelUnavailableError("the native remoted tunnel is only available on macOS")
+        raise UserspaceTunnelUnavailableError("The native remoted tunnel is only available on macOS.")
     if _libxpc_singleton is None:
         _libxpc_singleton = _LibXpc()
     return _libxpc_singleton
@@ -574,7 +574,7 @@ class _RemotePairingSession:
         xpc.connection_send_message_with_reply(conn, message, self._queue, xpc.make_block(on_reply))
         if not done.wait(self._REPLY_TIMEOUT):
             # The reply block stays pending: close() waits for the error libxpc delivers to it
-            raise _RemotePairingError(f"timed out waiting for reply to {mangled_type_name.decode()}")
+            raise _RemotePairingError(f"Timed out waiting for remotepairingd to answer {mangled_type_name.decode()}.")
         self._pending_replies.remove(done)
         return holder[0]
 
@@ -635,12 +635,12 @@ class _RemotePairingSession:
             hint = f" matching udid {serial}" if serial is not None else ""
             if _is_root() and _console_user_uid() is None and _seeded_target_uid() is None:
                 hint += (
-                    f"; running as root with no console user -- {REMOTEPAIRING_MACH_SERVICE} is registered "
+                    f"; running as root with no console user, but {REMOTEPAIRING_MACH_SERVICE} is registered "
                     f"per-user, so set {NATIVE_TARGET_UID_ENV_VAR} to the uid of the logged-in user "
                     "that owns the pairing"
                 )
             raise _RemotePairingDeviceNotFoundError(
-                serial, f"Device not found: remotepairingd reported no device{hint}"
+                serial, f"Device not found: remotepairingd reported no device{hint}."
             )
 
         device_conn = xpc.connection_create_from_endpoint(endpoint_holder[0])
@@ -674,7 +674,7 @@ class _RemotePairingSession:
                 description = xpc.dictionary_get_value(error, b"userInfo")
                 message = xpc.dictionary_get_string(description, b"NSLocalizedDescription") if description else b""
                 raise _RemotePairingError(
-                    f"pairing failed (code {code}): {(message or b'unknown error').decode(errors='replace')}"
+                    f"Pairing with the device failed (remotepairingd code {code}): {(message or b'unknown error').decode(errors='replace')}"
                 )
         xpc.release(initiate)
 
@@ -685,7 +685,9 @@ class _RemotePairingSession:
         )
         response = xpc.dictionary_get_value(assertion, b"response")
         if not response:
-            raise _RemotePairingError(f"CreateAssertion had no response: {self._describe(assertion)}")
+            raise _RemotePairingError(
+                f"The native tunnel was not created; remotepairingd replied: {self._describe(assertion)}"
+            )
         assertion_id = xpc.dictionary_get_value(response, b"assertionIdentifier")
         if assertion_id:
             self._assertion_id = xpc.retain(assertion_id)
@@ -693,7 +695,9 @@ class _RemotePairingSession:
         tunnel_ip = xpc.dictionary_get_string(info, b"tunnelIPAddress") if info else None
         xpc.release(assertion)
         if not tunnel_ip:
-            raise _RemotePairingError("CreateAssertion returned no tunnelIPAddress")
+            raise _RemotePairingError(
+                "The native tunnel was created, but remotepairingd did not report its IP address."
+            )
         self.tunnel_ip = tunnel_ip.decode()
         return self.tunnel_ip
 
@@ -995,9 +999,9 @@ class NativeRemotedTunnel:
                 else:
                     return rsd
         if last_error is None:
-            raise _RemotePairingError(f"could not find remoted's RSD connection to the tunnel address {tunnel_ip}")
+            raise _RemotePairingError(f"Could not find remoted's RSD connection on the native tunnel to {tunnel_ip}.")
         raise _RemotePairingError(
-            f"failed to complete RSD handshake over the native tunnel [{tunnel_ip}]: {last_error!r}"
+            f"Failed to complete the RSD handshake over the native tunnel [{tunnel_ip}]: {last_error!r}"
         )
 
     async def aclose(self) -> None:

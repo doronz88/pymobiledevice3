@@ -322,7 +322,9 @@ class UserspaceTun:
         deadline = asyncio.get_running_loop().time() + 5
         while not any(host.address == target for host in stack.local_ip6_hosts()):
             if asyncio.get_running_loop().time() > deadline:
-                raise PyMobileDevice3Exception(f"userspace stack address {self._addr} was not assigned within 5s")
+                raise PyMobileDevice3Exception(
+                    f"The userspace tunnel address {self._addr} was not assigned within 5 seconds."
+                )
             await asyncio.sleep(0)
         logger.debug("userspace tunnel up: pytcp L2 iface=%s addr=%s/64 mtu=%s", self._ifidx, self._addr, self._mtu)
 
@@ -608,7 +610,7 @@ class UserspaceUdp:
     def __init__(self) -> None:
         addr = userspace_stack_addr()
         if addr is None:
-            raise PyMobileDevice3Exception("userspace tunnel is not active")
+            raise PyMobileDevice3Exception("The userspace tunnel is not active.")
         self._sock = cast(_AsyncPytcpSocket, pytcp_socket(AF_INET6, SOCK_DGRAM))
         self._sock.bind((addr, 0))
         bound = self._sock.getsockname()
@@ -660,7 +662,7 @@ async def _create_no_root_tunnel_provider(serial: Optional[str], autopair: bool,
         await lockdown.close()
         if not remotepairing_fallback:
             raise UserspaceTunnelUnavailableError(
-                "no-root userspace tunnel unavailable: the device has no CoreDeviceProxy service "
+                "No-root userspace tunnel unavailable: the device has no CoreDeviceProxy service "
                 "(needs iOS 17.4+) and the RemotePairing fallback was disabled."
             ) from None
         logger.info("CoreDeviceProxy unavailable (iOS < 17.4); falling back to RemotePairing over bonjour")
@@ -677,7 +679,7 @@ async def _create_no_root_tunnel_provider(serial: Optional[str], autopair: bool,
     services = await tunnel_service.get_remote_pairing_tunnel_services(udid=serial or lockdown.udid)
     if not services:
         raise UserspaceTunnelUnavailableError(
-            "no-root userspace tunnel unavailable: the device exposes no CoreDeviceProxy lockdown "
+            "No-root userspace tunnel unavailable: the device exposes no CoreDeviceProxy lockdown "
             "service (needs iOS 17.4+) and no RemotePairing service was found over bonjour. Enable "
             "Wi-Fi for the device and host on the same network, or run a privileged kernel tunnel via "
             "`pymobiledevice3 remote tunneld`."
@@ -752,8 +754,8 @@ class UserspaceRsdTunnel:
         global _active_tunnel, USERSPACE_ACTIVE
         if _active_tunnel is not None:
             raise PyMobileDevice3Exception(
-                "a userspace tunnel is already active in this process (PyTCP's stack is a "
-                "process-global singleton; only one userspace tunnel per process is supported)"
+                "A userspace tunnel is already active in this process; only one userspace tunnel per "
+                "process is supported."
             )
         # pmd-pytcp presence was proven at import time (this module imports it at module level;
         # cli_common imports us inside a try/except that falls back to the kernel tunnel when that

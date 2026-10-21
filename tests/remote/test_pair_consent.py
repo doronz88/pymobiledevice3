@@ -67,7 +67,7 @@ def no_input(monkeypatch):
 async def test_pair_consent_error_raises_pairing_error(no_input, model, events):
     protocol = _ScriptedProtocol(model, events)
 
-    with pytest.raises(PairingError, match="BACKOFF, retry in 8316 seconds"):
+    with pytest.raises(PairingError, match="BACKOFF; retry in 8316 seconds"):
         await protocol._request_pair_consent()
 
     assert protocol.events == []
@@ -107,4 +107,4 @@ async def test_pair_consent_asks_vision_pro_for_pin(monkeypatch):
 def test_describe_pairing_error_names_code(error, expected):
     tlv = RemotePairingProtocol.decode_tlv(PairingDataComponentTLVBuf.parse(b"\x07\x01" + error + b"\x06\x01\x02"))
 
-    assert _describe_pairing_error(tlv) == f"device returned pairing error: {expected}"
+    assert _describe_pairing_error(tlv) == f"The device rejected pairing: {expected}"
