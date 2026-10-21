@@ -153,3 +153,39 @@ async def test_iter_browse_service_yields_before_timeout(mdns):
     assert results[0].instance == INSTANCE
     assert results[0].port == 62078
     assert elapsed < 2.0, f"early exit took {elapsed:.1f}s"
+
+
+async def test_skipped_interfaces_are_not_queried(mdns, monkeypatch):
+    sends: list[Any] = []
+
+    class _RecordingTransport(_FakeTransport):
+        def sendto(self, data: bytes, addr: Any) -> None:
+            sends.append(addr)
+
+    async def open_mdns_sockets():
+        queue: asyncio.Queue[tuple[bytes, Any]] = asyncio.Queue()
+        return [(_RecordingTransport(queue, 0), SimpleNamespace(family=socket.AF_INET6))], queue
+
+    monkeypatch.setattr(bonjour, "_open_mdns_sockets", open_mdns_sockets)
+    monkeypatch.setattr(bonjour.socket, "if_nameindex", lambda: [(4, "en0"), (31, "utun4"), (32, "anri0")])
+
+    await browse_service(SERVICE, timeout=0.01, skip_interfaces=("utun",))
+
+    assert [addr[3] for addr in sends] == [4, 32]
+
+
+async def test_answers_arriving_on_a_skipped_interface_are_ignored(mdns, monkeypatch):
+    # Other hosts' queries can still make a device answer over a skipped interface.
+    full = MDNSResponder._build_message(
+        [_build_rr(SERVICE, QTYPE_PTR, encode_name(INSTANCE), 120, False)],
+        [
+            _build_rr(INSTANCE, QTYPE_SRV, _encode_srv(0, 0, 62078, "device.local."), 120, True),
+            _build_rr("device.local.", QTYPE_A, socket.inet_aton("192.0.2.1"), 120, True),
+        ],
+    )
+    mdns.packets = [full]
+    monkeypatch.setattr(bonjour._Adapters, "pick_iface_for_ip", lambda self, ip, fam, sid: "utun4")
+
+    instances = await browse_service(SERVICE, timeout=0.05, skip_interfaces=("utun",))
+
+    assert [instance.addresses for instance in instances] == [[]]
