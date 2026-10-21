@@ -618,7 +618,9 @@ def jsonify_parsed_stackshot(
     current_index = index
     while True:
         if current_index >= len(stackshot):
-            raise ExtractingStackshotError("stackshot ended before its end marker (an item could not be decoded)")
+            raise ExtractingStackshotError(
+                "The stackshot ended before its end marker; an item in it could not be decoded."
+            )
         item = stackshot[current_index]
         current_index += 1
         if item["type"] == "KCDATA_BUFFER_BEGIN_STACKSHOT":
@@ -940,7 +942,7 @@ class CoreProfileSessionTap:
 
         # CoreProfile TAP emits a notice when kperf is already owned by another session.
         if isinstance(status, int) and status != 0:
-            raise DvtException(str(notice))
+            raise DvtException(f"The device could not start the core profile session: {notice}")
 
     async def get_stackshot(self, timeout: typing.Optional[float] = 10.0) -> dict[str, typing.Any]:
         """
@@ -968,7 +970,7 @@ class CoreProfileSessionTap:
             else:
                 remaining = timeout - (time.monotonic() - started_at)
                 if remaining <= 0:
-                    raise ExtractingStackshotError("timed out waiting for stackshot data")
+                    raise ExtractingStackshotError("Timed out waiting for the device to send a stackshot.")
                 data = await asyncio.wait_for(self._next_message(), timeout=remaining)
             self._raise_if_tap_start_failed(data)
 

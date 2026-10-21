@@ -47,8 +47,8 @@ class SessionProtocol:
         if "result" in response:
             return response["result"]
         elif "error" in response:
-            raise WirError(response["error"]["message"])
-        raise WirError(f"Unknown response: {response}")
+            raise WirError(f"The automation command failed: {response['error']['message']}")
+        raise WirError(f"Web Inspector sent a reply with neither a result nor an error: {response}")
 
     async def send_receive(self, method: str, wait_for_response: bool = True, **kwargs: Any):
         wir_id = await self.send_command(method, **kwargs)

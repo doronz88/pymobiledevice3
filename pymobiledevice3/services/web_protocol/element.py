@@ -108,7 +108,7 @@ class WebElement(SeleniumApi):
         """The size and location of the element."""
         layout = await self._compute_layout(scroll_if_needed=False)
         if layout is None:
-            raise WirError("failed to compute element layout")
+            raise WirError("Cannot get the element's position and size; it may no longer be on the page.")
         return layout[0]
 
     async def _get_screenshot_as_base64(self) -> str:
@@ -150,7 +150,7 @@ class WebElement(SeleniumApi):
         """Submits a form."""
         form = await self.find_element(By.XPATH, "./ancestor-or-self::form")
         if form is None:
-            raise WirError("failed to locate enclosing form element")
+            raise WirError("Cannot submit: the element is not inside a form.")
         submit_code = (
             "var e = arguments[0].ownerDocument.createEvent('Event');"
             "e.initEvent('submit', true, true);"
