@@ -9,7 +9,7 @@ macOS, no Xcode) to hand us the device's existing tunnel, then rides it:
 2. ``RemotePairing.CreateAssertionCommand`` -> the device's in-tunnel ``tunnelIPAddress`` plus an
    assertion identifier that keeps Apple's tunnel alive for as long as we hold it.
 3. Discover the in-tunnel RSD port by finding ``remoted``'s own TCP connection to that tunnel
-   address in one ``nettop`` sample (no root; see :func:`find_rsd_port` for why nettop).
+   address in the ``net.inet.tcp.pcblist_n`` socket table (no root; see :func:`find_rsd_port`).
 4. Connect a normal TCP socket to ``[tunnelIPAddress]:rsd_port`` (the tunnel address is
    kernel-routable, so no root) and run the standard RSD handshake via
    :class:`~pymobiledevice3.remote.remote_service_discovery.RemoteServiceDiscoveryService`.
@@ -29,6 +29,7 @@ import os
 import platform
 import re
 import socket
+import struct
 import subprocess
 import threading
 import time
@@ -64,9 +65,22 @@ _remotepairing_target_uid: Optional[int] = None
 # paired -- a benign no-op, not a failure.
 _REMOTEPAIRING_ALREADY_PAIRED = 1002
 
-# nettop invocation for the RSD port scan (see find_rsd_port).
+# Socket table reads for the RSD port scan (see find_rsd_port).
+_SOCKET_TABLE_TIMEOUT = 10.0
+# Runs ``sysctl`` once launchd has adopted it, so that none of our own ancestors are its ancestors.
+# ``$$`` is the inner shell's pid (``exec`` keeps it for sysctl); the outer shell backgrounds it and
+# exits, which hands it to launchd.
+_ORPHANED_PCBLIST_ARGV = [
+    "/bin/sh",
+    "-c",
+    '/bin/sh -c "$0" &',
+    'until [ "$(/bin/ps -o ppid= -p $$)" -eq 1 ]; do :; done; exec /usr/sbin/sysctl -b net.inet.tcp.pcblist_n',
+]
+# net.inet.tcp.pcblist_n item kinds (xgen_n.xgn_kind) and inp_vflag bit.
+_XSO_SOCKET = 0x001
+_XSO_INPCB = 0x010
+_INP_IPV6 = 0x02
 _NETTOP_PATH = "/usr/bin/nettop"
-_NETTOP_TIMEOUT = 10.0
 # ``tcp6 <local>.<port><-><foreign>.<port>`` / ``tcp4 <local>:<port><-><foreign>:<port>`` socket rows.
 _NETTOP_SOCKET_RE = re.compile(r"^tcp[46] (?P<local>\S+?)<->(?P<foreign>\S+)$")
 
@@ -770,15 +784,25 @@ async def browse_native_devices(timeout: float = 3.0) -> list[dict[str, Any]]:
 def find_rsd_port(xpc: _LibXpc, tunnel_ip: str) -> list[int]:
     """Return candidate in-tunnel RSD ports: ``remoted``'s TCP connections to ``tunnel_ip``.
 
-    The socket table comes from one ``nettop`` sample. Since macOS 27 the kernel answers the
-    ``net.inet.tcp.pcblist*`` sysctls (what netstat reads) with only the caller's own sockets unless
-    it runs as root, so root-owned ``remoted`` never shows up there. nettop's NetworkStatistics feed
-    still lists every process's sockets -- but only because ``/usr/bin/nettop`` is Apple-signed with
-    ``com.apple.private.network.statistics``: the same feed hands an unentitled process (e.g. this
-    one calling ``NStatManagerAddAllTCP`` through ctypes) just its own uid's sockets, whatever
-    filter flags it passes. Hence the subprocess.
+    The socket table comes from ``net.inet.tcp.pcblist_n``, read through ``/usr/sbin/sysctl`` once
+    launchd has adopted it. Since macOS 27 the kernel shows other processes' sockets only to a
+    platform binary whose non-platform ancestors are all Apple or Developer ID signed; to anyone
+    else (this interpreter, or ``sysctl`` run as its child) the table holds just the caller's own
+    sockets, so root-owned ``remoted`` never shows up. An orphaned ``sysctl`` has no ancestors but
+    launchd. Should that stop working, the table comes back without a single connection, and the
+    scan falls back to one ``nettop`` sample: nettop sees every socket only because it is
+    Apple-signed with ``com.apple.private.network.statistics`` (calling NetworkStatistics directly
+    gives an unentitled process the same own-uid view), and it is ~4x slower.
     """
     target = socket.inet_pton(socket.AF_INET6, tunnel_ip)
+    connections = parse_tcp_pcbs(_read_orphaned_tcp_pcblist())
+    if connections:
+        return [
+            foreign_port
+            for pid, version_flag, foreign_addr, foreign_port in connections
+            if (version_flag & _INP_IPV6) and foreign_addr == target and _proc_path(xpc, pid) == REMOTED_PATH
+        ]
+    logger.debug("pcblist_n lists no connections, scanning with nettop")
     ports: list[int] = []
     for pid, foreign_addr, foreign_port in parse_nettop_tcp_csv(_run_nettop_tcp()):
         try:
@@ -790,6 +814,59 @@ def find_rsd_port(xpc: _LibXpc, tunnel_ip: str) -> list[int]:
     return ports
 
 
+def _read_orphaned_tcp_pcblist() -> bytes:
+    """``net.inet.tcp.pcblist_n`` as an orphaned ``sysctl`` sees it (see find_rsd_port); ``b""`` on failure."""
+    try:
+        result = subprocess.run(_ORPHANED_PCBLIST_ARGV, capture_output=True, timeout=_SOCKET_TABLE_TIMEOUT, check=False)
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.debug("sysctl unavailable: %r", e)
+        return b""
+    if result.returncode != 0:
+        logger.debug("sysctl exited %d: %s", result.returncode, result.stderr.strip())
+        return b""
+    return result.stdout
+
+
+def parse_tcp_pcbs(data: bytes) -> list[tuple[int, int, bytes, int]]:
+    """Parse ``net.inet.tcp.pcblist_n`` bytes into ``(effective_pid, version_flag, foreign_addr, foreign_port)``.
+
+    The buffer is a sequence of ``{uint32 length; uint32 kind}`` records after a leading ``xinpgen``
+    header (whose first uint32 is its own length); each connection contributes an ``XSO_SOCKET``
+    record (carrying the owning pid) and an ``XSO_INPCB`` record (carrying the addresses/ports),
+    terminated by a trailing ``xinpgen`` (length 24). Records are paired per connection regardless of
+    their order within the block.
+    """
+    connections: list[tuple[int, int, bytes, int]] = []
+    if len(data) < 4:
+        return connections
+    # Skip the leading xinpgen header (its first uint32 is xig_len).
+    offset = int(struct.unpack_from("<I", data, 0)[0])
+    pending_pid: Optional[int] = None
+    pending: Optional[tuple[int, bytes, int]] = None  # (version_flag, foreign_addr, foreign_port)
+    while offset + 8 <= len(data):
+        header = struct.unpack_from("<II", data, offset)
+        length, kind = int(header[0]), int(header[1])
+        if length == 24:  # trailing xinpgen end marker (sizeof(struct xinpgen))
+            break
+        if length < 8 or offset + length > len(data):  # malformed/truncated: avoid a bad or endless walk
+            break
+        if kind == _XSO_SOCKET and offset + 72 <= len(data):
+            pending_pid = int(struct.unpack_from("<i", data, offset + 68)[0])
+        elif kind == _XSO_INPCB and offset + 64 <= len(data):
+            foreign_port = int(struct.unpack_from(">H", data, offset + 16)[0])
+            version_flag = data[offset + 44]
+            foreign_addr = data[offset + 48 : offset + 48 + 16]
+            pending = (version_flag, foreign_addr, foreign_port)
+        if pending_pid is not None and pending is not None:
+            version_flag, foreign_addr, foreign_port = pending
+            connections.append((pending_pid, version_flag, foreign_addr, foreign_port))
+            pending_pid = None
+            pending = None
+        step = length if length % 8 == 0 else length + (8 - length % 8)
+        offset += step
+    return connections
+
+
 def _run_nettop_tcp() -> str:
     """One CSV sample of every TCP socket ``nettop`` can see; ``""`` when nettop is unusable."""
     try:
@@ -797,7 +874,7 @@ def _run_nettop_tcp() -> str:
             [_NETTOP_PATH, "-n", "-x", "-L", "1", "-m", "tcp", "-J", "interface,state"],
             capture_output=True,
             text=True,
-            timeout=_NETTOP_TIMEOUT,
+            timeout=_SOCKET_TABLE_TIMEOUT,
             check=False,
         )
     except (OSError, subprocess.SubprocessError) as e:
