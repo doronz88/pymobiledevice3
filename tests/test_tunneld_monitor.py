@@ -170,8 +170,8 @@ async def test_monitor_usb_task_follows_the_rsd_addresses_the_os_reports(monkeyp
     # The OS reports each USB device's RSD address: the monitor starts a tunnel task for new ones,
     # leaves a device that already has a tunnel alone, and drops the tunnel of an address that went away.
     snapshots = iter([
-        {"TUNNELED": ["fe80::1%anri0"], "NEW": ["fe80::2%anri1"]},
-        {"NEW": ["fe80::2%anri1"]},
+        {"TUNNELED": "fe80::1%anri0", "NEW": "fe80::2%anri1"},
+        {"NEW": "fe80::2%anri1"},
     ])
     started = []
     sleeps = 0
@@ -241,7 +241,7 @@ async def test_monitor_usb_task_retries_a_failing_rsd_address_with_backoff(monke
         core.tunnel_tasks.pop(address, None)
 
     monkeypatch.setattr(core, "handle_new_potential_usb_cdc_ncm_interface_task", failing_handle)
-    monkeypatch.setattr(tunneld_server.OSUTILS, "usb_rsd_addresses", lambda: {"BOOTING": ["fe80::1%anri0"]})
+    monkeypatch.setattr(tunneld_server.OSUTILS, "usb_rsd_addresses", lambda: {"BOOTING": "fe80::1%anri0"})
     monkeypatch.setattr(tunneld_server.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(asyncio.get_running_loop(), "time", lambda: clock)
 
@@ -256,7 +256,7 @@ async def test_monitor_usb_task_retries_a_failing_rsd_address_with_backoff(monke
 async def test_monitor_usb_task_keeps_tunnels_when_the_os_briefly_cannot_tell(monkeypatch):
     # e.g. a new device whose public NCM function shows up before its private one: the fallback
     # iteration must not treat the IORegistry addresses as gone and cancel their tunnels.
-    snapshots = iter([{"DEVICE": ["fe80::1%anri0"]}, None, {"DEVICE": ["fe80::1%anri0"]}])
+    snapshots = iter([{"DEVICE": "fe80::1%anri0"}, None, {"DEVICE": "fe80::1%anri0"}])
     sleeps = 0
 
     async def fake_sleep(_):

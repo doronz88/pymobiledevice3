@@ -35,43 +35,7 @@ _RSD_ENDPOINT_ERRORS = (
 )
 
 
-async def _connect_first(
-    rsds: list[RemoteServiceDiscoveryService], timeout: float
-) -> Optional[RemoteServiceDiscoveryService]:
-    """Handshake with every candidate at once, keep the first that answers and close the rest."""
-    tasks = {asyncio.ensure_future(rsd.connect()): rsd for rsd in rsds}
-    pending = set(tasks)
-    winner: Optional[RemoteServiceDiscoveryService] = None
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
-    try:
-        while pending and winner is None:
-            done, pending = await asyncio.wait(
-                pending, timeout=max(0.0, deadline - loop.time()), return_when=asyncio.FIRST_COMPLETED
-            )
-            if not done:
-                break
-            for task in done:
-                error = task.exception()
-                if error is None:
-                    winner = winner or tasks[task]
-                elif isinstance(error, _RSD_ENDPOINT_ERRORS):
-                    logger.debug("Skipping RSD endpoint %s: %r", tasks[task].service.address[0], error)
-                else:
-                    raise error
-    finally:
-        for task in pending:
-            if winner is None:
-                logger.debug("Gave up on RSD endpoint %s after %ss", tasks[task].service.address[0], timeout)
-            task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
-        for rsd in tasks.values():
-            if rsd is not winner:
-                await rsd.close()
-    return winner
-
-
-async def _get_usb_rsd_addresses(udid: Optional[str]) -> Optional[dict[str, list[str]]]:
+async def _get_usb_rsd_addresses(udid: Optional[str]) -> Optional[dict[str, str]]:
     """Each USB device's RSD address (see ``OsUtils.usb_rsd_addresses``), keyed by UDID.
 
     A device the host already sees on USB whose RSD link is not up yet is still coming up, so it gets
@@ -84,7 +48,7 @@ async def _get_usb_rsd_addresses(udid: Optional[str]) -> Optional[dict[str, list
         if addresses is None:
             return None
         if udid is not None:
-            addresses = {device: device_addresses for device, device_addresses in addresses.items() if device == udid}
+            addresses = {device: address for device, address in addresses.items() if device == udid}
         coming_up = [
             device.serial
             for device in OSUTILS.usb_devices_seen_by_host() or []
@@ -98,23 +62,21 @@ async def _get_usb_rsd_addresses(udid: Optional[str]) -> Optional[dict[str, list
 
 
 async def _connect_usb_rsds(
-    handshake_uuid: Optional[uuid.UUID], peers: dict[str, list[str]], udid: Optional[str]
+    handshake_uuid: Optional[uuid.UUID], peers: dict[str, str]
 ) -> list[RemoteServiceDiscoveryService]:
     """RSD on each USB device's RSD address (see `_get_usb_rsd_addresses`)."""
 
-    async def connect(addresses: list[str]) -> Optional[RemoteServiceDiscoveryService]:
-        candidates = [RemoteServiceDiscoveryService((a, RSD_PORT), handshake_uuid=handshake_uuid) for a in addresses]
-        return await _connect_first(candidates, _USB_HANDSHAKE_TIMEOUT)
-
-    result: list[RemoteServiceDiscoveryService] = []
-    for rsd in await asyncio.gather(*(connect(addresses) for addresses in peers.values())):
-        if rsd is None:
-            continue
-        if udid is None or rsd.udid == udid:
-            result.append(rsd)
-        else:
+    async def connect(address: str) -> Optional[RemoteServiceDiscoveryService]:
+        rsd = RemoteServiceDiscoveryService((address, RSD_PORT), handshake_uuid=handshake_uuid)
+        try:
+            await asyncio.wait_for(rsd.connect(), _USB_HANDSHAKE_TIMEOUT)
+        except _RSD_ENDPOINT_ERRORS as e:
+            logger.debug("Skipping RSD endpoint %s: %r", address, e)
             await rsd.close()
-    return result
+            return None
+        return rsd
+
+    return [rsd for rsd in await asyncio.gather(*map(connect, peers.values())) if rsd is not None]
 
 
 async def get_rsds(
@@ -132,7 +94,7 @@ async def get_rsds(
     handshake_uuid = await asyncio.to_thread(remoted_handshake_uuid)
     with stop_remoted():
         if peers is not None:
-            return await _connect_usb_rsds(handshake_uuid, peers, udid)
+            return await _connect_usb_rsds(handshake_uuid, peers)
         # Asking for one device stops at it; listing them all still takes the whole window.
         answers = iter_browse_remoted(timeout=bonjour_timeout)
         try:

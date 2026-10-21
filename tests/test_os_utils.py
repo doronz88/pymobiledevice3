@@ -171,7 +171,7 @@ def test_darwin_usb_rsd_addresses_follow_remoted(monkeypatch):
     monkeypatch.setattr(posix_util, "get_adapters", lambda: adapters)
 
     assert posix_util.Darwin().usb_rsd_addresses() == {
-        "00008150-001074523440401C": ["fe80::bc5a:3eff:fec4:9be9%anri0"],
+        "00008150-001074523440401C": "fe80::bc5a:3eff:fec4:9be9%anri0",
     }
 
 

@@ -128,11 +128,11 @@ def usb(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_get_rsds_finds_usb_devices_on_their_own_links_without_bonjour(usb):
-    # A device with more than one RSD address keeps the one that answers; the others are dropped
-    # even while their handshake is still hanging.
+async def test_get_rsds_finds_usb_devices_on_their_own_links_without_bonjour(usb, monkeypatch):
+    # A device whose handshake hangs is given up on (and closed) without holding up the others.
+    monkeypatch.setattr(utils, "_USB_HANDSHAKE_TIMEOUT", 0.05)
     usb(
-        {"UDID-A": ["fe80::1%anri0", "fe80::9%anri9"], "UDID-B": ["fe80::2%anri1"]},
+        {"UDID-A": "fe80::1%anri0", "UDID-B": "fe80::2%anri1", "UDID-C": "fe80::9%anri9"},
         {"fe80::1%anri0": "UDID-A", "fe80::9%anri9": "hang", "fe80::2%anri1": "UDID-B"},
     )
 
@@ -147,7 +147,7 @@ async def test_get_rsds_finds_usb_devices_on_their_own_links_without_bonjour(usb
 
 @pytest.mark.asyncio
 async def test_get_rsds_only_asks_the_requested_device(usb):
-    usb({"UDID-A": ["fe80::1%anri0"], "UDID-B": ["fe80::2%anri1"]}, {"fe80::2%anri1": "UDID-B"})
+    usb({"UDID-A": "fe80::1%anri0", "UDID-B": "fe80::2%anri1"}, {"fe80::2%anri1": "UDID-B"})
 
     rsds = await utils.get_rsds(udid="UDID-B")
 
@@ -158,7 +158,7 @@ async def test_get_rsds_only_asks_the_requested_device(usb):
 async def test_get_rsds_does_not_browse_bonjour_when_the_os_lists_usb_links(usb, monkeypatch):
     # The OS lists every USB device's RSD link: one that does not answer would not answer bonjour's
     # address either, so browsing would only add its window.
-    usb({"UDID-A": ["fe80::1%anri0"]}, {"fe80::1%anri0": ConnectionRefusedError()})
+    usb({"UDID-A": "fe80::1%anri0"}, {"fe80::1%anri0": ConnectionRefusedError()})
 
     assert await utils.get_rsds() == []
     assert await utils.get_rsds(udid="NOT-ON-USB") == []
@@ -180,7 +180,7 @@ async def test_get_rsds_leaves_remoted_alone_when_no_usb_device_is_up(usb, monke
 @pytest.mark.asyncio
 async def test_get_rsds_waits_for_a_device_whose_link_is_coming_up(usb, monkeypatch):
     # Seen on USB but its RSD link not up yet: wait for it rather than report no device.
-    snapshots = iter([{}, {}, {"UDID-A": ["fe80::1%anri0"]}])
+    snapshots = iter([{}, {}, {"UDID-A": "fe80::1%anri0"}])
     usb({}, {"fe80::1%anri0": "UDID-A"})
     monkeypatch.setattr(utils.OSUTILS, "usb_rsd_addresses", lambda: next(snapshots))
     monkeypatch.setattr(utils.OSUTILS, "usb_devices_seen_by_host", lambda: [SimpleNamespace(serial="UDID-A")])

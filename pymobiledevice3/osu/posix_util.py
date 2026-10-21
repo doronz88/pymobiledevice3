@@ -174,7 +174,7 @@ class Darwin(Posix):
             )
         return devices
 
-    def usb_rsd_addresses(self) -> Optional[dict[str, list[str]]]:
+    def usb_rsd_addresses(self) -> Optional[dict[str, str]]:
         """Ask IOKit for each Apple USB device's RSD address, as remoted finds it, keyed by UDID.
 
         A device brings up two NCM functions; the one serving RSD is flagged private
@@ -183,8 +183,8 @@ class Darwin(Posix):
         discovered (remoted does the same; neither bonjour nor neighbor discovery is involved).
 
         ``None`` (the OS cannot tell) when a device has NCM interfaces but none flagged private, as
-        on macOS releases without that split (seen as ``anriN`` on macOS 27); there remoted itself
-        finds the device over bonjour on the public interface, so callers should too.
+        on older macOS releases without that flag; there remoted itself finds the device over
+        bonjour on the public interface, so callers should too.
         """
         if get_io_services_by_type is None:
             return None
@@ -194,7 +194,7 @@ class Darwin(Posix):
             for ip in adapter.ips
             if not ip.is_IPv4 and cast(tuple[str, int, int], ip.ip)[0].lower().startswith("fe80:")
         }
-        addresses: dict[str, list[str]] = {}
+        addresses: dict[str, str] = {}
         with_ncm: set[str] = set()
         with_private_ncm: set[str] = set()
         for entry in get_io_services_by_type("IOEthernetInterface"):
@@ -219,7 +219,7 @@ class Darwin(Posix):
             mac = cast(Optional[bytes], controller.get("IOMACAddress"))
             if name is None or name not in host_link_local or mac is None or len(mac) != 6:
                 continue
-            addresses.setdefault(_with_udid_separator(serial), []).append(f"{_device_link_local(mac)}%{name}")
+            addresses[_with_udid_separator(serial)] = f"{_device_link_local(mac)}%{name}"
         if with_ncm - with_private_ncm:
             return None
         return addresses
