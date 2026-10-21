@@ -13,7 +13,10 @@ from typing import Annotated, Any, Callable, Optional, Union, cast
 
 import ansilogs
 import typer
+import typer_injector
 from packaging.version import Version
+from rich.console import Console
+from rich.traceback import Traceback
 from typer.core import TyperGroup
 from typer_injector import InjectingTyper
 
@@ -25,6 +28,7 @@ except ImportError:  # pragma: no cover
 # Must precede the other first-party imports (isort keeps it first) so their dependency
 # chains are lazy on Python 3.15+; see the module docstring.
 import pymobiledevice3._lazy_imports  # noqa: F401
+from pymobiledevice3.cli import cli_common
 from pymobiledevice3.cli.cli_common import (
     FORCE_TUNNEL_ENV_VAR,
     NATIVE_ENV_VAR,
@@ -309,7 +313,15 @@ def _report(error: PyMobileDevice3Exception) -> None:
     """Tell the user what failed: the exception's message, and its traceback when running with ``-v``."""
     logger.error(str(error) or type(error).__name__)
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug("Traceback:", exc_info=error)
+        if sys.stderr.isatty():
+            # rich shows each frame's source in context; the CLI machinery's own frames add nothing
+            traceback = Traceback.from_exception(
+                type(error), error, error.__traceback__, suppress=[typer, typer_injector, asyncio]
+            )
+            Console(stderr=True, no_color=not cli_common.COLORED_OUTPUT).print(traceback)
+        else:
+            # redirected (e.g. to a file attached to an issue): a plain traceback reads and greps better
+            logger.debug("Traceback:", exc_info=error)
     elif not error.worth_reporting:  # (that message already says to rerun with -v)
         logger.info("Run again with -v for the full traceback (include it when reporting an issue)")
 
