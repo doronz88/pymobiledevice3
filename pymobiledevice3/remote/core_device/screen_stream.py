@@ -667,7 +667,6 @@ class ScreenStreamServer:
         ltrp_enabled: bool = False,
         https: bool = False,
         rctl_enabled: bool = False,
-        max_bitrate_kbps: int = 60000,
         motion_idr: bool = True,
         compensate: bool = True,
     ) -> None:
@@ -688,13 +687,8 @@ class ScreenStreamServer:
         self._motion_idr = motion_idr
         # AVConference RCTL receiver feedback (see _rctl_feedback_loop): the
         # closed-loop rate-control channel Xcode's mirror uses, reversed from a
-        # live capture. ``max_bitrate_kbps`` is the cap advertised to the
-        # device, which honours it (confirmed on-device: dropping it collapses
-        # the encoder bitrate). The uncapped encoder can ramp past ~5.5 Mbps
-        # under sustained motion and stall; lowering this (e.g. 5000) trades
-        # peak quality for a steadier stream.
+        # live capture.
         self._rctl_enabled = rctl_enabled
-        self._rctl_maxk = max_bitrate_kbps
         self._bind = bind
         # Every endpoint can watch or drive the device, so the whole server sits behind one HTTP
         # Basic password when one is set. The browser asks once and then attaches it to the
@@ -1177,7 +1171,7 @@ class ScreenStreamServer:
     #   "RCTL" (32 B, ~20/s): tag 0x85000004 then 8x u16:
     #     [0]=received RTP ts>>8, [1..2]=0, [3]=jitter/loss(0),
     #     [4]=1024 Hz receiver wall clock, [5]=reception quality, [6]=frames,
-    #     [7]=accepted max bitrate (kbps).
+    #     [7]=0xEA61 (a constant in Xcode's capture; see _build_rctl_packet).
     #   name 0x00000005 (16 B, ~35/s): the received video RTP timestamp.
     # Echoing the *received* RTP timestamp is what makes the device act on the
     # feedback (a synthetic clock was ignored). Xcode sends this and no PLIs.

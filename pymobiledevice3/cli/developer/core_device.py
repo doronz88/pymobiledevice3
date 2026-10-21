@@ -1136,19 +1136,6 @@ async def core_device_display_serve_web(
             ),
         ),
     ] = False,
-    max_bitrate: Annotated[
-        int,
-        typer.Option(
-            "--max-bitrate",
-            help=(
-                "Encoder bitrate cap in kbps, advertised to the device over the "
-                "RCTL loop (the device honours it). The uncapped encoder can "
-                "ramp past ~5.5 Mbps under sustained motion and stall; lowering "
-                "this (e.g. 5000) keeps the stream steadier at some cost to peak "
-                "quality. Requires --rctl."
-            ),
-        ),
-    ] = 60000,
     motion_idr: Annotated[
         bool,
         typer.Option(
@@ -1207,7 +1194,6 @@ async def core_device_display_serve_web(
         ltrp_enabled=ltrp,
         https=https,
         rctl_enabled=rctl,
-        max_bitrate_kbps=max_bitrate,
         motion_idr=motion_idr,
         compensate=compensate,
     )
