@@ -252,8 +252,7 @@ class TunneldCore:
             # Per RSD address: when it may be tried again, and how long the wait after that grows to.
             # Right after boot a device accepts the connection before RSD answers (remoted retries every
             # second), but one that never gets a tunnel must not have remoted suspended every few seconds.
-            retry_at: dict[str, float] = {}
-            retry_delay: dict[str, float] = {}
+            retry: dict[str, tuple[float, float]] = {}
             loop = asyncio.get_running_loop()
             while True:
                 iteration += 1
@@ -271,14 +270,13 @@ class TunneldCore:
                         previous_ips = current
                 else:
                     # failed attempts are retried below instead of by a periodic rescan
-                    current = {address for addresses in rsd_addresses.values() for address in addresses}
+                    current = set(rsd_addresses.values())
                     added = current - previous_addresses
                     removed = previous_addresses - current
                     previous_addresses = current
 
                 for ip in removed:
-                    retry_at.pop(ip, None)
-                    retry_delay.pop(ip, None)
+                    retry.pop(ip, None)
                     if ip in self.tunnel_tasks:
                         self.tunnel_tasks[ip].task.cancel()
                         with suppress(asyncio.CancelledError):
@@ -295,19 +293,16 @@ class TunneldCore:
                         ]
                 else:
                     now = loop.time()
-                    for udid, device_addresses in rsd_addresses.items():
+                    for udid, address in rsd_addresses.items():
                         if self.tunnel_exists_for_udid(udid):
                             # (possibly under another key, e.g. through usbmux)
-                            for address in device_addresses:
-                                retry_delay.pop(address, None)
+                            retry.pop(address, None)
                             continue
-                        for address in device_addresses:
-                            if address in self.tunnel_tasks or now < retry_at.get(address, 0):
-                                continue
-                            delay = retry_delay.get(address, USB_RSD_RETRY_INTERVAL)
-                            retry_at[address] = now + delay
-                            retry_delay[address] = min(delay * 2, USB_MONITOR_RESCAN_INTERVAL)
-                            addresses.append(address)
+                        retry_at, delay = retry.get(address, (0.0, USB_RSD_RETRY_INTERVAL))
+                        if address in self.tunnel_tasks or now < retry_at:
+                            continue
+                        retry[address] = (now + delay, min(delay * 2, USB_MONITOR_RESCAN_INTERVAL))
+                        addresses.append(address)
                 for address in addresses:
                     if address in self.tunnel_tasks:
                         # Skip already established tunnels
