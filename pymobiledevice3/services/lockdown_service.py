@@ -141,4 +141,5 @@ class LockdownService:
                 fut.cancel()
             else:
                 fut.set_exception(e)
+                fut.exception()  # prevent "Future exception was never retrieved" warning
             raise
