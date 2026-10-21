@@ -1,4 +1,5 @@
 import datetime
+import ipaddress
 import os
 import signal
 import socket
@@ -13,6 +14,7 @@ from ifaddr import get_adapters
 
 if sys.platform == "darwin":
     # IOKit, so macOS-only -- and this module is imported on every posix platform.
+    from ioregistry.exceptions import IORegistryException
     from ioregistry.ioentry import get_io_services_by_type
 else:
     get_io_services_by_type = None
@@ -46,6 +48,12 @@ _APPLE_USB_VENDOR_ID = "05ac"
 # and avoids parsing another tool's output; every file here is world-readable, so no root either.
 _LINUX_USB_DEVICES = Path("/sys/bus/usb/devices")
 
+# kIONetworkLinkValid | kIONetworkLinkActive, from <IOKit/network/IONetworkMedium.h>.
+_IO_NETWORK_LINK_VALID_AND_ACTIVE = 0x3
+# The NetworkInterfaceFlags bit marking the private NCM function (the one serving RSD), as remoted
+# tests it; the other, public, function is a regular network interface.
+_NETWORK_INTERFACE_PRIVATE = 0x20000000
+
 _DARWIN_TCP_KEEPALIVE = 0x10
 _DARWIN_TCP_KEEPINTVL = 0x101
 _DARWIN_TCP_KEEPCNT = 0x102
@@ -76,6 +84,15 @@ def _looks_like_udid(serial: str) -> bool:
     """
     bare = serial.replace("-", "")
     return len(bare) in _UDID_LENGTHS and all(character in string.hexdigits for character in bare)
+
+
+def _device_link_local(host_mac: bytes) -> str:
+    """The device's link-local address on a private NCM link, from the host side's MAC address.
+
+    It is the host's own EUI-64 link-local with the last byte inverted, as remoted computes it.
+    """
+    interface_id = bytes([host_mac[0] ^ 0x02, *host_mac[1:3], 0xFF, 0xFE, *host_mac[3:5], host_mac[5] ^ 0xFF])
+    return str(ipaddress.IPv6Address(b"\xfe\x80" + bytes(6) + interface_id))
 
 
 def _with_udid_separator(serial: str) -> str:
@@ -156,6 +173,56 @@ class Darwin(Posix):
                 )
             )
         return devices
+
+    def usb_rsd_addresses(self) -> Optional[dict[str, list[str]]]:
+        """Ask IOKit for each Apple USB device's RSD address, as remoted finds it, keyed by UDID.
+
+        A device brings up two NCM functions; the one serving RSD is flagged private
+        (``NetworkInterfaceFlags``). It counts once its link is active and the host side has its
+        link-local address, and the device's address is derived from ``IOMACAddress`` rather than
+        discovered (remoted does the same; neither bonjour nor neighbor discovery is involved).
+
+        ``None`` (the OS cannot tell) when a device has NCM interfaces but none flagged private, as
+        on macOS releases without that split (seen as ``anriN`` on macOS 27); there remoted itself
+        finds the device over bonjour on the public interface, so callers should too.
+        """
+        if get_io_services_by_type is None:
+            return None
+        host_link_local = {
+            adapter.nice_name
+            for adapter in get_adapters()
+            for ip in adapter.ips
+            if not ip.is_IPv4 and cast(tuple[str, int, int], ip.ip)[0].lower().startswith("fe80:")
+        }
+        addresses: dict[str, list[str]] = {}
+        with_ncm: set[str] = set()
+        with_private_ncm: set[str] = set()
+        for entry in get_io_services_by_type("IOEthernetInterface"):
+            try:
+                device = entry.get_parent_by_type("IOService", "IOUSBHostDevice").properties
+                controller = entry.get_parent_by_type("IOService", "IONetworkController").properties
+            except IORegistryException:
+                # not a USB interface
+                continue
+            if device.get("USB Vendor Name") != "Apple Inc.":
+                continue
+            serial = cast(Optional[str], device.get("USB Serial Number"))
+            if serial is None or not _looks_like_udid(serial):
+                continue
+            with_ncm.add(serial)
+            if not cast(int, controller.get("NetworkInterfaceFlags", 0)) & _NETWORK_INTERFACE_PRIVATE:
+                continue
+            with_private_ncm.add(serial)
+            if cast(int, controller.get("IOLinkStatus", 0)) != _IO_NETWORK_LINK_VALID_AND_ACTIVE:
+                continue
+            name = cast(Optional[str], entry.properties.get("BSD Name"))
+            mac = cast(Optional[bytes], controller.get("IOMACAddress"))
+            if name is None or name not in host_link_local or mac is None or len(mac) != 6:
+                continue
+            addresses.setdefault(_with_udid_separator(serial), []).append(f"{_device_link_local(mac)}%{name}")
+        if with_ncm - with_private_ncm:
+            return None
+        return addresses
 
     @property
     def loopback_header(self) -> bytes:
