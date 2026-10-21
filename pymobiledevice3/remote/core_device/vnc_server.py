@@ -339,6 +339,8 @@ class VncStreamServer:
         self._remote_ssrc: int = 0
         self._rtcp_dest: Optional[tuple[str, int]] = None
         self._pli_tasks: set[asyncio.Task[None]] = set()
+        # VNC client handlers in flight, for serve() to cancel at shutdown.
+        self._client_tasks: set[asyncio.Task[None]] = set()
         # Extended highest video RTP seq, for the periodic Receiver Report that
         # keeps the device from reaping the video session (RTCPTimeoutEnabled).
         self._rtp_highest_seq: int = 0
@@ -940,7 +942,10 @@ class VncStreamServer:
                 await asyncio.sleep(1.0)
             except asyncio.CancelledError:
                 return
-            if self._audio_rtcp_dest is None or self._audio_rtp_packets_received == 0:
+            # Not gated on a first audio packet: the screen usually starts silent, and the device reaps an
+            # audio session that gets no RR for ~20 s. The SSRCs are known from negotiation, so a
+            # highest-seq=0 RR is a valid keepalive (as in serve-web).
+            if self._audio_rtcp_dest is None:
                 continue
             try:
                 await transport.sendto(self._build_audio_rtcp_rr(), *self._audio_rtcp_dest)
@@ -1121,6 +1126,10 @@ class VncStreamServer:
 
     # ----- RFB protocol -----------------------------------------------------
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        task = asyncio.current_task()
+        assert task is not None
+        self._client_tasks.add(task)
+        task.add_done_callback(self._client_tasks.discard)
         peer = writer.get_extra_info("peername")
         client = _VncClient(reader, writer)
         logger.info("VNC client connected: %s", peer)
@@ -1701,8 +1710,8 @@ class VncStreamServer:
             logger.debug("shutdown: releasing device media session")
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(DisplayService.stop_all_streams(self._rsd), timeout=6.0)
-            current = asyncio.current_task()
-            stragglers = [t for t in asyncio.all_tasks(loop) if t is not current and not t.done()]
+            # Only this server's tasks: the loop also runs the caller's, such as its device tunnel.
+            stragglers = [t for t in (serve_task, *self._client_tasks, *self._pli_tasks) if not t.done()]
             for t in stragglers:
                 t.cancel()
             if stragglers:
