@@ -196,7 +196,7 @@ class Mobilebackup2Service(LockdownService):
     def _udid(self) -> str:
         udid = self.lockdown.udid
         if udid is None:
-            raise NotConnectedError("lockdown provider has no udid; connect it first")
+            raise NotConnectedError("The device UDID is unknown; connect to the device first.")
         return validate_device_filename(udid)
 
     async def get_will_encrypt(self) -> bool:
@@ -676,7 +676,9 @@ class Mobilebackup2Service(LockdownService):
                     break
             else:  # No break, lock failed.
                 await afc.fclose(lockfile)
-                raise PyMobileDevice3Exception("Failed to lock itunes sync file")
+                raise PyMobileDevice3Exception(
+                    "Could not lock the device's sync lock file; another sync or backup may be running."
+                )
         try:
             yield
         finally:
@@ -927,7 +929,9 @@ class Mobilebackup2Service(LockdownService):
 
         manifest_plist_path = Mobilebackup2Service._backup_manifest_plist_path(device_directory)
         if manifest_plist_path is None:
-            raise PyMobileDevice3Exception("Encrypted backup Manifest.plist was not received before Manifest.db")
+            raise PyMobileDevice3Exception(
+                "The device sent the encrypted backup's Manifest.db before its Manifest.plist."
+            )
 
         manifest = ManifestPlist.from_path(manifest_plist_path)
         keybag = Keybag.from_manifest(manifest, password)
@@ -944,7 +948,9 @@ class Mobilebackup2Service(LockdownService):
         plaintext = decrypted_manifest_path.read_bytes()
         algorithm = algorithms.AES(manifest_key)
         if len(plaintext) % (algorithm.block_size // 8):
-            raise PyMobileDevice3Exception("Decrypted backup Manifest.db is not AES block aligned")
+            raise PyMobileDevice3Exception(
+                "The decrypted backup Manifest.db has an invalid size: it is not a whole number of AES blocks."
+            )
 
         cipher = Cipher(algorithm, modes.CBC(b"\x00" * 16))
         encryptor = cipher.encryptor()

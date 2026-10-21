@@ -166,7 +166,7 @@ class DeviceLink:
                 elif message[1]["ErrorCode"] == MB_ERROR_INSUFFICIENT_DISK_SPACE:
                     raise NotEnoughDiskSpaceError(self._insufficient_disk_space_error(message[1]))
                 else:
-                    raise PyMobileDevice3Exception(f"Device link error: {message[1]}")
+                    raise PyMobileDevice3Exception(f"The device reported an error: {message[1]}")
             await self._dl_handlers[command](message)
 
     def _insufficient_disk_space_error(self, response: Mapping[str, Any]) -> str:
@@ -219,7 +219,7 @@ class DeviceLink:
         await self.service.send_plist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
         dl_message_device_ready = await self.receive_message()
         if dl_message_device_ready[0] != "DLMessageDeviceReady":
-            raise PyMobileDevice3Exception("Device link didn't return ready state")
+            raise PyMobileDevice3Exception("The device did not report it was ready to start the session.")
 
     async def send_process_message(self, message: Mapping[str, Any]) -> None:
         await self.service.send_plist(["DLMessageProcessMessage", message])

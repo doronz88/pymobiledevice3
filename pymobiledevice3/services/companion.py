@@ -68,7 +68,7 @@ class CompanionProxyService(LockdownService):
             return value
 
         error = response.get("Error")
-        raise PyMobileDevice3Exception(error)
+        raise PyMobileDevice3Exception(f"The device could not read {key!r} from the paired watch {udid}: {error}")
 
     async def start_forwarding_service_port(
         self, remote_port: int, service_name: Optional[str] = None, options: Optional[dict[str, Any]] = None

@@ -62,4 +62,6 @@ class DtDeviceArbitration(LockdownService):
         request = {"command": "check-out"}
         response = await self._send_recv(request)
         if response.get("result") != "success":
-            raise ArbitrationError(f"failed with: {response}")
+            raise ArbitrationError(
+                f"The device arbitration service refused to release (check out) the device: {response}"
+            )

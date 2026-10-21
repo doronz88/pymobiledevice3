@@ -111,7 +111,7 @@ class MobileActivationService:
         footer = root.find("page/tableView/section/footer")
         server_info_node = root.find("serverInfo")
         if navigation_bar is None or footer is None or server_info_node is None:
-            raise MobileActivationException("Activation server response is invalid")
+            raise MobileActivationException("Could not parse the page sent by Apple's activation server.")
         title = navigation_bar.get("title")
         description = footer.text
         fields: list[Field] = []
@@ -193,7 +193,9 @@ class MobileActivationService:
                         self.logger.warning(f"Unable to get {k} from lockdownd")
                         if k == "MEID" and has_meid:
                             # Something is wrong if both IMEI & MEID is missing
-                            raise MobileActivationException("Unable to obtain both IMEI and MEID")
+                            raise MobileActivationException(
+                                "Could not read either the IMEI or the MEID from the device."
+                            )
 
                     # Either IMEI or MEID, or both
                     if k == "IMEI":
@@ -205,11 +207,11 @@ class MobileActivationService:
 
         if content_type == "application/x-buddyml":
             if skip_apple_id_query:
-                raise MobileActivationException("Device is iCloud locked")
+                raise MobileActivationException("The device is iCloud locked (Activation Lock).")
             try:
                 activation_form = self._get_activation_form_from_response(content.decode())
             except Exception as e:
-                raise MobileActivationException("Activation server response is invalid") from e
+                raise MobileActivationException("Could not parse the page sent by Apple's activation server.") from e
             else:
                 typer.secho(activation_form.title, bold=True)
                 typer.secho(activation_form.description)
@@ -260,7 +262,7 @@ class MobileActivationService:
         response = await self.send_command("CreateTunnel1SessionInfoRequest")
         error = response.get("Error")
         if error is not None:
-            raise MobileActivationException(f"Mobile activation can not be done due to: {response}")
+            raise MobileActivationException(f"The device refused to create an activation session: {response}")
         return response["Value"]
 
     async def create_activation_info_with_session(self, handshake_response: Any):
@@ -277,7 +279,7 @@ class MobileActivationService:
         response = await self.send_command("CreateTunnel1ActivationInfoRequest", handshake_response)
         error = response.get("Error")
         if error is not None:
-            raise MobileActivationException(f"Mobile activation can not be done due to: {response}")
+            raise MobileActivationException(f"The device refused to create its activation info: {response}")
         return response["Value"]
 
     async def activate_with_lockdown(self, activation_record: bytes):
@@ -296,7 +298,7 @@ class MobileActivationService:
         if node is None:
             node = record.get("device-activation")
         if node is None:
-            raise MobileActivationException("Activation record received is invalid")
+            raise MobileActivationException("The activation record from Apple's server has no device activation entry.")
 
         assert isinstance(self.lockdown, LockdownClient)
         await self.lockdown._request("Activate", {"ActivationRecord": node.get("activation-record")})

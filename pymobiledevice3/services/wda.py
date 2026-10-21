@@ -58,7 +58,7 @@ class WdaClient:
         if isinstance(message, dict):
             message = cast(dict[str, Any], message)
             message = message.get("message") or message.get("error") or message
-        return f"WDA error (status={status_code}): {message}"
+        return f"WDA rejected the request (HTTP status {status_code}): {message}"
 
     def start_session(self, bundle_id: Optional[str] = None) -> str:
         """Start a WDA session, optionally launching a specific application.
@@ -82,7 +82,7 @@ class WdaClient:
             if isinstance(value, dict):
                 session_id = cast(dict[str, Any], value).get("sessionId")
         if not session_id:
-            raise WdaError("WDA did not return a session id")
+            raise WdaError("WDA did not return a session id when starting the session.")
         self.session_id = session_id
         return session_id
 
@@ -97,7 +97,7 @@ class WdaClient:
         """
         session_id = session_id or self.session_id
         if not session_id:
-            raise WdaError("session_id is required")
+            raise WdaError("No WDA session is active. Start a session first or pass a session id.")
         data = self._request_json(
             "POST",
             f"/session/{session_id}/element",
@@ -105,13 +105,13 @@ class WdaClient:
         )
         element = data.get("value")
         if not isinstance(element, dict):
-            raise WdaError("WDA did not return an element")
+            raise WdaError(f"WDA returned no element for {using} {value!r}")
         element = cast(dict[str, Any], element)
         element_id = (
             element.get("ELEMENT") or element.get("element-6066-11e4-a52e-4f735466cecf") or element.get("element")
         )
         if not element_id:
-            raise WdaError("WDA did not return an element id")
+            raise WdaError(f"WDA returned an element without an id for {using} {value!r}")
         return element_id
 
     def click(self, element_id: str, session_id: Optional[str] = None) -> None:
@@ -123,7 +123,7 @@ class WdaClient:
         """
         session_id = session_id or self.session_id
         if not session_id:
-            raise WdaError("session_id is required")
+            raise WdaError("No WDA session is active. Start a session first or pass a session id.")
         self._request_json("POST", f"/session/{session_id}/element/{element_id}/click", {})
 
     def press_button(self, name: str, session_id: Optional[str] = None) -> None:
@@ -152,7 +152,10 @@ class WdaClient:
         if normalized == "home":
             self._request_json("POST", "/wda/homescreen", {})
             return
-        raise WdaError("WDA does not support pressButton or keys endpoints", status_code=404)
+        raise WdaError(
+            "This WDA build cannot press buttons: it has neither the pressButton nor the keys endpoint.",
+            status_code=404,
+        )
 
     def unlock(self, session_id: Optional[str] = None) -> None:
         """Unlock the device, trying the session-scoped endpoint then the global one.
@@ -174,7 +177,9 @@ class WdaClient:
         except WdaError as exc:
             if exc.status_code != 404:
                 raise
-            raise WdaError("WDA does not support unlock endpoint", status_code=404) from exc
+            raise WdaError(
+                "This WDA build cannot unlock the device: it has no unlock endpoint.", status_code=404
+            ) from exc
 
     def get_source(self, session_id: Optional[str] = None) -> str:
         """Fetch the current UI hierarchy as an XML source tree.
@@ -189,7 +194,7 @@ class WdaClient:
             data = self._request_json("GET", "/source", None)
         value = data.get("value")
         if not isinstance(value, str):
-            raise WdaError("WDA did not return a source string")
+            raise WdaError("WDA did not return the UI source tree.")
         return value
 
     def get_screenshot(self, session_id: Optional[str] = None) -> bytes:
@@ -205,7 +210,7 @@ class WdaClient:
             data = self._request_json("GET", "/screenshot", None)
         value = data.get("value")
         if not isinstance(value, str):
-            raise WdaError("WDA did not return a screenshot")
+            raise WdaError("WDA did not return a screenshot.")
         return base64.b64decode(value)
 
     def get_status(self) -> dict[str, Any]:
@@ -223,11 +228,11 @@ class WdaClient:
         :raises WdaError: No session id is available, or WDA did not return a window size.
         """
         if not session_id:
-            raise WdaError("session_id is required")
+            raise WdaError("No WDA session is active. Start a session first or pass a session id.")
         data = self._request_json("GET", f"/session/{session_id}/window/size", None)
         value = data.get("value")
         if not isinstance(value, dict):
-            raise WdaError("WDA did not return window size")
+            raise WdaError("WDA did not return the window size.")
         return cast(dict[str, Any], value)
 
     def send_keys(self, text: str, session_id: Optional[str] = None) -> None:
@@ -241,7 +246,7 @@ class WdaClient:
         :raises WdaError: No session id is available.
         """
         if not session_id:
-            raise WdaError("session_id is required")
+            raise WdaError("No WDA session is active. Start a session first or pass a session id.")
         payload = {"value": list(text)}
         try:
             self._request_json("POST", f"/session/{session_id}/wda/keys", payload)
@@ -270,7 +275,7 @@ class WdaClient:
         :raises WdaError: No session id is available.
         """
         if not session_id:
-            raise WdaError("session_id is required")
+            raise WdaError("No WDA session is active. Start a session first or pass a session id.")
         payload: dict[str, Any] = {
             "fromX": start_x,
             "fromY": start_y,
@@ -375,7 +380,9 @@ class WdaServiceClient:
         try:
             data: dict[str, Any] = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
         except ValueError as exc:
-            raise WdaError(f"WDA returned non-JSON response (status={status_code})", status_code=status_code) from exc
+            raise WdaError(
+                f"WDA sent a reply that is not JSON (HTTP status {status_code}).", status_code=status_code
+            ) from exc
 
         if status_code >= 400:
             raise WdaError(WdaClient._format_error(data, status_code), status_code=status_code)
@@ -395,7 +402,7 @@ class WdaServiceClient:
                 break
             buf += chunk
         if marker not in buf:
-            raise WdaError("WDA response did not contain headers terminator")
+            raise WdaError("WDA closed the connection before sending complete HTTP headers.")
         header_bytes, body_prefix = buf.split(marker, 1)
         return header_bytes, body_prefix
 
@@ -421,7 +428,7 @@ class WdaServiceClient:
             if isinstance(value, dict):
                 session_id = cast(dict[str, Any], value).get("sessionId")
         if not session_id:
-            raise WdaError("WDA did not return a session id")
+            raise WdaError("WDA did not return a session id when starting the session.")
         self.session_id = session_id
         return session_id
 
@@ -436,7 +443,7 @@ class WdaServiceClient:
         """
         session_id = session_id or self.session_id
         if not session_id:
-            raise WdaError("session_id is required")
+            raise WdaError("No WDA session is active. Start a session first or pass a session id.")
         data = await self._request_json(
             "POST",
             f"/session/{session_id}/element",
@@ -444,13 +451,13 @@ class WdaServiceClient:
         )
         element = data.get("value")
         if not isinstance(element, dict):
-            raise WdaError("WDA did not return an element")
+            raise WdaError(f"WDA returned no element for {using} {value!r}")
         element = cast(dict[str, Any], element)
         element_id = (
             element.get("ELEMENT") or element.get("element-6066-11e4-a52e-4f735466cecf") or element.get("element")
         )
         if not element_id:
-            raise WdaError("WDA did not return an element id")
+            raise WdaError(f"WDA returned an element without an id for {using} {value!r}")
         return element_id
 
     async def click(self, element_id: str, session_id: Optional[str] = None) -> None:
@@ -462,7 +469,7 @@ class WdaServiceClient:
         """
         session_id = session_id or self.session_id
         if not session_id:
-            raise WdaError("session_id is required")
+            raise WdaError("No WDA session is active. Start a session first or pass a session id.")
         await self._request_json("POST", f"/session/{session_id}/element/{element_id}/click", {})
 
     async def press_button(self, name: str, session_id: Optional[str] = None) -> None:
@@ -491,7 +498,10 @@ class WdaServiceClient:
         if normalized == "home":
             await self._request_json("POST", "/wda/homescreen", {})
             return
-        raise WdaError("WDA does not support pressButton or keys endpoints", status_code=404)
+        raise WdaError(
+            "This WDA build cannot press buttons: it has neither the pressButton nor the keys endpoint.",
+            status_code=404,
+        )
 
     async def unlock(self, session_id: Optional[str] = None) -> None:
         """Unlock the device, trying the session-scoped endpoint then the global one.
@@ -513,7 +523,9 @@ class WdaServiceClient:
         except WdaError as exc:
             if exc.status_code != 404:
                 raise
-            raise WdaError("WDA does not support unlock endpoint", status_code=404) from exc
+            raise WdaError(
+                "This WDA build cannot unlock the device: it has no unlock endpoint.", status_code=404
+            ) from exc
 
     async def get_source(self, session_id: Optional[str] = None) -> str:
         """Fetch the current UI hierarchy as an XML source tree.
@@ -528,7 +540,7 @@ class WdaServiceClient:
             data = await self._request_json("GET", "/source", None)
         value = data.get("value")
         if not isinstance(value, str):
-            raise WdaError("WDA did not return a source string")
+            raise WdaError("WDA did not return the UI source tree.")
         return value
 
     async def get_screenshot(self, session_id: Optional[str] = None) -> bytes:
@@ -544,7 +556,7 @@ class WdaServiceClient:
             data = await self._request_json("GET", "/screenshot", None)
         value = data.get("value")
         if not isinstance(value, str):
-            raise WdaError("WDA did not return a screenshot")
+            raise WdaError("WDA did not return a screenshot.")
         return base64.b64decode(value)
 
     async def get_status(self) -> dict[str, Any]:
@@ -562,11 +574,11 @@ class WdaServiceClient:
         :raises WdaError: No session id is available, or WDA did not return a window size.
         """
         if not session_id:
-            raise WdaError("session_id is required")
+            raise WdaError("No WDA session is active. Start a session first or pass a session id.")
         data = await self._request_json("GET", f"/session/{session_id}/window/size", None)
         value = data.get("value")
         if not isinstance(value, dict):
-            raise WdaError("WDA did not return window size")
+            raise WdaError("WDA did not return the window size.")
         return cast(dict[str, Any], value)
 
     async def send_keys(self, text: str, session_id: Optional[str] = None) -> None:
@@ -580,7 +592,7 @@ class WdaServiceClient:
         :raises WdaError: No session id is available.
         """
         if not session_id:
-            raise WdaError("session_id is required")
+            raise WdaError("No WDA session is active. Start a session first or pass a session id.")
         payload = {"value": list(text)}
         try:
             await self._request_json("POST", f"/session/{session_id}/wda/keys", payload)
@@ -609,7 +621,7 @@ class WdaServiceClient:
         :raises WdaError: No session id is available.
         """
         if not session_id:
-            raise WdaError("session_id is required")
+            raise WdaError("No WDA session is active. Start a session first or pass a session id.")
         payload: dict[str, Any] = {
             "fromX": start_x,
             "fromY": start_y,

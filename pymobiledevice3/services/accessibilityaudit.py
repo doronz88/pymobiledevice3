@@ -39,7 +39,7 @@ class AXAuditInspectorFocus_v1(SerializedObject):
         """Converts the element bytes to a hexadecimal string."""
         element = self.element
         if element is None:
-            raise DvtException("focus event carries no element")
+            raise DvtException("The accessibility focus event does not identify an element.")
         return element.identifier.hex().upper()
 
     @property

@@ -34,7 +34,7 @@ class DtFetchSymbols:
         files = (await service.recv_plist()).get("files")
         await service.close()
         if files is None:
-            raise PyMobileDevice3Exception("list files response is missing the 'files' entry")
+            raise PyMobileDevice3Exception("The device's symbol file list reply did not include any files.")
         return typing.cast(list[str], files)
 
     async def get_file(self, fileno: int, stream: typing.IO[bytes], max_bytes: typing.Optional[int] = None):
@@ -67,6 +67,6 @@ class DtFetchSymbols:
 
         # receive same command as an ack
         if cmd != await service.recvall(len(cmd)):
-            raise PyMobileDevice3Exception("bad ack")
+            raise PyMobileDevice3Exception("The device did not acknowledge the symbol fetch command.")
 
         return service

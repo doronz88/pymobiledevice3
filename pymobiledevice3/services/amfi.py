@@ -45,7 +45,7 @@ class AmfiService:
         service = await self._lockdown.start_lockdown_service(self.SERVICE_NAME)
         resp = await service.send_recv_plist({"action": self.DEVELOPER_MODE_REVEAL})
         if not resp.get("success"):
-            raise PyMobileDevice3Exception(f"create_AMFIShowOverridePath() failed with: {resp}")
+            raise PyMobileDevice3Exception(f"The device did not reveal the Developer Mode setting: {resp}")
 
     async def enable_developer_mode(self, enable_post_restart: bool = True):
         """
@@ -69,10 +69,10 @@ class AmfiService:
         if error is not None:
             if error == "Device has a passcode set":
                 raise DeviceHasPasscodeSetError()
-            raise AmfiError(error)
+            raise AmfiError(f"AMFI refused to enable Developer Mode: {error}")
 
         if not resp.get("success"):
-            raise DeveloperModeError(f"enable_developer_mode(): {resp}")
+            raise DeveloperModeError(f"The device did not enable Developer Mode: {resp}")
 
         if not enable_post_restart:
             return
@@ -97,4 +97,4 @@ class AmfiService:
         service = await self._lockdown.start_lockdown_service(self.SERVICE_NAME)
         resp = await service.send_recv_plist({"action": self.DEVELOPER_MODE_ACCEPT})
         if not resp.get("success"):
-            raise DeveloperModeError(f"enable_developer_mode_post_restart() failed: {resp}")
+            raise DeveloperModeError(f"The device did not confirm Developer Mode after restarting: {resp}")

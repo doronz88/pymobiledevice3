@@ -80,7 +80,9 @@ async def test_pwd_and_cd(shell: AfcShell, capfd: pytest.CaptureFixture[str]) ->
 
 async def test_cd_to_missing_directory_fails_and_stays(shell: AfcShell, capfd: pytest.CaptureFixture[str]) -> None:
     assert await shell.run_line("cd nope") != 0
-    assert "nope does not exist" in capfd.readouterr().err
+    err = capfd.readouterr().err
+    assert "No such directory: " in err
+    assert "nope" in err
     assert shell.cwd == ROOT
 
 

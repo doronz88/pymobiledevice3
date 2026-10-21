@@ -565,10 +565,10 @@ class CryptexdService(RemoteService):
         already_installed = await self._installed_ddi()
         if already_installed is not None:
             raise AlreadyMountedError(
-                f"{already_installed.identifier} {already_installed.version} is already installed"
+                f"The {already_installed.identifier} {already_installed.version} cryptex is already installed."
             )
         if await self._ddi_mounted_by_image_mounter():
-            raise AlreadyMountedError("a Personalized image is already mounted by the image mounter")
+            raise AlreadyMountedError("A Personalized developer disk image is already mounted by the image mounter.")
 
         assets = load_cryptex1_assets(restore_dir)
         request = TSSRequest()

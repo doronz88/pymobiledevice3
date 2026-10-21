@@ -95,7 +95,7 @@ class RestoreService(RemoteService):
             request["payload"] = _xpc_encodable(payload)
         response = await self.service.send_receive_request(request)
         if response.get("result") != "preflightinfo":
-            raise PyMobileDevice3Exception(f"getdevicesidepreflightinfo failed: {response}")
+            raise PyMobileDevice3Exception(f"The device failed the restore preflight info request: {response}")
         return response["preflightinfo"]
 
     async def get_nonces(self) -> dict[str, Any]:
@@ -142,5 +142,5 @@ class RestoreService(RemoteService):
         """
         response = await self.service.send_receive_request({"command": command})
         if response.get("result") != "success":
-            raise PyMobileDevice3Exception(f"request command: {command} failed with error: {response}")
+            raise PyMobileDevice3Exception(f"The device failed the {command} restore command: {response}")
         return response

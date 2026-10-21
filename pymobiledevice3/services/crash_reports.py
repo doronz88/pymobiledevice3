@@ -113,7 +113,7 @@ class CrashReportsManager:
             if item != self.APPSTORED_PATH:
                 # AfcException mis-annotates `status` as str; it accepts AfcError/None at runtime
                 raise AfcException(
-                    f"failed to clear crash reports under {path!r}, undeleted items: {undeleted_items}",
+                    f"Could not clear the crash reports under {path!r}; these items were not deleted: {undeleted_items}",
                     None,
                 )
 
@@ -233,7 +233,7 @@ class CrashReportsManager:
         service = await self.lockdown.start_lockdown_service(self.crash_mover_service_name)
         response = await service.recvall(len(ack))
         if response != ack:
-            raise ProtocolError(f"got invalid response: {response!r}")
+            raise ProtocolError(f"The crash report mover sent an unexpected acknowledgement: {response!r}")
 
     async def watch(
         self, name: Optional[str] = None, raw: bool = False
@@ -330,7 +330,7 @@ class CrashReportsManager:
                     await asyncio.sleep(IOS17_SYSDIAGNOSE_DELAY)
                     break
             except NotificationTimeoutError as e:
-                raise SysdiagnoseTimeoutError("Timeout waiting for sysdiagnose completion") from e
+                raise SysdiagnoseTimeoutError("Timed out waiting for the sysdiagnose to complete.") from e
 
     async def _get_new_sysdiagnose_filename(self, end_time: Optional[float] = None) -> str:
         sysdiagnose_filename = None
@@ -361,7 +361,9 @@ class CrashReportsManager:
                 pass
 
             if self._check_timeout(end_time):
-                raise SysdiagnoseTimeoutError("Timeout finding in-progress sysdiagnose filename")
+                raise SysdiagnoseTimeoutError(
+                    "Timed out waiting for the device to start writing the sysdiagnose archive."
+                )
             await asyncio.sleep(0.1)
 
         # unreachable in practice (the loop only exits via return/raise); satisfies the declared return type

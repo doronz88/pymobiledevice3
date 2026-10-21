@@ -154,11 +154,11 @@ class MobileImageMounterService(LockdownService):
             if error == "UnknownCommand":
                 raise UnsupportedCommandError()
             elif "There is no matching entry" in response.get("DetailedError", ""):
-                raise NotMountedError(response)
+                raise NotMountedError(f"No image is mounted at {mount_path}.")
             elif error == "InternalError":
                 raise InternalError(response)
             else:
-                raise PyMobileDevice3Exception(response)
+                raise PyMobileDevice3Exception(f"The device failed to unmount the image at {mount_path}: {response}")
 
     async def mount_image(self, image_type: str, signature: bytes, extras: Optional[dict[str, Any]] = None) -> None:
         """
@@ -190,8 +190,10 @@ class MobileImageMounterService(LockdownService):
         if status != "Complete":
             # backstop for when the pre-mount check above missed the mounted image
             if "is already mounted" in response.get("DetailedError", ""):
-                raise AlreadyMountedError(response)
-            raise PyMobileDevice3Exception(f"command MountImage failed with: {response}")
+                raise AlreadyMountedError(
+                    f"A {image_type} image is already mounted: {response.get('DetailedError', response)}"
+                )
+            raise PyMobileDevice3Exception(f"The device failed to mount the {image_type} image: {response}")
 
     async def upload_image(self, image_type: str, image: bytes, signature: bytes) -> None:
         """
@@ -216,7 +218,7 @@ class MobileImageMounterService(LockdownService):
         status = result.get("Status")
 
         if status != "ReceiveBytesAck":
-            raise PyMobileDevice3Exception(f"command ReceiveBytes failed with: {result}")
+            raise PyMobileDevice3Exception(f"The device refused to receive the {image_type} image: {result}")
 
         await self.service.sendall(image)
         result = await self.service.recv_plist()
@@ -224,7 +226,7 @@ class MobileImageMounterService(LockdownService):
         status = result.get("Status")
 
         if status != "Complete":
-            raise PyMobileDevice3Exception(f"command ReceiveBytes failed to send bytes with: {result}")
+            raise PyMobileDevice3Exception(f"The device failed to receive the {image_type} image: {result}")
 
     async def query_developer_mode_status(self) -> bool:
         """
@@ -470,7 +472,9 @@ async def request_personalization_manifest(
             build_identity = tmp_build_identity
             break
     else:
-        raise NoSuchBuildIdentityError(f"Could not find the manifest for board {board_id} and chip {chip_id}")
+        raise NoSuchBuildIdentityError(
+            f"The image's build manifest has no entry for this device (board {board_id}, chip {chip_id})."
+        )
     manifest = build_identity["Manifest"]
 
     parameters: dict[str, Any] = {
