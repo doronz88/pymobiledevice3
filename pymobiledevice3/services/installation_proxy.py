@@ -176,7 +176,7 @@ class InstallationProxyService(LockdownService):
         :returns: None.
         :raises AppInstallError: If the restore fails.
         """
-        await self.send_cmd_for_bundle_identifier(bundle_identifier, "Restore", options, handler, args)
+        await self.send_cmd_for_bundle_identifier(bundle_identifier, "Restore", options, handler, *args)
 
     async def uninstall(
         self,
@@ -198,7 +198,7 @@ class InstallationProxyService(LockdownService):
         :returns: None.
         :raises AppInstallError: If the uninstall fails.
         """
-        await self.send_cmd_for_bundle_identifier(bundle_identifier, "Uninstall", options, handler, args)
+        await self.send_cmd_for_bundle_identifier(bundle_identifier, "Uninstall", options, handler, *args)
 
     async def install_from_bytes(
         self,
@@ -350,7 +350,7 @@ class InstallationProxyService(LockdownService):
             )
         )
 
-        await self._watch_completion(handler, args)
+        await self._watch_completion(handler, *args)
 
     async def upload_ipcc_from_path(self, file: Path, remote_path: str, afc_client: AfcService) -> None:
         """
