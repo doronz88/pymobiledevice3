@@ -5,7 +5,6 @@ import plistlib
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Callable, Optional, Union, cast
 
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
@@ -205,105 +204,6 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         if self.lockdown is None:
             raise InvalidServiceError("device does not offer a lockdown service", self.udid, self.product_version)
         return self.lockdown
-
-    async def get_developer_mode_status(self) -> bool:
-        """Get whether Developer Mode is enabled, via the remote lockdown service
-        (see ``LockdownClient.get_developer_mode_status``)."""
-        return await self._lockdown.get_developer_mode_status()
-
-    async def get_date(self) -> datetime:
-        """Get the device's current date and time, via the remote lockdown service
-        (see ``LockdownClient.get_date``)."""
-        return await self._lockdown.get_date()
-
-    async def set_language(self, language: str) -> None:
-        """Set the device's language, via the remote lockdown service (see ``LockdownClient.set_language``).
-
-        :param language: The language code to set (e.g. ``"en"``).
-        """
-        await self._lockdown.set_language(language)
-
-    async def get_language(self) -> str:
-        """Get the device's language, via the remote lockdown service (see ``LockdownClient.get_language``)."""
-        return await self._lockdown.get_language()
-
-    async def set_locale(self, locale: str) -> None:
-        """Set the device's locale, via the remote lockdown service (see ``LockdownClient.set_locale``).
-
-        :param locale: The locale string to set (e.g. ``"en_US"``).
-        """
-        await self._lockdown.set_locale(locale)
-
-    async def get_locale(self) -> str:
-        """Get the device's locale, via the remote lockdown service (see ``LockdownClient.get_locale``)."""
-        return await self._lockdown.get_locale()
-
-    async def set_assistive_touch(self, value: bool) -> None:
-        """Enable or disable AssistiveTouch, via the remote lockdown service
-        (see ``LockdownClient.set_assistive_touch``).
-
-        :param value: True to enable, False to disable.
-        """
-        await self._lockdown.set_assistive_touch(value)
-
-    async def get_assistive_touch(self) -> bool:
-        """Get whether AssistiveTouch is enabled, via the remote lockdown service
-        (see ``LockdownClient.get_assistive_touch``)."""
-        return await self._lockdown.get_assistive_touch()
-
-    async def set_voice_over(self, value: bool) -> None:
-        """Enable or disable VoiceOver, via the remote lockdown service
-        (see ``LockdownClient.set_voice_over``).
-
-        :param value: True to enable, False to disable.
-        """
-        await self._lockdown.set_voice_over(value)
-
-    async def get_voice_over(self) -> bool:
-        """Get whether VoiceOver is enabled, via the remote lockdown service
-        (see ``LockdownClient.get_voice_over``)."""
-        return await self._lockdown.get_voice_over()
-
-    async def set_invert_display(self, value: bool) -> None:
-        """Enable or disable display color inversion, via the remote lockdown service
-        (see ``LockdownClient.set_invert_display``).
-
-        :param value: True to enable, False to disable.
-        """
-        await self._lockdown.set_invert_display(value)
-
-    async def get_invert_display(self) -> bool:
-        """Get whether display color inversion is enabled, via the remote lockdown service
-        (see ``LockdownClient.get_invert_display``)."""
-        return await self._lockdown.get_invert_display()
-
-    async def set_enable_wifi_connections(self, value: bool) -> None:
-        """Enable or disable Wi-Fi lockdown connections, via the remote lockdown service
-        (see ``LockdownClient.set_enable_wifi_connections``).
-
-        :param value: True to enable, False to disable.
-        """
-        await self._lockdown.set_enable_wifi_connections(value)
-
-    async def get_enable_wifi_connections(self) -> bool:
-        """Get whether Wi-Fi lockdown connections are enabled, via the remote lockdown service
-        (see ``LockdownClient.get_enable_wifi_connections``)."""
-        return await self._lockdown.get_enable_wifi_connections()
-
-    async def set_timezone(self, timezone: str) -> None:
-        """Set the device's time zone, via the remote lockdown service (see ``LockdownClient.set_timezone``).
-
-        :param timezone: The time zone identifier to set (e.g. ``"America/New_York"``).
-        """
-        await self._lockdown.set_timezone(timezone)
-
-    async def set_uses24h_clock(self, value: bool) -> None:
-        """Set whether the device uses the 24-hour clock format, via the remote lockdown service
-        (see ``LockdownClient.set_uses24h_clock``).
-
-        :param value: True for 24-hour format, False for 12-hour format.
-        """
-        await self._lockdown.set_uses24h_clock(value)
 
     async def connect(self) -> None:
         """
