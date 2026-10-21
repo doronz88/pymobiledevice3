@@ -36,13 +36,13 @@ class OpenStdioSocketService:
         :raises NotConnectedError: if accessed before ``connect()`` (or ``async with``) has run.
         """
         if self._identifier is None:
-            raise NotConnectedError(f"{type(self).__name__} is not connected; call connect() first")
+            raise NotConnectedError(f"{type(self).__name__} is not connected; call connect() first.")
         return self._identifier
 
     @property
     def _service(self) -> ServiceConnection:
         if self._connection is None:
-            raise NotConnectedError(f"{type(self).__name__} is not connected; call connect() first")
+            raise NotConnectedError(f"{type(self).__name__} is not connected; call connect() first.")
         return self._connection
 
     async def connect(self) -> None:

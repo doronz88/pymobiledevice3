@@ -35,7 +35,7 @@ class StreamingZipConduitError(PyMobileDevice3Exception):
     """The device refused or failed a streaming zip conduit transfer."""
 
     def __init__(self, error: str) -> None:
-        super().__init__(f"streaming zip conduit failed: {error}")
+        super().__init__(f"The device failed to receive the streamed app: {error}")
         #: The device's error code, e.g. ``DestinationExists``, ``NoSpace`` or ``ExtractionFailed``.
         self.error = error
 

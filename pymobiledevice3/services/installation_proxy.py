@@ -49,16 +49,18 @@ def classify_zip_file(zip_bytes: bytes) -> ZipFileType:
             dirs = next((name for name in zip_file.namelist() if "/" in name), "").split("/")
 
             if dirs[0] != "Payload":
-                raise AppInstallError("package does not have a payload")
+                raise AppInstallError("The package is not a valid .ipa or .ipcc: it has no Payload folder.")
             if dirs[1].endswith(".app"):
                 return ZipFileType.IPA
             elif dirs[1].endswith(".bundle"):
                 return ZipFileType.IPCC
             else:
-                raise AppInstallError("package does not have the appropriate folders structure")
+                raise AppInstallError(
+                    "The package is not a valid .ipa or .ipcc: Payload holds no .app or .bundle folder."
+                )
 
     except BadZipFile as e:
-        raise AppInstallError("Invalid bytes package") from e
+        raise AppInstallError("The package is not a valid ZIP archive.") from e
 
 
 class InstallationProxyService(LockdownService):

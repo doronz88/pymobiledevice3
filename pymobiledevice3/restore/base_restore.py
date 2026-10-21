@@ -62,11 +62,11 @@ class BaseRestore:
 
         build_info = cast(dict[str, Any], self.build_identity).get("Info")
         if build_info is None:
-            raise PyMobileDevice3Exception('build identity does not contain an "Info" element')
+            raise PyMobileDevice3Exception('The build identity has no "Info" element.')
 
         device_class = build_info.get("DeviceClass")
         if device_class is None:
-            raise PyMobileDevice3Exception('build identity does not contain an "DeviceClass" element')
+            raise PyMobileDevice3Exception('The build identity has no "DeviceClass" element.')
 
     async def ensure_image4_supported(self) -> None:
         if not await self.device.get_is_image4_supported():

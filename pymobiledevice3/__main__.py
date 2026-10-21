@@ -8,13 +8,15 @@ import re
 import shutil
 import sys
 import textwrap
-import traceback
 import warnings
 from typing import Annotated, Any, Callable, Optional, Union, cast
 
 import ansilogs
 import typer
+import typer_injector
 from packaging.version import Version
+from rich.console import Console
+from rich.traceback import Traceback
 from typer.core import TyperGroup
 from typer_injector import InjectingTyper
 
@@ -26,6 +28,7 @@ except ImportError:  # pragma: no cover
 # Must precede the other first-party imports (isort keeps it first) so their dependency
 # chains are lazy on Python 3.15+; see the module docstring.
 import pymobiledevice3._lazy_imports  # noqa: F401
+from pymobiledevice3.cli import cli_common
 from pymobiledevice3.cli.cli_common import (
     FORCE_TUNNEL_ENV_VAR,
     NATIVE_ENV_VAR,
@@ -41,47 +44,16 @@ from pymobiledevice3.cli.cli_common import (
     set_verbosity,
 )
 from pymobiledevice3.exceptions import (
-    AccessDeniedError,
-    AfcException,
-    AfcFileNotFoundError,
-    CloudConfigurationAlreadyPresentError,
     ConnectionFailedError,
     ConnectionFailedToUsbmuxdError,
     ConnectionTerminatedError,
-    CoreDeviceError,
-    CryptexdError,
-    DeprecationError,
-    DeveloperModeError,
-    DeveloperModeIsNotEnabledError,
-    DeviceFeatureNotSupportedError,
-    DeviceHasPasscodeSetError,
     DeviceNotFoundError,
-    DevicePathError,
-    DvtException,
-    FeatureNotSupportedError,
-    InstallCoordinationError,
-    InternalError,
     InvalidServiceError,
-    MessageNotSupportedError,
-    MissingValueError,
     NoDeviceConnectedError,
-    NotPairedError,
-    OSNotSupportedError,
-    PairingDialogResponsePendingError,
-    PasswordRequiredError,
-    QuicProtocolNotSupportedError,
-    RemoteXPCHandshakeTimeoutError,
-    RoutableTunnelRequiredError,
+    PyMobileDevice3Exception,
     RSDRequiredError,
-    SetProhibitedError,
-    StartServiceError,
-    TraceLagError,
-    TunneldConnectionError,
-    UserDeniedPairingError,
-    UserspaceTunnelUnavailableError,
 )
 from pymobiledevice3.lockdown import retry_create_using_usbmux
-from pymobiledevice3.osu.os_utils import get_os_utils
 
 ansilogs.install(logging.INFO)
 
@@ -337,6 +309,23 @@ def product_version_needs_tunnel(product_version: str) -> bool:
     return Version(product_version) >= Version("17.0")
 
 
+def _report(error: PyMobileDevice3Exception) -> None:
+    """Tell the user what failed: the exception's message, and its traceback when running with ``-v``."""
+    logger.error(str(error) or type(error).__name__)
+    if logger.isEnabledFor(logging.DEBUG):
+        if sys.stderr.isatty():
+            # rich shows each frame's source in context; the CLI machinery's own frames add nothing
+            traceback = Traceback.from_exception(
+                type(error), error, error.__traceback__, suppress=[typer, typer_injector, asyncio]
+            )
+            Console(stderr=True, no_color=not cli_common.COLORED_OUTPUT).print(traceback)
+        else:
+            # redirected (e.g. to a file attached to an issue): a plain traceback reads and greps better
+            logger.debug("Traceback:", exc_info=error)
+    elif not error.worth_reporting:  # (that message already says to rerun with -v)
+        logger.info("Run again with -v for the full traceback (include it when reporting an issue)")
+
+
 def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
     """
     Invoke the command line interface once. Returns (exit_code, reconnectable) - reconnectable is
@@ -348,68 +337,11 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
     try:
         # Typer apps are callable; this executes the CLI with current sys.argv
         app(args=["--help"] if len(sys.argv) == 1 else None)
-    except NoDeviceConnectedError:
-        logger.error("Device is not connected")
-        reconnectable = True
-    except ConnectionTerminatedError:
-        logger.error("Connection was terminated abruptly")
-        reconnectable = True
-    except DvtException as e:
-        logger.error(str(e))
-    except TraceLagError as e:
-        logger.error(
-            f"{e}. To skip ahead to recent events instead, pass --skip-behind (or allow more lag with --max-lag, or "
-            "narrow the trace)"
-        )
-    except RemoteXPCHandshakeTimeoutError as e:
-        logger.error(
-            f"{e.args[0].capitalize()}. The service either refuses this host or its daemon is stuck; "
-            "restarting the device clears a stuck daemon."
-        )
-    except NotPairedError:
-        logger.error("Device is not paired")
-    except UserDeniedPairingError:
-        logger.error("User refused to trust this computer")
-    except PairingDialogResponsePendingError:
-        logger.error("Waiting for user dialog approval")
-    except SetProhibitedError:
-        logger.error("lockdownd denied the access")
-    except MissingValueError:
-        logger.error("No such value")
-    except DeviceHasPasscodeSetError:
-        logger.error("Cannot enable developer-mode when passcode is set")
-    except DeveloperModeError:
-        logger.error("Failed to enable developer-mode.")
-    except ConnectionFailedToUsbmuxdError:
-        logger.error("Failed to connect to usbmuxd socket. Make sure it's running.")
-    except ConnectionFailedError:
-        logger.error("Failed to connect to service port.")
-        reconnectable = True
-    except MessageNotSupportedError:
-        logger.error("Message not supported for this iOS version")
-        traceback.print_exc()
-    except InternalError as e:
-        # surface the device's DetailedError (e.g. "Failed to unload launchd jobs" on unmount)
-        response = cast(dict[str, Any], e.args[0]) if e.args and isinstance(e.args[0], dict) else {}
-        detail = str(response.get("DetailedError", ""))
-        logger.error(f"Internal Error: {detail}" if detail else "Internal Error")
-    except DeveloperModeIsNotEnabledError:
-        logger.error(
-            "Developer Mode is disabled. You can try to enable it using: "
-            "python3 -m pymobiledevice3 amfi enable-developer-mode"
-        )
-    except RoutableTunnelRequiredError as e:
-        logger.error(str(e))
-    except DeviceNotFoundError as e:
-        # The message names the lookup that failed (usbmux/tunneld/remotepairingd/...).
-        logger.error(str(e))
-        # Reconnectable: after a disconnect the target device may still be re-enumerating
-        # while other devices are attached, making re-invocation fail with this error.
-        reconnectable = True
-    except UserspaceTunnelUnavailableError as e:
-        logger.error(str(e))
-    except DeviceFeatureNotSupportedError as e:
-        logger.error(f"{e} (iOS {e.product_version})")
+    except (NoDeviceConnectedError, ConnectionTerminatedError, ConnectionFailedError, DeviceNotFoundError) as e:
+        _report(e)
+        # The device may be back by the next attempt (after a disconnect it may still be re-enumerating
+        # while other devices are attached); usbmuxd itself being down is another matter.
+        reconnectable = not isinstance(e, ConnectionFailedToUsbmuxdError)
     except (InvalidServiceError, RSDRequiredError) as e:
         reason = ""
         # Both exceptions carry the device's product version (no extra device round-trip needed).
@@ -456,58 +388,8 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
             exit_code = main()
             return exit_code, False
         logger.error(INVALID_SERVICE_MESSAGE)
-    except PasswordRequiredError:
-        logger.error("Device is password protected. Please unlock and retry")
-    except AccessDeniedError:
-        logger.error(get_os_utils().access_denied_error)
-    except BrokenPipeError:
-        traceback.print_exc()
-    except TunneldConnectionError:
-        logger.error(
-            "Unable to connect to Tunneld. You can start one using:\nsudo python3 -m pymobiledevice3 remote tunneld"
-        )
-    except DeprecationError:
-        logger.error("failed to query MobileGestalt, MobileGestalt deprecated (iOS >= 17.4).")
-    except CoreDeviceError as e:
-        # A CoreDevice invocation failed for a reason we can state plainly (e.g.
-        # the camera/microphone is in use): print the message, no traceback.
-        logger.error(str(e))
-    except CryptexdError as e:
-        logger.error(f"cryptexd rejected the request: {e}")
-    except InstallCoordinationError as e:
-        logger.error(f"install coordination request failed: {e}")
-    except OSNotSupportedError as e:
-        logger.error(
-            f"Unsupported OS - {e.os_name}. To add support, consider contributing at "
-            f"https://github.com/doronz88/pymobiledevice3."
-        )
-    except CloudConfigurationAlreadyPresentError:
-        logger.error(
-            "A cloud configuration is already present on device. You must first erase the device in order "
-            "to install new one:\n"
-            "> pymobiledevice3 profile erase-device"
-        )
-    except FeatureNotSupportedError as e:
-        logger.error(
-            f"Missing implementation of `{e.feature}` on `{e.os_name}`. To add support, consider contributing at "
-            f"https://github.com/doronz88/pymobiledevice3."
-        )
-    except QuicProtocolNotSupportedError:
-        logger.error("Encountered a QUIC protocol error.")
-    except StartServiceError as e:
-        if e.message == "ServiceProhibited" and e.service_name == "com.apple.pcapd.shim.remote":
-            logger.error(
-                f"The {e.service_name} service is USB only (at least for some iOS versions).\n"
-                "Full discussion is available in: https://github.com/doronz88/pymobiledevice3/issues/1515"
-            )
-        else:
-            logger.error(f"Failed to start: {e.service_name} with. Received error: {e.message}.")
-    except AfcFileNotFoundError as e:
-        logger.error(f"File [{e.filename}] not found during afc operation: {e}")
-    except AfcException as e:
-        logger.error(f"Failed to perform Afc operation: {e}")
-    except DevicePathError as e:
-        logger.error(f"Refusing a path supplied by the device: {e}")
+    except PyMobileDevice3Exception as e:
+        _report(e)
     else:
         # No exception: in practice unreachable, since a real Typer app() raises SystemExit(0) on
         # success before ever returning here

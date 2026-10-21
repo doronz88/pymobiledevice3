@@ -980,11 +980,13 @@ class DiagnosticsService(LockdownService):
         response = await self._send_recv({"Request": "MobileGestalt", "MobileGestaltKeys": keys})
 
         if response["Diagnostics"]["MobileGestalt"]["Status"] == "MobileGestaltDeprecated":
-            err_msg = f"failed to query MobileGestalt, MobileGestalt deprecated (iOS >= 17.4). Got response {response}"
+            err_msg = (
+                f"Failed to query MobileGestalt: it is deprecated on iOS 17.4 and later. The device replied: {response}"
+            )
             raise DeprecationError(err_msg)
 
         if (response["Status"] != "Success") or (response["Diagnostics"]["MobileGestalt"]["Status"] != "Success"):
-            raise PyMobileDevice3Exception("failed to query MobileGestalt")
+            raise PyMobileDevice3Exception(f"The device failed to query MobileGestalt: {response}")
 
         response["Diagnostics"]["MobileGestalt"].pop("Status")
 
@@ -1003,7 +1005,7 @@ class DiagnosticsService(LockdownService):
         """
         response = await self._send_recv({"Request": action})
         if response["Status"] != "Success":
-            raise PyMobileDevice3Exception(f"failed to perform action: {action}")
+            raise PyMobileDevice3Exception(f"The device failed the {action} diagnostics request: {response}")
         return response.get("Diagnostics")
 
     async def restart(self):
@@ -1073,7 +1075,7 @@ class DiagnosticsService(LockdownService):
 
         response = await self._send_recv(d)
         if response.get("Status") != "Success":
-            raise PyMobileDevice3Exception(f"got invalid response: {response}")
+            raise PyMobileDevice3Exception(f"The device failed the IORegistry query: {response}")
 
         dd = response.get("Diagnostics")
         if dd:

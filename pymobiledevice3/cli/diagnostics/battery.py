@@ -33,7 +33,7 @@ async def diagnostics_battery_monitor(service_provider: ServiceProviderDep) -> N
         raw_info = await diagnostics.get_battery()
         if raw_info is None:
             raise MissingValueError(
-                "device did not expose an IOPMPowerSource entry",
+                "The device did not report battery information (no IOPMPowerSource entry).",
                 service_provider.udid,
                 service_provider.product_version,
             )

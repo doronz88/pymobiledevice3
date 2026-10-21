@@ -217,7 +217,7 @@ class RemoteXPCConnection:
         except asyncio.TimeoutError as e:
             await self.close()
             raise RemoteXPCHandshakeTimeoutError(
-                f"the service at {self.address[0]}:{self.address[1]} did not answer the RemoteXPC handshake"
+                f"The service at {self.address[0]}:{self.address[1]} did not answer the RemoteXPC handshake."
             ) from e
         except Exception:
             await self.close()
@@ -230,7 +230,7 @@ class RemoteXPCConnection:
         :raises NotConnectedError: if accessed before ``connect()`` (or after ``close()``).
         """
         if self._reader is None:
-            raise NotConnectedError("RemoteXPCConnection is not open")
+            raise NotConnectedError("RemoteXPCConnection is not open; call connect() first.")
         return self._reader
 
     @property
@@ -240,7 +240,7 @@ class RemoteXPCConnection:
         :raises NotConnectedError: if accessed before ``connect()`` (or after ``close()``).
         """
         if self._writer is None:
-            raise NotConnectedError("RemoteXPCConnection is not open")
+            raise NotConnectedError("RemoteXPCConnection is not open; call connect() first.")
         return self._writer
 
     @property
@@ -257,7 +257,7 @@ class RemoteXPCConnection:
             # This connection has no kernel endpoint the device could ever reach, and the old
             # loopback-TCP relay's ('127.0.0.1', port) answer was equally unreachable — fail
             # loudly instead of advertising a dead endpoint.
-            raise PyMobileDevice3Exception("local_address is unavailable over an in-process (userspace) tunnel")
+            raise PyMobileDevice3Exception("The connection has no local address over the in-process userspace tunnel.")
         address = cast("tuple[str, int]", sockname)
         return address[0], address[1]
 
@@ -354,7 +354,7 @@ class RemoteXPCConnection:
 
                 xpc_wrapper = XpcWrapper.parse(frame.data)
                 if not xpc_wrapper.flags & XpcFlags.FILE_TX_STREAM_REQUEST:
-                    raise ProtocolError(f"Got unexpected file transfer stream: {frame.stream_id}")
+                    raise ProtocolError(f"The device opened an unexpected file transfer stream: {frame.stream_id}")
         except asyncio.CancelledError:
             raise
         except BaseException as e:
@@ -379,7 +379,7 @@ class RemoteXPCConnection:
             if payload is None:
                 continue
             if payload.type != XpcMessageType.DICTIONARY:
-                raise ProtocolError(f"expected a dictionary reply, got {payload.type!r}")
+                raise ProtocolError(f"The device sent an XPC reply that is not a dictionary: {payload.type!r}")
             if not payload.data:
                 # an empty dictionary carries nothing to answer with
                 continue
@@ -440,7 +440,9 @@ class RemoteXPCConnection:
             # The peer grants its connection window before ACKing settings; record it rather than
             # discarding it, otherwise outbound file transfers stall at the 65535 default.
             if not self._apply_flow_control_frame(settings_frame):
-                raise ProtocolError(f"Got unexpected frame: {settings_frame} instead of a SettingsFrame")
+                raise ProtocolError(
+                    f"The device sent an unexpected frame during the RemoteXPC handshake: {settings_frame}"
+                )
             settings_frame = await asyncio.wait_for(self._receive_frame(), FIRST_REPLY_TIMEOUT)
         self._apply_flow_control_frame(settings_frame)
 
@@ -487,8 +489,8 @@ class RemoteXPCConnection:
                 await asyncio.wait_for(self._pump_one_frame(), FILE_TRANSFER_WINDOW_TIMEOUT)
             except asyncio.TimeoutError as e:
                 raise ProtocolError(
-                    f"Timed out waiting for the device to grant flow-control window on stream "
-                    f"{stream_id} after {offset}/{total} bytes"
+                    f"The device stopped accepting file data on stream {stream_id} after {offset}/{total} bytes "
+                    "(flow-control timeout)."
                 ) from e
             budget = self._outbound_budget(stream_id)
         chunk = data[offset : offset + budget]
@@ -533,11 +535,11 @@ class RemoteXPCConnection:
         while True:
             frame = await self._receive_frame()
             if isinstance(frame, GoAwayFrame):
-                raise StreamClosedError(f"Got {frame}")
+                raise StreamClosedError(f"The device closed the connection: {frame}")
             if isinstance(frame, RstStreamFrame):
                 if frame.stream_id in self._finished_file_transfer_streams:
                     continue
-                raise StreamClosedError(f"Got {frame}")
+                raise StreamClosedError(f"The device reset the stream: {frame}")
             if self._apply_flow_control_frame(frame):
                 return frame
             if isinstance(frame, DataFrame):
@@ -567,11 +569,11 @@ class RemoteXPCConnection:
             self._apply_flow_control_frame(frame)
 
             if isinstance(frame, GoAwayFrame):
-                raise StreamClosedError(f"Got {frame}")
+                raise StreamClosedError(f"The device closed the connection: {frame}")
             if isinstance(frame, RstStreamFrame):
                 if frame.stream_id in self._finished_file_transfer_streams:
                     continue
-                raise StreamClosedError(f"Got {frame}")
+                raise StreamClosedError(f"The device reset the stream: {frame}")
             if not isinstance(frame, DataFrame):
                 continue
 

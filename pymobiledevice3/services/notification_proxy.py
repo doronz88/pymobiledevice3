@@ -40,7 +40,7 @@ class NotificationStateError(PyMobileDevice3Exception):
     """The device could not read a notification's state."""
 
     def __init__(self, name: str, status: int) -> None:
-        super().__init__(f"failed to get the state of {name!r}: notify status {status}")
+        super().__init__(f"Could not read the state of notification {name!r}: notify status {status}")
         self.name = name
         #: The ``notify(3)`` status code, e.g. 7 (``NOTIFY_STATUS_NOT_AUTHORIZED``) on the insecure service.
         self.status = status

@@ -1,6 +1,6 @@
 from typing import Any, cast
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.exceptions import ProtocolError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
@@ -29,7 +29,7 @@ class ScreenshotService(LockdownService):
         await self.service.send_plist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
         dl_message_device_ready = cast(list[Any], await self.service.recv_plist())
         if dl_message_device_ready[0] != "DLMessageDeviceReady":
-            raise PyMobileDevice3Exception("Screenshotr didn't return ready state")
+            raise ProtocolError("The screenshot service did not report it was ready.")
         self._did_handshake = True
 
     async def take_screenshot(self) -> bytes:
@@ -51,4 +51,4 @@ class ScreenshotService(LockdownService):
         if response[1].get("MessageType") == "ScreenShotReply":
             return response[1]["ScreenShotData"]
 
-        raise PyMobileDevice3Exception(f"invalid response: {response}")
+        raise ProtocolError(f"The screenshot service sent an unexpected reply: {response}")

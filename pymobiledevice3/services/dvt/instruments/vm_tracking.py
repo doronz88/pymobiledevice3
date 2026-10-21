@@ -31,7 +31,7 @@ def _parse_primitive_array(data: bytes) -> list[int]:
             values.append(struct.unpack_from("<Q", data, offset)[0])
             offset += 8
         else:
-            raise DvtException(f"unexpected primitive type {type_code} in a VM region record")
+            raise DvtException(f"The device sent a VM region record with an unknown value type: {type_code}")
     return values
 
 
@@ -183,7 +183,7 @@ class VMTracking(DtxService[VMTrackingService]):
             await self.service.set_target_pid_reference_date_(pid, None)
             self._pid = pid
         elif pid != self._pid:
-            raise DvtException(f"this instance already tracks pid {self._pid}")
+            raise DvtException(f"This VM tracker already tracks pid {self._pid}; use a new one for pid {pid}.")
         snapshot = await self.service.request_vm_snapshot()
         if snapshot is None or not snapshot.regions:
             raise ProcessInspectionError(pid, "read the memory regions of")
@@ -203,7 +203,7 @@ class VMTracking(DtxService[VMTrackingService]):
                 continue
             unchanged = previous.get(region)
             if not unchanged:
-                raise DvtException(f"the device referred to an unknown memory region at {region:#x}")
+                raise DvtException(f"The device referred to a memory region it never sent: {region:#x}")
             # Regions that start at the same address come back in the order they were first sent.
             restored.append(unchanged.pop(0) if len(unchanged) > 1 else unchanged[0])
         return restored

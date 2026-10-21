@@ -63,7 +63,9 @@ class ScreenCast:
             # A JSContext debuggable has no page to capture: its global object carries no window
             # or screen, so the evaluation comes back as a thrown ReferenceError rather than the
             # size. A page that stopped answering lands here too.
-            raise ScreencastUnavailableError("the debuggable did not report a screen size to capture")
+            raise ScreencastUnavailableError(
+                "The target did not report a screen size to capture; it may not be a page."
+            )
         self.device_width, self.device_height, self.page_scale_factor = list(map(int, device_size.split(",")))
         self._run = True
         self.recording_task = asyncio.create_task(self.recording_loop())

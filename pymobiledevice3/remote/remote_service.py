@@ -20,7 +20,7 @@ class RemoteService:
         :raises NotConnectedError: if accessed before ``connect()`` (or ``async with``) has run.
         """
         if self._service is None:
-            raise NotConnectedError(f"{type(self).__name__} is not connected; call connect() first")
+            raise NotConnectedError(f"{type(self).__name__} is not connected; call connect() first.")
         return self._service
 
     async def connect(self) -> None:

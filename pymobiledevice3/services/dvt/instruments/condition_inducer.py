@@ -61,7 +61,9 @@ class ConditionInducer(DtxService[ConditionInducerService]):
                         cast(str, group.get("identifier")), cast(str, profile.get("identifier"))
                     )
                     return
-        raise PyMobileDevice3Exception("Invalid profile identifier")
+        raise PyMobileDevice3Exception(
+            f"No condition profile is named {profile_identifier!r}. Run `developer dvt condition list` to see the available ones."
+        )
 
     async def clear(self):
         """Disable the currently active condition, returning the device to normal behavior."""

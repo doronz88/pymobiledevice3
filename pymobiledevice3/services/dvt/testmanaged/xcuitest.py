@@ -228,8 +228,7 @@ class XCUITestService:
                         raise TimeoutError(f"Test did not finish within {timeout_str}")
                     if not test_done.is_set():
                         raise ConnectionTerminatedError(
-                            "Runner DTX connection closed before _XCT_didFinishExecutingTestPlan"
-                            " — the test runner likely terminated itself mid-plan"
+                            "The test runner disconnected before the test plan finished; it likely terminated itself mid-plan."
                         )
 
 
@@ -260,11 +259,11 @@ class TestConfig:
                 bundle_identifiers=[runner_bundle_id] + ([target_bundle_id] if target_bundle_id else [])
             )
             if runner_bundle_id not in apps:
-                raise AppNotInstalledError(f"No app with bundle id {runner_bundle_id} found")
+                raise AppNotInstalledError(f"The test runner app is not installed on the device: {runner_bundle_id}")
             runner_app_info = apps[runner_bundle_id]
             if target_bundle_id:
                 if target_bundle_id not in apps:
-                    raise AppNotInstalledError(f"No app with bundle id {target_bundle_id} found")
+                    raise AppNotInstalledError(f"The target app is not installed on the device: {target_bundle_id}")
                 target_app_info = apps[target_bundle_id]
 
         return TestConfig(runner_app_info=runner_app_info, target_app_info=target_app_info)

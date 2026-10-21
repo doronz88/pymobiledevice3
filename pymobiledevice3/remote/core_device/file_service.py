@@ -310,5 +310,5 @@ class FileServiceService(CoreDeviceService):
             localized_description = response.get("LocalizedDescription") or encoded_error.get("NSLocalizedDescription")
             if localized_description is not None:
                 raise CoreDeviceError(localized_description)
-            raise CoreDeviceError(encoded_error)
+            raise CoreDeviceError(f"The device rejected the file request: {encoded_error}")
         return response

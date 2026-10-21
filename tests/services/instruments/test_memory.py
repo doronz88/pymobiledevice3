@@ -90,7 +90,7 @@ def test_vm_region_is_decoded_from_its_archive() -> None:
 def test_vm_region_rejects_an_unknown_primitive() -> None:
     archive = FakeArchive({"dataList": struct.pack("<QQI", 0x1F0, 4, 9)})
 
-    with pytest.raises(PyMobileDevice3Exception, match="unexpected primitive type 9"):
+    with pytest.raises(PyMobileDevice3Exception, match="unknown value type: 9"):
         VMRegion.decode_archive(cast(Any, archive))
 
 
@@ -166,7 +166,7 @@ async def test_vm_snapshot_rejects_a_reference_to_an_unknown_region() -> None:
     vm_tracking = VMTracking(cast(Any, None), service=cast(Any, service))
     await vm_tracking.snapshot(77)
 
-    with pytest.raises(PyMobileDevice3Exception, match="unknown memory region at 0x2000"):
+    with pytest.raises(PyMobileDevice3Exception, match="memory region it never sent: 0x2000"):
         await vm_tracking.snapshot(77)
 
 

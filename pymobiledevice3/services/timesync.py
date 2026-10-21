@@ -2,7 +2,7 @@ import dataclasses
 import struct
 import time
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.exceptions import ProtocolError
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
@@ -78,11 +78,11 @@ class TimeSyncService(RemoteService):
 
         payload = response.get("TimesyncPayload")
         if not isinstance(payload, bytes) or len(payload) != SNTP_PACKET_SIZE:
-            raise PyMobileDevice3Exception(f"invalid timesync response: {response}")
+            raise ProtocolError(f"The device sent a malformed time sync reply: {response}")
         if payload[0] & 0x7 != SNTP_MODE_SERVER:
-            raise PyMobileDevice3Exception(f"timesync response is not an SNTP server packet: {payload.hex()}")
+            raise ProtocolError(f"The device's time sync reply is not an SNTP server packet: {payload.hex()}")
         if payload[_ORIGINATE_TIMESTAMP_OFFSET:_RECEIVE_TIMESTAMP_OFFSET] != transmit_timestamp:
-            raise PyMobileDevice3Exception("timesync response does not answer the request that was sent")
+            raise ProtocolError("The device's time sync reply does not answer the request that was sent.")
 
         t2 = _unpack_timestamp(payload[_RECEIVE_TIMESTAMP_OFFSET:_TRANSMIT_TIMESTAMP_OFFSET])
         t3 = _unpack_timestamp(payload[_TRANSMIT_TIMESTAMP_OFFSET:])

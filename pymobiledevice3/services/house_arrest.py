@@ -78,9 +78,9 @@ class HouseArrestService(AfcService):
         error = response.get("Error")
         if error:
             if error == "ApplicationLookupFailed":
-                raise AppNotInstalledError(f"No app with bundle id {bundle_id} found")
+                raise AppNotInstalledError(f"No app with bundle ID {bundle_id} is installed.")
             else:
-                raise PyMobileDevice3Exception(error)
+                raise PyMobileDevice3Exception(f"The device refused to open the container of {bundle_id}: {error}")
 
     def shell(self, host_tools: Iterable[str] = ()) -> None:
         """

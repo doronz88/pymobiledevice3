@@ -15,7 +15,7 @@ from pymobiledevice3.exceptions import (
     NoDeviceConnectedError,
     NotConnectedError,
     NotPairedError,
-    PyMobileDevice3Exception,
+    ProtocolError,
     RemoteXPCHandshakeTimeoutError,
     StartServiceError,
 )
@@ -176,7 +176,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def _require_peer_info(self) -> dict[str, Any]:
         """Return the handshake ``peer_info``, raising if the RSD has not been connected yet."""
         if self.peer_info is None:
-            raise NotConnectedError("RSD is not connected; call connect() first")
+            raise NotConnectedError("The RSD connection is not open; call connect() first.")
         return self.peer_info
 
     @property
@@ -202,7 +202,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
     def _lockdown(self) -> LockdownClient:
         """Return the remote lockdown client, raising if the device offers no lockdown service."""
         if self.lockdown is None:
-            raise InvalidServiceError("device does not offer a lockdown service", self.udid, self.product_version)
+            raise InvalidServiceError("The device does not offer a lockdown service.", self.udid, self.product_version)
         return self.lockdown
 
     async def connect(self) -> None:
@@ -224,7 +224,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             except asyncio.TimeoutError as e:
                 address = self.service.address
                 raise RemoteXPCHandshakeTimeoutError(
-                    f"the service at {address[0]}:{address[1]} did not send its peer info"
+                    f"The RSD service at {address[0]}:{address[1]} did not send its peer info during the handshake."
                 ) from e
             self.udid = self.peer_info["Properties"]["UniqueDeviceID"]
             self.product_type = self.peer_info["Properties"]["ProductType"]
@@ -338,21 +338,21 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
             checkin: dict[str, Any] = {"Label": "pymobiledevice3", "ProtocolVersion": "2", "Request": "RSDCheckin"}
             if include_escrow_bag:
                 if self.udid is None:
-                    raise NotConnectedError("RSD is not connected; call connect() first")
+                    raise NotConnectedError("The RSD connection is not open; call connect() first.")
                 pairing_record = get_local_pairing_record(
                     get_remote_pairing_record_filename(self.udid), get_home_folder()
                 )
                 if pairing_record is None:
-                    raise NotPairedError(f"no local pairing record found for {self.udid}")
+                    raise NotPairedError(
+                        f"No local remote pairing record found for {self.udid}; pair the device first."
+                    )
                 checkin["EscrowBag"] = base64.b64decode(pairing_record["remote_unlock_host_key"])
             response = await service.send_recv_plist(checkin)
             if response["Request"] != "RSDCheckin":
-                raise PyMobileDevice3Exception(f'Invalid response for RSDCheckIn: {response}. Expected "RSDCheckIn"')
+                raise ProtocolError(f"The device sent an unexpected reply to the {name} check-in: {response}")
             response = await service.recv_plist()
             if response["Request"] != "StartService":
-                raise PyMobileDevice3Exception(
-                    f'Invalid response for RSDCheckIn: {response}. Expected "ServiceService"'
-                )
+                raise ProtocolError(f"The device sent an unexpected reply while starting {name}: {response}")
             error = response.get("Error")
             if error is not None:
                 raise StartServiceError(name, cast(str, error))
@@ -457,7 +457,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         """Return a service's ``peer_info`` entry, raising `InvalidServiceError` if absent."""
         service = self._require_peer_info()["Services"].get(name)
         if service is None:
-            raise InvalidServiceError(f"No such service: {name}", self.udid, self.product_version)
+            raise InvalidServiceError(f"The device does not offer the {name} service.", self.udid, self.product_version)
         return service
 
     async def close(self) -> None:

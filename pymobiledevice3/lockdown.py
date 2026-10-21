@@ -442,7 +442,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             if not response or response.get("Result") != "Success":
                 raise CannotStopSessionError()
             return response
-        raise CannotStopSessionError("No active session")
+        raise CannotStopSessionError("Cannot stop the lockdown session: no session is active.")
 
     async def validate_pairing(self) -> bool:
         """Validate the existing pairing and establish a session with the device.
@@ -578,7 +578,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
         keybag_data = Path(keybag_file).read_bytes()
         private_key = serialization.load_pem_private_key(keybag_data, password=None)
         if not isinstance(private_key, (RSAPrivateKey, EllipticCurvePrivateKey)):
-            raise PairingError(f"unsupported supervisor private key type: {type(private_key).__name__}")
+            raise PairingError(
+                f"The supervisor keybag must hold an RSA or EC private key, not {type(private_key).__name__}."
+            )
         cer = x509.load_pem_x509_certificate(keybag_data)
         public_key = cer.public_bytes(Encoding.DER)
 
@@ -736,9 +738,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         response = await self._request("StartService", options)
         if not response or response.get("Error"):
             if response.get("Error", "") == "PasswordProtected":
-                raise PasswordRequiredError(
-                    "your device is protected with password, please enter password in device and try again"
-                )
+                raise PasswordRequiredError("The device is protected with a passcode. Unlock it and try again.")
             raise StartServiceError(name, response.get("Error", ""))
         return response
 
@@ -885,7 +885,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             try:
                 return self._verify_request_response(request, response, verify_request=verify_request)
             except (InvalidConnectionError, LockdownError) as e:
-                if not (isinstance(e, InvalidConnectionError) or str(e) == "SessionInactive"):
+                if not (isinstance(e, InvalidConnectionError) or e.error == "SessionInactive"):
                     raise
                 if self._reestablishing_connection:
                     raise
@@ -934,7 +934,15 @@ class LockdownClient(ABC, LockdownServiceProvider):
                 "PasscodeRequired": PasscodeRequiredError,
                 "SessionActive": SessionActiveError,
             }
-            raise exception_errors.get(error, LockdownError)(error, self.identifier, self.product_version)
+            error_type = exception_errors.get(error, LockdownError)
+            message = (
+                f"lockdownd failed {request}: {error}"
+                if error_type is LockdownError
+                else (error_type.describe() or error)
+            )
+            if issubclass(error_type, LockdownError):
+                raise error_type(message, self.identifier, self.product_version, error=error)
+            raise error_type(message)
 
         # iOS < 5: 'Error' is not present, so we need to check the 'Result' instead
         if response.get("Result") == "Failure":

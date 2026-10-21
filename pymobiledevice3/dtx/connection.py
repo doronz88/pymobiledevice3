@@ -383,7 +383,9 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
             async with self._service_condition:
                 while True:
                     if self._closed:
-                        raise ConnectionTerminatedError("Connection closed while waiting for service")
+                        raise ConnectionTerminatedError(
+                            "The DTX connection closed before the device opened the expected service."
+                        )
                     for svc in self._services.values():
                         if _predicate(svc):
                             return svc
@@ -426,7 +428,9 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
             async with self._service_condition:
                 while True:
                     if self._closed:
-                        raise ConnectionTerminatedError("Connection closed while waiting for proxied service")
+                        raise ConnectionTerminatedError(
+                            "The DTX connection closed before the device opened the expected proxied service."
+                        )
                     for svc in self._services.values():
                         if isinstance(svc, DTXProxyService):
                             candidate = svc.remote_service if remote else svc.local_service

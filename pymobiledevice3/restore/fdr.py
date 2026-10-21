@@ -12,6 +12,7 @@ from pymobiledevice3.exceptions import (
     ConnectionFailedError,
     ConnectionTerminatedError,
     NoDeviceConnectedError,
+    ProtocolError,
     PyMobileDevice3Exception,
 )
 from pymobiledevice3.service_connection import ServiceConnection
@@ -65,7 +66,7 @@ class FDRClient:
             )
         else:
             if conn_port is None:
-                raise PyMobileDevice3Exception("FDR connection port is unavailable")
+                raise PyMobileDevice3Exception("The device has not reported an FDR connection port yet.")
             service = await ServiceConnection.create_using_usbmux(device.serial, conn_port, connection_type="USB")
 
         client = cls(service, device.serial)
@@ -112,7 +113,7 @@ class FDRClient:
         identifier = reply["Identifier"]
 
         if cmd != "HelloConn":
-            raise PyMobileDevice3Exception("Did not receive HelloConn reply...")
+            raise ProtocolError(f"The device did not answer the FDR handshake with HelloConn: {cmd}")
         if identifier:
             logger.debug(f"got device identifier: {identifier}")
 

@@ -5,7 +5,7 @@ import os
 import plistlib
 import typing
 
-from pymobiledevice3.exceptions import ConnectionFailedError, NotConnectedError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import ConnectionFailedError, NotConnectedError, ProtocolError
 from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.utils import current_task_name
@@ -42,7 +42,7 @@ class ASRClient:
         :raises NotConnectedError: if accessed before ``connect()`` has run.
         """
         if self._service is None:
-            raise NotConnectedError("ASRClient is not connected; call connect() first")
+            raise NotConnectedError("ASRClient is not connected. Call connect() first.")
         return self._service
 
     async def connect(self, port: int = DEFAULT_ASR_SYNC_PORT) -> None:
@@ -67,7 +67,7 @@ class ASRClient:
 
         command = data.get("Command")
         if command != "Initiate":
-            raise PyMobileDevice3Exception(f"invalid command received: {command}")
+            raise ProtocolError(f"ASR did not start with the expected Initiate command: {command}")
 
         self.checksum_chunks = data.get("Checksum Chunks", False)
         self.logger.debug(f"Checksum Chunks: {self.checksum_chunks}")
@@ -130,7 +130,7 @@ class ASRClient:
                 await self.handle_oob_data_request(packet, filesystem)
 
             else:
-                raise PyMobileDevice3Exception(f"unknown packet: {packet}")
+                raise ProtocolError(f"ASR sent an unexpected packet while validating the filesystem: {packet}")
 
     async def send_payload(self, filesystem: typing.IO[bytes]) -> None:
         filesystem.seek(0, os.SEEK_END)

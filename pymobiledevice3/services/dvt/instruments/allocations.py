@@ -275,7 +275,7 @@ class Allocations(DtxService[AllocationsService]):
         """
         prepared = await self.service.prepared_environment_for_launch_events_mask_(environment or {}, events_mask)
         if prepared is None:
-            raise DvtException("the device could not prepare an allocations recording")
+            raise DvtException("The device could not prepare an allocations recording.")
         return prepared
 
     async def attach(self, pid: int, events_mask: int = MALLOC_EVENTS_MASK) -> None:

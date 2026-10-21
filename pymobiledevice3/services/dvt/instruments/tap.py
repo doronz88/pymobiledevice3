@@ -99,7 +99,7 @@ class Tap:
         :raises NotConnectedError: if accessed before the tap's ``async with`` context is entered.
         """
         if self._message_channel is None:
-            raise NotConnectedError(f"{type(self).__name__} context not entered; use `async with`")
+            raise NotConnectedError(f"{type(self).__name__} was used before entering its `async with` block.")
         return self._message_channel
 
     async def _service_ref(self) -> TapService:

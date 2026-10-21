@@ -49,7 +49,7 @@ class MisagentService(LockdownService):
             "ProfileType": "Provisioning",
         })
         if response["Status"]:
-            raise PyMobileDevice3Exception(f"invalid status: {response}")
+            raise PyMobileDevice3Exception(f"The device refused to install the provisioning profile: {response}")
 
         return response
 
@@ -67,7 +67,9 @@ class MisagentService(LockdownService):
             "ProfileType": "Provisioning",
         })
         if response["Status"]:
-            raise PyMobileDevice3Exception(f"invalid status: {response}")
+            raise PyMobileDevice3Exception(
+                f"The device refused to remove provisioning profile {profile_id}: {response}"
+            )
 
         return response
 
@@ -80,6 +82,6 @@ class MisagentService(LockdownService):
         """
         response = await self.service.send_recv_plist({"MessageType": "CopyAll", "ProfileType": "Provisioning"})
         if response["Status"]:
-            raise PyMobileDevice3Exception(f"invalid status: {response}")
+            raise PyMobileDevice3Exception(f"The device refused to list the provisioning profiles: {response}")
 
         return [ProvisioningProfile(p) for p in cast(list[bytes], response["Payload"])]

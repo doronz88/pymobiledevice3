@@ -55,7 +55,7 @@ async def test_stackshot_times_out_without_stackshot_data() -> None:
     tap = CoreProfileSessionTap(cast(DtxServiceProvider, None), {})
     tap.channel = cast(TapMessageChannel, FakeChannel())
 
-    with pytest.raises(ExtractingStackshotError, match="timed out waiting for stackshot data"):
+    with pytest.raises(ExtractingStackshotError, match="Timed out waiting for the device to send a stackshot"):
         await tap.get_stackshot(timeout=0.01)
 
 

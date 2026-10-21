@@ -47,7 +47,9 @@ body:
     id: logs
     attributes:
       label: Relevant log output
-      description: Paste logs, stack traces, or protocol errors that help explain the failure.
+      description: >-
+        Run the failing command again with `-v` before the subcommand (e.g. `pymobiledevice3 -v lockdown info`)
+        and paste its whole output: without it, an error shows only its message, not the traceback.
       render: shell
     validations:
       required: false

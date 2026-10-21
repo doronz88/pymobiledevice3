@@ -9,7 +9,10 @@ class StorageMounterBridgeError(PyMobileDevice3Exception):
     """The storage mounter bridge answered a command with an error."""
 
     def __init__(self, command: str, error: str, detailed_error: Optional[str] = None) -> None:
-        super().__init__(f"{command} failed: {error}" + (f" ({detailed_error})" if detailed_error else ""))
+        super().__init__(
+            f"The storage mounter bridge failed the {command} command: {error}"
+            + (f" ({detailed_error})" if detailed_error else "")
+        )
         #: The device's error code, e.g. ``UnknownCommand`` or ``InternalError``.
         self.error = error
         #: The underlying ``NSError`` description, when the device supplied one.

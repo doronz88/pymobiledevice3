@@ -686,7 +686,7 @@ class AfcService(LockdownService):
         if undeleted_items:
             # AfcException mis-annotates `status` as str; it accepts AfcError/None at runtime
             raise AfcException(
-                f"Failed to delete paths: {undeleted_items}",
+                f"Failed to delete: {', '.join(undeleted_items)}",
                 None,
             )
 
@@ -766,7 +766,7 @@ class AfcService(LockdownService):
         except AfcException as e:
             if e.status != AfcError.READ_ERROR:
                 raise
-            raise AfcFileNotFoundError(e.args[0], e.status) from e
+            raise AfcFileNotFoundError(f"No such file on the device: {filename}", e.status, filename) from e
 
         stat["st_size"] = int(stat["st_size"])
         stat["st_blocks"] = int(stat["st_blocks"])
@@ -842,7 +842,7 @@ class AfcService(LockdownService):
         :raises AfcException: if the file could not be opened.
         """
         if mode not in AFC_FOPEN_TEXTUAL_MODES:
-            raise ArgumentError(f"mode can be only one of: {AFC_FOPEN_TEXTUAL_MODES.keys()}")
+            raise ArgumentError(f"Invalid file mode {mode!r}; use one of: {', '.join(AFC_FOPEN_TEXTUAL_MODES)}")
 
         data = await self._do_operation(
             AfcOpcode.FILE_OPEN,
@@ -879,7 +879,7 @@ class AfcService(LockdownService):
             if await self.exists(source):
                 raise
             raise AfcFileNotFoundError(
-                f"Failed to rename {source} into {target}. Got status: {e.status}", e.args[0], str(e.status)
+                f"Failed to rename {source} to {target}: {source} no longer exists.", e.status, source
             ) from e
 
     async def fread(self, handle: int, sz: int) -> bytes:
@@ -903,7 +903,7 @@ class AfcService(LockdownService):
                 AfcOpcode.READ, AfcFreadRequest(handle=handle, size=to_read).build()
             )
             if status != AfcError.SUCCESS:
-                raise AfcException("fread error", status)
+                raise AfcException("Failed to read from the file.", status)
             sz -= to_read
             data += chunk
         return data
@@ -941,13 +941,13 @@ class AfcService(LockdownService):
             chunk = data[i * chunk_size : (i + 1) * chunk_size]
             status, _ = await self._send_and_wait(AfcOpcode.WRITE, file_handle + chunk, this_length=48)
             if status != AfcError.SUCCESS:
-                raise AfcException(f"failed to write chunk: {status}", status)
+                raise AfcException("Failed to write to the file.", status)
 
         if len(data) % chunk_size:
             chunk = data[chunks_count * chunk_size :]
             status, _ = await self._send_and_wait(AfcOpcode.WRITE, file_handle + chunk, this_length=48)
             if status != AfcError.SUCCESS:
-                raise AfcException(f"failed to write last chunk: {status}", status)
+                raise AfcException("Failed to write to the file.", status)
 
     @path_to_str()
     async def resolve_path(self, filename: str) -> str:
@@ -985,11 +985,11 @@ class AfcService(LockdownService):
         info = await self.stat(filename)
 
         if info["st_ifmt"] != "S_IFREG":
-            raise AfcException(f"{filename} isn't a file", AfcError.INVALID_ARG, filename)
+            raise AfcException(f"Not a regular file: {filename}", AfcError.INVALID_ARG, filename)
 
         h = await self.fopen(filename)
         if not h:
-            raise AfcException(f"failed to open {filename}", AfcError.INTERNAL_ERROR, filename)
+            raise AfcException(f"Failed to open {filename}", AfcError.INTERNAL_ERROR, filename)
         d = await self.fread(h, int(info["st_size"]))
         await self.fclose(h)
         return d
@@ -1421,7 +1421,7 @@ class AfcShell(InteractiveShell):
         directory = self.relative_path(directory)
         directory = posixpath.normpath(directory)
         if not await self.afc.exists(directory):
-            raise ArgumentError(f"{directory} does not exist")
+            raise ArgumentError(f"No such directory: {directory}")
         self.cwd = directory
 
     @shell_command(raw=True, completer=path_completer)

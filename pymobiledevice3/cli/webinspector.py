@@ -514,7 +514,7 @@ async def cdp(
             await serve_task
             # Raised to pymobiledevice3's top-level handler: with --reconnect it waits for the
             # device and re-runs the command, otherwise it reports the disconnect and stops.
-            raise ConnectionTerminatedError("the device disconnected")
+            raise ConnectionTerminatedError("The device disconnected.")
         await serve_task
     finally:
         disconnect_task.cancel()

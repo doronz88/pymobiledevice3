@@ -16,7 +16,6 @@ from pymobiledevice3.exceptions import (
     DeviceNotFoundError,
     NoDeviceConnectedError,
     ProtocolError,
-    PyMobileDevice3Exception,
 )
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.plist_types import PlistDict, PlistSendable, PlistValue
@@ -79,9 +78,9 @@ def parse_plist(payload: bytes) -> PlistValue:
         try:
             return plistlib.loads(payload)
         except plistlib.InvalidFileException as e:
-            raise PyMobileDevice3Exception(f"parse_plist invalid data: {payload[:100].hex()}") from e
+            raise ProtocolError(f"The device sent a reply that is not a valid plist: {payload[:100].hex()}") from e
     except plistlib.InvalidFileException as e:
-        raise PyMobileDevice3Exception(f"parse_plist invalid data: {payload[:100].hex()}") from e
+        raise ProtocolError(f"The device sent a reply that is not a valid plist: {payload[:100].hex()}") from e
 
 
 async def close_stream_writer(
@@ -385,7 +384,7 @@ class ServiceConnection:
 
     def _checked_frame_size(self, size: int) -> int:
         if size > self.max_frame_size:
-            raise ProtocolError(f"Frame size {size} exceeds limit {self.max_frame_size}")
+            raise ProtocolError(f"The device sent a {size}-byte message, over the {self.max_frame_size}-byte limit.")
         return size
 
     async def send_prefixed(self, data: bytes) -> None:

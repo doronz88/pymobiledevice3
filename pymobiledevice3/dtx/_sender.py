@@ -54,7 +54,7 @@ class _DTXSenderMixin:
     async def _send_message(self, message: DTXMessage) -> None:
         """Serialise and write *message* to the transport as a single fragment."""
         if self._closed:
-            raise ConnectionTerminatedError("Cannot send message: connection is closed")
+            raise ConnectionTerminatedError("Cannot send to the device: the DTX connection is closed.")
 
         async with self._send_lock:
             if message.identifier == 0:
@@ -82,7 +82,9 @@ class _DTXSenderMixin:
                 await self._writer.drain()
             except (ConnectionResetError, BrokenPipeError, OSError) as e:
                 self._pending_replies.pop(message.identifier, None)
-                raise ConnectionTerminatedError("Connection lost while sending") from e
+                raise ConnectionTerminatedError(
+                    "The connection to the device was lost while sending a DTX message."
+                ) from e
 
             self._log_message("sent", message)  # type: ignore[attr-defined]
 

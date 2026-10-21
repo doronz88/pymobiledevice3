@@ -64,7 +64,9 @@ class MobileConfigService(LockdownService):
             keybag_data = f.read()
         private_key = serialization.load_pem_private_key(keybag_data, password=None)
         if not isinstance(private_key, (rsa.RSAPrivateKey, ec.EllipticCurvePrivateKey)):
-            raise ProfileError(f"unsupported supervision private key type: {type(private_key).__name__}")
+            raise ProfileError(
+                f"The supervision keybag must hold an RSA or EC private key, not {type(private_key).__name__}"
+            )
         cer = x509.load_pem_x509_certificate(keybag_data)
         public_key = cer.public_bytes(Encoding.DER)
         escalate_response = await self._send_recv({"RequestType": "Escalate", "SupervisorCertificate": public_key})
@@ -223,7 +225,7 @@ class MobileConfigService(LockdownService):
                 error_code = cast(list[dict[str, Any]], error_chain)[0]["ErrorCode"]
                 if error_code == ERROR_CLOUD_CONFIGURATION_ALREADY_PRESENT:
                     raise CloudConfigurationAlreadyPresentError()
-            raise ProfileError(f"invalid response {response}")
+            raise ProfileError(f"The device rejected the profile request: {response}")
         return response
 
     async def install_wifi_profile(

@@ -328,7 +328,7 @@ class Recovery(BaseRestore):
                 logging.warning(f"build_identity has no {component}")
                 return
             else:
-                raise PyMobileDevice3Exception(f"missing component: {component}")
+                raise PyMobileDevice3Exception(f"The build identity has no {component} component.")
 
         await self.send_component(component)
         assert self.device.irecv is not None
@@ -452,7 +452,9 @@ class Recovery(BaseRestore):
 
         assert self.device.irecv is not None
         if "SRTG" in self.device.irecv._device_info:
-            raise PyMobileDevice3Exception("Device failed to enter recovery")
+            raise PyMobileDevice3Exception(
+                "The device failed to enter recovery mode: it is still in DFU mode after receiving iBSS."
+            )
 
         if cast(BuildManifest, self.build_identity.build_manifest).build_major > 8:
             old_nonce = self.device.irecv.ap_nonce

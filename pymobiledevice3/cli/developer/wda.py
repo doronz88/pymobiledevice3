@@ -68,7 +68,7 @@ async def wait_for_xctest_app(service_provider: LockdownServiceProvider, xctrunn
             if device is None:
                 raise DeviceNotFoundError(
                     service_provider.udid,
-                    f"Device not found: {service_provider.udid} left usbmux while waiting for WDA to become reachable",
+                    f"Device {service_provider.udid} disconnected while waiting for WebDriverAgent to become reachable.",
                 )
             try:
                 probe_sock = await device.connect(DEFAULT_WDA_PORT)
