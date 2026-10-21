@@ -31,8 +31,8 @@ misc/linux-vm/run.sh pymobiledevice3 developer dvt ls /
 misc/linux-vm/run.sh pytest -m device tests/services/instruments
 ```
 
-The VM reaches the devices through the Mac's usbmuxd, exposed on a loopback TCP port only while the
-command runs.
+The VM reaches the devices through the Mac's usbmuxd socket, forwarded into the VM over SSH only while
+the command runs. The VM uses Python 3.15 by default (`PMD3_LINUX_VM_PYTHON` overrides it).
 
 ## Style Notes
 
