@@ -80,10 +80,11 @@ class MobileImageMounterService(LockdownService):
         :returns: List of dictionaries, one per mounted image entry.
         :raises MessageNotSupportedError: If the device does not support the ``CopyDevices`` command.
         """
+        response = await self._send_recv({"Command": "CopyDevices"})
         try:
-            return (await self._send_recv({"Command": "CopyDevices"}))["EntryList"]
+            return response["EntryList"]
         except KeyError as e:
-            raise MessageNotSupportedError from e
+            raise MessageNotSupportedError("CopyDevices", response) from e
 
     async def lookup_image(self, image_type: str) -> bytes:
         """
@@ -237,7 +238,7 @@ class MobileImageMounterService(LockdownService):
         try:
             return response["DeveloperModeStatus"]
         except KeyError as e:
-            raise MessageNotSupportedError from e
+            raise MessageNotSupportedError("QueryDeveloperModeStatus", response) from e
 
     async def query_nonce(self, personalized_image_type: Optional[str] = None) -> bytes:
         """
@@ -255,7 +256,7 @@ class MobileImageMounterService(LockdownService):
         try:
             return response["PersonalizationNonce"]
         except KeyError as e:
-            raise MessageNotSupportedError from e
+            raise MessageNotSupportedError("QueryNonce", response) from e
 
     async def query_personalization_identifiers(self, image_type: Optional[str] = None) -> dict[str, Any]:
         """
