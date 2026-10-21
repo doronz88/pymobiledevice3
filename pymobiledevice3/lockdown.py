@@ -885,7 +885,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             try:
                 return self._verify_request_response(request, response, verify_request=verify_request)
             except (InvalidConnectionError, LockdownError) as e:
-                if not (isinstance(e, InvalidConnectionError) or str(e) == "SessionInactive"):
+                if not (isinstance(e, InvalidConnectionError) or e.error == "SessionInactive"):
                     raise
                 if self._reestablishing_connection:
                     raise
@@ -934,7 +934,15 @@ class LockdownClient(ABC, LockdownServiceProvider):
                 "PasscodeRequired": PasscodeRequiredError,
                 "SessionActive": SessionActiveError,
             }
-            raise exception_errors.get(error, LockdownError)(error, self.identifier, self.product_version)
+            error_type = exception_errors.get(error, LockdownError)
+            message = (
+                f"lockdownd failed {request}: {error}"
+                if error_type is LockdownError
+                else (error_type.describe() or error)
+            )
+            if issubclass(error_type, LockdownError):
+                raise error_type(message, self.identifier, self.product_version, error=error)
+            raise error_type(message)
 
         # iOS < 5: 'Error' is not present, so we need to check the 'Result' instead
         if response.get("Result") == "Failure":
