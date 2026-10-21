@@ -1,5 +1,7 @@
 import asyncio
+from collections.abc import Callable, Coroutine
 from contextlib import suppress
+from functools import wraps
 from pathlib import Path
 from typing import Annotated, Any, Optional, cast
 
@@ -114,8 +116,22 @@ async def _cleanup_xctrunner(xctrunner: WdaXcRunnerDep) -> None:
         await xctrunner
 
 
+def _stops_xctrunner(func: Callable[..., Coroutine[Any, Any, None]]) -> Callable[..., Coroutine[Any, Any, None]]:
+    """Stop the command's XCUITest runner (``_xctrunner``) when it ends, also when it fails."""
+
+    @wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> None:
+        try:
+            await func(*args, **kwargs)
+        finally:
+            await _cleanup_xctrunner(cast(Optional[asyncio.Future[None]], kwargs.get("_xctrunner")))
+
+    return wrapper
+
+
 @cli.command("launch")
 @async_command
+@_stops_xctrunner
 async def wda_launch(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
@@ -124,11 +140,11 @@ async def wda_launch(
     """Launch an app by starting a WDA session and print the session id."""
     session_id = await client.start_session(bundle_id=bundle_id)
     print(session_id)
-    await _cleanup_xctrunner(_xctrunner)
 
 
 @cli.command("tap")
 @async_command
+@_stops_xctrunner
 async def wda_tap(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
@@ -164,11 +180,11 @@ async def wda_tap(
         client.session_id = session_id
     element_id = await client.find_element(using=using, value=selector, session_id=session_id)
     await client.click(element_id=element_id, session_id=session_id)
-    await _cleanup_xctrunner(_xctrunner)
 
 
 @cli.command("press")
 @async_command
+@_stops_xctrunner
 async def wda_press(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
@@ -194,11 +210,11 @@ async def wda_press(
         client.session_id = session_id
     for name in names:
         await client.press_button(name=name, session_id=session_id)
-    await _cleanup_xctrunner(_xctrunner)
 
 
 @cli.command("unlock")
 @async_command
+@_stops_xctrunner
 async def wda_unlock(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
@@ -213,11 +229,11 @@ async def wda_unlock(
 ) -> None:
     """Unlock the device."""
     await client.unlock(session_id=session_id)
-    await _cleanup_xctrunner(_xctrunner)
 
 
 @cli.command("list-items")
 @async_command
+@_stops_xctrunner
 async def wda_list_items(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
@@ -332,11 +348,11 @@ async def wda_list_items(
         items.append(item)
 
     print_json(items)
-    await _cleanup_xctrunner(_xctrunner)
 
 
 @cli.command("screenshot")
 @async_command
+@_stops_xctrunner
 async def wda_screenshot(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
@@ -353,22 +369,22 @@ async def wda_screenshot(
     """Save a screenshot via WDA."""
     data = await client.get_screenshot(session_id=session_id)
     out.write_bytes(data)
-    await _cleanup_xctrunner(_xctrunner)
 
 
 @cli.command("status")
 @async_command
+@_stops_xctrunner
 async def wda_status(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
 ) -> None:
     """Show WDA status."""
     print_json(await client.get_status())
-    await _cleanup_xctrunner(_xctrunner)
 
 
 @cli.command("type")
 @async_command
+@_stops_xctrunner
 async def wda_type(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
@@ -395,11 +411,11 @@ async def wda_type(
     else:
         client.session_id = session_id
     await client.send_keys(text, session_id=session_id)
-    await _cleanup_xctrunner(_xctrunner)
 
 
 @cli.command("swipe")
 @async_command
+@_stops_xctrunner
 async def wda_swipe(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
@@ -437,11 +453,11 @@ async def wda_swipe(
     else:
         client.session_id = session_id
     await client.swipe(start_x, start_y, end_x, end_y, duration=duration, session_id=session_id)
-    await _cleanup_xctrunner(_xctrunner)
 
 
 @cli.command("window-size")
 @async_command
+@_stops_xctrunner
 async def wda_window_size(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
@@ -467,4 +483,3 @@ async def wda_window_size(
     else:
         client.session_id = session_id
     print_json(await client.get_window_size(session_id=session_id))
-    await _cleanup_xctrunner(_xctrunner)

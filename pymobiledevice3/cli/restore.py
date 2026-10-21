@@ -3,7 +3,6 @@ import contextlib
 import logging
 import plistlib
 import tempfile
-import traceback
 from collections.abc import Generator
 from pathlib import Path
 from typing import IO, Annotated, Any, Optional, Union, cast
@@ -254,19 +253,14 @@ async def restore_update_task(
     if erase:
         behavior = Behavior.Erase
 
-    try:
-        await Restore(
-            ipsw,
-            device,
-            tss=tss,
-            behavior=behavior,
-            ignore_fdr=ignore_fdr,
-            enable_tss_batch=enable_tss_batch,
-        ).update()
-    except Exception:
-        # click may "swallow" several exception types so we try to catch them all here
-        traceback.print_exc()
-        raise
+    await Restore(
+        ipsw,
+        device,
+        tss=tss,
+        behavior=behavior,
+        ignore_fdr=ignore_fdr,
+        enable_tss_batch=enable_tss_batch,
+    ).update()
 
 
 @cli.command("shell")
