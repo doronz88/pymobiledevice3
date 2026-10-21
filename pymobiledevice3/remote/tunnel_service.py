@@ -1277,6 +1277,12 @@ class CoreDeviceTunnelService(RemotePairingProtocol, RemoteService):
         if self._service is not None:
             await self._service.close()
 
+    def __repr__(self) -> str:
+        return (
+            f"<{self.__class__.__name__} PRODUCT:{self.rsd.product_type} VERSION:{self.rsd.product_version} "
+            f"UDID:{self.rsd.udid} ADDRESS:{self.rsd.service.address[0]}>"
+        )
+
     async def receive_response(self) -> dict[str, Any]:
         response = await self.service.receive_response()
         return response["value"]

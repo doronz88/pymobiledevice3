@@ -176,6 +176,14 @@ class OsUtils:
         """
         return None
 
+    def usb_rsd_addresses(self) -> Optional[dict[str, list[str]]]:
+        """The RSD address (``fe80::…%iface``) of each Apple device on USB whose link is up, by UDID.
+
+        Lets RSD discovery go straight to a device's own link instead of browsing bonjour on every
+        interface. ``None`` means the platform offers no way to ask.
+        """
+        return None
+
 
 def get_os_utils() -> OsUtils:
     return OsUtils.create()

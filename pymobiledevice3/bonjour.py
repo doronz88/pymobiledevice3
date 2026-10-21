@@ -292,8 +292,13 @@ async def _open_mdns_sockets() -> tuple[
     return transports, queue
 
 
-async def _send_query_all(transports: list[tuple[asyncio.DatagramTransport, socket.socket]], pkt: bytes) -> int:
-    """Send ``pkt`` on every socket/interface; returns how many sends were attempted."""
+async def _send_query_all(
+    transports: list[tuple[asyncio.DatagramTransport, socket.socket]], pkt: bytes, skip_interfaces: tuple[str, ...] = ()
+) -> int:
+    """Send ``pkt`` on every socket/interface; returns how many sends were attempted.
+
+    ``skip_interfaces`` names interface prefixes (e.g. ``"utun"``) not to query on.
+    """
     sent = 0
     for transport, sock in transports:
         if sock.family == socket.AF_INET:
@@ -301,7 +306,9 @@ async def _send_query_all(transports: list[tuple[asyncio.DatagramTransport, sock
             sent += 1
         else:
             # Send once per iface index for better reachability
-            for ifindex, _ in socket.if_nameindex():
+            for ifindex, ifname in socket.if_nameindex():
+                if ifname.startswith(skip_interfaces):
+                    continue
                 transport.sendto(pkt, (MDNS_MCAST_V6, MDNS_PORT, 0, ifindex))
                 sent += 1
     return sent
@@ -420,12 +427,15 @@ def _assemble_instances(state: _BrowseState) -> list[ServiceInstance]:
     return results
 
 
-async def _browse_receive_loop(service_type: str, timeout: float) -> AsyncIterable[_BrowseState]:
+async def _browse_receive_loop(
+    service_type: str, timeout: float, skip_interfaces: tuple[str, ...] = ()
+) -> AsyncIterable[_BrowseState]:
     """Shared mDNS receive loop that yields accumulated state after each packet.
 
     The state object is mutated in place; consumers must snapshot what they need
     before the next iteration.  When the consumer stops iterating early (e.g.
     ``break``), the multicast sockets are closed in the ``finally`` block.
+    Interfaces named with a ``skip_interfaces`` prefix are neither queried nor listened to.
     """
     if not service_type.endswith("."):
         service_type += "."
@@ -440,14 +450,17 @@ async def _browse_receive_loop(service_type: str, timeout: float) -> AsyncIterab
         if isinstance(pkt_addr, tuple) and len(cast(tuple[Any, ...], pkt_addr)) == 4:
             scopeid = cast(Optional[int], pkt_addr[3])
         iface = adapters.pick_iface_for_ip(ip_str, family, scopeid)
-        if iface is None:
+        if iface is None or iface.startswith(skip_interfaces):
+            # answers can still arrive on a skipped interface, prompted by other hosts' queries
             return
         existing = state.host_addrs[rr_name]
         if not any(a.ip == ip_str for a in existing):
             existing.append(Address(ip=ip_str, iface=iface))
 
     try:
-        state.sent = await _send_query_all(transports, build_query(service_type, QTYPE_PTR, unicast=False))
+        state.sent = await _send_query_all(
+            transports, build_query(service_type, QTYPE_PTR, unicast=False), skip_interfaces
+        )
         loop = asyncio.get_running_loop()
         end = loop.time() + timeout
         while loop.time() < end:
@@ -475,14 +488,18 @@ async def _browse_receive_loop(service_type: str, timeout: float) -> AsyncIterab
             transport.close()
 
 
-async def browse_service(service_type: str, timeout: float = 4.0) -> list[ServiceInstance]:
+async def browse_service(
+    service_type: str, timeout: float = 4.0, skip_interfaces: tuple[str, ...] = ()
+) -> list[ServiceInstance]:
     """
     Discover a DNS-SD/mDNS service type (e.g. "_remoted._tcp.local.") on the local network.
+
+    ``skip_interfaces`` names interface prefixes (e.g. ``"utun"``) to leave out of the browse.
 
     Returns: List[ServiceInstance] with Address(ip, iface) entries.
     """
     instances: list[ServiceInstance] = []
-    async for state in _browse_receive_loop(service_type, timeout=timeout):
+    async for state in _browse_receive_loop(service_type, timeout=timeout, skip_interfaces=skip_interfaces):
         instances = _assemble_instances(state)
     return instances
 
@@ -509,8 +526,10 @@ async def iter_browse_service(service_type: str, timeout: float = 4.0) -> AsyncG
                 yield instance
 
 
-async def browse_remoted(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[ServiceInstance]:
-    return await browse_service(REMOTED_SERVICE_NAME, timeout=timeout)
+async def browse_remoted(
+    timeout: float = DEFAULT_BONJOUR_TIMEOUT, skip_interfaces: tuple[str, ...] = ()
+) -> list[ServiceInstance]:
+    return await browse_service(REMOTED_SERVICE_NAME, timeout=timeout, skip_interfaces=skip_interfaces)
 
 
 async def browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[ServiceInstance]:

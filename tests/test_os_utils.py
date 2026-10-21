@@ -119,3 +119,80 @@ def test_get_home_folder_fails_loudly_on_stray_file(home, chowned, set_home_fold
 
     with pytest.raises(FileExistsError):
         common.get_home_folder()
+
+
+class _IOEntry:
+    def __init__(self, properties, parents=None):
+        self.properties = properties
+        self._parents = parents or {}
+
+    def get_parent_by_type(self, plane, parent_type):
+        if parent_type not in self._parents:
+            raise _NoParentError(parent_type)
+        return self._parents[parent_type]
+
+
+class _NoParentError(Exception):
+    pass
+
+
+# the host-side MAC of a real iPhone's private NCM link (its device answers at fe80::bc5a:3eff:fec4:9be9)
+_HOST_MAC = bytes.fromhex("be5a3ec49b16")
+
+
+def _ncm_interface(name, serial, flags, link_status=3, vendor="Apple Inc.", mac=_HOST_MAC):
+    device = _IOEntry({"USB Vendor Name": vendor, "USB Serial Number": serial})
+    controller = _IOEntry({"NetworkInterfaceFlags": flags, "IOLinkStatus": link_status, "IOMACAddress": mac})
+    return _IOEntry({"BSD Name": name}, {"IOUSBHostDevice": device, "IONetworkController": controller})
+
+
+def test_darwin_usb_rsd_addresses_follow_remoted(monkeypatch):
+    # Only the private NCM function serves RSD, once its link is active and the host side holds its
+    # link-local; the device's address is derived from the host MAC (values from a real iPhone).
+    from types import SimpleNamespace
+
+    from pymobiledevice3.osu import posix_util
+
+    serial = "00008150001074523440401C"
+    entries = [
+        _ncm_interface("anri0", serial, flags=0x20000000),
+        _ncm_interface("en29", serial, flags=0),
+        _ncm_interface("anri1", "0000FE01F07564571CF86456", flags=0x20000000, link_status=1),
+        _ncm_interface("anri2", "0000FE01F07564571CF86457", flags=0x20000000),
+        _ncm_interface("en40", "SOMEDONGLE", flags=0x20000000, vendor="ASIX"),
+        _IOEntry({"BSD Name": "en0"}),
+    ]
+    adapters = [
+        SimpleNamespace(nice_name=name, ips=[SimpleNamespace(is_IPv4=False, ip=("fe80::1", 0, 0))])
+        for name in ("anri0", "en29", "anri1", "en40", "en0")
+    ]
+    monkeypatch.setattr(posix_util, "get_io_services_by_type", lambda service_type: iter(entries))
+    monkeypatch.setattr(posix_util, "IORegistryException", _NoParentError, raising=False)
+    monkeypatch.setattr(posix_util, "get_adapters", lambda: adapters)
+
+    assert posix_util.Darwin().usb_rsd_addresses() == {
+        "00008150-001074523440401C": ["fe80::bc5a:3eff:fec4:9be9%anri0"],
+    }
+
+
+def test_darwin_usb_rsd_addresses_cannot_tell_without_a_private_ncm_function(monkeypatch):
+    # macOS releases without the private/public split: remoted finds such devices over bonjour on the
+    # public interface, so the caller must browse too rather than report no devices.
+    from types import SimpleNamespace
+
+    from pymobiledevice3.osu import posix_util
+
+    entries = [
+        _ncm_interface("anri0", "00008150001074523440401C", flags=0x20000000),
+        _ncm_interface("en24", "0000FE01F07564571CF86456", flags=0),
+        _ncm_interface("en25", "0000FE01F07564571CF86456", flags=0),
+    ]
+    adapters = [
+        SimpleNamespace(nice_name=name, ips=[SimpleNamespace(is_IPv4=False, ip=("fe80::1", 0, 0))])
+        for name in ("anri0", "en24", "en25")
+    ]
+    monkeypatch.setattr(posix_util, "get_io_services_by_type", lambda service_type: iter(entries))
+    monkeypatch.setattr(posix_util, "IORegistryException", _NoParentError, raising=False)
+    monkeypatch.setattr(posix_util, "get_adapters", lambda: adapters)
+
+    assert posix_util.Darwin().usb_rsd_addresses() is None
