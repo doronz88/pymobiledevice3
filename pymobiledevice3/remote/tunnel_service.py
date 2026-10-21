@@ -12,6 +12,7 @@ import platform
 import plistlib
 import secrets
 import select
+import signal
 import ssl
 import struct
 import sys
@@ -106,7 +107,7 @@ from pymobiledevice3.remote.siphash import compute_auth_tag, validate_auth_tag
 from pymobiledevice3.remote.utils import get_rsds, resume_remoted_if_required, stop_remoted_if_required
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.service_connection import ServiceConnection
-from pymobiledevice3.utils import asyncio_print_traceback
+from pymobiledevice3.utils import asyncio_print_traceback, sigint_handler
 from pymobiledevice3.utils import current_task_name as _current_task_name
 
 # These third-party helpers ship only partial type information (Unknown-typed parameters/returns);
@@ -929,7 +930,9 @@ class RemotePairingProtocol(StartTcpTunnel):
             # e.g. BACKOFF, sent without PUBLIC_KEY and SALT
             raise PairingError(_describe_pairing_error(data))
 
-        pin = input("Enter PIN: ") if ask_pin else None
+        # input() holds up the loop, so a cancellation would only be seen once it returns.
+        with sigint_handler(signal.default_int_handler):
+            pin = input("Enter PIN: ") if ask_pin else None
         return PairConsentResult(
             public_key=data[PairingDataComponentType.PUBLIC_KEY], salt=data[PairingDataComponentType.SALT], pin=pin
         )

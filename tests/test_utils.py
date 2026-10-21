@@ -1,11 +1,20 @@
+import asyncio
 import inspect
 import os
+import signal
 from pathlib import Path
 
 import pytest
 from bytestruct import BinaryParseError
 
-from pymobiledevice3.utils import bytes_to_uint, hexdump, path_to_str, str_to_path
+from pymobiledevice3.utils import (
+    bytes_to_uint,
+    cancel_on_sigint,
+    hexdump,
+    path_to_str,
+    sigint_handler,
+    str_to_path,
+)
 
 
 def test_hexdump_formats_full_and_partial_lines() -> None:
@@ -84,3 +93,40 @@ def test_bytes_to_uint_reads_the_widest_integer_that_fits(data: bytes, expected:
 def test_bytes_to_uint_of_nothing() -> None:
     with pytest.raises(BinaryParseError):
         bytes_to_uint(b"")
+
+
+async def test_cancel_on_sigint_cancels_the_task_then_raises() -> None:
+    previous = signal.getsignal(signal.SIGINT)
+    task = asyncio.ensure_future(asyncio.sleep(10))
+    with cancel_on_sigint(task) as interrupted:
+        assert not interrupted()
+        signal.raise_signal(signal.SIGINT)
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert interrupted()
+        # Once the task is done, Ctrl-C is a KeyboardInterrupt again.
+        with pytest.raises(KeyboardInterrupt):
+            signal.raise_signal(signal.SIGINT)
+    assert signal.getsignal(signal.SIGINT) is previous
+
+
+async def test_cancel_on_sigint_leaves_an_ignored_sigint_alone() -> None:
+    previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        task = asyncio.ensure_future(asyncio.sleep(0))
+        with cancel_on_sigint(task):
+            assert signal.getsignal(signal.SIGINT) is signal.SIG_IGN
+        await task
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
+async def test_sigint_handler_takes_over_inside_cancel_on_sigint() -> None:
+    task = asyncio.ensure_future(asyncio.sleep(10))
+    with cancel_on_sigint(task) as interrupted:
+        handler = signal.getsignal(signal.SIGINT)
+        with sigint_handler(signal.default_int_handler), pytest.raises(KeyboardInterrupt):
+            signal.raise_signal(signal.SIGINT)
+        assert signal.getsignal(signal.SIGINT) is handler
+        assert not interrupted()
+    task.cancel()
