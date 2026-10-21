@@ -635,24 +635,12 @@ class Restore(BaseRestore):
 
         return bbfw_fn_elem_mav25.get(elem) if bb_chip_id == 0x1F30E1 else bbfw_fn_elem.get(elem)
 
-    def fls_parse(self, buffer: bytes) -> bytes:
-        raise NotImplementedError()
-
-    def fls_update_sig_blob(self, buffer: bytes, blob: bytes) -> bytes:
-        raise NotImplementedError()
-
-    def fls_insert_ticket(self, fls: bytes, bbticket: bytes) -> bytes:
-        raise NotImplementedError()
-
-    def sign_bbfw(
-        self, bbfw_orig: bytes, bbtss: TSSResponse, bb_nonce: Optional[bytes], bb_chip_id: Optional[int] = None
-    ) -> bytes:
+    def sign_bbfw(self, bbfw_orig: bytes, bbtss: TSSResponse, bb_chip_id: Optional[int] = None) -> bytes:
         # check for BBTicket in result
         bbticket = bbtss.bb_ticket
         bbfw_dict = bbtss.get("BasebandFirmware")
         if bbfw_dict is None:
             raise PyMobileDevice3Exception('missing "BasebandFirmware" entry in TSS response')
-        is_fls = False
         signed_file: list[str] = []
 
         with tempfile.NamedTemporaryFile(delete=False) as tmp_zip_read:
@@ -674,27 +662,20 @@ class Restore(BaseRestore):
                             )
 
                         if signfn.endswith(".fls"):
-                            is_fls = True
+                            raise NotImplementedError("is_fls")
 
                         buffer = bbfw_zip.read(signfn)
 
-                        if is_fls:
-                            raise NotImplementedError("is_fls")
-                        elif bb_chip_id == 0x1F30E1:  # Mav25 - Qualcomm Snapdragon X80 5G Modem
-                            data = mbn_mav25_stitch(buffer, blob)
-                        else:
-                            data = mbn_stitch(buffer, blob)
+                        # 0x1F30E1: Mav25 - Qualcomm Snapdragon X80 5G Modem
+                        stitch = mbn_mav25_stitch if bb_chip_id == 0x1F30E1 else mbn_stitch
+                        data = stitch(buffer, blob)
 
                         if data is None:
                             raise PyMobileDevice3Exception(f"failed to stitch baseband firmware file: {signfn}")
 
                         bbfw_patched.writestr(bbfw_zip.getinfo(signfn), data)
 
-                        if is_fls and (bb_nonce is None):
-                            if key == "RamPSI":
-                                signed_file.append(signfn)
-                        else:
-                            signed_file.append(signfn)
+                        signed_file.append(signfn)
 
                 # remove everything but required files
                 for entry in bbfw_zip.filelist:
@@ -718,19 +699,12 @@ class Restore(BaseRestore):
 
                 # add the BBTicket whenever TSS returned one, not only when a nonce was involved
                 if bbticket is not None:
-                    if is_fls:
-                        # add BBTicket to file ebl.fls
-                        buffer = bbfw_zip.read("ebl.fls")
-                        fls = self.fls_parse(buffer)
-                        data = self.fls_insert_ticket(fls, bbticket)
-                        bbfw_patched.writestr("ebl.fls", data)
-                    else:
-                        # add BBTicket as bbticket.der
-                        zname = ZipInfo("bbticket.der")
-                        zname.filename = "bbticket.der"
-                        ZIP_EXT_ATTR_FILE = 0o100000
-                        zname.external_attr = (0o644 | ZIP_EXT_ATTR_FILE) << 16
-                        bbfw_patched.writestr(zname, bbticket)
+                    # add BBTicket as bbticket.der
+                    zname = ZipInfo("bbticket.der")
+                    zname.filename = "bbticket.der"
+                    ZIP_EXT_ATTR_FILE = 0o100000
+                    zname.external_attr = (0o644 | ZIP_EXT_ATTR_FILE) << 16
+                    bbfw_patched.writestr(zname, bbticket)
 
                 bbfw_patched.close()
                 tmp_zip_write.seek(0)
@@ -800,7 +774,7 @@ class Restore(BaseRestore):
         bbfw = self.ipsw.read(bbfwpath)
 
         assert bbtss is not None
-        buffer = self.sign_bbfw(bbfw, bbtss, bb_nonce, bb_chip_id)
+        buffer = self.sign_bbfw(bbfw, bbtss, bb_chip_id)
 
         self.logger.info("Sending BasebandData now...")
         await service.send_plist({"BasebandData": buffer})

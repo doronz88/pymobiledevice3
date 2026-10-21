@@ -203,12 +203,6 @@ def catch_errors(func: Callable[..., Any]) -> Callable[..., Any]:
     return update_wrapper(catch_function, func)
 
 
-async def reload_pages(inspector: WebinspectorService) -> None:
-    await inspector.get_open_pages()
-    # Best effort.
-    await inspector.flush_input(2)
-
-
 @asynccontextmanager
 async def webinspector_service(lockdown: LockdownServiceProvider) -> AsyncGenerator[WebinspectorService, None]:
     inspector = WebinspectorService(lockdown=lockdown)

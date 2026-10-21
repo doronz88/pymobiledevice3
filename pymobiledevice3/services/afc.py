@@ -1102,32 +1102,6 @@ class AfcService(LockdownService):
         await self.service.sendall(header + data)
         return pkt_num
 
-    async def _receive_data(self):
-        """
-        Receive an AFC protocol response packet from the device.
-
-        .. deprecated::
-            Internal use only. External callers should use `_do_operation` or
-            `_send_and_wait` which use the background demux reader.
-
-        :return: Tuple of (status_code, response_data)
-        """
-        header_bytes = await self.service.recvall(AFC_HEADER_SIZE)
-        status = AfcError.SUCCESS
-        data = b""
-        if header_bytes:
-            header = AfcHeader.parse(header_bytes)
-            assert header.entire_length >= AFC_HEADER_SIZE
-            length = header.entire_length - AFC_HEADER_SIZE
-            data = await self.service.recvall(length)
-            if header.operation == AfcOpcode.STATUS:
-                if length != 8:
-                    self.logger.error("Status length != 8")
-                status = parse_afc_status(data)
-            elif header.operation != AfcOpcode.DATA:
-                self.logger.debug("Unexpected AFC opcode %s", header.operation)
-        return status, data
-
     async def _send_and_wait(self, operation: AfcOpcode, data: bytes, this_length: int = 0):
         """
         Atomically send one AFC packet and wait for its response via the demux reader.

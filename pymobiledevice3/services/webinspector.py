@@ -769,13 +769,6 @@ class WebinspectorService(LockdownService):
         except (ConnectionError, ConnectionTerminatedError, OSError, EOFError) as error:
             self._note_connection_lost(error)
 
-    def _page_by_automation_session(self, session_id: str) -> Page:
-        for app_id in self.application_pages:
-            for page in self.application_pages[app_id]:
-                if page.type_ == WirTypes.AUTOMATION and page.automation_session_id == session_id:
-                    return page
-        raise KeyError(f"Automation session with id {session_id} not found")
-
     async def _wait_for_page(self, session_id: str) -> Page:
         while True:
             for app in self.application_pages.values():
