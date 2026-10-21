@@ -303,7 +303,7 @@ class DTXChannel:
 
     def _check_open(self) -> None:
         if self._closed:
-            raise ConnectionTerminatedError("Channel is closed")
+            raise ConnectionTerminatedError("The DTX service channel is closed.")
 
     async def _reader_loop(self) -> None:
         """Continuously read messages from the connection and dispatch them to the

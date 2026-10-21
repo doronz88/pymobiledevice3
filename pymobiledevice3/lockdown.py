@@ -442,7 +442,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
             if not response or response.get("Result") != "Success":
                 raise CannotStopSessionError()
             return response
-        raise CannotStopSessionError("No active session")
+        raise CannotStopSessionError("Cannot stop the lockdown session: no session is active.")
 
     async def validate_pairing(self) -> bool:
         """Validate the existing pairing and establish a session with the device.
@@ -578,7 +578,9 @@ class LockdownClient(ABC, LockdownServiceProvider):
         keybag_data = Path(keybag_file).read_bytes()
         private_key = serialization.load_pem_private_key(keybag_data, password=None)
         if not isinstance(private_key, (RSAPrivateKey, EllipticCurvePrivateKey)):
-            raise PairingError(f"unsupported supervisor private key type: {type(private_key).__name__}")
+            raise PairingError(
+                f"The supervisor keybag must hold an RSA or EC private key, not {type(private_key).__name__}."
+            )
         cer = x509.load_pem_x509_certificate(keybag_data)
         public_key = cer.public_bytes(Encoding.DER)
 
@@ -736,9 +738,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         response = await self._request("StartService", options)
         if not response or response.get("Error"):
             if response.get("Error", "") == "PasswordProtected":
-                raise PasswordRequiredError(
-                    "your device is protected with password, please enter password in device and try again"
-                )
+                raise PasswordRequiredError("The device is protected with a passcode. Unlock it and try again.")
             raise StartServiceError(name, response.get("Error", ""))
         return response
 

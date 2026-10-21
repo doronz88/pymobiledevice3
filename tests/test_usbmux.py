@@ -138,7 +138,7 @@ async def test_binary_mux_listen_and_device_updates() -> None:
         assert mux.devices == []
 
         server.sendall(_packet(UsbmuxdMessageType.RESULT, struct.pack("<I", UsbmuxdResult.BADDEV), tag=2))
-        with pytest.raises(BadDevError, match="LISTEN failed: error BADDEV"):
+        with pytest.raises(BadDevError, match="usbmuxd rejected the LISTEN request: BADDEV"):
             await mux.listen()
     finally:
         client.close()

@@ -422,7 +422,7 @@ class TunneldCore:
                 await asyncio.sleep(USBMUX_INTERVAL)
             except (BlockingIOError, BinaryParseError, MuxException) as e:
                 # Connection lost - will reconnect on next iteration.
-                # MuxException("socket connection broken") is raised when usbmuxd drops the
+                # MuxException("usbmuxd closed the connection.") is raised when usbmuxd drops the
                 # listen socket on device replug/reboot (notably on Linux); reconnect instead
                 # of letting the monitor task die (see issue #1742).
                 logger.debug(f"usbmux connection error: {e}, reconnecting...")

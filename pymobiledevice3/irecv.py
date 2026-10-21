@@ -89,7 +89,7 @@ class IRecv:
         :raises IRecvNoDeviceConnectedError: if no device is connected (before/after ``_reinit``).
         """
         if self._device is None:
-            raise IRecvNoDeviceConnectedError("no device is connected")
+            raise IRecvNoDeviceConnectedError("No device in Recovery or DFU mode is connected.")
         return self._device
 
     @property
@@ -99,7 +99,7 @@ class IRecv:
         :raises IRecvNoDeviceConnectedError: if no device is connected.
         """
         if self._mode is None:
-            raise IRecvNoDeviceConnectedError("no device is connected")
+            raise IRecvNoDeviceConnectedError("No device in Recovery or DFU mode is connected.")
         return self._mode
 
     @property
@@ -192,10 +192,16 @@ class IRecv:
                 pass
             elif state == 10:
                 self.ctrl_transfer(0x21, 4)
-                raise PyMobileDevice3Exception("DFU ERROR, issuing CLRSTATUS")
+                raise PyMobileDevice3Exception(
+                    "The device in DFU mode was in an error state, so the upload did not start. The error was "
+                    "cleared; retry the upload."
+                )
             else:
                 self.ctrl_transfer(0x21, 6)
-                raise PyMobileDevice3Exception(f"Unexpected state {state}, issuing ABORT")
+                raise PyMobileDevice3Exception(
+                    f"The device in DFU mode was not ready for an upload (DFU state {state}), so it was aborted. "
+                    "Retry the upload."
+                )
 
         crc = -1
 
@@ -295,7 +301,7 @@ class IRecv:
         self._mode = None
         self._find(ecid=ecid, timeout=timeout, is_recovery=is_recovery)
         if self._device is None or self._mode is None:
-            raise IRecvNoDeviceConnectedError("Failed to find a connected iDevice")
+            raise IRecvNoDeviceConnectedError("No device in Recovery or DFU mode was found.")
         self._populate_device_info()
 
         self.ap_nonce = self._copy_nonce_with_tag("NONC")
@@ -313,7 +319,7 @@ class IRecv:
     def _copy_nonce_with_tag(self, tag: str):
         device_string = get_string(self.device, 1)
         if device_string is None:
-            raise IRecvError("failed to read the device string descriptor")
+            raise IRecvError("Could not read the USB string descriptor of the device in Recovery/DFU mode.")
         if tag in device_string:
             return binascii.unhexlify(device_string.split(f"{tag}:")[1].split(" ")[0])
         else:
@@ -371,7 +377,7 @@ class IRecv:
     def _populate_device_info(self):
         serial_number = cast(Optional[str], self.device.serial_number)
         if serial_number is None:
-            raise IRecvError("device did not report a serial number")
+            raise IRecvError("The device in Recovery/DFU mode did not report its USB serial number.")
         for component in serial_number.split(" "):
             k, v = component.split(":")
             if k in ("SRNM", "SRTG") and "[" in v:

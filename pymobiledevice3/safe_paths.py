@@ -32,10 +32,10 @@ def validate_device_filename(name: str) -> str:
     identifier, and that is an IPv6 address for a device found over Wi-Fi.
     """
     if not name or name in (".", "..") or any(c in name for c in _FORBIDDEN_IN_FILENAME):
-        raise DevicePathError(f"Invalid device filename: {name!r}")
+        raise DevicePathError(f"not a valid single file name: {name!r}")
     if PureWindowsPath(name).drive or _is_windows_device_name(name):
         # "C:" joined onto a directory is drive-relative on Windows and discards the directory
-        raise DevicePathError(f"Invalid device filename: {name!r}")
+        raise DevicePathError(f"not a valid single file name: {name!r}")
     return name
 
 
@@ -54,17 +54,17 @@ def resolve_device_path(root: Path, device_path: str) -> Path:
     a link's target.
     """
     if "\0" in device_path:
-        raise DevicePathError(f"Invalid device path: {device_path!r}")
+        raise DevicePathError(f"it contains a NUL character: {device_path!r}")
     # Windows path rules are a superset of POSIX ones (both separators, drives, UNC), so one view
     # of the string classifies it the same way on every host.
     windows_path = PureWindowsPath(device_path)
     if windows_path.drive or windows_path.root:
-        raise DevicePathError(f"Absolute device path: {device_path!r}")
+        raise DevicePathError(f"absolute paths are not allowed: {device_path!r}")
     if ".." in windows_path.parts:
-        raise DevicePathError(f"Device path traverses upwards: {device_path!r}")
+        raise DevicePathError(f"'..' components are not allowed: {device_path!r}")
     if any(_is_windows_device_name(part) for part in windows_path.parts):
-        raise DevicePathError(f"Device path names a Windows device: {device_path!r}")
+        raise DevicePathError(f"it names a reserved Windows device: {device_path!r}")
     path = root / device_path
     if not path.resolve().is_relative_to(root.resolve()):
-        raise DevicePathError(f"Device path escapes {root}: {device_path!r}")
+        raise DevicePathError(f"it leads outside {root}: {device_path!r}")
     return path
