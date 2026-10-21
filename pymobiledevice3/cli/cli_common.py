@@ -34,7 +34,7 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, TunneldAddress, get_tunneld_devices
-from pymobiledevice3.utils import ask_prompt, get_asyncio_loop, hexdump
+from pymobiledevice3.utils import ask_prompt, cancel_on_sigint, get_asyncio_loop, hexdump
 
 UDID_ENV_VAR = "PYMOBILEDEVICE3_UDID"
 # With `--reconnect`: accept the first available device on reconnect, even when its UDID differs
@@ -240,7 +240,10 @@ def async_command(func: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, R]:
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         task = cli_loop.create_task(func(*args, **kwargs))
         try:
-            return cli_loop.run_until_complete(task)
+            with cancel_on_sigint(task):
+                return cli_loop.run_until_complete(task)
+        except asyncio.CancelledError:
+            raise typer.Exit(code=130) from None
         except KeyboardInterrupt:
             # Ensure graceful coroutine finalization on Ctrl-C; otherwise Python
             # may report "coroutine ignored GeneratorExit" during GC shutdown.

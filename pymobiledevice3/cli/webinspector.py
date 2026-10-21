@@ -43,7 +43,7 @@ from pymobiledevice3.services.web_protocol.cdp_trace import ProtocolTrace
 from pymobiledevice3.services.web_protocol.driver import By, Cookie, WebDriver
 from pymobiledevice3.services.web_protocol.inspector_session import InspectorSession
 from pymobiledevice3.services.webinspector import SAFARI, ApplicationPage, WebinspectorService
-from pymobiledevice3.utils import start_ipython_shell
+from pymobiledevice3.utils import cancel_on_sigint, run_in_loop, start_ipython_shell
 
 SCRIPT = Template("""
 function inspectedPage_evalResult_getCompletions(primitiveType) {
@@ -306,8 +306,7 @@ driver.add_cookie(
 
 @cli.command()
 @catch_errors
-@async_command
-async def shell(
+def shell(
     service_provider: ServiceProviderDep,
     timeout: Annotated[
         float,
@@ -326,9 +325,12 @@ async def shell(
         Settings -> Safari -> Advanced -> Web Inspector
         Settings -> Safari -> Advanced -> Remote Automation
     """
-    async with webinspector_service(service_provider) as inspector:
-        safari = await inspector.open_app(SAFARI)
-        session = await inspector.automation_session(safari)
+    # Not an async command: IPython needs the event loop idle, and runs it itself for each awaited cell.
+    inspector = WebinspectorService(lockdown=service_provider)
+    run_in_loop(inspector.connect())
+    try:
+        safari = run_in_loop(inspector.open_app(SAFARI))
+        session = run_in_loop(inspector.automation_session(safari))
         driver = WebDriver(session)
         try:
             start_ipython_shell(
@@ -342,7 +344,9 @@ async def shell(
                 },
             )
         finally:
-            await session.stop_session()
+            run_in_loop(session.stop_session())
+    finally:
+        run_in_loop(inspector.close())
 
 
 @cli.command()
@@ -619,7 +623,15 @@ class JsShell(ABC):
         if not exp.strip():
             return
 
-        result = await self.evaluate_expression(exp)
+        # Ctrl-C abandons this evaluation, not the shell.
+        evaluation = asyncio.ensure_future(self.evaluate_expression(exp))
+        with cancel_on_sigint(evaluation) as interrupted:
+            try:
+                result = await evaluation
+            except CancelledError:
+                if not interrupted():
+                    raise
+                return
         colorful_result = cast(
             str,
             highlight(

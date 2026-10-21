@@ -1,12 +1,15 @@
 import asyncio
+import contextlib
 import inspect
 import os
+import signal
 import struct
 import sys
 import traceback
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Generator
 from functools import wraps
 from pathlib import Path
+from types import FrameType
 from typing import Any, Callable, Optional, TypeVar, Union, cast, overload
 
 import questionary
@@ -175,6 +178,44 @@ def get_asyncio_loop() -> asyncio.AbstractEventLoop:
 
 def run_in_loop(coro: Coroutine[Any, Any, Any]):
     return get_asyncio_loop().run_until_complete(coro)
+
+
+@contextlib.contextmanager
+def sigint_handler(handler: Callable[[int, Optional[FrameType]], Any]) -> Generator[None, None, None]:
+    """Handle SIGINT with ``handler`` while inside, unless SIGINT is ignored or this is not the main thread."""
+    previous = signal.getsignal(signal.SIGINT)
+    try:
+        if previous is not signal.SIG_IGN:
+            signal.signal(signal.SIGINT, handler)
+    except ValueError:  # not the main thread: signals are only handled there
+        previous = signal.SIG_IGN
+    try:
+        yield
+    finally:
+        if previous is not signal.SIG_IGN:
+            # None: the previous handler was not installed from Python.
+            signal.signal(signal.SIGINT, signal.SIG_DFL if previous is None else previous)
+
+
+@contextlib.contextmanager
+def cancel_on_sigint(task: "asyncio.Future[Any]") -> Generator[Callable[[], bool], None, None]:
+    """Make the first Ctrl-C cancel ``task``, and another raise ``KeyboardInterrupt``, as ``asyncio.run`` does.
+
+    Left to Python, Ctrl-C raises ``KeyboardInterrupt`` wherever the main thread happens to be. Inside a
+    task's step or a transport callback, the task keeps it as its result and whatever awaits that task
+    raises it again, so ``finally`` blocks stop halfway. Yields whether Ctrl-C was pressed.
+    """
+    interrupted = False
+
+    def handler(signum: int, frame: Optional[FrameType]) -> None:
+        nonlocal interrupted
+        if interrupted or task.done():
+            raise KeyboardInterrupt
+        interrupted = True
+        task.get_loop().call_soon_threadsafe(task.cancel)
+
+    with sigint_handler(handler):
+        yield lambda: interrupted
 
 
 def ask_prompt(question: questionary.Question) -> Any:

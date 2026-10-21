@@ -1,3 +1,6 @@
+import asyncio
+import contextlib
+import signal
 import subprocess
 import zipfile
 from pathlib import Path
@@ -9,6 +12,7 @@ import typer
 
 from pymobiledevice3.cli import backup, remote, webinspector
 from pymobiledevice3.cli import lockdown as lockdown_cli
+from pymobiledevice3.cli.cli_common import async_command
 from pymobiledevice3.cli.developer import arbitration, debugserver
 from pymobiledevice3.cli.developer import dvt as dvt_cli
 from pymobiledevice3.cli.developer.dvt import core_profile_session
@@ -276,3 +280,30 @@ def test_debugserver_lldb_exits_nonzero_when_the_app_is_not_installed(monkeypatc
         _debugserver_lldb("com.example.app")
 
     assert exc_info.value.exit_code == 1
+
+
+def test_async_command_lets_the_command_clean_up_on_ctrl_c() -> None:
+    cleaned_up: list[bool] = []
+
+    @async_command
+    async def command() -> None:
+        async def reader() -> None:
+            # Ctrl-C landing inside another task's step, as it does in a busy transport callback.
+            signal.raise_signal(signal.SIGINT)
+            await asyncio.sleep(10)
+
+        task = asyncio.create_task(reader())
+        try:
+            await asyncio.sleep(10)
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            cleaned_up.append(True)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        command()
+
+    assert exc_info.value.exit_code == 130
+    assert cleaned_up == [True]
+    assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
