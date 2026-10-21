@@ -15,7 +15,6 @@ from pymobiledevice3.exceptions import (
     RemoteAutomationNotEnabledError,
     WebInspectorNotEnabledError,
 )
-from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.services.notification_proxy import NotificationProxyService
@@ -190,7 +189,7 @@ class WebinspectorService(LockdownService):
     RSD_SERVICE_NAME = "com.apple.webinspector.shim.remote"
 
     def __init__(self, lockdown: LockdownServiceProvider) -> None:
-        super().__init__(lockdown, self.SERVICE_NAME if isinstance(lockdown, LockdownClient) else self.RSD_SERVICE_NAME)
+        super().__init__(lockdown)
         self.connection_id = str(uuid.uuid4()).upper()
         self.state: Optional[str] = None
         self.connected_application: dict[str, Application] = {}

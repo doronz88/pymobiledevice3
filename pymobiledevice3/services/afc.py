@@ -47,7 +47,6 @@ from pygnuutils.ls import Ls, LsStub
 from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError, ConnectionTerminatedError
 from pymobiledevice3.interactive_shell import Arg, CompletionContext, InteractiveShell, shell_command
-from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 from pymobiledevice3.safe_paths import device_file_path, validate_device_filename
@@ -290,8 +289,6 @@ class AfcService(LockdownService):
         :param lockdown: Lockdown service provider for establishing connection
         :param service_name: Optional service name override. Auto-detected if None
         """
-        if service_name is None:
-            service_name = self.SERVICE_NAME if isinstance(lockdown, LockdownClient) else self.RSD_SERVICE_NAME
         super().__init__(lockdown, service_name)
         self.packet_num = 0
         # Demux state — populated in __aenter__, torn down in __aexit__

@@ -2,10 +2,11 @@ import asyncio
 import logging
 from inspect import isawaitable
 from types import TracebackType
-from typing import Any, Optional, Union
+from typing import Any, ClassVar, Optional, Union
 
 from typing_extensions import Self
 
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.service_connection import ServiceConnection
 
@@ -52,10 +53,15 @@ class LockdownService:
     :ivar logger: logger named after the subclass module.
     """
 
+    # The service's name over a direct lockdown connection, and over RSD; used when no
+    # ``service_name`` is given.
+    SERVICE_NAME: ClassVar[str]
+    RSD_SERVICE_NAME: ClassVar[str]
+
     def __init__(
         self,
         lockdown: LockdownServiceProvider,
-        service_name: str,
+        service_name: Optional[str] = None,
         is_developer_service: bool = False,
         service: Optional[ServiceConnection] = None,
         include_escrow_bag: bool = False,
@@ -63,6 +69,7 @@ class LockdownService:
         """
         :param lockdown: service provider used to start the service and communicate with the device.
         :param service_name: name of the lockdown service to wrap; started lazily on first connection.
+            Defaults to ``SERVICE_NAME`` over a `LockdownClient` and ``RSD_SERVICE_NAME`` otherwise.
         :param is_developer_service: when True, the service is started via the developer-service path,
             which requires the DeveloperDiskImage to be mounted.
         :param service: an already-established service connection. When provided, no connection is
@@ -71,6 +78,8 @@ class LockdownService:
         """
         self._is_developer_service = is_developer_service
         self._include_escrow_bag = include_escrow_bag
+        if service_name is None:
+            service_name = self.SERVICE_NAME if isinstance(lockdown, LockdownClient) else self.RSD_SERVICE_NAME
         self.service_name: str = service_name
         self.lockdown: LockdownServiceProvider = lockdown
         self._service: Optional[ServiceConnection] = service

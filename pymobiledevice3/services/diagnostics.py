@@ -1,8 +1,6 @@
 from typing import Any, Optional
 
 from pymobiledevice3.exceptions import DeprecationError, PyMobileDevice3Exception
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 MobileGestaltKeys = [
@@ -960,15 +958,6 @@ class DiagnosticsService(LockdownService):
     RSD_SERVICE_NAME = "com.apple.mobile.diagnostics_relay.shim.remote"
     SERVICE_NAME = "com.apple.mobile.diagnostics_relay"
     OLD_SERVICE_NAME = "com.apple.iosdiagnostics.relay"
-
-    def __init__(self, lockdown: LockdownServiceProvider):
-        """
-        :param lockdown: Lockdown service provider used to establish the diagnostics relay connection. When it is a
-            `LockdownClient`, the classic lockdown service name is used; otherwise the
-            RemoteXPC (RSD) service name is used.
-        """
-        service_name = self.SERVICE_NAME if isinstance(lockdown, LockdownClient) else self.RSD_SERVICE_NAME
-        super().__init__(lockdown, service_name, service=None)
 
     async def _send_recv(self, request: dict[str, Any]) -> dict[str, Any]:
         return await self.service.send_recv_plist(request)
