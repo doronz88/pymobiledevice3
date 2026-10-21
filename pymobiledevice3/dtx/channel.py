@@ -301,10 +301,6 @@ class DTXChannel:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self._connection.cancel_channel(self)
 
-    def _close(self) -> None:
-        """Alias for :meth:`_shutdown` used by connection teardown."""
-        self._shutdown("connection closed")
-
     def _check_open(self) -> None:
         if self._closed:
             raise ConnectionTerminatedError("Channel is closed")

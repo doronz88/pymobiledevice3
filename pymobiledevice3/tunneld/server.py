@@ -63,10 +63,6 @@ from pymobiledevice3.utils import current_task_name as _current_task_name
 
 logger = logging.getLogger(__name__)
 
-# bugfix: after the device reboots, it might take some time for remoted to start answering the bonjour queries
-REATTEMPT_INTERVAL = 5
-REATTEMPT_COUNT = 5
-
 REMOTEPAIRING_INTERVAL = 5
 MOBDEV2_INTERVAL = 5
 

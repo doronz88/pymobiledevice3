@@ -769,11 +769,6 @@ ServiceProviderDep = Annotated[
     Depends(any_service_provider_dependency),
 ]
 
-NoAutoPairServiceProviderDep = Annotated[
-    LockdownServiceProvider,
-    Depends(no_autopair_service_provider_dependency),
-]
-
 LockdownClientDep = Annotated[
     LockdownClient,
     Depends(lockdown_client_dependency),
