@@ -140,9 +140,12 @@ class _NoParentError(Exception):
 _HOST_MAC = bytes.fromhex("be5a3ec49b16")
 
 
-def _ncm_interface(name, serial, flags, link_status=3, vendor="Apple Inc.", mac=_HOST_MAC):
+def _ncm_interface(name, serial, flags, link_status=3, vendor="Apple Inc.", mac=_HOST_MAC, wait_bsd_start=None):
     device = _IOEntry({"USB Vendor Name": vendor, "USB Serial Number": serial})
-    controller = _IOEntry({"NetworkInterfaceFlags": flags, "IOLinkStatus": link_status, "IOMACAddress": mac})
+    controller_properties = {"NetworkInterfaceFlags": flags, "IOLinkStatus": link_status, "IOMACAddress": mac}
+    if wait_bsd_start is not None:
+        controller_properties["waitBsdStart"] = wait_bsd_start
+    controller = _IOEntry(controller_properties)
     return _IOEntry({"BSD Name": name}, {"IOUSBHostDevice": device, "IONetworkController": controller})
 
 
@@ -175,7 +178,32 @@ def test_darwin_usb_rsd_addresses_follow_remoted(monkeypatch):
     }
 
 
-def test_darwin_usb_rsd_addresses_cannot_tell_without_a_private_ncm_function(monkeypatch):
+def test_darwin_usb_rsd_addresses_also_recognize_rsd_by_wait_bsd_start(monkeypatch):
+    # A release that marks the RSD function only with waitBsdStart: its address derives the same way
+    # (seen on every RSD interface checked, macOS 26.2 and 27, where both markers are set).
+    from types import SimpleNamespace
+
+    from pymobiledevice3.osu import posix_util
+
+    serial = "00008150001074523440401C"
+    entries = [
+        _ncm_interface("en14", serial, flags=0, wait_bsd_start=1477268727),
+        _ncm_interface("en10", serial, flags=0),
+    ]
+    adapters = [
+        SimpleNamespace(nice_name=name, ips=[SimpleNamespace(is_IPv4=False, ip=("fe80::1", 0, 0))])
+        for name in ("en14", "en10")
+    ]
+    monkeypatch.setattr(posix_util, "get_io_services_by_type", lambda service_type: iter(entries))
+    monkeypatch.setattr(posix_util, "IORegistryException", _NoParentError, raising=False)
+    monkeypatch.setattr(posix_util, "get_adapters", lambda: adapters)
+
+    assert posix_util.Darwin().usb_rsd_addresses() == {
+        "00008150-001074523440401C": ["fe80::bc5a:3eff:fec4:9be9%en14"],
+    }
+
+
+def test_darwin_usb_rsd_addresses_cannot_tell_without_a_marked_ncm_function(monkeypatch):
     # macOS releases without the private/public split: remoted finds such devices over bonjour on the
     # public interface, so the caller must browse too rather than report no devices.
     from types import SimpleNamespace

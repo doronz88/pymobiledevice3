@@ -177,14 +177,16 @@ class Darwin(Posix):
     def usb_rsd_addresses(self) -> Optional[dict[str, list[str]]]:
         """Ask IOKit for each Apple USB device's RSD address, as remoted finds it, keyed by UDID.
 
-        A device brings up two NCM functions; the one serving RSD is flagged private
-        (``NetworkInterfaceFlags``). It counts once its link is active and the host side has its
-        link-local address, and the device's address is derived from ``IOMACAddress`` rather than
-        discovered (remoted does the same; neither bonjour nor neighbor discovery is involved).
+        A device brings up two NCM functions and only one serves RSD: it is flagged private
+        (``NetworkInterfaceFlags``) and its ``AppleUSBNCMData`` carries ``waitBsdStart`` (named
+        ``enN`` up to macOS 26, ``anriN`` on macOS 27; both markers seen on both). Either marker
+        identifies it, in case a release sets only one. It counts once its link is active and the
+        host side has its link-local address, and the device's address is derived from
+        ``IOMACAddress`` rather than discovered (remoted does the same; neither bonjour nor neighbor
+        discovery is involved).
 
-        ``None`` (the OS cannot tell) when a device has NCM interfaces but none flagged private, as
-        on macOS releases without that split (seen as ``anriN`` on macOS 27); there remoted itself
-        finds the device over bonjour on the public interface, so callers should too.
+        ``None`` (the OS cannot tell) when a device has NCM interfaces but none marked; there remoted
+        itself finds the device over bonjour on the public interface, so callers should too.
         """
         if get_io_services_by_type is None:
             return None
@@ -196,7 +198,7 @@ class Darwin(Posix):
         }
         addresses: dict[str, list[str]] = {}
         with_ncm: set[str] = set()
-        with_private_ncm: set[str] = set()
+        with_rsd_ncm: set[str] = set()
         for entry in get_io_services_by_type("IOEthernetInterface"):
             try:
                 device = entry.get_parent_by_type("IOService", "IOUSBHostDevice").properties
@@ -210,9 +212,10 @@ class Darwin(Posix):
             if serial is None or not _looks_like_udid(serial):
                 continue
             with_ncm.add(serial)
-            if not cast(int, controller.get("NetworkInterfaceFlags", 0)) & _NETWORK_INTERFACE_PRIVATE:
+            private = cast(int, controller.get("NetworkInterfaceFlags", 0)) & _NETWORK_INTERFACE_PRIVATE
+            if not private and "waitBsdStart" not in controller:
                 continue
-            with_private_ncm.add(serial)
+            with_rsd_ncm.add(serial)
             if cast(int, controller.get("IOLinkStatus", 0)) != _IO_NETWORK_LINK_VALID_AND_ACTIVE:
                 continue
             name = cast(Optional[str], entry.properties.get("BSD Name"))
@@ -220,7 +223,7 @@ class Darwin(Posix):
             if name is None or name not in host_link_local or mac is None or len(mac) != 6:
                 continue
             addresses.setdefault(_with_udid_separator(serial), []).append(f"{_device_link_local(mac)}%{name}")
-        if with_ncm - with_private_ncm:
+        if with_ncm - with_rsd_ncm:
             return None
         return addresses
 
