@@ -17,7 +17,12 @@ import requests
 from ipsw_parser.build_identity import BuildIdentity
 from ipsw_parser.ipsw import IPSW
 
-from pymobiledevice3.exceptions import ConnectionFailedError, NoDeviceConnectedError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import (
+    ConnectionFailedError,
+    NoDeviceConnectedError,
+    ProtocolError,
+    PyMobileDevice3Exception,
+)
 from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 from pymobiledevice3.restore.asr import DEFAULT_ASR_SYNC_PORT, ASRClient
 from pymobiledevice3.restore.base_restore import (
@@ -824,7 +829,7 @@ class Restore(BaseRestore):
             image_type_k = arguments["ImageType"]
 
         if image_type_k is None:
-            raise PyMobileDevice3Exception("The device requested image data without specifying an ImageType.")
+            raise ProtocolError("The device requested image data without specifying an ImageType.")
 
         if want_image_list is None and image_name is None:
             self.logger.info(f"About to send {image_data_k}...")

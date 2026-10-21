@@ -12,7 +12,7 @@ from io import BufferedWriter
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
 
-from pymobiledevice3.exceptions import NotEnoughDiskSpaceError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import NotEnoughDiskSpaceError, ProtocolError, PyMobileDevice3Exception
 from pymobiledevice3.safe_paths import resolve_device_path
 from pymobiledevice3.service_connection import ServiceConnection
 
@@ -219,7 +219,7 @@ class DeviceLink:
         await self.service.send_plist(["DLMessageVersionExchange", "DLVersionsOk", version_major])
         dl_message_device_ready = await self.receive_message()
         if dl_message_device_ready[0] != "DLMessageDeviceReady":
-            raise PyMobileDevice3Exception("The device did not report it was ready to start the session.")
+            raise ProtocolError("The device did not report it was ready to start the session.")
 
     async def send_process_message(self, message: Mapping[str, Any]) -> None:
         await self.service.send_plist(["DLMessageProcessMessage", message])

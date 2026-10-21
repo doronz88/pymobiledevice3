@@ -16,7 +16,6 @@ from pymobiledevice3.exceptions import (
     DeviceNotFoundError,
     NoDeviceConnectedError,
     ProtocolError,
-    PyMobileDevice3Exception,
 )
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.plist_types import PlistDict, PlistSendable, PlistValue
@@ -79,13 +78,9 @@ def parse_plist(payload: bytes) -> PlistValue:
         try:
             return plistlib.loads(payload)
         except plistlib.InvalidFileException as e:
-            raise PyMobileDevice3Exception(
-                f"The device sent a reply that is not a valid plist: {payload[:100].hex()}"
-            ) from e
+            raise ProtocolError(f"The device sent a reply that is not a valid plist: {payload[:100].hex()}") from e
     except plistlib.InvalidFileException as e:
-        raise PyMobileDevice3Exception(
-            f"The device sent a reply that is not a valid plist: {payload[:100].hex()}"
-        ) from e
+        raise ProtocolError(f"The device sent a reply that is not a valid plist: {payload[:100].hex()}") from e
 
 
 async def close_stream_writer(

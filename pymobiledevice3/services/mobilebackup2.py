@@ -28,6 +28,7 @@ from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
     LockdownError,
     NotConnectedError,
+    ProtocolError,
     PyMobileDevice3Exception,
 )
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -929,9 +930,7 @@ class Mobilebackup2Service(LockdownService):
 
         manifest_plist_path = Mobilebackup2Service._backup_manifest_plist_path(device_directory)
         if manifest_plist_path is None:
-            raise PyMobileDevice3Exception(
-                "The device sent the encrypted backup's Manifest.db before its Manifest.plist."
-            )
+            raise ProtocolError("The device sent the encrypted backup's Manifest.db before its Manifest.plist.")
 
         manifest = ManifestPlist.from_path(manifest_plist_path)
         keybag = Keybag.from_manifest(manifest, password)

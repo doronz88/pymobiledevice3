@@ -5,7 +5,7 @@ import os
 import plistlib
 import typing
 
-from pymobiledevice3.exceptions import ConnectionFailedError, NotConnectedError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import ConnectionFailedError, NotConnectedError, ProtocolError
 from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.utils import current_task_name
@@ -67,7 +67,7 @@ class ASRClient:
 
         command = data.get("Command")
         if command != "Initiate":
-            raise PyMobileDevice3Exception(f"ASR did not start with the expected Initiate command: {command}")
+            raise ProtocolError(f"ASR did not start with the expected Initiate command: {command}")
 
         self.checksum_chunks = data.get("Checksum Chunks", False)
         self.logger.debug(f"Checksum Chunks: {self.checksum_chunks}")
@@ -130,9 +130,7 @@ class ASRClient:
                 await self.handle_oob_data_request(packet, filesystem)
 
             else:
-                raise PyMobileDevice3Exception(
-                    f"ASR sent an unexpected packet while validating the filesystem: {packet}"
-                )
+                raise ProtocolError(f"ASR sent an unexpected packet while validating the filesystem: {packet}")
 
     async def send_payload(self, filesystem: typing.IO[bytes]) -> None:
         filesystem.seek(0, os.SEEK_END)

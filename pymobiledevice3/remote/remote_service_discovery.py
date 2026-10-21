@@ -15,7 +15,7 @@ from pymobiledevice3.exceptions import (
     NoDeviceConnectedError,
     NotConnectedError,
     NotPairedError,
-    PyMobileDevice3Exception,
+    ProtocolError,
     RemoteXPCHandshakeTimeoutError,
     StartServiceError,
 )
@@ -349,12 +349,10 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
                 checkin["EscrowBag"] = base64.b64decode(pairing_record["remote_unlock_host_key"])
             response = await service.send_recv_plist(checkin)
             if response["Request"] != "RSDCheckin":
-                raise PyMobileDevice3Exception(
-                    f"The device sent an unexpected reply to the {name} check-in: {response}"
-                )
+                raise ProtocolError(f"The device sent an unexpected reply to the {name} check-in: {response}")
             response = await service.recv_plist()
             if response["Request"] != "StartService":
-                raise PyMobileDevice3Exception(f"The device sent an unexpected reply while starting {name}: {response}")
+                raise ProtocolError(f"The device sent an unexpected reply while starting {name}: {response}")
             error = response.get("Error")
             if error is not None:
                 raise StartServiceError(name, cast(str, error))

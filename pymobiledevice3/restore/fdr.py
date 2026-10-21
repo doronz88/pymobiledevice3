@@ -12,6 +12,7 @@ from pymobiledevice3.exceptions import (
     ConnectionFailedError,
     ConnectionTerminatedError,
     NoDeviceConnectedError,
+    ProtocolError,
     PyMobileDevice3Exception,
 )
 from pymobiledevice3.service_connection import ServiceConnection
@@ -112,7 +113,7 @@ class FDRClient:
         identifier = reply["Identifier"]
 
         if cmd != "HelloConn":
-            raise PyMobileDevice3Exception(f"The device did not answer the FDR handshake with HelloConn: {cmd}")
+            raise ProtocolError(f"The device did not answer the FDR handshake with HelloConn: {cmd}")
         if identifier:
             logger.debug(f"got device identifier: {identifier}")
 

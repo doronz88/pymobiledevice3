@@ -1218,7 +1218,7 @@ class RemotePairingProtocol(StartTcpTunnel):
                 .get("userInfo", {})
                 .get("NSLocalizedDescription")
             )
-        raise PyMobileDevice3Exception(f"The device sent an unexpected pairing message: {response}")
+        raise ProtocolError(f"The device sent an unexpected pairing message: {response}")
 
     async def _send_receive_plain_request(self, plain_request: dict[str, Any]):
         await self._send_plain_request(plain_request)
@@ -2098,7 +2098,7 @@ class PairableHost:
                 .get("userInfo", {})
                 .get("NSLocalizedDescription")
             )
-        raise PyMobileDevice3Exception(f"The device sent an unexpected pairing message: {response}")
+        raise ProtocolError(f"The device sent an unexpected pairing message: {response}")
 
     async def _send_plain(self, value: dict[str, Any]) -> None:
         envelope: dict[str, Any] = {
