@@ -90,7 +90,7 @@ class TSSResponse(dict[str, typing.Any]):
         ticket = self.get("ApImg4Ticket")
 
         if ticket is None:
-            raise PyMobileDevice3Exception("TSS response doesn't contain a ApImg4Ticket")
+            raise PyMobileDevice3Exception("The TSS response does not contain an ApImg4Ticket.")
 
         return ticket
 
@@ -808,7 +808,9 @@ class TSSRequest:
                 break
 
         if comp_node is None or result_comp_name is None:
-            raise PyMobileDevice3Exception(f"No Yonkers node for {isprod}/{fabrevision}")
+            raise PyMobileDevice3Exception(
+                f"The build manifest has no Yonkers firmware for this device (production: {isprod}, fab revision: {fabrevision})."
+            )
 
         # add Yonkers,SysTopPatch
         comp_dict = dict(comp_node)
@@ -1149,7 +1151,7 @@ class TSSRequest:
 
         message = content.split(b"MESSAGE=", 1)[1].split(b"&", 1)[0].decode()
         if message != "SUCCESS":
-            raise TSSError(f"server replied: {message}")
+            raise TSSError(f"Apple's signing server (TSS) refused the request: {message}")
 
         return TSSResponse(plistlib.loads(content.split(b"REQUEST_STRING=", 1)[1]))
 
