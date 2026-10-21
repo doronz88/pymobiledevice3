@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from packaging.version import Version
 
-from pymobiledevice3.exceptions import StartServiceError
+from pymobiledevice3.exceptions import MissingValueError, StartServiceError
 from pymobiledevice3.service_connection import ServiceConnection
 
 # Developer mode arrived in iOS 16; before that there is nothing to enable or to query.
@@ -158,7 +158,11 @@ class LockdownServiceProvider:
 
         :returns: True if Wi-Fi connections are enabled, False otherwise.
         """
-        value = await self.get_value(domain="com.apple.mobile.wireless_lockdown", key="EnableWifiConnections")
+        try:
+            value = await self.get_value(domain="com.apple.mobile.wireless_lockdown", key="EnableWifiConnections")
+        except MissingValueError:
+            # never set on this device: Wi-Fi connections are off
+            return False
         return bool(value)
 
     async def get_developer_mode_status(self) -> bool:
