@@ -13,8 +13,6 @@ from tarfile import TarFile
 from bytestruct import BinaryStruct, Bytes, OpenIntEnum, u8, u16, u32, u64, uuid_t
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError, DevicePathError, ProtocolError
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.safe_paths import resolve_device_path
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.utils import try_decode
@@ -224,12 +222,6 @@ class OsTraceService(LockdownService):
 
     SERVICE_NAME = "com.apple.os_trace_relay"
     RSD_SERVICE_NAME = "com.apple.os_trace_relay.shim.remote"
-
-    def __init__(self, lockdown: LockdownServiceProvider):
-        if isinstance(lockdown, LockdownClient):
-            super().__init__(lockdown, self.SERVICE_NAME)
-        else:
-            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     async def get_pid_list(self):
         """

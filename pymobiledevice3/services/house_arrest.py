@@ -3,7 +3,6 @@ from collections.abc import Iterable
 from bytestruct import BinaryDataError
 
 from pymobiledevice3.exceptions import AppNotInstalledError, PyMobileDevice3Exception
-from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcService, AfcShell
 from pymobiledevice3.utils import get_asyncio_loop
@@ -34,10 +33,7 @@ class HouseArrestService(AfcService):
     RSD_SERVICE_NAME = "com.apple.mobile.house_arrest.shim.remote"
 
     def __init__(self, lockdown: LockdownServiceProvider, documents_only: bool = False):
-        if isinstance(lockdown, LockdownClient):
-            super().__init__(lockdown, self.SERVICE_NAME)
-        else:
-            super().__init__(lockdown, self.RSD_SERVICE_NAME)
+        super().__init__(lockdown)
         self.documents_only = documents_only
 
     @classmethod

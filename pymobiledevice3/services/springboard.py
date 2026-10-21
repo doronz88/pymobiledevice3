@@ -1,8 +1,6 @@
 from enum import IntEnum
 from typing import Any, Optional, Union, cast
 
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.service_connection import build_plist
 from pymobiledevice3.services.lockdown_service import LockdownService
 
@@ -26,12 +24,6 @@ class SpringBoardServicesService(LockdownService):
 
     RSD_SERVICE_NAME = "com.apple.springboardservices.shim.remote"
     SERVICE_NAME = "com.apple.springboardservices"
-
-    def __init__(self, lockdown: LockdownServiceProvider) -> None:
-        if isinstance(lockdown, LockdownClient):
-            super().__init__(lockdown, self.SERVICE_NAME)
-        else:
-            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     async def get_icon_state(self, format_version: str = "2") -> list[Any]:
         """

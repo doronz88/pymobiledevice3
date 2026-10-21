@@ -24,7 +24,6 @@ from pymobiledevice3.exceptions import (
     RSDRequiredError,
     UnsupportedCommandError,
 )
-from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.restore.tss import TSSRequest
@@ -55,10 +54,7 @@ class MobileImageMounterService(LockdownService):
     IMAGE_TYPE: ClassVar[Optional[str]] = None
 
     def __init__(self, lockdown: LockdownServiceProvider):
-        if isinstance(lockdown, LockdownClient):
-            super().__init__(lockdown, self.SERVICE_NAME)
-        else:
-            super().__init__(lockdown, self.RSD_SERVICE_NAME)
+        super().__init__(lockdown)
         self._copy_devices_unsupported = False
 
     async def _send_recv(self, request: dict[str, Any]) -> dict[str, Any]:

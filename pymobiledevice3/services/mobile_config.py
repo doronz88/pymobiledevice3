@@ -12,8 +12,6 @@ from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7Options, PKCS7SignatureBuilder
 
 from pymobiledevice3.exceptions import CloudConfigurationAlreadyPresentError, ConnectionTerminatedError, ProfileError
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 ERROR_CLOUD_CONFIGURATION_ALREADY_PRESENT = 14002
@@ -43,12 +41,6 @@ class MobileConfigService(LockdownService):
 
     SERVICE_NAME = "com.apple.mobile.MCInstall"
     RSD_SERVICE_NAME = "com.apple.mobile.MCInstall.shim.remote"
-
-    def __init__(self, lockdown: LockdownServiceProvider) -> None:
-        if isinstance(lockdown, LockdownClient):
-            super().__init__(lockdown, self.SERVICE_NAME)
-        else:
-            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     async def hello(self) -> None:
         """Perform the ``HelloHostIdentifier`` handshake with the service."""

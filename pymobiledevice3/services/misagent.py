@@ -2,8 +2,6 @@ import plistlib
 from typing import IO, Any, cast
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 
@@ -35,12 +33,6 @@ class MisagentService(LockdownService):
 
     SERVICE_NAME = "com.apple.misagent"
     RSD_SERVICE_NAME = "com.apple.misagent.shim.remote"
-
-    def __init__(self, lockdown: LockdownServiceProvider):
-        if isinstance(lockdown, LockdownClient):
-            super().__init__(lockdown, self.SERVICE_NAME)
-        else:
-            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     async def install(self, plist: IO[bytes]) -> dict[str, Any]:
         """

@@ -10,8 +10,6 @@ import pcapng.blocks as blocks
 from bytestruct import BinaryStruct, ByteReader, BytesLike, PaddedString, u8, u16, u32, u32le
 from pcapng import FileWriter
 
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 INTERFACE_NAMES = enum.Enum(
@@ -356,12 +354,6 @@ class PcapdService(LockdownService):
 
     RSD_SERVICE_NAME = "com.apple.pcapd.shim.remote"
     SERVICE_NAME = "com.apple.pcapd"
-
-    def __init__(self, lockdown: LockdownServiceProvider):
-        if isinstance(lockdown, LockdownClient):
-            super().__init__(lockdown, self.SERVICE_NAME)
-        else:
-            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     async def watch(
         self, packets_count: int = -1, process: Optional[str] = None, interface_name: Optional[str] = None

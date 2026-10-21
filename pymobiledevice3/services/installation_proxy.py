@@ -8,8 +8,6 @@ from typing import Any, Callable, Optional, cast
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from pymobiledevice3.exceptions import AppInstallError
-from pymobiledevice3.lockdown import LockdownClient
-from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.plist_types import PlistSendable
 from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -75,12 +73,6 @@ class InstallationProxyService(LockdownService):
 
     SERVICE_NAME = "com.apple.mobile.installation_proxy"
     RSD_SERVICE_NAME = "com.apple.mobile.installation_proxy.shim.remote"
-
-    def __init__(self, lockdown: LockdownServiceProvider):
-        if isinstance(lockdown, LockdownClient):
-            super().__init__(lockdown, self.SERVICE_NAME)
-        else:
-            super().__init__(lockdown, self.RSD_SERVICE_NAME)
 
     async def _watch_completion(self, handler: Optional[Callable[..., Any]] = None, *args: Any) -> None:
         while True:

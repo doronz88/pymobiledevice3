@@ -30,7 +30,6 @@ from pymobiledevice3.exceptions import (
     NotConnectedError,
     PyMobileDevice3Exception,
 )
-from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.safe_paths import validate_device_filename
 from pymobiledevice3.services.afc import AFC_LOCK_EX, AFC_LOCK_UN, AfcError, AfcService
@@ -191,10 +190,7 @@ class Mobilebackup2Service(LockdownService):
     RSD_SERVICE_NAME = "com.apple.mobilebackup2.shim.remote"
 
     def __init__(self, lockdown: LockdownServiceProvider) -> None:
-        if isinstance(lockdown, LockdownClient):
-            super().__init__(lockdown, self.SERVICE_NAME, include_escrow_bag=True)
-        else:
-            super().__init__(lockdown, self.RSD_SERVICE_NAME, include_escrow_bag=True)
+        super().__init__(lockdown, include_escrow_bag=True)
 
     @property
     def _udid(self) -> str:
