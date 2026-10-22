@@ -5,7 +5,7 @@ import itertools
 import json
 import logging
 import re
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import partial
@@ -1282,7 +1282,7 @@ class CdpTarget:
             # keeps the page nudged until it answers (see _wake_late_replies).
             self._reply_wake_pending[message_id] = asyncio.get_event_loop().time()
             if self._reply_wake_task is None or self._reply_wake_task.done():
-                self._reply_wake_task = asyncio.ensure_future(self._wake_late_replies())
+                self._reply_wake_task = asyncio.create_task(self._wake_late_replies(), name="cdp-wake-late-replies")
                 self._background_tasks.add(self._reply_wake_task)
                 self._reply_wake_task.add_done_callback(self._background_tasks.discard)
         if record:
@@ -1425,10 +1425,10 @@ class CdpTarget:
             result["loaderId"] = self._loader_id
         await self.output_queue.put({"id": id_, "result": result})
 
-    def _spawn(self, coroutine: "Awaitable[None]") -> None:
+    def _spawn(self, coroutine: Coroutine[Any, Any, None]) -> None:
         """Run a coroutine detached from the loop that started it, keeping a reference so it is
         neither garbage collected mid-flight nor left running after the session closes."""
-        task = asyncio.ensure_future(coroutine)
+        task = asyncio.create_task(coroutine, name=f"cdp-{coroutine.__qualname__}")
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
@@ -3131,7 +3131,7 @@ class CdpTarget:
         soon as the reply is late frees it within milliseconds (see _nudge_target); nobody waits for the nudge's
         own reply, and a reply to an internal id nobody waits for is dropped on arrival.
         """
-        pending = asyncio.ensure_future(self._evaluate_json_in(context_id, expression))
+        pending = asyncio.create_task(self._evaluate_json_in(context_id, expression), name="cdp-key-handler-evaluate")
         done, _ = await asyncio.wait({pending}, timeout=KEY_HANDLER_WAKE_DELAY)
         if not done:
             await self._nudge_target()

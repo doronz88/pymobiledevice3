@@ -567,7 +567,7 @@ class UserspaceDialPlane:
                 writer.close()
                 cwriter.close()
                 raise ConnectionError("userspace dial plane is closed")
-            task = asyncio.ensure_future(self._relay_handler(port, creader, cwriter))
+            task = asyncio.create_task(self._relay_handler(port, creader, cwriter), name=f"userspace-relay-{port}")
             self._relay_tasks.add(task)
             task.add_done_callback(self._relay_tasks.discard)
             # A relay cancelled before its first step never runs its own cleanup.

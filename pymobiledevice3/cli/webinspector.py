@@ -505,8 +505,8 @@ async def cdp(
             ws="wsproto",
         )
     )
-    serve_task = asyncio.ensure_future(server.serve())
-    disconnect_task = asyncio.ensure_future(device_disconnected.wait())
+    serve_task = asyncio.create_task(server.serve(), name="cdp-server")
+    disconnect_task = asyncio.create_task(device_disconnected.wait(), name="cdp-device-disconnected")
     try:
         await asyncio.wait({serve_task, disconnect_task}, return_when=asyncio.FIRST_COMPLETED)
         if device_disconnected.is_set():
@@ -618,7 +618,7 @@ class JsShell(ABC):
             return
 
         # Ctrl-C abandons this evaluation, not the shell.
-        evaluation = asyncio.ensure_future(self.evaluate_expression(exp))
+        evaluation = asyncio.create_task(self.evaluate_expression(exp), name="js-shell-evaluate")
         with cancel_on_sigint(evaluation) as interrupted:
             try:
                 result = await evaluation
