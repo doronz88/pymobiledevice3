@@ -86,6 +86,28 @@ class MobileImageMounterService(LockdownService):
         except KeyError as e:
             raise MessageNotSupportedError("CopyDevices", response) from e
 
+    async def list_images(self) -> list[dict[str, Any]]:
+        """
+        List the images currently mounted on the device, also on devices without ``CopyDevices``.
+
+        Before iOS 14 the only image is the ``Developer`` one, so it is looked up instead and reported
+        with the fields ``CopyDevices`` gives it (``DiskImageType``, ``IsMounted``, ``ImageSignature``).
+
+        :returns: List of dictionaries, one per mounted image entry.
+        """
+        if not self._copy_devices_unsupported:
+            try:
+                return await self.copy_devices()
+            except MessageNotSupportedError:
+                # see is_image_mounted(): the legacy proxy hangs up after an unknown command
+                self._copy_devices_unsupported = True
+                await self.close()
+        try:
+            signature = await self.lookup_image("Developer")
+        except NotMountedError:
+            return []
+        return [{"DiskImageType": "Developer", "IsMounted": True, "ImageSignature": signature}]
+
     async def lookup_image(self, image_type: str) -> bytes:
         """
         Look up the signature of a mounted image by its type.
@@ -541,50 +563,46 @@ async def auto_mount_developer(
     before mounting.
 
     :param lockdown: Lockdown service provider for the target device.
-    :param xcode: Path to the Xcode app bundle to source images from. Defaults to
-        ``/Applications/Xcode.app`` or a created ``Xcode.app`` under the home folder.
+    :param xcode: Path to the Xcode app bundle to source images from, and to download a missing one
+        into. Defaults to ``/Applications/Xcode.app`` for an image it ships, and to a cache under the
+        home folder for one it does not (an installed Xcode is not ours to write into).
     :param version: iOS version (``major.minor``) to select the image for. Defaults to the device's
         product version.
     :raises AlreadyMountedError: If a Developer image is already mounted.
     :raises DeveloperDiskImageNotFoundError: If no matching image is available in the repository.
     """
-    if xcode is None:
-        # avoid "default"-ing this option, because Windows and Linux won't have this path
-        xcode_path = Path("/Applications/Xcode.app")
-        if not (xcode_path.exists()):
-            xcode_path = get_home_folder() / "Xcode.app"
-            xcode_path.mkdir(parents=True, exist_ok=True)
-        xcode = str(xcode_path)
-
-    image_mounter = DeveloperDiskImageMounter(lockdown=lockdown)
-    if await image_mounter.is_image_mounted("Developer"):
-        raise AlreadyMountedError()
-
     if version is None:
         product_version = Version(lockdown.product_version)
         version = f"{product_version.major}.{product_version.minor}"
-    image_dir = f"{xcode}/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/{version}"
-    image_path = f"{image_dir}/DeveloperDiskImage.dmg"
-    signature = f"{image_path}.signature"
-    developer_disk_image_dir = Path(image_path).parent
+    if xcode is not None:
+        image_path = _developer_disk_image_path(Path(xcode), version)
+    else:
+        # avoid "default"-ing this option, because Windows and Linux won't have this path
+        image_path = _developer_disk_image_path(Path("/Applications/Xcode.app"), version)
+        if not image_path.exists():
+            image_path = _developer_disk_image_path(get_home_folder() / "Xcode.app", version)
+    signature = image_path.with_name(f"{image_path.name}.signature")
 
-    image_path = Path(image_path)
-    signature = Path(signature)
+    async with DeveloperDiskImageMounter(lockdown=lockdown) as image_mounter:
+        if await image_mounter.is_image_mounted("Developer"):
+            raise AlreadyMountedError()
+        if not image_path.exists():
+            _download_developer_disk_image(version, image_path, signature)
+        await image_mounter.mount(image_path, signature)
 
-    if not image_path.exists():
-        # download the DeveloperDiskImage from our repository
-        repo = DeveloperDiskImageRepository.create()
-        developer_disk_image = repo.get_developer_disk_image(version)
 
-        if developer_disk_image is None:
-            raise DeveloperDiskImageNotFoundError()
+def _developer_disk_image_path(xcode: Path, version: str) -> Path:
+    return xcode / "Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport" / version / "DeveloperDiskImage.dmg"
 
-        # write it filesystem
-        developer_disk_image_dir.mkdir(exist_ok=True, parents=True)
-        image_path.write_bytes(developer_disk_image.image)
-        signature.write_bytes(developer_disk_image.signature)
 
-    await image_mounter.mount(image_path, signature)
+def _download_developer_disk_image(version: str, image_path: Path, signature: Path) -> None:
+    """Download the DeveloperDiskImage for ``version`` from our repository to ``image_path``."""
+    developer_disk_image = DeveloperDiskImageRepository.create().get_developer_disk_image(version)
+    if developer_disk_image is None:
+        raise DeveloperDiskImageNotFoundError()
+    image_path.parent.mkdir(exist_ok=True, parents=True)
+    image_path.write_bytes(developer_disk_image.image)
+    signature.write_bytes(developer_disk_image.signature)
 
 
 def fetch_personalized_ddi() -> tuple[Path, Path, Path]:
@@ -672,7 +690,8 @@ async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
         return
 
     image, build_manifest, trustcache = fetch_personalized_ddi()
-    await PersonalizedImageMounter(lockdown=lockdown).mount(image, build_manifest, trustcache)
+    async with PersonalizedImageMounter(lockdown=lockdown) as mounter:
+        await mounter.mount(image, build_manifest, trustcache)
 
 
 def uses_personalized_image(lockdown: LockdownServiceProvider) -> bool:

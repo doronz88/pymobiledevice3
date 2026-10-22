@@ -42,6 +42,7 @@ LOCKDOWN_PORT = 62078
 USBMUXD2_CONNECT_FIX_VERSION = "0.64"
 # usbmux performs no timeout of its own, and a device listed over Wi-Fi may simply be asleep.
 CONNECT_PROBE_TIMEOUT = 5.0
+MOUNTER_PROBE_TIMEOUT = 10.0
 # Widest title shipped, so every line in a section starts its detail at the same column.
 TITLE_COLUMN = 20
 
@@ -326,8 +327,21 @@ async def _developer_image_check(lockdown: LockdownClient) -> Check:
     cutoff moves.
     """
     image_type = image_type_for_device(lockdown)
-    async with MobileImageMounterService(lockdown=lockdown) as mounter:
-        mounted = await mounter.is_image_mounted(image_type)
+
+    async def is_mounted() -> bool:
+        async with MobileImageMounterService(lockdown=lockdown) as mounter:
+            return await mounter.is_image_mounted(image_type)
+
+    try:
+        mounted = await asyncio.wait_for(is_mounted(), timeout=MOUNTER_PROBE_TIMEOUT)
+    except asyncio.TimeoutError:
+        # Before iOS 14 the mounter serves one client at a time; another may be holding it.
+        return Check(
+            "Developer image",
+            Status.UNKNOWN,
+            f"the image mounter did not answer within {MOUNTER_PROBE_TIMEOUT:g} s",
+            hint="close other tools using the device's image mounter, or restart the device",
+        )
     if mounted:
         return Check("Developer image", Status.OK, f"a {image_type} image is mounted")
     return Check(
