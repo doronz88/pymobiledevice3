@@ -758,10 +758,13 @@ class LockdownClient(ABC, LockdownServiceProvider):
         """
         attr = await self.get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
         service_connection = await self.create_service_connection(attr["Port"])
-
-        if attr.get("EnableServiceSSL", False):
-            with self.ssl_file() as f:
-                await service_connection.ssl_start(f)
+        try:
+            if attr.get("EnableServiceSSL", False):
+                with self.ssl_file() as f:
+                    await service_connection.ssl_start(f)
+        except BaseException:
+            await service_connection.close()
+            raise
         return service_connection
 
     async def close(self) -> None:

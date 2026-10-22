@@ -132,6 +132,11 @@ class ServiceConnection:
         # multiple coroutines race to use a not-yet-started connection simultaneously.
         self._start_future: Optional[asyncio.Future[None]] = None
 
+        # The in-flight open_connection() binding the socket to the loop. Its transport owns the fd
+        # before it returns, so close() cancels it rather than closing the fd underneath it.
+        self._open_task: Optional[asyncio.Task[tuple[asyncio.StreamReader, asyncio.StreamWriter]]] = None
+        self._closed = False
+
         # Held across the full send→recv pair in send_recv_plist() so that concurrent
         # callers (e.g. LockdownClient shared by many tasks) are serialised automatically.
         self._transaction_lock = asyncio.Lock()
@@ -237,7 +242,18 @@ class ServiceConnection:
 
     async def close(self) -> None:
         """Asynchronously close the connection."""
+        self._closed = True
         try:
+            open_task = self._open_task
+            if open_task is not None:
+                # The transport open_connection() registered owns the fd: cancelling closes it,
+                # and one that already opened is closed through its writer. Closing only the
+                # socket would leave that transport live on an fd number the OS hands to the
+                # next socket.
+                open_task.cancel()
+                await asyncio.wait([open_task])
+                if not open_task.cancelled() and open_task.exception() is None:
+                    await close_stream_writer(open_task.result()[1])
             if self.writer is not None:
                 await close_stream_writer(self.writer)
             if self.socket is not None and self.socket.fileno() != -1:
@@ -498,11 +514,8 @@ class ServiceConnection:
         try:
             if self.reader is None:
                 # Socket not yet bound to the event loop — create SSL-aware streams directly.
-                self.reader, self.writer = await asyncio.open_connection(
-                    sock=self.socket,
-                    ssl=ssl_context,
-                    server_hostname="",
-                    ssl_handshake_timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT,
+                await self._open_streams(
+                    ssl=ssl_context, server_hostname="", ssl_handshake_timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT
                 )
             else:
                 # Socket already registered with the event loop — upgrade in-place.
@@ -534,6 +547,9 @@ class ServiceConnection:
                     )
                     if tls_transport is None:
                         raise ConnectionTerminatedError()
+                    if self._closed:
+                        tls_transport.close()
+                        raise ConnectionTerminatedError()
                     self.writer = asyncio.StreamWriter(tls_transport, protocol, self.reader, loop)
         except OSError as e:
             raise ConnectionTerminatedError() from e
@@ -542,9 +558,25 @@ class ServiceConnection:
         """Asynchronously initialize stream reader/writer for the socket."""
         if self.reader is not None and self.writer is not None:
             return
-        if self.socket is None:
+        await self._open_streams()
+
+    async def _open_streams(self, **kwargs: Any) -> None:
+        """Bind the socket to the event loop, unless close() runs before that finishes."""
+        if self.socket is None or self._closed:
             raise ConnectionTerminatedError()
-        self.reader, self.writer = await asyncio.open_connection(sock=self.socket)
+        task = asyncio.ensure_future(asyncio.open_connection(sock=self.socket, **kwargs))
+        self._open_task = task
+        try:
+            await asyncio.wait([task])
+        except BaseException:
+            task.cancel()
+            raise
+        finally:
+            self._open_task = None
+        if task.cancelled() or self._closed:
+            # close() cancelled the open, or closed the streams it produced
+            raise ConnectionTerminatedError()
+        self.reader, self.writer = task.result()
 
     async def __aenter__(self) -> "ServiceConnection":
         await self.start()
