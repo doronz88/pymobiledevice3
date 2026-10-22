@@ -353,7 +353,8 @@ class UserspaceTun:
     async def async_read(self) -> bytes:
         # outbound (stack -> device): await an Ethernet frame off the stack's socketpair and
         # return its raw IPv6 payload (no loopback header — tun_read_task checks the version
-        # nibble). Raises OSError once the socketpair is closed, which ends tun_read_task.
+        # nibble). stop_tunnel() ends tun_read_task by cancelling it before close() releases the
+        # socketpair: closing a socket under a pending sock_recv() would not wake it.
         while not self._closed:
             frame = await asyncio.get_running_loop().sock_recv(self._peer, 65535)
             if len(frame) < 14 or frame[12:14] != _ETH_IPV6_BYTES:
@@ -368,8 +369,9 @@ class UserspaceTun:
         One event-loop wakeup services a whole egress burst — the userspace counterpart of the
         kernel tun's ``_tun_read_loop_via_reader`` batch-drain. Paying a loop reschedule per
         MSS-sized packet caps uploads at a few thousand packets/s, because the same loop also
-        runs the pytcp stack. Raises OSError once the socketpair is closed, which ends
-        ``tun_read_task``."""
+        runs the pytcp stack. ``stop_tunnel()`` ends ``tun_read_task`` by cancelling it before
+        ``close()`` releases the socketpair (closing a socket under a pending ``sock_recv()`` would
+        not wake it)."""
         frame = await asyncio.get_running_loop().sock_recv(self._peer, 65535)
         packets: list[bytes] = []
         while True:
