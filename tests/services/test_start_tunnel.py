@@ -42,6 +42,9 @@ async def test_get_core_device_tunnel_services_skips_terminated_service(monkeypa
     assert rsd.closed
 
 
+# Discovers real devices (usbmux, and Bonjour on the local network) and builds a tunnel to the first
+# one found; no device fixture is involved, so it is marked explicitly.
+@pytest.mark.device
 @pytest.mark.parametrize("connection_type", [ConnectionType.USB, ConnectionType.WIFI])
 @pytest.mark.asyncio
 async def test_start_tunnel(connection_type: ConnectionType) -> None:
