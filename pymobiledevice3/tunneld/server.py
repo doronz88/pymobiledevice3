@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import signal
+import sys
 import time
 import traceback
 import urllib.parse
@@ -1126,8 +1127,10 @@ class TunneldRunner:
         return True
 
     def _run_app(self) -> None:
+        # uvicorn's "asyncio" loop factory always builds a ProactorEventLoop on win32, bypassing the
+        # selector policy pymobiledevice3 sets there (#1217, #1811); on the proactor loop the Wi-Fi
+        # monitor's bonjour browse gets no answers (#2051). "none" leaves the loop to that policy.
+        loop = "none" if sys.platform == "win32" else "asyncio"
         # per-message deflate would burn CPU compressing the mostly-encrypted tunnel
         # traffic bridged over /connect
-        uvicorn.run(
-            self._app, host=self.host, port=self.port, loop="asyncio", ws="wsproto", ws_per_message_deflate=False
-        )
+        uvicorn.run(self._app, host=self.host, port=self.port, loop=loop, ws="wsproto", ws_per_message_deflate=False)
