@@ -11,6 +11,8 @@ import pytest
 from pymobiledevice3.exceptions import ConnectionTerminatedError, DeviceNotFoundError
 from pymobiledevice3.service_connection import ServiceConnection
 
+pytestmark = pytest.mark.usefixtures("socket_hygiene")
+
 
 class _FakeTransport:
     def __init__(self) -> None:

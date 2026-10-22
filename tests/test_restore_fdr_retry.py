@@ -7,6 +7,8 @@ from pymobiledevice3.exceptions import ConnectionFailedError, ConnectionTerminat
 from pymobiledevice3.restore import fdr
 from pymobiledevice3.service_connection import ServiceConnection
 
+pytestmark = pytest.mark.usefixtures("socket_hygiene")
+
 
 class _StubService:
     async def close(self) -> None:
