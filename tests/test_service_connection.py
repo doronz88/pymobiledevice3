@@ -173,3 +173,76 @@ async def test_socket_error_other_than_reset_raises_connection_terminated(monkey
     finally:
         device.close()
         await connection.close()
+
+
+def _live_transport(fd: int) -> object:
+    transport = getattr(asyncio.get_running_loop(), "_transports", {}).get(fd)
+    return transport if transport is not None and not transport.is_closing() else None
+
+
+@pytest.mark.asyncio
+async def test_close_during_start_leaves_no_transport_on_the_fd():
+    """A close() that lands while start() is still binding the socket must win: the fd must not be
+    left owned by a live transport (the OS reuses the number for the next socket, which asyncio
+    then refuses to touch), and the closed connection must not come back to life."""
+    sock, peer = socket.socketpair()
+    fd = sock.fileno()
+    connection = ServiceConnection(sock)
+    try:
+        start = asyncio.ensure_future(connection.start())
+        await asyncio.sleep(0)  # start() is inside open_connection(), its transport registered
+        await connection.close()
+        with pytest.raises(ConnectionTerminatedError):
+            await start
+        assert connection.reader is None and connection.writer is None
+        await asyncio.sleep(0)
+        assert _live_transport(fd) is None
+        with pytest.raises(ConnectionTerminatedError):
+            await connection.start()
+    finally:
+        peer.close()
+
+
+@pytest.mark.asyncio
+async def test_close_after_the_open_finishes_but_before_start_resumes():
+    """The open can complete before close() runs while start() has yet to take its streams: close()
+    must close those streams instead of the bare socket under them."""
+    sock, peer = socket.socketpair()
+    fd = sock.fileno()
+    connection = ServiceConnection(sock)
+    try:
+        start = asyncio.ensure_future(connection.start())
+        while connection._open_task is None or not connection._open_task.done():
+            await asyncio.sleep(0)
+        assert connection.writer is None, "start() resumed before close() could run"
+        await connection.close()
+        with pytest.raises(ConnectionTerminatedError):
+            await start
+        assert connection.reader is None and connection.writer is None
+        await asyncio.sleep(0)
+        assert _live_transport(fd) is None
+    finally:
+        peer.close()
+
+
+@pytest.mark.asyncio
+async def test_close_during_ssl_start_leaves_no_transport_on_the_fd(monkeypatch):
+    """Same race as above for the TLS handshake that binds a not-yet-started socket."""
+    sock, peer = socket.socketpair()  # the peer never answers the ClientHello
+    fd = sock.fileno()
+    connection = ServiceConnection(sock)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    monkeypatch.setattr(connection, "create_ssl_context", lambda certfile, keyfile=None: context)
+    try:
+        handshake = asyncio.ensure_future(connection.ssl_start("unused"))
+        await asyncio.sleep(0.1)  # waiting for the ServerHello
+        await connection.close()
+        with pytest.raises(ConnectionTerminatedError):
+            await asyncio.wait_for(handshake, timeout=5)
+        assert connection.reader is None and connection.writer is None
+        await asyncio.sleep(0)
+        assert _live_transport(fd) is None
+    finally:
+        peer.close()
