@@ -286,3 +286,335 @@ async def test_monitor_usb_task_keeps_tunnels_when_the_os_briefly_cannot_tell(mo
 
     assert not existing.done()
     existing.cancel()
+
+
+class _ListeningMux:
+    """A usbmux listen connection that reports one attached device, then no further events.
+
+    It records how the monitor reads it: the read is not cancel-safe, so it must never be cancelled
+    while the connection is in use, nor run concurrently with another read."""
+
+    def __init__(self, device) -> None:
+        self._device = device
+        self.devices = []
+        self.reads = 0
+        self.in_flight = 0
+        self.max_in_flight = 0
+        self.cancelled_reads = 0
+
+    async def listen(self) -> None:
+        return None
+
+    async def receive_device_state_update(self) -> None:
+        self.reads += 1
+        self.in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        try:
+            if self.reads == 1:
+                self.devices.append(self._device)
+                return
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled_reads += 1
+            raise
+        finally:
+            self.in_flight -= 1
+
+    async def close(self) -> None:
+        pass
+
+
+class _Lockdown:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info) -> None:
+        pass
+
+
+async def _until(condition, timeout: float = 5) -> None:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not condition():
+        assert loop.time() < deadline, "condition not reached"
+        await asyncio.sleep(0.01)
+
+
+@pytest.mark.asyncio
+async def test_monitor_usbmux_task_tunnels_a_usb_device_once_its_other_tunnel_ends(monkeypatch):
+    """Issue #2052: a device attached over USB while it has a Wi-Fi tunnel is skipped; when that
+    tunnel ends no usbmux event follows, so the monitor must re-evaluate the devices it knows of."""
+    closed: dict[str, asyncio.Event] = {}
+
+    @asynccontextmanager
+    async def fake_start_tunnel(protocol_handler, protocol=None):
+        closed[protocol_handler.name] = asyncio.Event()
+        client = Mock(wait_closed=closed[protocol_handler.name].wait, stop_tunnel=AsyncMock())
+        yield Mock(client=client, address="fd00::1", port=1)
+
+    usb_handler = Mock(remote_identifier="DEVICE", close=AsyncMock())
+    usb_handler.name = "usb"
+
+    async def fake_create_using_usbmux(serial, usbmux_address=None):
+        return _Lockdown()
+
+    mux = _ListeningMux(Mock(serial="DEVICE", connection_type="USB"))
+
+    async def fake_create_mux(usbmux_address=None):
+        return mux
+
+    monkeypatch.setattr(tunneld_server, "start_tunnel", fake_start_tunnel)
+    monkeypatch.setattr(tunneld_server, "create_using_usbmux", fake_create_using_usbmux)
+    monkeypatch.setattr(tunneld_server.CoreDeviceTunnelProxy, "create", AsyncMock(return_value=usb_handler))
+    monkeypatch.setattr(tunneld_server.usbmux, "create_mux", fake_create_mux)
+    monkeypatch.setattr(tunneld_server, "USBMUX_INTERVAL", 0.05)
+    core = tunneld_server.TunneldCore(wifi_monitor=False, usb_monitor=False, usbmux_monitor=True, mobdev2_monitor=False)
+
+    monitor = asyncio.create_task(core.monitor_usbmux_task())
+    wifi_handler = Mock(remote_identifier="DEVICE", close=AsyncMock())
+    wifi_handler.name = "wifi"
+    core.tunnel_tasks["fd00::2"] = tunneld_server.TunnelTask(
+        task=asyncio.create_task(core.start_tunnel_task("fd00::2", wifi_handler)), udid="DEVICE"
+    )
+    try:
+        await _until(lambda: core.tunnel_exists_for_udid("DEVICE"))
+        # the attach event was evaluated and the monitor is back waiting for the next one
+        await _until(lambda: mux.reads == 2)
+        assert list(core.tunnel_tasks) == ["fd00::2"]
+
+        closed["wifi"].set()
+
+        await _until(lambda: "usbmux-DEVICE-USB" in core.tunnel_tasks)
+        await _until(lambda: core.tunnel_exists_for_udid("DEVICE"))
+        assert list(core.tunnel_tasks) == ["usbmux-DEVICE-USB"]
+        assert (mux.reads, mux.max_in_flight, mux.cancelled_reads) == (2, 1, 0)
+    finally:
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_start_tunnel_task_signals_a_usbmux_rescan_when_any_attempt_ends(monkeypatch):
+    # A failed attempt also signals: a device skipped while it was pending may now need a tunnel.
+    @asynccontextmanager
+    async def failing_start_tunnel(protocol_handler, protocol=None):
+        raise ConnectionTerminatedError()
+        yield
+
+    monkeypatch.setattr(tunneld_server, "start_tunnel", failing_start_tunnel)
+    core = tunneld_server.TunneldCore(
+        wifi_monitor=False, usb_monitor=False, usbmux_monitor=False, mobdev2_monitor=False
+    )
+    core._usbmux_rescan = asyncio.Event()
+
+    await core.start_tunnel_task("usbmux-DEVICE-USB", Mock(remote_identifier="DEVICE", close=AsyncMock()))
+
+    assert core._usbmux_rescan.is_set()
+
+
+@pytest.mark.asyncio
+async def test_monitor_usbmux_task_rescans_after_a_usb_attempt_that_gave_way_finishes(monkeypatch):
+    """#2052, a later ordering: the USB attempt starts while a Wi-Fi tunnel exists, gives way to it,
+    and is still closing when the Wi-Fi tunnel ends. The rescan that Wi-Fi signals sees the USB entry
+    still registered and skips the device, so the USB attempt must signal again once it is gone."""
+    creating_usb = asyncio.Event()
+    finish_usb_create = asyncio.Event()
+    usb_closing = asyncio.Event()
+    finish_usb_close = asyncio.Event()
+    closed: dict[str, asyncio.Event] = {}
+
+    @asynccontextmanager
+    async def fake_start_tunnel(protocol_handler, protocol=None):
+        closed[protocol_handler.name] = asyncio.Event()
+        client = Mock(wait_closed=closed[protocol_handler.name].wait, stop_tunnel=AsyncMock())
+        yield Mock(client=client, address="fd00::1", port=1)
+
+    async def close_usb() -> None:
+        usb_closing.set()
+        await finish_usb_close.wait()
+
+    usb_handler = Mock(remote_identifier="DEVICE", close=close_usb)
+    usb_handler.name = "usb"
+
+    async def fake_create_using_usbmux(serial, usbmux_address=None):
+        creating_usb.set()
+        await finish_usb_create.wait()
+        return _Lockdown()
+
+    mux = _ListeningMux(Mock(serial="DEVICE", connection_type="USB"))
+
+    async def fake_create_mux(usbmux_address=None):
+        return mux
+
+    monkeypatch.setattr(tunneld_server, "start_tunnel", fake_start_tunnel)
+    monkeypatch.setattr(tunneld_server, "create_using_usbmux", fake_create_using_usbmux)
+    monkeypatch.setattr(tunneld_server.CoreDeviceTunnelProxy, "create", AsyncMock(return_value=usb_handler))
+    monkeypatch.setattr(tunneld_server.usbmux, "create_mux", fake_create_mux)
+    monkeypatch.setattr(tunneld_server, "USBMUX_INTERVAL", 0.05)
+    core = tunneld_server.TunneldCore(wifi_monitor=False, usb_monitor=False, usbmux_monitor=True, mobdev2_monitor=False)
+
+    monitor = asyncio.create_task(core.monitor_usbmux_task())
+    wifi_handler = Mock(remote_identifier="DEVICE", close=AsyncMock())
+    wifi_handler.name = "wifi"
+    try:
+        await creating_usb.wait()
+        # a Wi-Fi tunnel comes up while the monitor is still preparing its USB attempt
+        core.tunnel_tasks["fd00::2"] = tunneld_server.TunnelTask(
+            task=asyncio.create_task(core.start_tunnel_task("fd00::2", wifi_handler)), udid="DEVICE"
+        )
+        await _until(lambda: core.tunnel_exists_for_udid("DEVICE"))
+        finish_usb_create.set()
+        await usb_closing.wait()  # the USB attempt gave way and is closing, still registered
+        await _until(lambda: mux.reads == 2)
+
+        closed["wifi"].set()
+        await _until(lambda: "fd00::2" not in core.tunnel_tasks)
+        rescan = core._usbmux_rescan
+        assert rescan is not None
+        await _until(lambda: not rescan.is_set())  # consumed while USB is registered
+        finish_usb_close.set()
+
+        await _until(lambda: "usb" in closed)  # a second USB attempt established a tunnel
+        await _until(lambda: core.tunnel_exists_for_udid("DEVICE"))
+        assert list(core.tunnel_tasks) == ["usbmux-DEVICE-USB"]
+        assert (mux.reads, mux.max_in_flight, mux.cancelled_reads) == (2, 1, 0)
+    finally:
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_monitor_usbmux_task_throttles_rescans_for_a_tunnel_that_keeps_ending(monkeypatch):
+    # A USB tunnel that ends as soon as it is up signals a rescan each time; every retry, the first
+    # included, must come at least USBMUX_INTERVAL after the previous evaluation, not in a busy loop.
+    attempts: list[float] = []
+    loop = asyncio.get_running_loop()
+
+    @asynccontextmanager
+    async def short_lived_tunnel(protocol_handler, protocol=None):
+        attempts.append(loop.time())
+        yield Mock(client=Mock(wait_closed=AsyncMock(), stop_tunnel=AsyncMock()), address="fd00::1", port=1)
+
+    async def fake_create_using_usbmux(serial, usbmux_address=None):
+        return _Lockdown()
+
+    mux = _ListeningMux(Mock(serial="DEVICE", connection_type="USB"))
+
+    async def fake_create_mux(usbmux_address=None):
+        return mux
+
+    monkeypatch.setattr(tunneld_server, "start_tunnel", short_lived_tunnel)
+    monkeypatch.setattr(tunneld_server, "create_using_usbmux", fake_create_using_usbmux)
+    monkeypatch.setattr(
+        tunneld_server.CoreDeviceTunnelProxy,
+        "create",
+        AsyncMock(side_effect=lambda *args, **kwargs: Mock(remote_identifier="DEVICE", close=AsyncMock())),
+    )
+    monkeypatch.setattr(tunneld_server.usbmux, "create_mux", fake_create_mux)
+    monkeypatch.setattr(tunneld_server, "USBMUX_INTERVAL", 0.2)
+    core = tunneld_server.TunneldCore(wifi_monitor=False, usb_monitor=False, usbmux_monitor=True, mobdev2_monitor=False)
+
+    monitor = asyncio.create_task(core.monitor_usbmux_task())
+    try:
+        await _until(lambda: len(attempts) >= 3)
+        gaps = [later - earlier for earlier, later in zip(attempts, attempts[1:])]
+        assert all(gap >= 0.15 for gap in gaps), gaps
+    finally:
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_monitor_usbmux_task_rescans_after_a_pending_usb_attempt_fails(monkeypatch):
+    """#2052: the USB attempt is still in its handshake while a Wi-Fi tunnel comes and goes. The
+    rescan Wi-Fi signals skips the device (its USB attempt is registered); when that attempt then
+    fails, its end must signal again, or the device is left without a tunnel."""
+    handshake = asyncio.Event()
+    fail_usb = asyncio.Event()
+    wifi_ends = asyncio.Event()
+    usb_attempts = 0
+
+    @asynccontextmanager
+    async def fake_start_tunnel(protocol_handler, protocol=None):
+        nonlocal usb_attempts
+        if protocol_handler.name == "usb":
+            usb_attempts += 1
+            if usb_attempts == 1:
+                handshake.set()
+                await fail_usb.wait()
+                raise ConnectionTerminatedError()
+        ends = wifi_ends if protocol_handler.name == "wifi" else asyncio.Event()
+        yield Mock(client=Mock(wait_closed=ends.wait, stop_tunnel=AsyncMock()), address="fd00::1", port=1)
+
+    def handler(name: str) -> Mock:
+        result = Mock(remote_identifier="DEVICE", close=AsyncMock())
+        result.name = name
+        return result
+
+    async def fake_create_using_usbmux(serial, usbmux_address=None):
+        return _Lockdown()
+
+    mux = _ListeningMux(Mock(serial="DEVICE", connection_type="USB"))
+
+    async def fake_create_mux(usbmux_address=None):
+        return mux
+
+    monkeypatch.setattr(tunneld_server, "start_tunnel", fake_start_tunnel)
+    monkeypatch.setattr(tunneld_server, "create_using_usbmux", fake_create_using_usbmux)
+    monkeypatch.setattr(
+        tunneld_server.CoreDeviceTunnelProxy, "create", AsyncMock(side_effect=lambda *args, **kwargs: handler("usb"))
+    )
+    monkeypatch.setattr(tunneld_server.usbmux, "create_mux", fake_create_mux)
+    monkeypatch.setattr(tunneld_server, "USBMUX_INTERVAL", 0.05)
+    core = tunneld_server.TunneldCore(wifi_monitor=False, usb_monitor=False, usbmux_monitor=True, mobdev2_monitor=False)
+
+    monitor = asyncio.create_task(core.monitor_usbmux_task())
+    try:
+        await handshake.wait()
+        core.tunnel_tasks["fd00::2"] = tunneld_server.TunnelTask(
+            task=asyncio.create_task(core.start_tunnel_task("fd00::2", handler("wifi"))), udid="DEVICE"
+        )
+        await _until(lambda: core.tunnel_exists_for_udid("DEVICE"))
+        wifi_ends.set()
+        await _until(lambda: "fd00::2" not in core.tunnel_tasks)
+        rescan = core._usbmux_rescan
+        assert rescan is not None
+        await _until(lambda: not rescan.is_set())  # consumed while the USB attempt is registered
+        fail_usb.set()
+
+        await _until(lambda: usb_attempts == 2)
+        await _until(lambda: core.tunnel_exists_for_udid("DEVICE"))
+        assert list(core.tunnel_tasks) == ["usbmux-DEVICE-USB"]
+        assert (mux.reads, mux.max_in_flight, mux.cancelled_reads) == (2, 1, 0)
+    finally:
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_tunnels_do_not_signal_a_usbmux_rescan(monkeypatch):
+    # A tunnel ended through the API (cancel or clear) must stay gone, not be rebuilt by the monitor.
+    @asynccontextmanager
+    async def fake_start_tunnel(protocol_handler, protocol=None):
+        yield Mock(client=Mock(wait_closed=asyncio.Event().wait, stop_tunnel=AsyncMock()), address="fd00::1", port=1)
+
+    monkeypatch.setattr(tunneld_server, "start_tunnel", fake_start_tunnel)
+    core = tunneld_server.TunneldCore(
+        wifi_monitor=False, usb_monitor=False, usbmux_monitor=False, mobdev2_monitor=False
+    )
+    rescan = core._usbmux_rescan = asyncio.Event()
+
+    for end in (lambda: core.cancel("DEVICE"), core.clear):
+        task = asyncio.create_task(
+            core.start_tunnel_task("usbmux-DEVICE-USB", Mock(remote_identifier="DEVICE", close=AsyncMock()))
+        )
+        core.tunnel_tasks["usbmux-DEVICE-USB"] = tunneld_server.TunnelTask(task=task, udid="DEVICE")
+        await _until(lambda: core.tunnel_exists_for_udid("DEVICE"))
+        end()
+        await task
+        assert not rescan.is_set()
+        assert not core._cancel_requested
