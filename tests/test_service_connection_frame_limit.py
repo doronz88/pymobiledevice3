@@ -1,5 +1,5 @@
 import struct
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -28,11 +28,3 @@ async def test_recv_prefixed_accepts_frame_at_limit():
     connection = _connection()
     connection.recvall = AsyncMock(side_effect=[struct.pack(">L", 16), b"x" * 16])
     assert await connection.recv_prefixed() == b"x" * 16
-
-
-def test_recv_prefixed_sync_rejects_oversized_frame():
-    connection = _connection()
-    connection.recvall_sync = Mock(return_value=struct.pack(">L", 17))
-    with pytest.raises(ProtocolError):
-        connection.recv_prefixed_sync()
-    connection.recvall_sync.assert_called_once_with(4)

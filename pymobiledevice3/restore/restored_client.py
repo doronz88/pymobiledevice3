@@ -26,7 +26,6 @@ class RestoredClient:
             service = await ServiceConnection.create_using_usbmux(
                 mux_device.serial, cls.SERVICE_PORT, connection_type=mux_device.connection_type
             )
-            await service.start()
 
             query_type = await service.send_recv_plist({"Request": "QueryType"})
             version = cast(str, query_type.get("RestoreProtocolVersion"))

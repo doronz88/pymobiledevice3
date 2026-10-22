@@ -1,6 +1,7 @@
 import datetime
 import logging
 from abc import abstractmethod
+from ssl import SSLContext
 from typing import Any, Optional
 
 from packaging.version import Version
@@ -196,8 +197,11 @@ class LockdownServiceProvider:
         pass
 
     @abstractmethod
-    async def create_service_connection(self, port: int) -> ServiceConnection:
-        """Create a low-level connection object to a service port."""
+    async def create_service_connection(
+        self, port: int, ssl_context: Optional[SSLContext] = None, strip_ssl: bool = False
+    ) -> ServiceConnection:
+        """Create a low-level connection object to a service port, negotiating TLS when given ``ssl_context``
+        (``strip_ssl`` drops back to plaintext after the handshake)."""
         pass
 
     @abstractmethod

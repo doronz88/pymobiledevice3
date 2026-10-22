@@ -653,14 +653,13 @@ async def test_device_link_download_files_reports_dropped_link(tmp_path: Path) -
     (tmp_path / "Manifest.db").write_bytes(b"\x00" * (8 * 1024 * 1024))
     host, device = socket.socketpair()
     device.setblocking(False)
-    connection = ServiceConnection(host)
+    connection = await ServiceConnection.from_socket(host)
 
     async def drop_after_first_read() -> None:
         await asyncio.get_running_loop().sock_recv(device, 1024)
         device.close()
 
     try:
-        await connection.start()
         dropper = asyncio.create_task(drop_after_first_read())
         with pytest.raises(ConnectionTerminatedError):
             await DeviceLink(connection, tmp_path).download_files(["DLMessageDownloadFiles", ["Manifest.db"]])
@@ -674,14 +673,13 @@ async def test_device_link_download_files_reports_dropped_link(tmp_path: Path) -
 async def test_device_link_exit_keeps_the_error_that_ended_the_session(monkeypatch, tmp_path: Path) -> None:
     """The closing DLMessageDisconnect fails on a dead link; that must not replace the real error."""
     host, device = socket.socketpair()
-    connection = ServiceConnection(host)
+    connection = await ServiceConnection.from_socket(host)
     service = Mobilebackup2Service(Mock(udid="device"))
     service._service = connection
     service.version_exchange = AsyncMock()
     monkeypatch.setattr(DeviceLink, "version_exchange", AsyncMock())
 
     try:
-        await connection.start()
         with pytest.raises(ConnectionTerminatedError) as exc_info:
             async with service.device_link(tmp_path) as dl:
                 device.close()
@@ -698,7 +696,7 @@ async def test_erase_device_returns_when_the_device_drops_the_link(monkeypatch, 
     """The device closes the link once it starts erasing; that is the erase going through, not an error."""
     host, device = socket.socketpair()
     device.setblocking(False)
-    connection = ServiceConnection(host)
+    connection = await ServiceConnection.from_socket(host)
     service = Mobilebackup2Service(Mock(udid="device"))
     service._service = connection
     service.version_exchange = AsyncMock()
@@ -714,7 +712,6 @@ async def test_erase_device_returns_when_the_device_drops_the_link(monkeypatch, 
         device.close()
 
     try:
-        await connection.start()
         dropper = asyncio.create_task(drop_after_erase_request())
         await service.erase_device(tmp_path)
         await dropper
@@ -729,12 +726,11 @@ async def test_erase_device_returns_when_the_device_drops_the_link(monkeypatch, 
 async def test_erase_device_fails_when_the_link_drops_before_the_request(tmp_path: Path) -> None:
     """Only a drop after EraseDevice went out means the erase started; an earlier one is still an error."""
     host, device = socket.socketpair()
-    connection = ServiceConnection(host)
+    connection = await ServiceConnection.from_socket(host)
     service = Mobilebackup2Service(Mock(udid="device"))
     service._service = connection
 
     try:
-        await connection.start()
         device.close()
         with pytest.raises(ConnectionTerminatedError):
             await service.erase_device(tmp_path)

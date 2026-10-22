@@ -230,9 +230,11 @@ async def run_fdr_listener(type_: fdr_type, udid: Optional[str] = None) -> None:
     except GeneratorExit:
         # Coroutine finalization cannot perform async cleanup (no await allowed).
         closing_via_generator_exit = True
-        if client is not None and client.service.socket is not None:
-            with contextlib.suppress(Exception):
-                client.service.socket.close()
+        if client is not None:
+            # StreamWriter.close() starts closing the transport without awaiting; on a loop that is
+            # already closed it raises, and the transport closes its socket when collected.
+            with contextlib.suppress(RuntimeError):
+                client.service.writer.close()
         raise
     except ConnectionTerminatedError:
         pass

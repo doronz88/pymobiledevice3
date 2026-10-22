@@ -15,7 +15,7 @@ from collections.abc import AsyncGenerator, Generator, Iterable
 from contextlib import contextmanager, suppress
 from enum import Enum
 from pathlib import Path
-from ssl import SSLZeroReturnError, TLSVersion
+from ssl import SSLContext, SSLZeroReturnError, TLSVersion
 from types import TracebackType
 from typing import Any, Optional, cast, overload
 
@@ -72,7 +72,7 @@ from pymobiledevice3.pair_records import (
     get_usbmux_pairing_record,
 )
 from pymobiledevice3.safe_paths import device_file_path
-from pymobiledevice3.service_connection import ServiceConnection
+from pymobiledevice3.service_connection import ServiceConnection, create_ssl_context
 from pymobiledevice3.usbmux import PlistMuxConnection
 
 OSUTIL = get_os_utils()
@@ -481,14 +481,16 @@ class LockdownClient(ABC, LockdownServiceProvider):
 
         self.session_id = start_session.get("SessionID")
         if start_session.get("EnableSessionSSL"):
+            minimum_version, maximum_version = TLSVersion.TLSv1_2, TLSVersion.TLSv1_3
             if (Version(self.product_version) < Version("5.0")) and (self.device_class != DeviceClass.WATCH):
                 # TLS v1 is the protocol required for versions prior to iOS 5
-                self.service.min_ssl_proto = TLSVersion.SSLv3
-                self.service.max_ssl_proto = TLSVersion.TLSv1
+                minimum_version, maximum_version = TLSVersion.SSLv3, TLSVersion.TLSv1
 
             with self.ssl_file() as f:
                 try:
-                    await self.service.ssl_start(f)
+                    await self.service.start_tls(
+                        create_ssl_context(f, minimum_version=minimum_version, maximum_version=maximum_version)
+                    )
                 except (SSLZeroReturnError, ConnectionTerminatedError):
                     # possible when we have a pair record, but it was removed on-device
                     self.pair_record = None
@@ -757,15 +759,11 @@ class LockdownClient(ABC, LockdownServiceProvider):
         :raises StartServiceError: lockdownd refused to start the service.
         """
         attr = await self.get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
-        service_connection = await self.create_service_connection(attr["Port"])
-        try:
-            if attr.get("EnableServiceSSL", False):
-                with self.ssl_file() as f:
-                    await service_connection.ssl_start(f)
-        except BaseException:
-            await service_connection.close()
-            raise
-        return service_connection
+        ssl_context = None
+        if attr.get("EnableServiceSSL", False):
+            with self.ssl_file() as f:
+                ssl_context = create_ssl_context(f)
+        return await self.create_service_connection(attr["Port"], ssl_context=ssl_context)
 
     async def close(self) -> None:
         """Close the underlying lockdownd connection.
@@ -823,13 +821,17 @@ class LockdownClient(ABC, LockdownServiceProvider):
             raise FatalPairingError()
 
     @abstractmethod
-    async def create_service_connection(self, port: int) -> ServiceConnection:
+    async def create_service_connection(
+        self, port: int, ssl_context: Optional[SSLContext] = None, strip_ssl: bool = False
+    ) -> ServiceConnection:
         """Open a new connection to the device on the given port.
 
         Abstract: each concrete client implements this for its transport (usbmux, TCP, ...). Used to open
         service connections and to re-establish the lockdownd connection after it drops.
 
         :param port: The device-side port to connect to.
+        :param ssl_context: Negotiate TLS with this context before any service traffic.
+        :param strip_ssl: Carry the traffic in plaintext once the TLS handshake completes.
         :returns: A connected `ServiceConnection`.
         """
         pass
@@ -1096,16 +1098,25 @@ class UsbmuxLockdownClient(LockdownClient):
                 self.identifier, self.pairing_records_cache_folder, usbmux_address=self.usbmux_address
             )
 
-    async def create_service_connection(self, port: int) -> ServiceConnection:
+    async def create_service_connection(
+        self, port: int, ssl_context: Optional[SSLContext] = None, strip_ssl: bool = False
+    ) -> ServiceConnection:
         """Open a new connection to the device on the given port through usbmuxd.
 
         :param port: The device-side port to connect to.
+        :param ssl_context: Negotiate TLS with this context before any service traffic.
+        :param strip_ssl: Carry the traffic in plaintext once the TLS handshake completes.
         :returns: A connected `ServiceConnection` opened over usbmuxd, reusing this client's
             connection type and usbmux address.
         """
         connection_type = self.service.mux_device.connection_type if self.service.mux_device is not None else None
         return await ServiceConnection.create_using_usbmux(
-            self.identifier, port, connection_type, usbmux_address=self.usbmux_address
+            self.identifier,
+            port,
+            connection_type,
+            usbmux_address=self.usbmux_address,
+            ssl_context=ssl_context,
+            strip_ssl=strip_ssl,
         )
 
 
@@ -1175,18 +1186,26 @@ class TcpLockdownClient(LockdownClient):
         self.hostname = hostname
         self.identifier = hostname
 
-    async def create_service_connection(self, port: int) -> ServiceConnection:
+    async def create_service_connection(
+        self, port: int, ssl_context: Optional[SSLContext] = None, strip_ssl: bool = False
+    ) -> ServiceConnection:
         """Open a new TCP connection to the device on the given port.
 
         :param port: The device-side port to connect to.
+        :param ssl_context: Negotiate TLS with this context before any service traffic.
+        :param strip_ssl: Carry the traffic in plaintext once the TLS handshake completes.
         :returns: A connected `ServiceConnection` to this client's hostname, honoring its keep-alive
             setting.
         """
-        return await ServiceConnection.create_using_tcp(self.hostname, port, keep_alive=self._keep_alive)
+        return await ServiceConnection.create_using_tcp(
+            self.hostname, port, keep_alive=self._keep_alive, ssl_context=ssl_context, strip_ssl=strip_ssl
+        )
 
 
 class RemoteLockdownClient(LockdownClient):
-    async def create_service_connection(self, port: int) -> ServiceConnection:
+    async def create_service_connection(
+        self, port: int, ssl_context: Optional[SSLContext] = None, strip_ssl: bool = False
+    ) -> ServiceConnection:
         """Create service connection.
 
         :param port: Port.

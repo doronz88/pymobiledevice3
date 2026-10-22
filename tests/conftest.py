@@ -1,6 +1,10 @@
+import asyncio
+import gc
 import logging
+import os
+import stat
 from collections.abc import AsyncGenerator, Generator
-from typing import Any, Union
+from typing import Any, Optional, Union
 
 import pytest
 import pytest_asyncio
@@ -26,6 +30,53 @@ logging.getLogger("asyncio").setLevel(logging.CRITICAL + 1)
 logging.getLogger("parso").setLevel(logging.CRITICAL + 1)
 logging.getLogger("blib2to3").setLevel(logging.CRITICAL + 1)
 logging.getLogger("urllib3").setLevel(logging.CRITICAL + 1)
+
+
+def _open_fds() -> Optional[set[int]]:
+    """The fds this process has open, or None where the platform does not list them (Windows)."""
+    for fd_dir in ("/dev/fd", "/proc/self/fd"):
+        try:
+            listed = {int(name) for name in os.listdir(fd_dir)}
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+        # drop the fd listdir() itself held while listing
+        return {fd for fd in listed if _fd_kind(fd) is not None}
+    return None
+
+
+def _fd_kind(fd: int) -> Optional[str]:
+    try:
+        mode = os.fstat(fd).st_mode
+    except OSError:
+        return None
+    return "socket" if stat.S_ISSOCK(mode) else "fd"
+
+
+@pytest.fixture
+async def socket_hygiene() -> AsyncGenerator[None, None]:
+    """Fail the test if it leaves a socket behind: an fd it opened still open, a transport not
+    closing, or the loop still watching an fd (a stale registration, which wakes nothing once the
+    number is reused). Collects garbage first, so an unclosed object's ResourceWarning lands here."""
+    loop = asyncio.get_running_loop()
+    before = _open_fds()
+    yield
+    for _ in range(5):
+        await asyncio.sleep(0)  # let close callbacks run
+    gc.collect()
+    problems: list[str] = []
+    for fd, transport in list(getattr(loop, "_transports", {}).items()):
+        if not transport.is_closing():
+            problems.append(f"transport still open on fd {fd}: {transport!r}")
+    selector = getattr(loop, "_selector", None)
+    if selector is not None:
+        wakeup = loop._ssock.fileno()  # pyright: ignore[reportAttributeAccessIssue]
+        problems.extend(
+            f"loop still watches fd {fd} ({_fd_kind(fd) or 'closed'})" for fd in selector.get_map() if fd != wakeup
+        )
+    after = _open_fds()
+    if before is not None and after is not None:
+        problems.extend(f"leaked {_fd_kind(fd)} fd {fd}" for fd in sorted(after - before))
+    assert not problems, "; ".join(problems)
 
 
 def pytest_addoption(parser):

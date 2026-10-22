@@ -65,7 +65,6 @@ RESTORED_TYPE = "com.apple.mobile.restored"
 async def _query_device_description(device: usbmux.MuxDevice) -> Optional[str]:
     service = await ServiceConnection.create_using_usbmux(device.serial, LOCKDOWN_PORT, connection_type="USB")
     try:
-        await service.start()
         query_type = await service.send_recv_plist({"Label": "pymobiledevice3", "Request": "QueryType"})
         if query_type.get("Type") == RESTORED_TYPE:
             return None

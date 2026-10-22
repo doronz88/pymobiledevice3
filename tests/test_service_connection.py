@@ -3,12 +3,15 @@ import errno
 import socket
 import ssl
 import struct
+import sys
 from typing import cast
 
 import pytest
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError, DeviceNotFoundError
 from pymobiledevice3.service_connection import ServiceConnection
+
+pytestmark = pytest.mark.usefixtures("socket_hygiene")
 
 
 class _FakeTransport:
@@ -56,40 +59,38 @@ def test_device_not_found_error_defaults_to_a_message() -> None:
 
 
 @pytest.mark.asyncio
-async def test_service_connection_close_aborts_when_wait_closed_hangs(monkeypatch):
-    sock = socket.socket()
-    conn = ServiceConnection(sock)
+async def test_service_connection_close_aborts_when_wait_closed_hangs():
     writer = _FakeWriter()
-    conn.writer = cast(asyncio.StreamWriter, writer)
+    conn = ServiceConnection(asyncio.StreamReader(), cast(asyncio.StreamWriter, writer))
 
     await conn.close()
 
     assert writer.closed is True
     assert writer.transport.aborted is True
-    assert conn.writer is None
-    assert conn.reader is None
-    assert conn.socket is None
-    assert sock.fileno() == -1
+    with pytest.raises(ConnectionTerminatedError):
+        await conn.sendall(b"\x00")
+
+
+def _client_context() -> ssl.SSLContext:
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
 
 
 # CPython <= 3.10 leaves the half-built SSLSocket unclosed when the handshake fails inside
 # wrap_socket(), so it emits a ResourceWarning when collected. Reproducible with plain CPython and
 # no pymobiledevice3 involved, and the socket is never ours to close -- wrap_socket() owns it.
 @pytest.mark.filterwarnings("ignore::ResourceWarning")
-def test_ssl_start_sync_failure_raises_connection_terminated(monkeypatch):
+@pytest.mark.asyncio
+async def test_strip_ssl_handshake_failure_raises_connection_terminated():
     # A failed handshake leaves the original socket detached by wrap_socket(); the error
     # path must not touch it again (used to raise EBADF/WinError 10038, masking the error).
     client, server = socket.socketpair()
     server.close()
-    conn = ServiceConnection(client)
-
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    monkeypatch.setattr(ServiceConnection, "create_ssl_context", lambda self, certfile, keyfile=None: context)
-
     with pytest.raises(ConnectionTerminatedError):
-        conn.ssl_start_sync("unused-certfile")
+        await ServiceConnection.from_socket(client, ssl_context=_client_context(), strip_ssl=True)
+    assert client.fileno() == -1
 
 
 @pytest.mark.asyncio
@@ -98,9 +99,8 @@ async def test_sendall_after_peer_closed_raises_connection_terminated():
     # the stored socket error (BrokenPipeError). Both mean the device dropped us. On Windows socketpair()
     # is TCP, so sends are still accepted until the peer's RST comes back; keep sending until one fails.
     host, device = socket.socketpair()
-    connection = ServiceConnection(host)
+    connection = await ServiceConnection.from_socket(host)
     try:
-        await connection.start()
         device.close()
         for _ in range(2):
             with pytest.raises(ConnectionTerminatedError):
@@ -117,9 +117,8 @@ async def test_recvall_after_peer_reset_raises_connection_terminated():
     with socket.create_server(("127.0.0.1", 0)) as server:
         host = socket.create_connection(server.getsockname())
         device, _ = server.accept()
-    connection = ServiceConnection(host)
+    connection = await ServiceConnection.from_socket(host)
     try:
-        await connection.start()
         # Linger 0 makes close() send RST instead of FIN, like a device dropping off the bus.
         device.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
         device.close()
@@ -135,9 +134,8 @@ async def test_recv_any_after_peer_reset_raises_connection_terminated():
     with socket.create_server(("127.0.0.1", 0)) as server:
         host = socket.create_connection(server.getsockname())
         device, _ = server.accept()
-    connection = ServiceConnection(host)
+    connection = await ServiceConnection.from_socket(host)
     try:
-        await connection.start()
         device.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
         device.close()
         with pytest.raises(ConnectionTerminatedError):
@@ -152,15 +150,13 @@ async def test_socket_error_other_than_reset_raises_connection_terminated(monkey
     # A link that goes silent (Wi-Fi, keep-alive expiry) fails with ETIMEDOUT, an unreachable one with
     # EHOSTUNREACH. Neither is a ConnectionError, yet both mean the device is gone.
     host, device = socket.socketpair()
-    connection = ServiceConnection(host)
+    connection = await ServiceConnection.from_socket(host)
     error = TimeoutError(errno.ETIMEDOUT, "Operation timed out")
 
     async def failing_drain() -> None:
         raise error
 
     try:
-        await connection.start()
-        assert connection.reader is not None and connection.writer is not None
         monkeypatch.setattr(connection.writer, "drain", failing_drain)
         with pytest.raises(ConnectionTerminatedError):
             await connection.sendall(b"\x00")
@@ -181,68 +177,136 @@ def _live_transport(fd: int) -> object:
 
 
 @pytest.mark.asyncio
-async def test_close_during_start_leaves_no_transport_on_the_fd():
-    """A close() that lands while start() is still binding the socket must win: the fd must not be
-    left owned by a live transport (the OS reuses the number for the next socket, which asyncio
-    then refuses to touch), and the closed connection must not come back to life."""
+async def test_failed_tls_bind_leaves_no_transport_on_the_fd():
+    """A handshake the peer refuses must close the socket through its transport: a transport left
+    live on the fd would claim the number the OS hands to the next socket, and asyncio then refuses
+    every sock_* call on it ("File descriptor N is used by transport")."""
     sock, peer = socket.socketpair()
     fd = sock.fileno()
-    connection = ServiceConnection(sock)
-    try:
-        start = asyncio.ensure_future(connection.start())
-        await asyncio.sleep(0)  # start() is inside open_connection(), its transport registered
-        await connection.close()
-        with pytest.raises(ConnectionTerminatedError):
-            await start
-        assert connection.reader is None and connection.writer is None
-        await asyncio.sleep(0)
-        assert _live_transport(fd) is None
-        with pytest.raises(ConnectionTerminatedError):
-            await connection.start()
-    finally:
-        peer.close()
+    peer.close()
+    with pytest.raises(ConnectionTerminatedError):
+        await ServiceConnection.from_socket(sock, ssl_context=_client_context())
+    await asyncio.sleep(0)
+    assert _live_transport(fd) is None
+    assert sock.fileno() == -1
 
 
 @pytest.mark.asyncio
-async def test_close_after_the_open_finishes_but_before_start_resumes():
-    """The open can complete before close() runs while start() has yet to take its streams: close()
-    must close those streams instead of the bare socket under them."""
-    sock, peer = socket.socketpair()
-    fd = sock.fileno()
-    connection = ServiceConnection(sock)
-    try:
-        start = asyncio.ensure_future(connection.start())
-        while connection._open_task is None or not connection._open_task.done():
-            await asyncio.sleep(0)
-        assert connection.writer is None, "start() resumed before close() could run"
-        await connection.close()
-        with pytest.raises(ConnectionTerminatedError):
-            await start
-        assert connection.reader is None and connection.writer is None
-        await asyncio.sleep(0)
-        assert _live_transport(fd) is None
-    finally:
-        peer.close()
-
-
-@pytest.mark.asyncio
-async def test_close_during_ssl_start_leaves_no_transport_on_the_fd(monkeypatch):
-    """Same race as above for the TLS handshake that binds a not-yet-started socket."""
+async def test_cancelled_tls_bind_leaves_no_transport_on_the_fd():
+    """Cancelling the bind mid-handshake (a timeout, a closing caller) must not leave the fd owned
+    by a live transport either."""
     sock, peer = socket.socketpair()  # the peer never answers the ClientHello
     fd = sock.fileno()
-    connection = ServiceConnection(sock)
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    monkeypatch.setattr(connection, "create_ssl_context", lambda certfile, keyfile=None: context)
     try:
-        handshake = asyncio.ensure_future(connection.ssl_start("unused"))
+        bind = asyncio.create_task(ServiceConnection.from_socket(sock, ssl_context=_client_context()))
         await asyncio.sleep(0.1)  # waiting for the ServerHello
-        await connection.close()
-        with pytest.raises(ConnectionTerminatedError):
-            await asyncio.wait_for(handshake, timeout=5)
-        assert connection.reader is None and connection.writer is None
+        bind.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await bind
         await asyncio.sleep(0)
         assert _live_transport(fd) is None
+        assert sock.fileno() == -1
+    finally:
+        peer.close()
+
+
+@pytest.mark.asyncio
+async def test_close_releases_the_fd():
+    sock, peer = socket.socketpair()
+    fd = sock.fileno()
+    try:
+        connection = await ServiceConnection.from_socket(sock)
+        await connection.close()
+        await asyncio.sleep(0)
+        assert _live_transport(fd) is None
+        assert sock.fileno() == -1
+        with pytest.raises(ConnectionTerminatedError):
+            await connection.recv_any()
+    finally:
+        peer.close()
+
+
+@pytest.mark.asyncio
+async def test_tcp_tls_failure_raises_connection_terminated():
+    """A peer that drops the handshake ends it as ConnectionTerminatedError, as over usbmux."""
+
+    async def refuse(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        await reader.read(1)  # the ClientHello
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(refuse, "127.0.0.1", 0)
+    try:
+        port = server.sockets[0].getsockname()[1]
+        with pytest.raises(ConnectionTerminatedError):
+            await ServiceConnection.create_using_tcp("127.0.0.1", port, keep_alive=False, ssl_context=_client_context())
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_tcp_rejects_stripped_tls():
+    with pytest.raises(ValueError):
+        await ServiceConnection.create_using_tcp("127.0.0.1", 1, ssl_context=_client_context(), strip_ssl=True)
+
+
+@pytest.mark.asyncio
+async def test_close_wakes_a_task_blocked_in_recv():
+    sock, peer = socket.socketpair()
+    connection = await ServiceConnection.from_socket(sock)
+    try:
+        blocked = asyncio.create_task(connection.recvall(4))
+        await asyncio.sleep(0.01)
+        await connection.close()
+        with pytest.raises(ConnectionTerminatedError):
+            await asyncio.wait_for(blocked, timeout=2)
+    finally:
+        peer.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == "win32", reason="a socketpair send there completes though the peer never reads")
+async def test_close_wakes_a_task_blocked_in_send():
+    sock, peer = socket.socketpair()  # the peer never reads, so the send buffers fill up
+    # Small kernel buffers and no transport buffering make the send block at once.
+    for end, option in ((sock, socket.SO_SNDBUF), (peer, socket.SO_RCVBUF)):
+        end.setsockopt(socket.SOL_SOCKET, option, 4096)
+    connection = await ServiceConnection.from_socket(sock)
+    connection.writer.transport.set_write_buffer_limits(high=0)
+    try:
+        blocked = asyncio.create_task(connection.sendall(b"\x00" * (64 * 1024 * 1024)))
+        await asyncio.sleep(0.05)
+        assert not blocked.done()
+        await connection.close()
+        with pytest.raises(ConnectionTerminatedError):
+            await asyncio.wait_for(blocked, timeout=2)
+    finally:
+        peer.close()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_closes_release_the_fd_once():
+    sock, peer = socket.socketpair()
+    connection = await ServiceConnection.from_socket(sock)
+    try:
+        await asyncio.wait_for(asyncio.gather(connection.close(), connection.close(), connection.close()), timeout=5)
+        assert sock.fileno() == -1
+    finally:
+        peer.close()
+
+
+@pytest.mark.asyncio
+async def test_close_during_start_tls_does_not_install_the_tls_writer():
+    sock, peer = socket.socketpair()  # the peer never answers the ClientHello
+    connection = await ServiceConnection.from_socket(sock)
+    plain_writer = connection.writer
+    try:
+        upgrade = asyncio.create_task(connection.start_tls(_client_context()))
+        await asyncio.sleep(0.05)
+        await connection.close()
+        with pytest.raises(ConnectionTerminatedError):
+            await asyncio.wait_for(upgrade, timeout=5)
+        assert connection.writer is plain_writer
     finally:
         peer.close()
