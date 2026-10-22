@@ -253,6 +253,7 @@ def pytest_fixture_post_finalizer(fixturedef: Any, request: pytest.FixtureReques
 def pytest_addoption(parser):
     parser.addoption("--rsd", default=None, type=str, nargs=2, action="store")
     parser.addoption("--tunnel", default=None, type=str, action="store")
+    parser.addoption("--udid", default=None, help="The device to test (default: the first USB device)")
     parser.addoption(
         "--xcuitest-config",
         default=None,
@@ -336,9 +337,9 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
         _skip_unless_tunneled(item, e)
 
 
-async def _create_usbmux_client() -> UsbmuxLockdownClient:
+async def _create_usbmux_client(udid: Optional[str]) -> UsbmuxLockdownClient:
     try:
-        return await create_using_usbmux()
+        return await create_using_usbmux(serial=udid)
     except (ConnectionFailedToUsbmuxdError, DeviceNotFoundError, NoDeviceConnectedError):
         pytest.skip(NO_DEVICE_SKIP_REASON)
 
@@ -359,9 +360,17 @@ def tunnel_option(request):
     return request.config.getoption("--tunnel")
 
 
+@pytest.fixture(scope="function")
+def udid_option(request):
+    """
+    Get --udid option
+    """
+    return request.config.getoption("--udid")
+
+
 @pytest_asyncio.fixture(scope="function")
 async def service_provider(
-    rsd_option, tunnel_option
+    rsd_option, tunnel_option, udid_option
 ) -> AsyncGenerator[Union[RemoteServiceDiscoveryService, UsbmuxLockdownClient, Any]]:
     """
     Creates a new LockdownServiceProvider client for each test.
@@ -394,14 +403,14 @@ async def service_provider(
         # macOS) - so those tests run by default instead of skipping until someone supplies tunneld.
         # Per test rather than per session on purpose: the tunnel's asyncio objects belong to the
         # loop that opened them, and the suite runs each test on a loop of its own.
-        tunnel = PreferredRsdTunnel()
+        tunnel = PreferredRsdTunnel(serial=udid_option)
         try:
             rsd = await tunnel.aopen()
         except Exception:
             # No tunnel for this device (pre-iOS 17, unpaired, no usable transport). Lockdown
             # services still work over usbmux; the RSD-only ones skip as they did before.
             await tunnel.aclose()
-            async with await _create_usbmux_client() as client:
+            async with await _create_usbmux_client(udid_option) as client:
                 yield client
         else:
             try:
@@ -423,11 +432,11 @@ async def dvt(service_provider) -> AsyncGenerator[DvtProvider, Any]:
 
 
 @pytest_asyncio.fixture(scope="function")
-async def lockdown() -> AsyncGenerator[UsbmuxLockdownClient, Any]:
+async def lockdown(udid_option) -> AsyncGenerator[UsbmuxLockdownClient, Any]:
     """
     Creates a new lockdown client for each test.
     """
-    client = await _create_usbmux_client()
+    client = await _create_usbmux_client(udid_option)
     async with client:
         yield client
 
