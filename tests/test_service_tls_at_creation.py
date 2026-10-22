@@ -12,8 +12,6 @@ from pymobiledevice3.exceptions import ConnectionTerminatedError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.service_connection import ServiceConnection
 
-pytestmark = pytest.mark.usefixtures("socket_hygiene")
-
 
 class _Lockdown:
     """Starts every service with SSL on a socket whose peer refuses the handshake."""

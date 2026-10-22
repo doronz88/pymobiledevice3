@@ -1,7 +1,7 @@
 import asyncio
-import gc
 import logging
 import os
+import socket
 import stat
 from collections.abc import AsyncGenerator, Generator
 from typing import Any, Optional, Union
@@ -32,6 +32,10 @@ logging.getLogger("blib2to3").setLevel(logging.CRITICAL + 1)
 logging.getLogger("urllib3").setLevel(logging.CRITICAL + 1)
 
 
+# Opened by the system resolver on the process's first name lookup and kept for its lifetime.
+_SYSTEM_SOCKET_PEERS = ("/var/run/mDNSResponder",)
+
+
 def _open_fds() -> Optional[set[int]]:
     """The fds this process has open, or None where the platform does not list them (Windows)."""
     for fd_dir in ("/dev/fd", "/proc/self/fd"):
@@ -39,30 +43,57 @@ def _open_fds() -> Optional[set[int]]:
             listed = {int(name) for name in os.listdir(fd_dir)}
         except (FileNotFoundError, NotADirectoryError):
             continue
-        # drop the fd listdir() itself held while listing
-        return {fd for fd in listed if _fd_kind(fd) is not None}
+        open_fds = set()
+        for fd in listed:
+            kind = _fd_kind(fd)
+            # drop the fd listdir() itself held while listing, and the system's own sockets
+            if kind is not None and not kind.endswith(tuple(f"-> {peer!r}" for peer in _SYSTEM_SOCKET_PEERS)):
+                open_fds.add(fd)
+        return open_fds
     return None
 
 
 def _fd_kind(fd: int) -> Optional[str]:
+    """What fd is (a socket with its addresses, or another kind of fd), or None if it is closed."""
     try:
         mode = os.fstat(fd).st_mode
     except OSError:
         return None
-    return "socket" if stat.S_ISSOCK(mode) else "fd"
+    if not stat.S_ISSOCK(mode):
+        return "fd"
+    try:
+        with socket.socket(fileno=os.dup(fd)) as sock:  # a duplicate, closed again right away
+            local = sock.getsockname()
+            try:
+                peer: Any = sock.getpeername()
+            except OSError:
+                peer = None
+    except OSError:
+        return "socket"
+    return f"socket {local!r} -> {peer!r}"
+
+
+_FD_SETTLE_SECONDS = 1.0
+
+
+async def _loop_tick(loop: asyncio.AbstractEventLoop, delay: float = 0) -> None:
+    """Yield to the loop without asyncio.sleep, which a test may have monkeypatched."""
+    waiter = loop.create_future()
+    loop.call_later(delay, lambda: waiter.done() or waiter.set_result(None))
+    await waiter
 
 
 @pytest.fixture
 async def socket_hygiene() -> AsyncGenerator[None, None]:
     """Fail the test if it leaves a socket behind: an fd it opened still open, a transport not
     closing, or the loop still watching an fd (a stale registration, which wakes nothing once the
-    number is reused). Collects garbage first, so an unclosed object's ResourceWarning lands here."""
+    number is reused). A socket dropped without close() is caught too: it either still holds its
+    fd (kept alive) or warned as it was finalized, inside the test."""
     loop = asyncio.get_running_loop()
     before = _open_fds()
     yield
     for _ in range(5):
-        await asyncio.sleep(0)  # let close callbacks run
-    gc.collect()
+        await _loop_tick(loop)  # let close callbacks run
     problems: list[str] = []
     for fd, transport in list(getattr(loop, "_transports", {}).items()):
         if not transport.is_closing():
@@ -73,9 +104,15 @@ async def socket_hygiene() -> AsyncGenerator[None, None]:
         problems.extend(
             f"loop still watches fd {fd} ({_fd_kind(fd) or 'closed'})" for fd in selector.get_map() if fd != wakeup
         )
-    after = _open_fds()
-    if before is not None and after is not None:
-        problems.extend(f"leaked {_fd_kind(fd)} fd {fd}" for fd in sorted(after - before))
+    if before is not None:
+        # A server or portal thread may close its socket a moment after the test returns; a
+        # leak is an fd that is still open once that settles.
+        deadline = loop.time() + _FD_SETTLE_SECONDS
+        leaked = (_open_fds() or set()) - before
+        while leaked and loop.time() < deadline:
+            await _loop_tick(loop, 0.01)
+            leaked = (_open_fds() or set()) - before
+        problems.extend(f"leaked {_fd_kind(fd)} fd {fd}" for fd in sorted(leaked))
     assert not problems, "; ".join(problems)
 
 
@@ -104,10 +141,30 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     exercised on every merge without test authors having to remember a marker: using
     one of the device-backed fixtures (directly or through a derived fixture) is what
     makes a test a device test.
+
+    Every device-free test also runs under `socket_hygiene`, so a leaked socket, an open
+    transport or a stale loop watch fails the test that caused it.
     """
     for item in items:
-        if DEVICE_FIXTURES.intersection(getattr(item, "fixturenames", ())):
+        fixturenames = getattr(item, "fixturenames", None)
+        if fixturenames is None:
+            continue
+        if DEVICE_FIXTURES.intersection(fixturenames):
             item.add_marker(pytest.mark.device)
+        if item.get_closest_marker("device") is None and "socket_hygiene" not in fixturenames:
+            # Ahead of the other function-scoped fixtures, so it is torn down after them (once they
+            # closed what they opened), but behind the wider-scoped ones, whose sockets outlive
+            # the test by design.
+            fixturenames.insert(_first_function_scoped(item, fixturenames), "socket_hygiene")
+
+
+def _first_function_scoped(item: pytest.Item, fixturenames: list[str]) -> int:
+    name2fixturedefs = getattr(getattr(item, "_fixtureinfo", None), "name2fixturedefs", {})
+    for index, name in enumerate(fixturenames):
+        definitions = name2fixturedefs.get(name)
+        if not definitions or definitions[-1].scope == "function":
+            return index
+    return len(fixturenames)
 
 
 def _skip_unless_tunneled(item: pytest.Item, e: InvalidServiceError) -> None:
