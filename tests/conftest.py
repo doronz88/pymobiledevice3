@@ -1,8 +1,12 @@
 import asyncio
+import contextlib
+import dataclasses
 import logging
 import os
 import socket
 import stat
+import time
+import weakref
 from collections.abc import AsyncGenerator, Generator
 from typing import Any, Optional, Union
 
@@ -24,6 +28,8 @@ from pymobiledevice3.remote.rsd_tunnel import PreferredRsdTunnel
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestService
 from pymobiledevice3.tunneld.api import get_tunneld_devices
+
+pytest_plugins = ["pytester"]
 
 logging.getLogger("quic").setLevel(logging.CRITICAL + 1)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL + 1)
@@ -78,6 +84,83 @@ def _fd_kind(fd: int) -> Optional[str]:
     return f"socket {local!r} -> {peer!r}"
 
 
+class _SocketRecording:
+    """The sockets created while it is active (every platform, every event loop), held weakly."""
+
+    def __init__(self) -> None:
+        self._sockets: list[weakref.ref[socket.socket]] = []
+
+    def add(self, sock: socket.socket) -> None:
+        self._sockets.append(weakref.ref(sock))
+
+    def open_sockets(self) -> list[socket.socket]:
+        sockets = (ref() for ref in list(self._sockets))
+        return [sock for sock in sockets if sock is not None and sock.fileno() != -1]
+
+
+# Compared by identity, so ending one recording never ends another.
+_socket_recordings: list[_SocketRecording] = []
+
+
+_socket_init = socket.socket.__init__
+
+
+def _recorded_socket_init(self: socket.socket, *args: Any, **kwargs: Any) -> None:
+    # Here rather than an audit hook: Windows raises no socket.__new__ event for a socket made
+    # from an existing fd (accept(), socketpair()).
+    _socket_init(self, *args, **kwargs)
+    # Only the innermost recording takes a socket: once it ends, the socket was closed or
+    # reported, and the recordings around it (a fixture's around a test's) never see it.
+    if _socket_recordings:
+        _socket_recordings[-1].add(self)
+
+
+socket.socket.__init__ = _recorded_socket_init
+
+
+@contextlib.contextmanager
+def _recording_sockets() -> Generator[_SocketRecording, None, None]:
+    recording = _SocketRecording()
+    _socket_recordings.append(recording)
+    try:
+        yield recording
+    finally:
+        _socket_recordings.remove(recording)
+
+
+@dataclasses.dataclass
+class _WideFixture:
+    """A module- or session-scoped fixture alive now, with what it may hold until its teardown."""
+
+    fixturedef: Any
+    recording: _SocketRecording
+    fds_before: Optional[set[int]]
+    fds_opened: frozenset[int]
+
+
+_wide_fixtures: list[_WideFixture] = []
+
+
+def _leaks(
+    recording: _SocketRecording, fds_before: Optional[set[int]], held_fds: frozenset[int] = frozenset()
+) -> dict[int, str]:
+    """By fd: the sockets in a recording still open, and the fds opened since ``fds_before``
+    (where listable) other than ``held_fds``."""
+    leaks = {sock.fileno(): f"socket left open: {sock!r}" for sock in recording.open_sockets()}
+    if fds_before is not None:
+        for fd in sorted((_open_fds() or set()) - fds_before - held_fds - leaks.keys()):
+            leaks[fd] = f"leaked {_fd_kind(fd)} fd {fd}"
+    return leaks
+
+
+def _reported(leaks: dict[int, str]) -> list[str]:
+    """Mark leaks as reported, so the wider-scoped fixtures still alive around them don't report them again."""
+    for fixture in _wide_fixtures:
+        if fixture.fds_before is not None:
+            fixture.fds_before.update(leaks)
+    return list(leaks.values())
+
+
 _FD_SETTLE_SECONDS = 1.0
 
 
@@ -90,40 +173,87 @@ async def _loop_tick(loop: asyncio.AbstractEventLoop, delay: float = 0) -> None:
 
 @pytest.fixture
 async def socket_hygiene() -> AsyncGenerator[None, None]:
-    """Fail the test if it leaves a socket behind: an fd it opened still open, a transport not
-    closing, or the loop still watching an fd (a stale registration, which wakes nothing once the
-    number is reused). A socket dropped without close() is caught too: it either still holds its
-    fd (kept alive) or warned as it was finalized, inside the test."""
+    """Fail the test if it leaves a socket behind: a socket object it created still open (on any
+    loop, or none: an unclosed loop keeps its self-pipe sockets), an fd it opened still open, a
+    transport not closing, or the loop still watching an fd (a stale registration, which wakes
+    nothing once the number is reused). A socket dropped without close() is caught too: it warned
+    as it was finalized, inside the test."""
     loop = asyncio.get_running_loop()
-    before = _open_fds()
-    yield
+    with _recording_sockets() as recording:
+        before = _open_fds()
+        yield
+        problems = await _loop_problems(loop)
+        # A server or portal thread may close its socket a moment after the test returns; a leak
+        # is a socket that is still open once that settles.
+        deadline = loop.time() + _FD_SETTLE_SECONDS
+        leaks = _leaks(recording, before)
+        while leaks and loop.time() < deadline:
+            await _loop_tick(loop, 0.01)
+            leaks = _leaks(recording, before)
+    problems.extend(_reported(leaks))
+    assert not problems, "; ".join(problems)
+
+
+async def _loop_problems(loop: asyncio.AbstractEventLoop) -> list[str]:
+    """Transports the test left open on its loop, and fds the loop still watches."""
     for _ in range(5):
         await _loop_tick(loop)  # let close callbacks run
     problems: list[str] = []
     for fd, transport in list(getattr(loop, "_transports", {}).items()):
         if not transport.is_closing():
             problems.append(f"transport still open on fd {fd}: {transport!r}")
-    selector = getattr(loop, "_selector", None)
-    if selector is not None:
+    # (a proactor loop has no selector, though it calls its proactor _selector)
+    if isinstance(loop, asyncio.SelectorEventLoop):
+        selector = loop._selector  # pyright: ignore[reportAttributeAccessIssue]
         wakeup = loop._ssock.fileno()  # pyright: ignore[reportAttributeAccessIssue]
         problems.extend(
             f"loop still watches fd {fd} ({_fd_kind(fd) or 'closed'})" for fd in selector.get_map() if fd != wakeup
         )
-    if before is not None:
-        # A server or portal thread may close its socket a moment after the test returns; a
-        # leak is an fd that is still open once that settles.
-        deadline = loop.time() + _FD_SETTLE_SECONDS
-        leaked = (_open_fds() or set()) - before
-        while leaked and loop.time() < deadline:
-            await _loop_tick(loop, 0.01)
-            leaked = (_open_fds() or set()) - before
-        problems.extend(f"leaked {_fd_kind(fd)} fd {fd}" for fd in sorted(leaked))
-    assert not problems, "; ".join(problems)
+    return problems
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_fixture_setup(fixturedef: Any, request: pytest.FixtureRequest) -> Generator[None, object, object]:
+    """Record what a wider-scoped fixture opens: its sockets outlive each test by design, so
+    `socket_hygiene` leaves them alone, and they are checked at the fixture's own teardown."""
+    if fixturedef.scope == "function":
+        return (yield)
+    recording = _SocketRecording()
+    _socket_recordings.append(recording)
+    before = _open_fds()
+    try:
+        result = yield
+    except BaseException:
+        _socket_recordings.remove(recording)
+        raise
+    after = _open_fds()
+    opened = frozenset(after - before) if after is not None and before is not None else frozenset()
+    _wide_fixtures.append(_WideFixture(fixturedef, recording, before, opened))
+    return result
+
+
+def pytest_fixture_post_finalizer(fixturedef: Any, request: pytest.FixtureRequest) -> None:
+    """Fail a wider-scoped fixture's teardown if it leaves a socket behind."""
+    index = next((i for i, fixture in enumerate(_wide_fixtures) if fixture.fixturedef is fixturedef), None)
+    if index is None:
+        return
+    fixture = _wide_fixtures.pop(index)
+    _socket_recordings.remove(fixture.recording)
+    # A wider fixture set up after this one (a session fixture first requested inside a module)
+    # is still alive, and so are the fds it opened.
+    held_fds = frozenset(fd for later in _wide_fixtures[index:] for fd in later.fds_opened)
+    deadline = time.monotonic() + _FD_SETTLE_SECONDS
+    leaks = _leaks(fixture.recording, fixture.fds_before, held_fds)
+    while leaks and time.monotonic() < deadline:
+        time.sleep(0.01)
+        leaks = _leaks(fixture.recording, fixture.fds_before, held_fds)
+    assert not leaks, f"fixture {fixturedef.argname!r} left: " + "; ".join(_reported(leaks))
 
 
 def pytest_addoption(parser):
     parser.addoption("--rsd", default=None, type=str, nargs=2, action="store")
     parser.addoption("--tunnel", default=None, type=str, action="store")
+    parser.addoption("--udid", default=None, help="The device to test (default: the first USB device)")
     parser.addoption(
         "--xcuitest-config",
         default=None,
@@ -147,8 +277,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     one of the device-backed fixtures (directly or through a derived fixture) is what
     makes a test a device test.
 
-    Every device-free test also runs under `socket_hygiene`, so a leaked socket, an open
-    transport or a stale loop watch fails the test that caused it.
+    Every test also runs under `socket_hygiene`, so a leaked socket, an open transport or a stale
+    loop watch fails the test that caused it.
     """
     for item in items:
         fixturenames = getattr(item, "fixturenames", None)
@@ -156,7 +286,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             continue
         if DEVICE_FIXTURES.intersection(fixturenames):
             item.add_marker(pytest.mark.device)
-        if item.get_closest_marker("device") is None and "socket_hygiene" not in fixturenames:
+        if "socket_hygiene" not in fixturenames:
             # Ahead of the other function-scoped fixtures, so it is torn down after them (once they
             # closed what they opened), but behind the wider-scoped ones, whose sockets outlive
             # the test by design.
@@ -207,9 +337,9 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
         _skip_unless_tunneled(item, e)
 
 
-async def _create_usbmux_client() -> UsbmuxLockdownClient:
+async def _create_usbmux_client(udid: Optional[str]) -> UsbmuxLockdownClient:
     try:
-        return await create_using_usbmux()
+        return await create_using_usbmux(serial=udid)
     except (ConnectionFailedToUsbmuxdError, DeviceNotFoundError, NoDeviceConnectedError):
         pytest.skip(NO_DEVICE_SKIP_REASON)
 
@@ -230,9 +360,17 @@ def tunnel_option(request):
     return request.config.getoption("--tunnel")
 
 
+@pytest.fixture(scope="function")
+def udid_option(request):
+    """
+    Get --udid option
+    """
+    return request.config.getoption("--udid")
+
+
 @pytest_asyncio.fixture(scope="function")
 async def service_provider(
-    rsd_option, tunnel_option
+    rsd_option, tunnel_option, udid_option
 ) -> AsyncGenerator[Union[RemoteServiceDiscoveryService, UsbmuxLockdownClient, Any]]:
     """
     Creates a new LockdownServiceProvider client for each test.
@@ -265,14 +403,14 @@ async def service_provider(
         # macOS) - so those tests run by default instead of skipping until someone supplies tunneld.
         # Per test rather than per session on purpose: the tunnel's asyncio objects belong to the
         # loop that opened them, and the suite runs each test on a loop of its own.
-        tunnel = PreferredRsdTunnel()
+        tunnel = PreferredRsdTunnel(serial=udid_option)
         try:
             rsd = await tunnel.aopen()
         except Exception:
             # No tunnel for this device (pre-iOS 17, unpaired, no usable transport). Lockdown
             # services still work over usbmux; the RSD-only ones skip as they did before.
             await tunnel.aclose()
-            async with await _create_usbmux_client() as client:
+            async with await _create_usbmux_client(udid_option) as client:
                 yield client
         else:
             try:
@@ -294,11 +432,11 @@ async def dvt(service_provider) -> AsyncGenerator[DvtProvider, Any]:
 
 
 @pytest_asyncio.fixture(scope="function")
-async def lockdown() -> AsyncGenerator[UsbmuxLockdownClient, Any]:
+async def lockdown(udid_option) -> AsyncGenerator[UsbmuxLockdownClient, Any]:
     """
     Creates a new lockdown client for each test.
     """
-    client = await _create_usbmux_client()
+    client = await _create_usbmux_client(udid_option)
     async with client:
         yield client
 

@@ -50,10 +50,10 @@ def shell(afc: AfcService) -> AfcShell:
 
 
 @pytest.mark.device
-def test_create_runs_a_shell_until_exit(capfd: pytest.CaptureFixture[str]) -> None:
+def test_create_runs_a_shell_until_exit(pytestconfig: pytest.Config, capfd: pytest.CaptureFixture[str]) -> None:
     """The blocking entry point: it builds the service itself and runs on the CLI event loop."""
     loop = get_asyncio_loop()
-    lockdown = loop.run_until_complete(create_using_usbmux())
+    lockdown = loop.run_until_complete(create_using_usbmux(serial=pytestconfig.getoption("--udid")))
     try:
         with create_pipe_input() as pipe_input, create_app_session(input=pipe_input, output=DummyOutput()):
             pipe_input.send_text("pwd\rexit\r")
