@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional, cast
@@ -210,3 +211,134 @@ async def test_auto_mount_over_rsd_below_the_cutoff_mounts_the_personalized_ddi(
     await mobile_image_mounter.auto_mount(_rsd(["CryptexInstall"], os_version="26.0.1"))
 
     assert recorder.calls == ["personalized"]
+
+
+class _SerialMounter:
+    """The pre-iOS 14 image mounter as observed on iOS 13.3: mobile_storage_proxy serves one host
+    connection at a time (a second one is not answered until the first closes), answers an unknown
+    command such as CopyDevices with UnknownCommand and then hangs up."""
+
+    has_developer_mode = False  # Developer Mode appeared in iOS 16
+
+    def __init__(self) -> None:
+        self.connections: list[_SerialMounterConnection] = []
+        self.mounted = False
+
+    async def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> ServiceConnection:
+        connection = _SerialMounterConnection(self)
+        self.connections.append(connection)
+        return cast(ServiceConnection, connection)
+
+    @property
+    def product_version(self) -> str:
+        return "13.3"
+
+
+class _SerialMounterConnection:
+    def __init__(self, device: _SerialMounter) -> None:
+        self.device = device
+        self.closed = False
+        self.hung_up = False
+
+    async def _served(self) -> None:
+        if any(other is not self and not other.closed for other in self.device.connections):
+            await asyncio.Event().wait()  # never answered while another client holds the proxy
+        if self.hung_up:
+            raise ConnectionResetError("Connection lost")
+
+    async def send_recv_plist(self, data: dict[str, Any]) -> dict[str, Any]:
+        await self._served()
+        command = data["Command"]
+        if command == "LookupImage":
+            if self.device.mounted:
+                return {"ImagePresent": True, "ImageSignature": [b"signature"]}
+            return {"ImagePresent": False}
+        if command == "ReceiveBytes":
+            return {"Status": "ReceiveBytesAck"}
+        if command == "MountImage":
+            self.device.mounted = True
+            return {"Status": "Complete"}
+        self.hung_up = True
+        return {"Error": "UnknownCommand"}
+
+    async def sendall(self, payload: bytes) -> None:
+        await self._served()
+
+    async def recv_plist(self) -> dict[str, Any]:
+        await self._served()
+        return {"Status": "Complete"}
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def _xcode_with_image(root: Path, version: str) -> Path:
+    image = mobile_image_mounter._developer_disk_image_path(root, version)
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"image")
+    image.with_name(f"{image.name}.signature").write_bytes(b"signature")
+    return root
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_developer_releases_the_mounter(tmp_path: Path) -> None:
+    """Regression: auto_mount_developer() left its mounter connection open, and a pre-iOS 14 device
+    serves one at a time, so every later mounter command (doctor's, a lookup) hung."""
+    device = _SerialMounter()
+    lockdown = cast(LockdownServiceProvider, device)
+    await asyncio.wait_for(
+        mobile_image_mounter.auto_mount_developer(lockdown, xcode=str(_xcode_with_image(tmp_path, "13.3"))), 5
+    )
+    assert device.mounted
+    assert all(connection.closed for connection in device.connections)
+    async with MobileImageMounterService(lockdown=lockdown) as mounter:
+        assert await asyncio.wait_for(mounter.is_image_mounted("Developer"), 5)
+
+
+@pytest.mark.asyncio
+async def test_list_images_falls_back_to_lookup_without_copy_devices() -> None:
+    device = _SerialMounter()
+    lockdown = cast(LockdownServiceProvider, device)
+    async with MobileImageMounterService(lockdown=lockdown) as mounter:
+        assert await asyncio.wait_for(mounter.list_images(), 5) == []
+    device.mounted = True
+    async with MobileImageMounterService(lockdown=lockdown) as mounter:
+        assert await asyncio.wait_for(mounter.list_images(), 5) == [
+            {"DiskImageType": "Developer", "IsMounted": True, "ImageSignature": b"signature"}
+        ]
+    assert all(connection.closed for connection in device.connections)
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_developer_downloads_into_the_home_cache_not_an_installed_xcode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An installed Xcode belongs to its installer (often root): a missing image is downloaded into
+    the per-user cache instead of into the Xcode bundle."""
+    downloads: list[Path] = []
+
+    def download(version: str, image_path: Path, signature: Path) -> None:
+        downloads.append(image_path)
+        image_path.parent.mkdir(parents=True)
+        image_path.write_bytes(b"image")
+        signature.write_bytes(b"signature")
+
+    monkeypatch.setattr(mobile_image_mounter, "get_home_folder", lambda: tmp_path)
+    monkeypatch.setattr(mobile_image_mounter, "_download_developer_disk_image", download)
+    device = _SerialMounter()
+    # a version no Xcode ships, so /Applications/Xcode.app (when present) never has it
+    await asyncio.wait_for(
+        mobile_image_mounter.auto_mount_developer(cast(LockdownServiceProvider, device), version="99.9"), 5
+    )
+    assert downloads == [mobile_image_mounter._developer_disk_image_path(tmp_path / "Xcode.app", "99.9")]
+
+
+def test_auto_mount_accepts_an_xcode_directory(tmp_path: Path) -> None:
+    """Regression: --xcode was declared a file, so it rejected every Xcode.app (a directory)."""
+    import typer.main
+
+    from pymobiledevice3.cli import mounter as mounter_cli
+
+    command = cast(Any, typer.main.get_command(mounter_cli.cli)).commands["auto-mount"]
+    xcode = next(param for param in command.params if param.name == "xcode")
+    assert xcode.type.convert(str(tmp_path), xcode, None) == str(tmp_path)

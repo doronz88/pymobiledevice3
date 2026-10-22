@@ -600,10 +600,17 @@ def test_mounter_query_nonce_does_not_require_an_image_type(monkeypatch, fake_lo
     from pymobiledevice3.cli import mounter
 
     queried = []
+    closed = []
 
     class _FakeMobileImageMounterService:
         def __init__(self, lockdown):
             pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            closed.append(True)
 
         async def query_nonce(self, personalized_image_type=None):
             queried.append(personalized_image_type)
@@ -615,6 +622,7 @@ def test_mounter_query_nonce_does_not_require_an_image_type(monkeypatch, fake_lo
 
     assert result.exit_code == 0, result.output
     assert queried == [None]
+    assert closed == [True]
 
 
 def test_core_device_read_file_prints_to_stdout_without_output(monkeypatch, no_transport_env):
