@@ -62,14 +62,19 @@ def _fd_kind(fd: int) -> Optional[str]:
     if not stat.S_ISSOCK(mode):
         return "fd"
     try:
-        with socket.socket(fileno=os.dup(fd)) as sock:  # a duplicate, closed again right away
-            local = sock.getsockname()
-            try:
-                peer: Any = sock.getpeername()
-            except OSError:
-                peer = None
+        sock = socket.socket(fileno=fd)  # raises for a family it can't describe (AF_ROUTE, AF_SYSTEM)
     except OSError:
         return "socket"
+    try:
+        local = sock.getsockname()
+        try:
+            peer: Any = sock.getpeername()
+        except OSError:
+            peer = None
+    except OSError:
+        return "socket"
+    finally:
+        sock.detach()  # the fd stays its owner's
     return f"socket {local!r} -> {peer!r}"
 
 
