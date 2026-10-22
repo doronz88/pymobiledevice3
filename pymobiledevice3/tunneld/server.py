@@ -844,7 +844,8 @@ class TunneldRunner:
                         )
                         self._tunneld_core.tunnel_tasks[task_identifier] = TunnelTask(task=task, udid=udid)
                         created_task = True
-                    except (ConnectionFailedError, InvalidServiceError, MuxException):
+                    except (ConnectionFailedError, DeviceNotFoundError, InvalidServiceError, MuxException):
+                        # e.g. the device is not attached over USB: try the other connection types
                         pass
                 if connection_type in ("usb", None):
                     for rsd in await get_rsds(udid=udid):
