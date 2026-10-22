@@ -234,6 +234,12 @@ class _DTXSenderMixin:
     # Reply correlation
     # ------------------------------------------------------------------
 
+    def _fail_reply(self, msg_id: int, exc: BaseException) -> None:
+        """Fail the reply Future registered under *msg_id*, if it is still pending."""
+        future = self._pending_replies.get(msg_id)
+        if future is not None and not future.done():
+            future.set_exception(exc)
+
     async def _wait_for_reply(self, msg_id: int) -> DTXMessage:
         """Await the reply Future registered under *msg_id*.
 

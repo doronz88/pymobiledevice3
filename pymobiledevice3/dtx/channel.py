@@ -64,7 +64,10 @@ class DTXChannel:
         self.logger = connection.logger.getChild(f"channel({code})")
 
         self._closed = False
+        self._close_reason = ""
         self._reader_task: Optional[asyncio.Task[None]] = None
+        # The requests on this channel still awaiting a reply, by message id.
+        self._awaited_replies: set[int] = set()
 
         self._queue: asyncio.Queue[DTXMessage] = asyncio.Queue()
         self._pending_tasks: set[asyncio.Task[None]] = set()
@@ -117,7 +120,13 @@ class DTXChannel:
         Returns the decoded OBJECT payload, ``None`` for OK, or raises
         :class:`DTXNsError` / :class:`UnrecognizedSelectorError` on error.
         """
-        reply = await self._connection._wait_for_reply(msg_id)
+        self._awaited_replies.add(msg_id)
+        if self._closed:  # closed while the request was being sent
+            self._fail_awaited_replies()
+        try:
+            reply = await self._connection._wait_for_reply(msg_id)
+        finally:
+            self._awaited_replies.discard(msg_id)
         if reply.type not in (DTXMessageType.OK, DTXMessageType.OBJECT, DTXMessageType.ERROR):
             raise DTXProtocolError(f"Unexpected reply type {reply.type!r} for {context} on channel {self.code}")
         if reply.type == DTXMessageType.ERROR:
@@ -273,6 +282,10 @@ class DTXChannel:
         if self._closed:
             return
         self._closed = True
+        self._close_reason = reason or "requested"
+        # The peer drops a channel's requests with it (a service it could not create cancels the
+        # channel instead of replying), so nothing else would wake their callers.
+        self._fail_awaited_replies()
         pending = self._queue.qsize()
         if pending:
             self.logger.warning(
@@ -300,6 +313,13 @@ class DTXChannel:
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         await self._connection.cancel_channel(self)
+
+    def _fail_awaited_replies(self) -> None:
+        for msg_id in self._awaited_replies:
+            self._connection._fail_reply(
+                msg_id,
+                ConnectionTerminatedError(f"The DTX service channel closed before replying ({self._close_reason})."),
+            )
 
     def _check_open(self) -> None:
         if self._closed:
