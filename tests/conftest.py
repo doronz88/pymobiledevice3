@@ -1,8 +1,10 @@
 import asyncio
+import contextlib
 import logging
 import os
 import socket
 import stat
+import weakref
 from collections.abc import AsyncGenerator, Generator
 from typing import Any, Optional, Union
 
@@ -78,6 +80,60 @@ def _fd_kind(fd: int) -> Optional[str]:
     return f"socket {local!r} -> {peer!r}"
 
 
+class _SocketRecording:
+    """The sockets created while it is active (every platform, every event loop), held weakly."""
+
+    def __init__(self) -> None:
+        self._sockets: list[weakref.ref[socket.socket]] = []
+
+    def add(self, sock: socket.socket) -> None:
+        self._sockets.append(weakref.ref(sock))
+
+    def open_sockets(self) -> list[socket.socket]:
+        sockets = (ref() for ref in list(self._sockets))
+        return [sock for sock in sockets if sock is not None and sock.fileno() != -1]
+
+
+# Compared by identity, so ending one recording never ends another.
+_socket_recordings: list[_SocketRecording] = []
+
+
+_socket_init = socket.socket.__init__
+
+
+def _recorded_socket_init(self: socket.socket, *args: Any, **kwargs: Any) -> None:
+    # Here rather than an audit hook: Windows raises no socket.__new__ event for a socket made
+    # from an existing fd (accept(), socketpair()).
+    _socket_init(self, *args, **kwargs)
+    # Only the innermost recording takes a socket: once it ends, the socket was closed or
+    # reported, and the recordings around it (a fixture's around a test's) never see it.
+    if _socket_recordings:
+        _socket_recordings[-1].add(self)
+
+
+socket.socket.__init__ = _recorded_socket_init
+
+
+@contextlib.contextmanager
+def _recording_sockets() -> Generator[_SocketRecording, None, None]:
+    recording = _SocketRecording()
+    _socket_recordings.append(recording)
+    try:
+        yield recording
+    finally:
+        _socket_recordings.remove(recording)
+
+
+def _leaks(recording: _SocketRecording, fds_before: Optional[set[int]]) -> list[str]:
+    """The sockets in a recording still open, and the fds opened since ``fds_before`` (where listable)."""
+    sockets = recording.open_sockets()
+    leaks = [f"socket left open: {sock!r}" for sock in sockets]
+    if fds_before is not None:
+        reported = {sock.fileno() for sock in sockets}
+        leaks.extend(f"leaked {_fd_kind(fd)} fd {fd}" for fd in sorted((_open_fds() or set()) - fds_before - reported))
+    return leaks
+
+
 _FD_SETTLE_SECONDS = 1.0
 
 
@@ -90,35 +146,43 @@ async def _loop_tick(loop: asyncio.AbstractEventLoop, delay: float = 0) -> None:
 
 @pytest.fixture
 async def socket_hygiene() -> AsyncGenerator[None, None]:
-    """Fail the test if it leaves a socket behind: an fd it opened still open, a transport not
-    closing, or the loop still watching an fd (a stale registration, which wakes nothing once the
-    number is reused). A socket dropped without close() is caught too: it either still holds its
-    fd (kept alive) or warned as it was finalized, inside the test."""
+    """Fail the test if it leaves a socket behind: a socket object it created still open (on any
+    loop, or none: an unclosed loop keeps its self-pipe sockets), an fd it opened still open, a
+    transport not closing, or the loop still watching an fd (a stale registration, which wakes
+    nothing once the number is reused). A socket dropped without close() is caught too: it warned
+    as it was finalized, inside the test."""
     loop = asyncio.get_running_loop()
-    before = _open_fds()
-    yield
+    with _recording_sockets() as recording:
+        before = _open_fds()
+        yield
+        problems = await _loop_problems(loop)
+        # A server or portal thread may close its socket a moment after the test returns; a leak
+        # is a socket that is still open once that settles.
+        deadline = loop.time() + _FD_SETTLE_SECONDS
+        leaks = _leaks(recording, before)
+        while leaks and loop.time() < deadline:
+            await _loop_tick(loop, 0.01)
+            leaks = _leaks(recording, before)
+    problems.extend(leaks)
+    assert not problems, "; ".join(problems)
+
+
+async def _loop_problems(loop: asyncio.AbstractEventLoop) -> list[str]:
+    """Transports the test left open on its loop, and fds the loop still watches."""
     for _ in range(5):
         await _loop_tick(loop)  # let close callbacks run
     problems: list[str] = []
     for fd, transport in list(getattr(loop, "_transports", {}).items()):
         if not transport.is_closing():
             problems.append(f"transport still open on fd {fd}: {transport!r}")
-    selector = getattr(loop, "_selector", None)
-    if selector is not None:
+    # (a proactor loop has no selector, though it calls its proactor _selector)
+    if isinstance(loop, asyncio.SelectorEventLoop):
+        selector = loop._selector  # pyright: ignore[reportAttributeAccessIssue]
         wakeup = loop._ssock.fileno()  # pyright: ignore[reportAttributeAccessIssue]
         problems.extend(
             f"loop still watches fd {fd} ({_fd_kind(fd) or 'closed'})" for fd in selector.get_map() if fd != wakeup
         )
-    if before is not None:
-        # A server or portal thread may close its socket a moment after the test returns; a
-        # leak is an fd that is still open once that settles.
-        deadline = loop.time() + _FD_SETTLE_SECONDS
-        leaked = (_open_fds() or set()) - before
-        while leaked and loop.time() < deadline:
-            await _loop_tick(loop, 0.01)
-            leaked = (_open_fds() or set()) - before
-        problems.extend(f"leaked {_fd_kind(fd)} fd {fd}" for fd in sorted(leaked))
-    assert not problems, "; ".join(problems)
+    return problems
 
 
 def pytest_addoption(parser):
