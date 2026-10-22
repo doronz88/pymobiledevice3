@@ -4,10 +4,13 @@ import socket
 import ssl
 import struct
 import sys
+import threading
 from typing import cast
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 
+from pymobiledevice3.ca import dump_cert, make_cert, serialize_private_key_pkcs8_pem
 from pymobiledevice3.exceptions import ConnectionTerminatedError, DeviceNotFoundError
 from pymobiledevice3.service_connection import ServiceConnection
 
@@ -78,19 +81,87 @@ def _client_context() -> ssl.SSLContext:
     return context
 
 
-# CPython <= 3.10 leaves the half-built SSLSocket unclosed when the handshake fails inside
-# wrap_socket(), so it emits a ResourceWarning when collected. Reproducible with plain CPython and
-# no pymobiledevice3 involved, and the socket is never ours to close -- wrap_socket() owns it.
-@pytest.mark.filterwarnings("ignore::ResourceWarning")
 @pytest.mark.asyncio
 async def test_strip_ssl_handshake_failure_raises_connection_terminated():
-    # A failed handshake leaves the original socket detached by wrap_socket(); the error
-    # path must not touch it again (used to raise EBADF/WinError 10038, masking the error).
     client, server = socket.socketpair()
     server.close()
     with pytest.raises(ConnectionTerminatedError):
         await ServiceConnection.from_socket(client, ssl_context=_client_context(), strip_ssl=True)
+    await asyncio.sleep(0)
     assert client.fileno() == -1
+
+
+@pytest.mark.asyncio
+async def test_strip_ssl_fails_fast_on_a_peer_that_is_not_speaking_tls():
+    client, server = socket.socketpair()
+    try:
+        server.sendall(b"HTTP/1.1 400 Bad Request\r\n\r\n")
+        with pytest.raises(ConnectionTerminatedError):
+            await asyncio.wait_for(
+                ServiceConnection.from_socket(client, ssl_context=_client_context(), strip_ssl=True), timeout=2
+            )
+    finally:
+        server.close()
+
+
+@pytest.fixture(scope="module")
+def server_certfile(tmp_path_factory: pytest.TempPathFactory) -> str:
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    path = tmp_path_factory.mktemp("tls") / "server.pem"
+    path.write_bytes(
+        dump_cert(make_cert(key, key.public_key(), common_name="test")) + serialize_private_key_pkcs8_pem(key)
+    )
+    return str(path)
+
+
+def _stripping_server(sock: socket.socket, certfile: str, version: ssl.TLSVersion, received: list[bytes]) -> None:
+    """The device side of a stripped-TLS service: a TLS handshake, then plaintext both ways."""
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = context.maximum_version = version
+    # A TLS 1.3 session ticket is an encrypted record sent after the handshake: a service that
+    # switches to plaintext cannot send one (with tickets, both the old blocking strip and this one
+    # would hand the record to the plaintext stream).
+    context.num_tickets = 0
+    context.load_cert_chain(certfile)
+    with context.wrap_socket(sock, server_side=True) as tls:
+        plain = socket.socket(fileno=tls.detach())
+    with plain:
+        plain.sendall(b"hello")
+        received.append(plain.recv(4))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("version", [ssl.TLSVersion.TLSv1_2, ssl.TLSVersion.TLSv1_3])
+@pytest.mark.parametrize("over", ["usbmux", "tcp"])
+async def test_strip_ssl_carries_plaintext_after_the_handshake(
+    server_certfile: str, version: ssl.TLSVersion, over: str
+) -> None:
+    received: list[bytes] = []
+    if over == "usbmux":
+        client, device = socket.socketpair()
+        thread = threading.Thread(target=_stripping_server, args=(device, server_certfile, version, received))
+        thread.start()
+        connection = await ServiceConnection.from_socket(client, ssl_context=_client_context(), strip_ssl=True)
+    else:
+        listener = socket.create_server(("127.0.0.1", 0))
+
+        def accept_and_serve() -> None:
+            with listener:
+                device, _ = listener.accept()
+            _stripping_server(device, server_certfile, version, received)
+
+        thread = threading.Thread(target=accept_and_serve)
+        thread.start()
+        connection = await ServiceConnection.create_using_tcp(
+            "127.0.0.1", listener.getsockname()[1], keep_alive=False, ssl_context=_client_context(), strip_ssl=True
+        )
+    try:
+        assert await connection.recvall(5) == b"hello"
+        await connection.sendall(b"ping")
+        await asyncio.get_running_loop().run_in_executor(None, thread.join, 5)
+        assert received == [b"ping"]
+    finally:
+        await connection.close()
 
 
 @pytest.mark.asyncio
@@ -243,12 +314,6 @@ async def test_tcp_tls_failure_raises_connection_terminated():
     finally:
         server.close()
         await server.wait_closed()
-
-
-@pytest.mark.asyncio
-async def test_tcp_rejects_stripped_tls():
-    with pytest.raises(ValueError):
-        await ServiceConnection.create_using_tcp("127.0.0.1", 1, ssl_context=_client_context(), strip_ssl=True)
 
 
 @pytest.mark.asyncio
