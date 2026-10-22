@@ -277,8 +277,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     one of the device-backed fixtures (directly or through a derived fixture) is what
     makes a test a device test.
 
-    Every device-free test also runs under `socket_hygiene`, so a leaked socket, an open
-    transport or a stale loop watch fails the test that caused it.
+    Every test also runs under `socket_hygiene`, so a leaked socket, an open transport or a stale
+    loop watch fails the test that caused it.
     """
     for item in items:
         fixturenames = getattr(item, "fixturenames", None)
@@ -286,7 +286,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             continue
         if DEVICE_FIXTURES.intersection(fixturenames):
             item.add_marker(pytest.mark.device)
-        if item.get_closest_marker("device") is None and "socket_hygiene" not in fixturenames:
+        if "socket_hygiene" not in fixturenames:
             # Ahead of the other function-scoped fixtures, so it is torn down after them (once they
             # closed what they opened), but behind the wider-scoped ones, whose sockets outlive
             # the test by design.
