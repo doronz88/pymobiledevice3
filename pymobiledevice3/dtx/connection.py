@@ -11,7 +11,7 @@
 
 Typical usage::
 
-    conn = await DTXConnection.from_socket(sock)
+    conn = DTXConnection(reader, writer)
     async with conn:
         svc = await conn.open_channel("com.apple.instruments.server.services.deviceinfo")
         result = await svc.invoke("runningProcesses")
@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import socket as _socket
 from contextlib import suppress
 from typing import Any, Callable, ClassVar, Optional, Union, cast, overload
 
@@ -53,24 +52,14 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
     - Handles the initial capability-notification handshake automatically
       inside :meth:`connect`.
 
-    Use :meth:`from_socket` to create a connection from a raw :class:`socket.socket`,
-    or instantiate directly with an ``asyncio.StreamReader`` / ``asyncio.StreamWriter``
-    pair (useful when the caller already owns the streams).
+    Instantiate with the ``asyncio.StreamReader`` / ``asyncio.StreamWriter`` pair of an
+    already-bound connection (e.g. a ``ServiceConnection``'s).
     """
 
     DEFAULT_CAPABILITIES: ClassVar[dict[str, Any]] = {
         "com.apple.private.DTXBlockCompression": 0,
         "com.apple.private.DTXConnection": 1,
     }
-
-    @classmethod
-    async def from_socket(cls, sock: _socket.socket) -> DTXConnection:
-        """Create a :class:`DTXConnection` from a raw :class:`socket.socket`.
-
-        Opens asyncio streams over *sock* and delegates to the primary constructor.
-        """
-        reader, writer = await asyncio.open_connection(sock=sock)
-        return cls(reader, writer)
 
     def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         self._reader = reader
