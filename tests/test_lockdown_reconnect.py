@@ -1,3 +1,4 @@
+import ssl
 from typing import Any, Optional, cast
 
 import pytest
@@ -39,7 +40,9 @@ class FakeLockdownClient(LockdownClient):
         self.connections = connections
         self.opened = 0
 
-    async def create_service_connection(self, port: int) -> ServiceConnection:
+    async def create_service_connection(
+        self, port: int, ssl_context: Optional[ssl.SSLContext] = None, strip_ssl: bool = False
+    ) -> ServiceConnection:
         self.opened += 1
         return cast(ServiceConnection, self.connections[min(self.opened, len(self.connections) - 1)])
 

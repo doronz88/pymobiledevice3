@@ -59,7 +59,6 @@ class ASRClient:
                     raise
                 self.logger.debug(f"ASR connection failed, retrying ({attempt}/{ASR_CONNECT_ATTEMPTS})")
                 await asyncio.sleep(ASR_CONNECT_RETRY_DELAY)
-        await self.service.start()
 
         # receive Initiate command message
         data = await self.recv_plist()

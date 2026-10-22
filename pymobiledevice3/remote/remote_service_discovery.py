@@ -5,6 +5,7 @@ import plistlib
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass
+from ssl import SSLContext
 from typing import Any, Callable, Optional, Union, cast
 
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remoted
@@ -306,13 +307,19 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         _ = include_escrow_bag
         return {"Port": self.get_service_port(name), "EnableServiceSSL": False}
 
-    async def create_service_connection(self, port: int) -> ServiceConnection:
+    async def create_service_connection(
+        self, port: int, ssl_context: Optional[SSLContext] = None, strip_ssl: bool = False
+    ) -> ServiceConnection:
         """
         Create a TCP service connection to a port on the device through this RSD.
 
         :param port: device-side TCP port to connect to.
+        :param ssl_context: unsupported; RSD services are reached in plaintext over the tunnel.
+        :param strip_ssl: unsupported, as ``ssl_context``.
         :returns: a connection routed through this RSD's dialer.
         """
+        if ssl_context is not None or strip_ssl:
+            raise ValueError("RSD service connections do not negotiate TLS")
         return await ServiceConnection.create_using_tcp(
             self.service.address[0], port, open_connection=self.open_connection
         )
@@ -333,7 +340,6 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
         :raises PyMobileDevice3Exception: if the check-in handshake returns an unexpected response.
         """
         service = await self.start_lockdown_service_without_checkin(name)
-        await service.start()
         try:
             checkin: dict[str, Any] = {"Label": "pymobiledevice3", "ProtocolVersion": "2", "Request": "RSDCheckin"}
             if include_escrow_bag:

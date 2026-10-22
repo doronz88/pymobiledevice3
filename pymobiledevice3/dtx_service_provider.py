@@ -30,7 +30,6 @@ the underlying connection.
 from __future__ import annotations
 
 import logging
-import socket as _socket
 from typing import Any, ClassVar, Optional, cast
 
 from packaging.version import Version
@@ -39,6 +38,7 @@ from typing_extensions import Self
 from pymobiledevice3.dtx import DTXConnection, DTXService
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.service_connection import create_ssl_context
 
 
 class DtxServiceProvider:
@@ -190,9 +190,8 @@ class DtxServiceProvider:
         """Open a raw connection to *service_name* and return an uninitialised
         :class:`DTXConnection` ready for :meth:`~DTXConnection.connect`.
 
-        When *strip_ssl* is ``True`` the method performs a synchronous TLS
-        handshake and then unwraps the SSL context so that the DTX framing
-        runs over the plain TCP transport — required for
+        When *strip_ssl* is ``True`` the connection completes the TLS
+        handshake and then carries the DTX framing in plaintext — required for
         ``com.apple.instruments.remoteserver`` and similar pre-iOS 14 services.
         """
         lockdown = self.lockdown
@@ -204,36 +203,14 @@ class DtxServiceProvider:
             # plist responses, leaving the stream at the start of the DTX frame.
             # (Native RemoteXPC-era services like dtservicehub need no check-in.)
             svc = await lockdown.start_lockdown_service(service_name)
-            reader, writer = await svc._ensure_started()
-            return DTXConnection(reader, writer)
+            return DTXConnection(svc.reader, svc.writer)
 
         attr = await lockdown.get_service_connection_attributes(service_name, False)
-        svc = await lockdown.create_service_connection(attr["Port"])
-
-        try:
-            if attr.get("EnableServiceSSL", False) and strip_ssl:
-                # Handshake before the socket is bound to the event loop: a stream transport would
-                # race the blocking handshake for the incoming bytes (the proactor loop on Windows
-                # pre-posts an overlapped recv that swallows the ServerHello, timing it out).
-                svc.setblocking(True)
-                with lockdown.ssl_file() as f:  # type: ignore[attr-defined]
-                    svc.ssl_start_sync(cast(str, f))
-                if svc.socket is not None and hasattr(svc.socket, "_sslobj"):
-                    raw_socket: Optional[_socket.socket] = getattr(svc.socket, "_sock", None)
-                    if raw_socket is None:
-                        raw_socket = _socket.socket(fileno=svc.socket.detach())
-                    else:
-                        # `_sslobj` is a private attribute of ssl-wrapped sockets (guarded by hasattr above)
-                        svc.socket._sslobj = None  # pyright: ignore[reportAttributeAccessIssue]
-                    svc.socket = raw_socket
-                svc.setblocking(False)
-            elif attr.get("EnableServiceSSL", False):
-                await svc._ensure_started()
-                with lockdown.ssl_file() as f:  # type: ignore[attr-defined]
-                    await svc.ssl_start(cast(str, f))
-
-            reader, writer = await svc._ensure_started()
-        except BaseException:
-            await svc.close()
-            raise
-        return DTXConnection(reader, writer)
+        ssl_context = None
+        if attr.get("EnableServiceSSL", False):
+            with lockdown.ssl_file() as f:  # type: ignore[attr-defined]
+                ssl_context = create_ssl_context(cast(str, f))
+        svc = await lockdown.create_service_connection(
+            attr["Port"], ssl_context=ssl_context, strip_ssl=ssl_context is not None and strip_ssl
+        )
+        return DTXConnection(svc.reader, svc.writer)

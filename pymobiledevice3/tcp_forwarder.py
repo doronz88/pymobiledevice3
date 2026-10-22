@@ -75,13 +75,10 @@ class TcpForwarderBase:
         try:
             try:
                 remote_connection = await self._establish_remote_connection()
-                await remote_connection.start()
             except ConnectionFailedError:
                 self.logger.error("failed to connect to remote endpoint")
                 return
 
-            assert remote_connection.reader is not None
-            assert remote_connection.writer is not None
             self.logger.info("connection established from %s", peer)
             client_to_remote = asyncio.create_task(
                 self._pipe(local_reader, remote_connection.writer, peer, "client->remote")
@@ -163,7 +160,7 @@ class UsbmuxTcpForwarder(TcpForwarderBase):
         if mux_device is None:
             raise ConnectionFailedError()
         sock = await mux_device.connect(self.dst_port, usbmux_address=self.usbmux_address)
-        return ServiceConnection(sock, mux_device=mux_device)
+        return await ServiceConnection.from_socket(sock, mux_device=mux_device)
 
 
 class LockdownTcpForwarder(TcpForwarderBase):

@@ -1938,5 +1938,4 @@ class Restore(BaseRestore):
             raise ConnectionFailedError(f"Failed to connect to the {data_type} data port {data_port}.")
 
         self.logger.info(f"Connected to {data_type} data port ({data_port})")
-        await service.start()
         return service
