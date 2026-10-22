@@ -638,3 +638,27 @@ def test_every_command_the_doctor_recommends_exists():
         if runner.invoke(__main__.app, [*command.split(), "--help"]).exit_code
     ]
     assert not unresolved, f"doctor recommends commands that do not exist: {unresolved}"
+
+
+@pytest.mark.asyncio
+async def test_developer_image_check_gives_up_on_a_mounter_that_does_not_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Before iOS 14 the mounter serves one client at a time: held by another, it does not answer, and
+    the check must report that instead of blocking doctor forever."""
+
+    async def never_answers(mounter: Any, image_type: str) -> bool:
+        await asyncio.Event().wait()
+        return False
+
+    async def nothing(mounter: Any) -> None: ...
+
+    monkeypatch.setattr(doctor, "MOUNTER_PROBE_TIMEOUT", 0.05)
+    monkeypatch.setattr(mobile_image_mounter.MobileImageMounterService, "connect", nothing)
+    monkeypatch.setattr(mobile_image_mounter.MobileImageMounterService, "close", nothing)
+    monkeypatch.setattr(mobile_image_mounter.MobileImageMounterService, "is_image_mounted", never_answers)
+    lockdown = cast(Any, SimpleNamespace(product_version="13.3", udid="UDID"))
+    monkeypatch.setattr(doctor, "image_type_for_device", lambda lockdown: "Developer")
+
+    check = await asyncio.wait_for(doctor._developer_image_check(lockdown), 5)
+    assert check.status is doctor.Status.UNKNOWN
