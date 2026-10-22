@@ -528,7 +528,7 @@ class InteractiveShell:
         """Run a command line and return its exit status (130 when interrupted)."""
         self._loop = asyncio.get_running_loop()
         self._interrupted = False
-        self._running = asyncio.ensure_future(self._run_line(line))
+        self._running = asyncio.create_task(self._run_line(line), name="interactive-shell-line")
         try:
             self.last_status = await self._running
         except asyncio.CancelledError:

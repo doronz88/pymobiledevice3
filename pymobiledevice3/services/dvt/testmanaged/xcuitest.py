@@ -210,8 +210,10 @@ class XCUITestService:
                     # connection is reset before _XCT_didFinishExecutingTestPlan
                     # can be sent.  In that case _disconnected fires first and we
                     # raise ConnectionTerminatedError rather than hanging.
-                    done_fut = asyncio.ensure_future(test_done.wait())
-                    disc_fut = asyncio.ensure_future(main_test_manager_provider.dtx.wait_disconnected())
+                    done_fut = asyncio.create_task(test_done.wait(), name="xcuitest-test-done")
+                    disc_fut = asyncio.create_task(
+                        main_test_manager_provider.dtx.wait_disconnected(), name="xcuitest-disconnected"
+                    )
                     try:
                         done_set, _ = await asyncio.wait(
                             {done_fut, disc_fut},

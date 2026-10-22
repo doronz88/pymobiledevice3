@@ -366,7 +366,7 @@ async def serve_afc_webdav(
 
     uv_config = uvicorn.Config(app, host=host, port=port, log_level="warning", lifespan="off")
     server = uvicorn.Server(uv_config)
-    task = asyncio.ensure_future(server.serve())
+    task = asyncio.create_task(server.serve(), name="afc-webdav-server")
     while not server.started:
         await asyncio.sleep(0.02)
     bound_port = server.servers[0].sockets[0].getsockname()[1]
