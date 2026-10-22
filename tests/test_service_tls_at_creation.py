@@ -62,9 +62,6 @@ async def test_start_lockdown_service_negotiates_tls_at_creation(fake_lockdown: 
     assert fake_lockdown.sock.fileno() == -1
 
 
-# CPython <= 3.10 leaves the half-built SSLSocket unclosed when the strip handshake fails inside
-# wrap_socket(); see test_strip_ssl_handshake_failure_raises_connection_terminated.
-@pytest.mark.filterwarnings("ignore::ResourceWarning")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("strip_ssl", [False, True])
 async def test_dtx_open_negotiates_tls_at_creation(fake_lockdown: _Lockdown, strip_ssl: bool) -> None:

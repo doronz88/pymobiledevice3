@@ -125,23 +125,50 @@ def create_ssl_context(
     return context
 
 
-def _strip_ssl(sock: socket.socket, ssl_context: ssl.SSLContext) -> socket.socket:
-    """Complete a TLS handshake on ``sock``, then hand back the bare socket for plaintext traffic."""
-    sock.setblocking(True)
-    sock.settimeout(DEFAULT_SSL_HANDSHAKE_TIMEOUT)
+# TLS record content types: change_cipher_spec, alert, handshake, application_data
+_TLS_CONTENT_TYPES = (20, 21, 22, 23)
+
+
+async def _strip_ssl(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, ssl_context: ssl.SSLContext) -> None:
+    """
+    Complete a TLS handshake over the streams, then leave them carrying plaintext.
+
+    Pre-iOS 14 DTX services gate on a handshake but speak raw bytes afterwards. The handshake runs
+    in memory, fed one whole TLS record at a time, so nothing past its last record is consumed and
+    the stream transport stays the only reader of the socket.
+    """
+    incoming, outgoing = ssl.MemoryBIO(), ssl.MemoryBIO()
+    tls = ssl_context.wrap_bio(incoming, outgoing, server_side=False)
+    while True:
+        try:
+            tls.do_handshake()
+            done = True
+        except ssl.SSLWantReadError:
+            done = False
+        pending = outgoing.read()
+        if pending:
+            writer.write(pending)
+            await writer.drain()
+        if done:
+            return
+        header = await reader.readexactly(5)
+        if header[0] not in _TLS_CONTENT_TYPES or header[1] != 3:
+            raise ConnectionTerminatedError(f"The device answered the TLS handshake with non-TLS data: {header.hex()}")
+        (length,) = struct.unpack(">H", header[3:])
+        incoming.write(header + await reader.readexactly(length))
+
+
+async def _strip_ssl_or_close(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, ssl_context: ssl.SSLContext
+) -> None:
     try:
-        ssl_socket = ssl_context.wrap_socket(sock)
-    except OSError as e:
-        # on handshake failure wrap_socket() has already detached (and closed) the socket
-        raise ConnectionTerminatedError() from e
-    raw_socket: Optional[socket.socket] = getattr(ssl_socket, "_sock", None)
-    if raw_socket is None:
-        raw_socket = socket.socket(fileno=ssl_socket.detach())
-    else:
-        # `_sslobj` is a private attribute of ssl-wrapped sockets
-        ssl_socket._sslobj = None  # pyright: ignore[reportAttributeAccessIssue]
-    raw_socket.settimeout(None)
-    return raw_socket
+        await asyncio.wait_for(_strip_ssl(reader, writer, ssl_context), timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT)
+    except BaseException as e:
+        # Wait for the close: a proactor transport releases the socket only once its pending read is cancelled.
+        await close_stream_writer(writer)
+        if isinstance(e, (OSError, asyncio.IncompleteReadError, asyncio.TimeoutError)):
+            raise ConnectionTerminatedError() from e
+        raise
 
 
 def _tls_options(ssl_context: ssl.SSLContext) -> dict[str, Any]:
@@ -246,15 +273,8 @@ class ServiceConnection:
         :return: A bound ServiceConnection.
         """
         try:
-            options: dict[str, Any] = {}
-            if ssl_context is not None and strip_ssl:
-                # Handshake before the socket is bound to the event loop: a stream transport would
-                # race the blocking handshake for the incoming bytes (the proactor loop on Windows
-                # pre-posts an overlapped recv that swallows the ServerHello, timing it out).
-                sock = _strip_ssl(sock, ssl_context)
-            elif ssl_context is not None:
-                options = _tls_options(ssl_context)
             sock.setblocking(False)
+            options = _tls_options(ssl_context) if ssl_context is not None and not strip_ssl else {}
             try:
                 reader, writer = await asyncio.open_connection(sock=sock, **options)
             except OSError as e:
@@ -264,6 +284,8 @@ class ServiceConnection:
             # before one did.
             sock.close()
             raise
+        if ssl_context is not None and strip_ssl:
+            await _strip_ssl_or_close(reader, writer, ssl_context)
         return cls(reader, writer, mux_device=mux_device)
 
     @classmethod
@@ -290,12 +312,9 @@ class ServiceConnection:
             connections through its in-process stack. Keep-alive is skipped for injected dialers —
             their connection is a process-local relay leg, not the network leg to the device.
         :param ssl_context: Negotiate TLS with this context before any service traffic.
-        :param strip_ssl: Not supported over TCP: the plaintext-after-handshake mode needs the socket
-            before it is bound.
+        :param strip_ssl: See `from_socket`.
         :return: A ServiceConnection object.
         """
-        if strip_ssl:
-            raise ValueError("stripped TLS needs a socket that is not yet bound; it is not supported over TCP")
         dialer = open_connection or asyncio.open_connection
         reader, writer = await asyncio.wait_for(dialer(hostname, port), timeout=create_connection_timeout)
         try:
@@ -304,7 +323,9 @@ class ServiceConnection:
                 raise ConnectionError(f"failed to get socket from connection to {hostname}:{port}")
             if keep_alive and open_connection is None:
                 OSUTIL.set_keepalive(sock)
-            if ssl_context is not None:
+            if ssl_context is not None and strip_ssl:
+                await _strip_ssl_or_close(reader, writer, ssl_context)
+            elif ssl_context is not None:
                 writer = await _start_tls(reader, writer, ssl_context)
         except BaseException:
             # Never leak the established connection: an open writer keeps the userspace
