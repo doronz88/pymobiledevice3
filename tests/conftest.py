@@ -1,9 +1,11 @@
 import asyncio
 import contextlib
+import dataclasses
 import logging
 import os
 import socket
 import stat
+import time
 import weakref
 from collections.abc import AsyncGenerator, Generator
 from typing import Any, Optional, Union
@@ -26,6 +28,8 @@ from pymobiledevice3.remote.rsd_tunnel import PreferredRsdTunnel
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.testmanaged.xcuitest import XCUITestService
 from pymobiledevice3.tunneld.api import get_tunneld_devices
+
+pytest_plugins = ["pytester"]
 
 logging.getLogger("quic").setLevel(logging.CRITICAL + 1)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL + 1)
@@ -124,14 +128,37 @@ def _recording_sockets() -> Generator[_SocketRecording, None, None]:
         _socket_recordings.remove(recording)
 
 
-def _leaks(recording: _SocketRecording, fds_before: Optional[set[int]]) -> list[str]:
-    """The sockets in a recording still open, and the fds opened since ``fds_before`` (where listable)."""
-    sockets = recording.open_sockets()
-    leaks = [f"socket left open: {sock!r}" for sock in sockets]
+@dataclasses.dataclass
+class _WideFixture:
+    """A module- or session-scoped fixture alive now, with what it may hold until its teardown."""
+
+    fixturedef: Any
+    recording: _SocketRecording
+    fds_before: Optional[set[int]]
+    fds_opened: frozenset[int]
+
+
+_wide_fixtures: list[_WideFixture] = []
+
+
+def _leaks(
+    recording: _SocketRecording, fds_before: Optional[set[int]], held_fds: frozenset[int] = frozenset()
+) -> dict[int, str]:
+    """By fd: the sockets in a recording still open, and the fds opened since ``fds_before``
+    (where listable) other than ``held_fds``."""
+    leaks = {sock.fileno(): f"socket left open: {sock!r}" for sock in recording.open_sockets()}
     if fds_before is not None:
-        reported = {sock.fileno() for sock in sockets}
-        leaks.extend(f"leaked {_fd_kind(fd)} fd {fd}" for fd in sorted((_open_fds() or set()) - fds_before - reported))
+        for fd in sorted((_open_fds() or set()) - fds_before - held_fds - leaks.keys()):
+            leaks[fd] = f"leaked {_fd_kind(fd)} fd {fd}"
     return leaks
+
+
+def _reported(leaks: dict[int, str]) -> list[str]:
+    """Mark leaks as reported, so the wider-scoped fixtures still alive around them don't report them again."""
+    for fixture in _wide_fixtures:
+        if fixture.fds_before is not None:
+            fixture.fds_before.update(leaks)
+    return list(leaks.values())
 
 
 _FD_SETTLE_SECONDS = 1.0
@@ -163,7 +190,7 @@ async def socket_hygiene() -> AsyncGenerator[None, None]:
         while leaks and loop.time() < deadline:
             await _loop_tick(loop, 0.01)
             leaks = _leaks(recording, before)
-    problems.extend(leaks)
+    problems.extend(_reported(leaks))
     assert not problems, "; ".join(problems)
 
 
@@ -183,6 +210,44 @@ async def _loop_problems(loop: asyncio.AbstractEventLoop) -> list[str]:
             f"loop still watches fd {fd} ({_fd_kind(fd) or 'closed'})" for fd in selector.get_map() if fd != wakeup
         )
     return problems
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_fixture_setup(fixturedef: Any, request: pytest.FixtureRequest) -> Generator[None, object, object]:
+    """Record what a wider-scoped fixture opens: its sockets outlive each test by design, so
+    `socket_hygiene` leaves them alone, and they are checked at the fixture's own teardown."""
+    if fixturedef.scope == "function":
+        return (yield)
+    recording = _SocketRecording()
+    _socket_recordings.append(recording)
+    before = _open_fds()
+    try:
+        result = yield
+    except BaseException:
+        _socket_recordings.remove(recording)
+        raise
+    after = _open_fds()
+    opened = frozenset(after - before) if after is not None and before is not None else frozenset()
+    _wide_fixtures.append(_WideFixture(fixturedef, recording, before, opened))
+    return result
+
+
+def pytest_fixture_post_finalizer(fixturedef: Any, request: pytest.FixtureRequest) -> None:
+    """Fail a wider-scoped fixture's teardown if it leaves a socket behind."""
+    index = next((i for i, fixture in enumerate(_wide_fixtures) if fixture.fixturedef is fixturedef), None)
+    if index is None:
+        return
+    fixture = _wide_fixtures.pop(index)
+    _socket_recordings.remove(fixture.recording)
+    # A wider fixture set up after this one (a session fixture first requested inside a module)
+    # is still alive, and so are the fds it opened.
+    held_fds = frozenset(fd for later in _wide_fixtures[index:] for fd in later.fds_opened)
+    deadline = time.monotonic() + _FD_SETTLE_SECONDS
+    leaks = _leaks(fixture.recording, fixture.fds_before, held_fds)
+    while leaks and time.monotonic() < deadline:
+        time.sleep(0.01)
+        leaks = _leaks(fixture.recording, fixture.fds_before, held_fds)
+    assert not leaks, f"fixture {fixturedef.argname!r} left: " + "; ".join(_reported(leaks))
 
 
 def pytest_addoption(parser):
