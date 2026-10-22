@@ -164,7 +164,8 @@ async def _strip_ssl_or_close(
     try:
         await asyncio.wait_for(_strip_ssl(reader, writer, ssl_context), timeout=DEFAULT_SSL_HANDSHAKE_TIMEOUT)
     except BaseException as e:
-        writer.close()
+        # Wait for the close: a proactor transport releases the socket only once its pending read is cancelled.
+        await close_stream_writer(writer)
         if isinstance(e, (OSError, asyncio.IncompleteReadError, asyncio.TimeoutError)):
             raise ConnectionTerminatedError() from e
         raise
