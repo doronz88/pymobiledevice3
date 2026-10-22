@@ -373,3 +373,35 @@ async def test_close_during_start_tls_does_not_install_the_tls_writer():
         assert connection.writer is plain_writer
     finally:
         peer.close()
+
+
+@pytest.mark.asyncio
+async def test_cancel_as_the_dial_completes_closes_what_it_dialed():
+    """A caller cancelled in the same loop iteration its dial completes (a timeout, a shutdown)
+    must not leave the dialed connection open: wait_for drops that result on the floor."""
+    sock, peer = socket.socketpair()
+    dialed = asyncio.get_running_loop().create_future()
+    gate = asyncio.get_running_loop().create_future()
+
+    async def dialer(hostname: str, port: int) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        streams = await asyncio.open_connection(sock=sock)
+        dialed.set_result(None)
+        await gate
+        return streams
+
+    try:
+        creating = asyncio.create_task(ServiceConnection.create_using_tcp("device", 1, open_connection=dialer))
+        await dialed
+        gate.set_result(None)  # the dial completes on the next iteration...
+        creating.cancel()  # ...the iteration its caller is cancelled in
+        try:
+            connection = await creating
+        except asyncio.CancelledError:
+            pass
+        else:  # Python <= 3.11's wait_for can drop the cancellation instead of the result
+            await connection.close()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert sock.fileno() == -1
+    finally:
+        peer.close()

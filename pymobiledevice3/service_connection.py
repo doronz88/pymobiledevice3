@@ -6,6 +6,7 @@ import socket
 import ssl
 import struct
 import xml.parsers.expat
+from collections.abc import Coroutine
 from typing import Any, Callable, Optional, cast
 
 from pygments import formatters, highlight, lexers
@@ -171,6 +172,28 @@ async def _strip_ssl_or_close(
         raise
 
 
+async def _dial(
+    dialing: Coroutine[Any, Any, tuple[asyncio.StreamReader, asyncio.StreamWriter]], timeout: float
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    """Await a dial within ``timeout``, closing what it dialed if the wait ends without taking it.
+
+    wait_for() drops a result that completes as the wait is cancelled or times out; shielded, the
+    dial is cancelled here instead, and a connection it completed anyway is closed.
+    """
+    dial = asyncio.create_task(dialing)
+    try:
+        return await asyncio.wait_for(asyncio.shield(dial), timeout=timeout)
+    except BaseException:
+        dial.cancel()
+        dial.add_done_callback(_close_dialed)
+        raise
+
+
+def _close_dialed(dial: "asyncio.Task[tuple[asyncio.StreamReader, asyncio.StreamWriter]]") -> None:
+    if not dial.cancelled() and dial.exception() is None:
+        dial.result()[1].close()
+
+
 def _tls_options(ssl_context: ssl.SSLContext) -> dict[str, Any]:
     return {"ssl": ssl_context, "server_hostname": "", "ssl_handshake_timeout": DEFAULT_SSL_HANDSHAKE_TIMEOUT}
 
@@ -316,7 +339,7 @@ class ServiceConnection:
         :return: A ServiceConnection object.
         """
         dialer = open_connection or asyncio.open_connection
-        reader, writer = await asyncio.wait_for(dialer(hostname, port), timeout=create_connection_timeout)
+        reader, writer = await _dial(dialer(hostname, port), create_connection_timeout)
         try:
             sock = writer.get_extra_info("socket")
             if sock is None:
