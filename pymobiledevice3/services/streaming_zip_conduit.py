@@ -11,6 +11,7 @@ from typing import Any, Callable, Optional, cast
 
 from pymobiledevice3.exceptions import AppInstallError, PyMobileDevice3Exception
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.lockdown_service import LockdownService
 
@@ -198,7 +199,7 @@ class StreamingZipConduitService(LockdownService):
         :param developer: install as a developer package (``PackageType`` ``Developer``) rather than
             a customer one.
         :param options: extra installation options, merged over the defaults.
-        :param handler: progress callback, invoked with the completion percentage.
+        :param handler: progress callback, invoked with the installation completion percentage.
         :raises AppInstallError: if the device fails to install the app.
         :raises StreamingZipConduitError: if the device refuses or fails the transfer.
         """
@@ -211,29 +212,45 @@ class StreamingZipConduitService(LockdownService):
             "UserInitiatedTransfer": False,
         }
         if package_path.is_dir():
-            await self._transfer(setup, _app_directory_entries(package_path), handler)
+            await self._transfer(setup, _app_directory_entries(package_path), handler, package_path.name)
         else:
             with zipfile.ZipFile(package_path) as archive:
-                await self._transfer(setup, _ipa_entries(archive), handler)
+                await self._transfer(setup, _ipa_entries(archive), handler, package_path.name)
 
     async def _transfer(
-        self, setup: dict[str, Any], entries: list[_Entry], handler: Optional[Callable[[int], Any]]
+        self, setup: dict[str, Any], entries: list[_Entry], handler: Optional[Callable[[int], Any]], name: str
     ) -> None:
         await self.service.send_plist(setup)
-        for entry in _with_metadata(entries):
-            await self.service.sendall(entry.header())
-            for chunk in entry.chunks():
-                await self.service.sendall(chunk)
-        await self.service.sendall(_CENTRAL_DIRECTORY_SIGNATURE)
+        entries = _with_metadata(entries)
+        total = sum(entry.size for entry in entries) + len(_CENTRAL_DIRECTORY_SIGNATURE)
+        self.logger.info(f"Uploading {name}...")
+        with ProgressBar(total=total, desc=name, unit=BYTES_UNIT) as upload_bar:
+            for entry in entries:
+                await self.service.sendall(entry.header())
+                for chunk in entry.chunks():
+                    await self.service.sendall(chunk)
+                    upload_bar.update(len(chunk))
+            await self.service.sendall(_CENTRAL_DIRECTORY_SIGNATURE)
+            upload_bar.update(len(_CENTRAL_DIRECTORY_SIGNATURE))
+        self.logger.info("Upload complete.")
 
-        while True:
-            response = await self.service.recv_plist()
-            if "Error" in response:
-                raise StreamingZipConduitError(str(response["Error"]))
-            if response.get("Status") == "DataComplete":
-                return
-            progress = cast(dict[str, Any], response.get("InstallProgressDict") or {})
-            if "Error" in progress:
-                raise AppInstallError(f"{progress['Error']}: {progress.get('ErrorDescription')}")
-            if handler is not None and "PercentComplete" in progress:
-                handler(progress["PercentComplete"])
+        stage: Optional[str] = None
+        with ProgressBar(total=100, desc="install") as install_bar:
+            while True:
+                response = await self.service.recv_plist()
+                if "Error" in response:
+                    raise StreamingZipConduitError(str(response["Error"]))
+                progress = cast(dict[str, Any], response.get("InstallProgressDict") or {})
+                if "Error" in progress:
+                    raise AppInstallError(f"{progress['Error']}: {progress.get('ErrorDescription')}")
+                status = progress.get("Status")
+                if status and status != "Complete" and status != stage:
+                    stage = status
+                    self.logger.info(f"Stage: {status}")
+                if "PercentComplete" in progress:
+                    install_bar.n = progress["PercentComplete"]
+                    if handler is not None:
+                        handler(progress["PercentComplete"])
+                if response.get("Status") == "DataComplete":
+                    break
+        self.logger.info("Installation succeed.")

@@ -148,10 +148,14 @@ async def test_install_reports_progress_until_complete(tmp_path: Path) -> None:
     assert progress == [40, 90]
 
 
+@pytest.mark.parametrize("extra", [{}, {"Status": "DataComplete"}])
 @pytest.mark.asyncio
-async def test_install_raises_on_an_installation_error(tmp_path: Path) -> None:
+async def test_install_raises_on_an_installation_error(tmp_path: Path, extra: dict[str, str]) -> None:
     service, _ = _service([
-        {"InstallProgressDict": {"Error": "ApplicationVerificationFailed", "ErrorDescription": "bad signature"}}
+        {
+            "InstallProgressDict": {"Error": "ApplicationVerificationFailed", "ErrorDescription": "bad signature"},
+            **extra,
+        }
     ])
 
     with pytest.raises(AppInstallError, match="ApplicationVerificationFailed: bad signature"):
