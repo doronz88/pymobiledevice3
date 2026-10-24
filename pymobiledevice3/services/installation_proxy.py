@@ -9,6 +9,7 @@ from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 from pymobiledevice3.exceptions import AppInstallError
 from pymobiledevice3.plist_types import PlistSendable
+from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 from pymobiledevice3.services.afc import AfcService
 from pymobiledevice3.services.lockdown_service import LockdownService
 from pymobiledevice3.utils import str_to_path
@@ -76,24 +77,31 @@ class InstallationProxyService(LockdownService):
     SERVICE_NAME = "com.apple.mobile.installation_proxy"
     RSD_SERVICE_NAME = "com.apple.mobile.installation_proxy.shim.remote"
 
-    async def _watch_completion(self, handler: Optional[Callable[..., Any]] = None, *args: Any) -> None:
-        while True:
-            response = await self.service.recv_plist()
-            if not response:
-                break
-            error = response.get("Error")
-            if error:
-                raise AppInstallError(f"{error}: {response.get('ErrorDescription')}")
-            completion = response.get("PercentComplete")
-            if completion:
-                if handler:
-                    self.logger.debug("calling handler")
-                    handler(completion, *args)
-                self.logger.info(f"{completion}% Complete")
-            if response.get("Status") == "Complete":
-                self.logger.info("Installation succeed.")
-                return
-        raise AppInstallError()
+    async def _watch_completion(
+        self, handler: Optional[Callable[..., Any]] = None, *args: Any, desc: str = "install"
+    ) -> None:
+        stage: Optional[str] = None
+        with ProgressBar(total=100, desc=desc) as bar:
+            while True:
+                response = await self.service.recv_plist()
+                if not response:
+                    raise AppInstallError()
+                error = response.get("Error")
+                if error:
+                    raise AppInstallError(f"{error}: {response.get('ErrorDescription')}")
+                status = response.get("Status")
+                if isinstance(status, str) and status != "Complete" and status != stage:
+                    stage = status
+                    self.logger.info(f"Stage: {status}")
+                completion = response.get("PercentComplete")
+                if isinstance(completion, (int, float)):
+                    bar.n = completion
+                    if completion and handler:
+                        self.logger.debug("calling handler")
+                        handler(completion, *args)
+                if status == "Complete":
+                    break
+        self.logger.info("Installation succeed.")
 
     async def send_cmd_for_bundle_identifier(
         self,
@@ -126,7 +134,7 @@ class InstallationProxyService(LockdownService):
 
         request.update({"ClientOptions": options})
         await self.service.send_plist(request)
-        await self._watch_completion(handler, *args)
+        await self._watch_completion(handler, *args, desc=cmd.lower())
 
     async def upgrade(
         self,
@@ -235,13 +243,19 @@ class InstallationProxyService(LockdownService):
             try:
                 if not ipcc_mode:
                     await afc.makedirs(TEMP_REMOTE_BASEDIR)
-                    await afc.set_file_contents(fpath, package_bytes)
+                    await self._upload_package(afc, fpath, package_bytes, "package")
                 else:
                     await self.upload_ipcc_from_bytes(package_bytes, fpath, afc)
 
                 await self.send_package(cmd, options, handler, fpath, *args)
             finally:
                 await afc.rm_single(fpath, force=True)
+
+    async def _upload_package(self, afc: AfcService, remote_path: str, data: bytes, name: str) -> None:
+        self.logger.info(f"Uploading {name}...")
+        with ProgressBar(total=len(data), desc=name, unit=BYTES_UNIT) as bar:
+            await afc.set_file_contents(remote_path, data, progress=bar)
+        self.logger.info("Upload complete.")
 
     @str_to_path("package_path")
     async def install_from_local(
@@ -299,7 +313,7 @@ class InstallationProxyService(LockdownService):
             try:
                 if not ipcc_mode:
                     await afc.makedirs(TEMP_REMOTE_BASEDIR)
-                    await afc.set_file_contents(fname, ipa_contents)
+                    await self._upload_package(afc, fname, ipa_contents, package_path.name)
 
                 else:
                     await self.upload_ipcc_from_path(package_path, fname, afc)
@@ -388,15 +402,17 @@ class InstallationProxyService(LockdownService):
 
         # we unpack it and upload it directly instead of saving it in a temp folder
         with ZipFile(file_stream, "r") as file_zip:
-            for file_name in file_zip.namelist():
-                if file_name.endswith(("/", "\\")):
-                    await afc_client.makedirs(f"{dst}/{file_name}")
-                    continue
+            total = sum(info.file_size for info in file_zip.infolist() if not info.filename.endswith(("/", "\\")))
+            with ProgressBar(total=total, desc="ipcc", unit=BYTES_UNIT) as bar:
+                for file_name in file_zip.namelist():
+                    if file_name.endswith(("/", "\\")):
+                        await afc_client.makedirs(f"{dst}/{file_name}")
+                        continue
 
-                with file_zip.open(file_name) as inside_file_zip:
-                    file_data = inside_file_zip.read()
-                    await afc_client.makedirs(dst)
-                    await afc_client.set_file_contents(f"{dst}/{file_name}", file_data)
+                    with file_zip.open(file_name) as inside_file_zip:
+                        file_data = inside_file_zip.read()
+                        await afc_client.makedirs(dst)
+                        await afc_client.set_file_contents(f"{dst}/{file_name}", file_data, progress=bar)
 
         self.logger.info("Upload complete.")
 

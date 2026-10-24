@@ -995,7 +995,7 @@ class AfcService(LockdownService):
         return d
 
     @path_to_str()
-    async def set_file_contents(self, filename: str, data: bytes) -> None:
+    async def set_file_contents(self, filename: str, data: bytes, progress: Optional[ProgressBar] = None) -> None:
         """
         Write data to a file, creating or truncating it.
 
@@ -1003,11 +1003,18 @@ class AfcService(LockdownService):
 
         :param filename: Path to the file.
         :param data: Bytes to write.
+        :param progress: Optional bar advanced as chunks are written.
         :raises AfcException: if the open or write operation fails.
         """
         h = await self.fopen(filename, "w")
-        await self.fwrite(h, data)
-        await self.fclose(h)
+        try:
+            for offset in range(0, len(data), MAXIMUM_READ_SIZE):
+                chunk = data[offset : offset + MAXIMUM_READ_SIZE]
+                await self.fwrite(h, chunk)
+                if progress is not None:
+                    progress.update(len(chunk))
+        finally:
+            await self.fclose(h)
 
     @path_to_str()
     async def walk(self, dirname: str) -> AsyncIterator[tuple[str, list[str], list[str]]]:
