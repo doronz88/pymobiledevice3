@@ -12,7 +12,11 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services import mobile_image_mounter
 from pymobiledevice3.services.cryptexd import DDI_CRYPTEX_IDENTIFIER, CryptexdService, InstalledCryptex
-from pymobiledevice3.services.mobile_image_mounter import MobileImageMounterService, PersonalizedImageMounter
+from pymobiledevice3.services.mobile_image_mounter import (
+    MobileImageMounterService,
+    PersonalizedDdi,
+    PersonalizedImageMounter,
+)
 
 
 @pytest.mark.asyncio
@@ -193,6 +197,45 @@ async def test_auto_mount_keeps_the_personalized_ddi_over_usb_below_the_cutoff(
     await mobile_image_mounter.auto_mount(_usb_lockdown(version))
 
     assert recorder.calls == ["personalized"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("over_rsd", [False, True], ids=["usb", "rsd"])
+async def test_auto_mount_can_force_the_personalized_dmg_from_the_cutoff(
+    monkeypatch: pytest.MonkeyPatch, over_rsd: bool
+) -> None:
+    # A virtual iPhone 27.0 whose sandbox denies cryptexd staging still mounts the PersonalizedDMG
+    recorder = _AutoMountCalls(monkeypatch)
+    lockdown = _rsd(["CryptexInstall"], os_version="27.0") if over_rsd else _usb_lockdown("27.0")
+
+    await mobile_image_mounter.auto_mount(lockdown, image=PersonalizedDdi.PERSONALIZED_DMG)
+
+    assert recorder.calls == ["personalized"]
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_can_force_the_cryptex_below_the_cutoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = _AutoMountCalls(monkeypatch)
+
+    await mobile_image_mounter.auto_mount(_rsd(["CryptexInstall"], os_version="26.4"), image=PersonalizedDdi.CRYPTEX)
+
+    assert recorder.calls == ["precheck", "cryptex"]
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_forced_cryptex_requires_rsd(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = _AutoMountCalls(monkeypatch)
+
+    with pytest.raises(RSDRequiredError):
+        await mobile_image_mounter.auto_mount(_usb_lockdown("26.4"), image=PersonalizedDdi.CRYPTEX)
+
+    assert recorder.calls == []
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_rejects_a_forced_image_below_ios_17() -> None:
+    with pytest.raises(ValueError):
+        await mobile_image_mounter.auto_mount(_usb_lockdown("16.7"), image=PersonalizedDdi.PERSONALIZED_DMG)
 
 
 @pytest.mark.parametrize("version", ["17.0", "17.4", "26.0.1"])

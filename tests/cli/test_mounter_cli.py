@@ -7,6 +7,7 @@ import typer
 from pymobiledevice3.cli import mounter
 from pymobiledevice3.exceptions import AlreadyMountedError, DeveloperDiskImageNotFoundError, UnsupportedCommandError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.mobile_image_mounter import PersonalizedDdi
 
 LOCKDOWN = cast(LockdownServiceProvider, object())
 
@@ -52,5 +53,28 @@ def test_explicit_mount_commands_exit_nonzero_on_a_handled_error(error: Exceptio
 
     with pytest.raises(typer.Exit) as exc_info:
         mounter.catch_errors(command)()
+
+    assert exc_info.value.exit_code == 1
+
+
+def test_auto_mount_forwards_a_forced_image(monkeypatch: pytest.MonkeyPatch) -> None:
+    forwarded: list[Any] = []
+
+    async def auto_mount(*_args: Any, image: Any = None, **_kwargs: Any) -> None:
+        forwarded.append(image)
+
+    monkeypatch.setattr(mounter, "auto_mount", auto_mount)
+    monkeypatch.setattr(mounter, "uses_personalized_image", lambda _lockdown: True)
+
+    mounter.mounter_auto_mount(service_provider=LOCKDOWN, image=PersonalizedDdi.PERSONALIZED_DMG)
+
+    assert forwarded == [PersonalizedDdi.PERSONALIZED_DMG]
+
+
+def test_auto_mount_refuses_a_forced_image_below_ios_17(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mounter, "uses_personalized_image", lambda _lockdown: False)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        mounter.mounter_auto_mount(service_provider=LOCKDOWN, image=PersonalizedDdi.CRYPTEX)
 
     assert exc_info.value.exit_code == 1
