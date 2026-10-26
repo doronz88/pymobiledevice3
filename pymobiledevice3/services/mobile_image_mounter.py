@@ -1,3 +1,4 @@
+import enum
 import hashlib
 import logging
 import plistlib
@@ -361,6 +362,16 @@ PERSONALIZED_IMAGE_MIN_VERSION = Version("17.0")
 CRYPTEX_IMAGE_MIN_VERSION = Version("27.0")
 
 
+class PersonalizedDdi(str, enum.Enum):
+    """Which iOS 17+ DeveloperDiskImage `auto_mount` installs, overriding its version-based choice."""
+
+    #: The Cryptex1 DDI, installed over ``cryptexd``; needs an RSD tunnel.
+    CRYPTEX = "cryptex"
+    #: The ``PersonalizedDMG``, mounted over the image mounter. Works where the device cannot
+    #: install the cryptex, e.g. a virtual iPhone 27.0 whose sandbox denies cryptexd staging.
+    PERSONALIZED_DMG = "personalized-dmg"
+
+
 class DeveloperDiskImageMounter(MobileImageMounterService):
     """Mounter for the classic (pre-iOS 17) ``Developer`` Disk Image."""
 
@@ -662,7 +673,7 @@ def uses_cryptex_image(lockdown: LockdownServiceProvider) -> bool:
     return True
 
 
-async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
+async def auto_mount_personalized(lockdown: LockdownServiceProvider, image: Optional[PersonalizedDdi] = None) -> None:
     """
     Download (if needed) and mount the Personalized Developer Disk Image.
 
@@ -671,17 +682,23 @@ async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
     be personalized for devices newer than the DDI itself. From `CRYPTEX_IMAGE_MIN_VERSION` the
     cryptex is the only choice, so plain lockdown is refused with `RSDRequiredError` (which the CLI
     answers by retrying over a tunnel). Below it -- or where `uses_cryptex_image` otherwise rules
-    the cryptex out -- mounts the ``PersonalizedDMG`` over the image mounter.
+    the cryptex out -- mounts the ``PersonalizedDMG`` over the image mounter. `image` overrides
+    that choice.
 
     :param lockdown: Lockdown service provider for the target device.
-    :raises RSDRequiredError: on `CRYPTEX_IMAGE_MIN_VERSION` and later without an RSD tunnel.
+    :param image: forces this image instead of choosing one by iOS version.
+    :raises RSDRequiredError: when the cryptex is to be installed without an RSD tunnel.
     """
-    if not isinstance(lockdown, RemoteServiceDiscoveryService) and (
-        Version(lockdown.product_version) >= CRYPTEX_IMAGE_MIN_VERSION
-    ):
+    if image is None:
+        if not isinstance(lockdown, RemoteServiceDiscoveryService) and (
+            Version(lockdown.product_version) >= CRYPTEX_IMAGE_MIN_VERSION
+        ):
+            raise RSDRequiredError(lockdown.udid, lockdown.product_version)
+        image = PersonalizedDdi.CRYPTEX if uses_cryptex_image(lockdown) else PersonalizedDdi.PERSONALIZED_DMG
+    elif image == PersonalizedDdi.CRYPTEX and not isinstance(lockdown, RemoteServiceDiscoveryService):
         raise RSDRequiredError(lockdown.udid, lockdown.product_version)
 
-    if uses_cryptex_image(lockdown):
+    if image == PersonalizedDdi.CRYPTEX:
         from pymobiledevice3.services.cryptexd import CryptexdService
 
         async with PersonalizedImageMounter(lockdown=lockdown) as mounter:
@@ -689,9 +706,9 @@ async def auto_mount_personalized(lockdown: LockdownServiceProvider) -> None:
         await CryptexdService(cast(RemoteServiceDiscoveryService, lockdown)).auto_install_ddi()
         return
 
-    image, build_manifest, trustcache = fetch_personalized_ddi()
+    dmg, build_manifest, trustcache = fetch_personalized_ddi()
     async with PersonalizedImageMounter(lockdown=lockdown) as mounter:
-        await mounter.mount(image, build_manifest, trustcache)
+        await mounter.mount(dmg, build_manifest, trustcache)
 
 
 def uses_personalized_image(lockdown: LockdownServiceProvider) -> bool:
@@ -714,7 +731,10 @@ def image_type_for_device(lockdown: LockdownServiceProvider) -> str:
 
 
 async def auto_mount(
-    lockdown: LockdownServiceProvider, xcode: Optional[str] = None, version: Optional[str] = None
+    lockdown: LockdownServiceProvider,
+    xcode: Optional[str] = None,
+    version: Optional[str] = None,
+    image: Optional[PersonalizedDdi] = None,
 ) -> None:
     """
     Auto-mount the appropriate Developer Disk Image for the device's iOS version.
@@ -726,8 +746,12 @@ async def auto_mount(
     :param lockdown: Lockdown service provider for the target device.
     :param xcode: Path to the Xcode app bundle, forwarded to `auto_mount_developer`.
     :param version: iOS version override, forwarded to `auto_mount_developer`.
+    :param image: forces this iOS 17+ image, forwarded to `auto_mount_personalized`.
+    :raises ValueError: if `image` is given for a device below iOS 17.0.
     """
     if uses_personalized_image(lockdown):
-        await auto_mount_personalized(lockdown)
+        await auto_mount_personalized(lockdown, image=image)
+    elif image is not None:
+        raise ValueError(f"{image.value} is an iOS {PERSONALIZED_IMAGE_MIN_VERSION}+ image")
     else:
         await auto_mount_developer(lockdown, xcode=xcode, version=version)

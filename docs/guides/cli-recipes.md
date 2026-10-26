@@ -299,6 +299,11 @@ pymobiledevice3 mounter auto-mount
 | 17.0 - 26.x | the `PersonalizedDMG` over the image mounter |
 | 27.0+ | the Cryptex1 DDI over `cryptexd` |
 
+On iOS 17+, `--image cryptex|personalized-dmg` overrides that choice. For example, a device
+whose cryptexd cannot install the cryptex (`syslog live -m cryptexd` shows `staging failed`)
+can still mount the `PersonalizedDMG` with `mounter auto-mount --image personalized-dmg`,
+as long as the DDI's build manifest lists its board.
+
 !!! note "Newer devices (e.g. the iPhone 18 series) only work with the Cryptex1 DDI"
 
     Every `PersonalizedDMG` build identity is tied to one chip/board pair, so it can only be

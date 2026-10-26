@@ -17,6 +17,7 @@ from pymobiledevice3.exceptions import (
 from pymobiledevice3.services.mobile_image_mounter import (
     DeveloperDiskImageMounter,
     MobileImageMounterService,
+    PersonalizedDdi,
     PersonalizedImageMounter,
     auto_mount,
     uses_personalized_image,
@@ -191,14 +192,27 @@ async def mounter_auto_mount(
         Optional[str],
         typer.Option(help="Use a different DeveloperDiskImage version from the one retrieved by lockdownconnection"),
     ] = None,
+    image: Annotated[
+        Optional[PersonalizedDdi],
+        typer.Option(
+            "--image",
+            help="iOS 17+ only: force this DeveloperDiskImage instead of choosing one by iOS version "
+            "(cryptex from iOS 27, personalized-dmg below it)",
+        ),
+    ] = None,
 ) -> None:
     """auto-detect correct DeveloperDiskImage and mount it
 
     Exits non-zero when no image could be mounted. An image that is already mounted is what was
     asked for, so that succeeds -- scripts can run this unconditionally before developer commands.
     """
+    if image is not None and not uses_personalized_image(service_provider):
+        logger.error(f"--image {image.value} needs iOS 17 or later")
+        raise typer.Exit(1)
     try:
-        await auto_mount(service_provider, xcode=str(xcode) if xcode is not None else None, version=version)
+        await auto_mount(
+            service_provider, xcode=str(xcode) if xcode is not None else None, version=version, image=image
+        )
         logger.info("DeveloperDiskImage mounted successfully")
     except AlreadyMountedError:
         if uses_personalized_image(service_provider):
