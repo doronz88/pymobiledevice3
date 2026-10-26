@@ -491,10 +491,10 @@ class _FakeTreeAfc(AfcService):
         self.listed: list[str] = []
 
     async def listdir(self, filename: str) -> list[str]:
+        self.listed.append(filename)
         if filename not in self.readable:
             # what iOS 27.2 answers for e.g. /PhotoData/UBF
             raise AfcException(f"READ_DIR failed for file: {filename}", AfcError.PERM_DENIED, filename)
-        self.listed.append(filename)
         return self.TREE[filename]
 
     async def stat(self, filename: str) -> dict[str, Any]:
@@ -520,10 +520,44 @@ class _FakeTreeAfc(AfcService):
 async def test_dirlist_does_not_read_beyond_depth(
     root: str, depth: int, expected: list[str], listed: list[str]
 ) -> None:
-    """``dirlist`` must not list directories beyond ``depth``: they may be unreadable, failing the whole listing."""
+    """``dirlist`` must not read directories beyond ``depth``: each is a wasted READ_DIR, and an unreadable one logs a warning."""
     afc = _FakeTreeAfc(readable=listed)
     assert [x async for x in afc.dirlist(root, depth)] == expected
     assert afc.listed == listed
+
+
+async def test_walk_skips_unreadable_directory() -> None:
+    class UnreadableTreeAfc(_FakeTreeAfc):
+        TREE: ClassVar[dict[str, list[str]]] = {"/": ["a", "b"], "/a": [], "/b": []}
+
+    afc = UnreadableTreeAfc(readable=["/", "/b"])
+    assert [item async for item in afc.walk("/")] == [("/", ["a", "b"], []), ("/b", [], [])]
+    with pytest.raises(AfcException):
+        _ = [item async for item in afc.walk("/a")]
+    with pytest.raises(AfcException):
+        _ = [item async for item in afc.dirlist("/a", 1)]
+
+
+class _VanishingFileAfc(_FakeTreeAfc):
+    TREE: ClassVar[dict[str, list[str]]] = {"/": ["f", "gone", "g"]}
+
+    async def stat(self, filename: str) -> dict[str, Any]:
+        if filename == "/gone":
+            raise AfcFileNotFoundError("File vanished", AfcError.OBJECT_NOT_FOUND, filename)
+        return await super().stat(filename)
+
+
+async def test_walk_keeps_files_it_cannot_stat() -> None:
+    class LockedFileAfc(_VanishingFileAfc):
+        TREE: ClassVar[dict[str, list[str]]] = {"/": ["f", "gone", "locked", "g"]}
+
+        async def stat(self, filename: str) -> dict[str, Any]:
+            if filename == "/locked":
+                raise AfcException("File is locked", AfcError.PERM_DENIED, filename)
+            return await super().stat(filename)
+
+    afc = LockedFileAfc(readable=["/"])
+    assert [item async for item in afc.walk("/")] == [("/", [], ["f", "gone", "locked", "g"])]
 
 
 class _MaliciousPullAfc(AfcService):

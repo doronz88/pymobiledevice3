@@ -1284,7 +1284,10 @@ class AfcService(LockdownService):
         entries. Symbolic links to directories are classified as files (not descended into).
 
         As with `os.walk`, the caller may modify ``dirnames`` in place to prune the descent:
-        only the names still listed when the generator resumes are walked.
+        only the names still listed when the generator resumes are walked. Subdirectories
+        that cannot be listed are logged and skipped. Entries that cannot be stat'ed (deleted
+        after the listing, or dangling links) are logged and classified as files, as `os.walk`
+        keeps them. Errors listing the root propagate to the caller.
 
         :param dirname: Root directory to walk.
         :yields: ``(dirpath, dirnames, filenames)`` tuples.
@@ -1294,7 +1297,13 @@ class AfcService(LockdownService):
         for fd in await self.listdir(dirname):
             if fd in (".", "..", ""):
                 continue
-            infos = await self.stat(posixpath.join(dirname, fd))
+            path = posixpath.join(dirname, fd)
+            try:
+                infos = await self.stat(path)
+            except AfcException as e:
+                self.logger.warning(f"Can't stat: {e}")
+                files.append(fd)
+                continue
             if infos and infos.get("st_ifmt") == "S_IFDIR":
                 dirs.append(fd)
             else:
@@ -1302,10 +1311,12 @@ class AfcService(LockdownService):
 
         yield dirname, dirs, files
 
-        if dirs:
-            for d in dirs:
+        for d in dirs:
+            try:
                 async for item in self.walk(posixpath.join(dirname, d)):
                     yield item
+            except AfcException as e:
+                self.logger.warning(f"Skipping: {e}")
 
     @path_to_str()
     async def dirlist(self, root: str, depth: int = -1) -> AsyncIterator[str]:
