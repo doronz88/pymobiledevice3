@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import plistlib
 import re
@@ -339,6 +340,23 @@ async def test_install_explains_a_connection_cryptexd_dropped() -> None:
     connection.receive_response = dropped  # type: ignore[method-assign]
 
     with pytest.raises(CryptexdError, match="closed the connection"):
+        await service.install(b"i", b"t", b"m", b"info", b"vol", {})
+    assert connection.closed
+
+
+@pytest.mark.asyncio
+async def test_install_gives_up_on_a_reply_that_never_comes(monkeypatch: pytest.MonkeyPatch) -> None:
+    # cryptexd on a virtual iPhone 27.0 logged "staging failed" and never replied, hanging the CLI.
+    monkeypatch.setattr(cryptexd, "INSTALL_REPLY_TIMEOUT", 0.01)
+    service, connection = _install_service({"error": 0})
+
+    async def silent() -> dict[str, Any]:
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    connection.receive_response = silent  # type: ignore[method-assign]
+
+    with pytest.raises(CryptexdError, match="did not reply"):
         await service.install(b"i", b"t", b"m", b"info", b"vol", {})
     assert connection.closed
 
