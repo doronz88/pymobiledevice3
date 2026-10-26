@@ -544,7 +544,10 @@ class _VanishingFileAfc(_FakeTreeAfc):
     async def stat(self, filename: str) -> dict[str, Any]:
         if filename == "/gone":
             raise AfcFileNotFoundError("File vanished", AfcError.OBJECT_NOT_FOUND, filename)
-        return await super().stat(filename)
+        return {**await super().stat(filename), "st_size": 1, "st_mtime": datetime(2020, 1, 1)}
+
+    async def get_file_contents(self, filename: str) -> bytes:
+        return b"x"
 
 
 async def test_walk_keeps_files_it_cannot_stat() -> None:
@@ -558,6 +561,36 @@ async def test_walk_keeps_files_it_cannot_stat() -> None:
 
     afc = LockedFileAfc(readable=["/"])
     assert [item async for item in afc.walk("/")] == [("/", [], ["f", "gone", "locked", "g"])]
+
+
+@pytest.mark.parametrize("ignore_errors", [True, False])
+async def test_pull_vanished_file(tmp_path: pathlib.Path, ignore_errors: bool) -> None:
+    afc = _VanishingFileAfc(readable=["/"])
+    if ignore_errors:
+        await afc.pull("/", str(tmp_path), ignore_errors=True, progress_bar=False)
+        assert (tmp_path / "g").read_bytes() == b"x"
+    else:
+        with pytest.raises(AfcFileNotFoundError):
+            await afc.pull("/", str(tmp_path), progress_bar=False)
+        assert not (tmp_path / "g").exists()
+    assert (tmp_path / "f").read_bytes() == b"x"
+    assert not (tmp_path / "gone").exists()
+
+
+async def test_pull_ignore_errors_reraises_connection_terminated(tmp_path: pathlib.Path) -> None:
+    class DisconnectedAfc(_VanishingFileAfc):
+        TREE: ClassVar[dict[str, list[str]]] = {"/": ["f", "g"]}
+
+        async def stat(self, filename: str) -> dict[str, Any]:
+            if filename == "/g":
+                raise ConnectionTerminatedError()
+            return await super().stat(filename)
+
+    afc = DisconnectedAfc(readable=["/"])
+    with pytest.raises(ConnectionTerminatedError):
+        await afc.pull("/", str(tmp_path), ignore_errors=True, progress_bar=False)
+    assert (tmp_path / "f").read_bytes() == b"x"
+    assert not (tmp_path / "g").exists()
 
 
 class _MaliciousPullAfc(AfcService):

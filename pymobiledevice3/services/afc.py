@@ -502,12 +502,12 @@ class AfcService(LockdownService):
 
             for filename in await self.listdir(src):
                 src_filename = posixpath.join(src, filename)
-                src_filename = await self.resolve_path(src_filename)
-
-                if match is not None and not match.search(posixpath.basename(src_filename)):
-                    continue
 
                 try:
+                    src_filename = await self.resolve_path(src_filename)
+                    if match is not None and not match.search(posixpath.basename(src_filename)):
+                        continue
+
                     dst_filename = device_file_path(dst_path, filename)
                     # A link is pulled under its target's name, which is just as device-supplied
                     validate_device_filename(posixpath.basename(src_filename))
@@ -532,6 +532,8 @@ class AfcService(LockdownService):
                         progress_bar=progress_bar,
                     )
 
+                except ConnectionTerminatedError:
+                    raise
                 except Exception as afc_exception:
                     if not ignore_errors:
                         raise
