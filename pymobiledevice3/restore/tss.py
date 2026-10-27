@@ -2,14 +2,14 @@ import asyncio
 import logging
 import plistlib
 import typing
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from uuid import uuid4
+from xml.parsers.expat import ExpatError
 
 import asn1
 import requests
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, TSSError
+from pymobiledevice3.exceptions import PyMobileDevice3Exception, TSSError, TSSUnavailableError
 from pymobiledevice3.restore.img4 import COMPONENT_FOURCC
 from pymobiledevice3.utils import bytes_to_uint, plist_access_path
 
@@ -49,6 +49,11 @@ from pymobiledevice3.utils import bytes_to_uint, plist_access_path
 TSS_CONTROLLER_ACTION_URL = "http://gs.apple.com/TSS/controller?action=2"
 
 TSS_CLIENT_VERSION_STRING = "libauthinstall-1104.0.9"
+
+# A POST that cannot reach TSS, times out or gets a 5xx is retried; any other reply is final
+TSS_REQUEST_ATTEMPTS = 3
+TSS_REQUEST_TIMEOUT = 60  # seconds, per connect and per read
+TSS_RETRY_DELAY = 2  # seconds
 
 logger = logging.getLogger(__name__)
 
@@ -1136,24 +1141,60 @@ class TSSRequest:
         logger.info("Sending TSS request...")
         logger.debug(self._request)
 
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as executor:
+        data = plistlib.dumps(self._request)
+        for attempt in range(1, TSS_REQUEST_ATTEMPTS):
+            try:
+                response = await self._post(headers, data)
+                break
+            except TSSUnavailableError as e:
+                logger.warning(f"{e}; retrying ({attempt}/{TSS_REQUEST_ATTEMPTS - 1})")
+                await asyncio.sleep(TSS_RETRY_DELAY)
+        else:
+            response = await self._post(headers, data)
+        return parse_tss_reply(response.status_code, response.content)
 
-            def post() -> bytes:
-                return requests.post(
-                    TSS_CONTROLLER_ACTION_URL, headers=headers, data=plistlib.dumps(self._request), verify=False
-                ).content
+    @staticmethod
+    async def _post(headers: dict[str, str], data: bytes) -> requests.Response:
+        """POST to TSS, raising `TSSUnavailableError` for the failures worth retrying: no answer or a 5xx."""
+        try:
+            response = await asyncio.to_thread(
+                requests.post,
+                TSS_CONTROLLER_ACTION_URL,
+                headers=headers,
+                data=data,
+                verify=False,
+                timeout=TSS_REQUEST_TIMEOUT,
+            )
+        except requests.RequestException as e:
+            raise TSSUnavailableError(f"Could not reach Apple's signing server (TSS): {e}") from e
+        if response.status_code >= 500:
+            raise TSSUnavailableError(
+                f"Apple's signing server (TSS) answered HTTP {response.status_code}"
+                f"{'' if response.content else ' with an empty body'}"
+            )
+        return response
 
-            content = await loop.run_in_executor(executor, post)
 
-        if b"MESSAGE=SUCCESS" in content:
-            logger.info("response successfully received")
+def parse_tss_reply(status_code: int, content: bytes) -> TSSResponse:
+    """Parse a ``STATUS=<n>&MESSAGE=<text>&REQUEST_STRING=<plist>`` reply of Apple's signing server.
 
-        message = content.split(b"MESSAGE=", 1)[1].split(b"&", 1)[0].decode()
-        if message != "SUCCESS":
-            raise TSSError(f"Apple's signing server (TSS) refused the request: {message}")
-
+    :raises TSSError: if TSS refused the request.
+    :raises TSSUnavailableError: if the reply is not a TSS reply (e.g. an error page of a proxy on the way).
+    """
+    if b"MESSAGE=" not in content:
+        raise TSSUnavailableError(
+            f"Apple's signing server (TSS) answered HTTP {status_code} without a TSS reply: {content[:200]!r}"
+        )
+    message = content.split(b"MESSAGE=", 1)[1].split(b"&", 1)[0].decode(errors="replace")
+    if message != "SUCCESS":
+        raise TSSError(f"Apple's signing server (TSS) refused the request: {message}")
+    logger.info("response successfully received")
+    if b"REQUEST_STRING=" not in content:
+        raise TSSUnavailableError("Apple's signing server (TSS) reported success but sent no ticket")
+    try:
         return TSSResponse(plistlib.loads(content.split(b"REQUEST_STRING=", 1)[1]))
+    except (plistlib.InvalidFileException, ExpatError) as e:
+        raise TSSUnavailableError(f"Apple's signing server (TSS) sent an unparsable ticket: {e}") from e
 
 
 @dataclass(frozen=True)

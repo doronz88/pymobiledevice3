@@ -572,6 +572,7 @@ class CryptexdService(RemoteService):
             already has a Personalized image mounted.
         :raises CryptexdError: if the daemon rejected the image.
         :raises TSSError: if Apple refused to sign the personalization request.
+        :raises TSSUnavailableError: if Apple's signing server could not be reached.
         :raises DeviceFeatureNotSupportedError: below `DDI_CRYPTEX_MIN_VERSION`.
         """
         # Before asking Apple to sign anything the device cannot mount

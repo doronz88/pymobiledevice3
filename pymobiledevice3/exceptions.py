@@ -72,6 +72,7 @@ __all__ = [
     "StartServiceError",
     "SysdiagnoseTimeoutError",
     "TSSError",
+    "TSSUnavailableError",
     "TraceLagError",
     "TunneldConnectionError",
     "UnrecognizedSelectorError",
@@ -735,6 +736,13 @@ class DevicePathError(PyMobileDevice3Exception):
 
 class TSSError(PyMobileDevice3Exception):
     """Apple's signing server (TSS) refused the request."""
+
+
+class TSSUnavailableError(PyMobileDevice3Exception):
+    """Apple's signing server (TSS) could not be reached or did not answer with a TSS reply.
+
+    Unlike `TSSError`, nothing was refused: check that this host can reach gs.apple.com.
+    """
 
 
 class WdaError(PyMobileDevice3Exception):
