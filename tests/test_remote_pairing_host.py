@@ -2,8 +2,6 @@
 
 import asyncio
 import base64
-import binascii
-import hashlib
 import json
 import socket
 import struct
@@ -16,10 +14,9 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from opack2 import dumps, loads
-from srptools import SRPClientSession, SRPContext
-from srptools.constants import PRIME_3072, PRIME_3072_GEN
 
 from pymobiledevice3.remote.siphash import compute_auth_tag, siphash24, validate_auth_tag
+from pymobiledevice3.remote.srp import SrpClient
 from pymobiledevice3.remote.tunnel_service import (
     REPAIRING_PACKET_MAGIC,
     PairableHost,
@@ -133,28 +130,20 @@ class _DeviceSimulator:
         assert m2[T.STATE][0] == 2
         assert len(m2[T.PUBLIC_KEY]) == 384
 
-        ctx = SRPContext(
-            "Pair-Setup",
-            password=pin_holder["pin"],
-            prime=PRIME_3072,
-            generator=PRIME_3072_GEN,
-            hash_func=hashlib.sha512,
-        )
-        client = SRPClientSession(ctx)
-        client.process(m2[T.PUBLIC_KEY].hex(), m2[T.SALT].hex())
-        a_pub = binascii.unhexlify(client.public)
+        client = SrpClient(pin_holder["pin"])
+        client.process(m2[T.PUBLIC_KEY], m2[T.SALT])
+        a_pub = client.public
 
         m3: list[PairingDataComponentTLV8] = [PairingDataComponentTLV8(T.STATE, b"\x03")]
         m3 += [PairingDataComponentTLV8(T.PUBLIC_KEY, a_pub[i : i + 255]) for i in range(0, len(a_pub), 255)]
-        m3 += [PairingDataComponentTLV8(T.PROOF, binascii.unhexlify(client.key_proof))]
+        m3 += [PairingDataComponentTLV8(T.PROOF, client.proof)]
         await self._send_pairing(PairingDataComponentTLVBuf.build(m3))
 
         m4 = _decode_tlv(PairingDataComponentTLVBuf.parse(await self._recv_pairing()))
         assert m4[T.STATE][0] == 4
-        # srptools compares against value_encode() output (hex bytes), so pass hexlify bytes
-        assert client.verify_proof(binascii.hexlify(m4[T.PROOF]))
+        assert client.verify_server_proof(m4[T.PROOF])
 
-        session_key = binascii.unhexlify(client.key)
+        session_key = client.key
         cip = ChaCha20Poly1305(
             HKDF(
                 algorithm=hashes.SHA512(), length=32, salt=b"Pair-Setup-Encrypt-Salt", info=b"Pair-Setup-Encrypt-Info"
