@@ -26,7 +26,12 @@ DEFAULT_AFTER_IDLE_SEC = 3
 DEFAULT_INTERVAL_SEC = 3
 DEFAULT_MAX_FAILS = 3
 DEFAULT_TIMEOUT = 1
-DEFAULT_SSL_HANDSHAKE_TIMEOUT = 10
+# Short-lived lockdown services (e.g. SyncAgent for com.apple.mobilesync) are spawned by launchd,
+# which holds a relaunch back until ~10 seconds after the previous instance started, so a back-to-back
+# session can sit that long before its handshake even starts. The previous 10 seconds raced that wait
+# and failed intermittently; 30 seconds covers it with room for the handshake itself on a slow link
+# (Wi-Fi, tunnel), while a dead handshake still fails in bounded time.
+DEFAULT_SSL_HANDSHAKE_TIMEOUT = 30
 CLOSE_STREAM_WRITER_DEFAULT_TIMEOUT_SECONDS = 1.0
 OSUTIL = get_os_utils()
 SHELL_USAGE = """
