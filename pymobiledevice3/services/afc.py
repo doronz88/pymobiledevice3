@@ -105,6 +105,7 @@ class AfcOpcode(OpenIntEnum):
     FILE_LOCK = 0x0000001B  # FileRefLock
     MAKE_LINK = 0x0000001C  # MakeLink
     SET_FILE_TIME = 0x0000001E  # set st_mtime
+    REMOVE_PATH_AND_CONTENTS = 0x00000022  # RemovePathAndContents (rm -rf, iOS 6+)
 
 
 class AfcError(OpenIntEnum):
@@ -635,6 +636,9 @@ class AfcService(LockdownService):
         """
         Recursively remove a file or directory tree on the device.
 
+        Without ``match``, the device removes the whole tree in a single ``REMOVE_PATH_AND_CONTENTS``
+        operation; if that fails, the tree is walked instead.
+
         For a directory, every entry is removed depth-first and the directory itself is removed
         last. The ``match`` pattern, when given, filters which top-level entries of ``filename``
         are considered (matched against their basename via ``match``); nested entries are always
@@ -648,6 +652,13 @@ class AfcService(LockdownService):
         :return: List of paths that could not be deleted (empty on full success).
         :raises AfcException: if any path could not be deleted and ``force`` is False.
         """
+        if match is None:
+            # let the device delete the whole tree in one round-trip; on any failure fall back to
+            # walking it, which also reports exactly which entries could not be deleted
+            with contextlib.suppress(AfcException):
+                await self._do_operation(AfcOpcode.REMOVE_PATH_AND_CONTENTS, CSTRING.build(filename), filename)
+                return []
+
         if not await self.exists(filename) and not await self.rm_single(filename, force=force):
             return [filename]
 
