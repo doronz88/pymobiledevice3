@@ -44,6 +44,9 @@ pymobiledevice3 diagnostics restart
 # Pull crash reports
 pymobiledevice3 crash pull /path/to/crashes
 
+# Remove only matching crash reports, without copying them
+pymobiledevice3 crash clear --match '^MobileSafari'
+
 # Show the process list (diagnosticsd API; no developer tunnel required)
 pymobiledevice3 processes ps
 

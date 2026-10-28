@@ -640,13 +640,16 @@ class AfcService(LockdownService):
         operation; if that fails, the tree is walked instead.
 
         For a directory, every entry is removed depth-first and the directory itself is removed
-        last. The ``match`` pattern, when given, filters which top-level entries of ``filename``
-        are considered (matched against their basename via ``match``); nested entries are always
-        removed once their parent is selected.
+        last.
+
+        With ``match``, the same entries `pull` would copy are removed: at every level, entries whose
+        basename does not match (via ``search``) are skipped, matching directories are descended into
+        with the same pattern, and matching files are removed. Directories (including ``filename``
+        itself) are never removed in this mode.
 
         :param filename: Path to the file or directory to remove.
-        :param match: Optional regex; only directory entries whose basename matches are removed.
-            None removes all entries.
+        :param match: Optional regex over entry basenames, applied as `pull` applies it. None removes
+            the whole tree.
         :param force: If True, suppress the final `AfcException` and instead return the
             list of paths that could not be deleted.
         :return: List of paths that could not be deleted (empty on full success).
@@ -662,6 +665,13 @@ class AfcService(LockdownService):
         if not await self.exists(filename) and not await self.rm_single(filename, force=force):
             return [filename]
 
+        if match is not None:
+            undeleted_matching = await self._rm_matching(filename, match)
+            if undeleted_matching and not force:
+                # AfcException mis-annotates `status` as str; it accepts AfcError/None at runtime
+                raise AfcException(f"Failed to delete: {', '.join(undeleted_matching)}", None)
+            return undeleted_matching
+
         # single file
         if not await self.isdir(filename):
             if await self.rm_single(filename, force=force):
@@ -672,9 +682,6 @@ class AfcService(LockdownService):
         undeleted_items: list[str] = []
         for entry in await self.listdir(filename):
             current_filename = posixpath.join(filename, entry)
-
-            if match is not None and not match.match(posixpath.basename(current_filename)):
-                continue
 
             if await self.isdir(current_filename):
                 ret_undeleted_items = await self.rm(current_filename, force=True)
@@ -702,6 +709,20 @@ class AfcService(LockdownService):
             )
 
         return []
+
+    async def _rm_matching(self, filename: str, match: Pattern[str]) -> list[str]:
+        """Remove the files under ``filename`` that `pull` would copy for ``match``; return the undeleted ones."""
+        if not await self.isdir(filename):
+            if not match.search(posixpath.basename(filename)) or await self.rm_single(filename, force=True):
+                return []
+            return [filename]
+
+        undeleted_items: list[str] = []
+        for entry in await self.listdir(filename):
+            if not match.search(entry):
+                continue
+            undeleted_items.extend(await self._rm_matching(posixpath.join(filename, entry), match))
+        return undeleted_items
 
     async def get_device_info(self):
         """

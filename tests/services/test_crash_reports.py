@@ -103,6 +103,49 @@ async def test_clear(crash_manager: CrashReportsManager, remote_temp_directory: 
     assert len(files) == 0
 
 
+async def test_clear_match_removes_what_pull_erase_would(
+    crash_manager: CrashReportsManager, remote_temp_directory: str, tmp_path: Path
+) -> None:
+    layout = [
+        "drop_report.ips",
+        "keep_report.ips",
+        "drop_dir/drop_nested.ips",
+        "drop_dir/keep_nested.ips",
+        "keep_dir/drop_skipped.ips",
+    ]
+
+    async def create_layout() -> None:
+        for name in layout:
+            path = posixpath.join(remote_temp_directory, name)
+            await crash_manager.afc.makedirs(posixpath.dirname(path))
+            await _create_crash_report(crash_manager, path)
+
+    async def remaining() -> set[str]:
+        return {
+            path
+            for path in await crash_manager.ls(remote_temp_directory, depth=-1)
+            if not await crash_manager.afc.isdir(path)
+        }
+
+    await create_layout()
+    await crash_manager.pull(str(tmp_path), remote_temp_directory, erase=True, match=r"drop_", progress_bar=False)
+    after_pull_erase = await remaining()
+
+    await crash_manager.afc.rm(remote_temp_directory)
+    await create_layout()
+    await crash_manager.clear(remote_temp_directory, match=r"drop_")
+
+    assert (
+        await remaining()
+        == after_pull_erase
+        == {
+            posixpath.join(remote_temp_directory, name)
+            for name in ("keep_report.ips", "drop_dir/keep_nested.ips", "keep_dir/drop_skipped.ips")
+        }
+    )
+    assert await crash_manager.afc.isdir(posixpath.join(remote_temp_directory, "drop_dir"))
+
+
 async def test_pull_file(crash_manager: CrashReportsManager, remote_temp_directory: str, tmp_path: Path) -> None:
     remote_file = posixpath.join(remote_temp_directory, "pull_test_report.ips")
     await _create_crash_report(crash_manager, remote_file)

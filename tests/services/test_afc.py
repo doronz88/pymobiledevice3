@@ -1,5 +1,9 @@
 import asyncio
 import pathlib
+import posixpath
+import re
+import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime
 from typing import Any, ClassVar, cast
 
@@ -89,6 +93,70 @@ async def test_rm_tree_in_one_request(afc: AfcService, monkeypatch: pytest.Monke
         assert not await afc.exists(TEST_FOLDER_NAME)
     finally:
         await afc.rm(TEST_FOLDER_NAME, force=True)
+
+
+_RM_MATCH_LAYOUT = (
+    "drop_top.txt",
+    "keep_top.txt",
+    "drop_dir/drop_nested.txt",
+    "drop_dir/keep_nested.txt",
+    "drop_dir/drop_sub/drop_deep.txt",
+    "drop_dir/keep_sub/drop_skipped.txt",
+    "keep_dir/drop_skipped.txt",
+)
+
+
+@pytest_asyncio.fixture(scope="function")
+async def rm_match_tree(afc: AfcService) -> AsyncGenerator[str, None]:
+    root = f"/pmd3_rm_match_{uuid.uuid4().hex}"
+    for name in _RM_MATCH_LAYOUT:
+        path = posixpath.join(root, name)
+        await afc.makedirs(posixpath.dirname(path))
+        await afc.set_file_contents(path, b"data")
+    try:
+        yield root
+    finally:
+        await afc.rm(root, force=True)
+
+
+async def _files_under(afc: AfcService, root: str) -> set[str]:
+    return {
+        posixpath.relpath(posixpath.join(dirpath, name), root)
+        async for dirpath, _dirs, files in afc.walk(root)
+        for name in files
+    }
+
+
+async def test_rm_match_removes_exactly_what_pull_copies(
+    afc: AfcService, rm_match_tree: str, tmp_path: pathlib.Path
+) -> None:
+    match = re.compile(r"drop_")
+    await afc.pull(rm_match_tree, str(tmp_path), match=match, progress_bar=False)
+    pulled_root = tmp_path / posixpath.basename(rm_match_tree)
+    pulled = {path.relative_to(pulled_root).as_posix() for path in pulled_root.rglob("*") if path.is_file()}
+
+    assert await afc.rm(rm_match_tree, match=match) == []
+
+    remaining = await _files_under(afc, rm_match_tree)
+    assert pulled == {"drop_top.txt", "drop_dir/drop_nested.txt", "drop_dir/drop_sub/drop_deep.txt"}
+    assert remaining == set(_RM_MATCH_LAYOUT) - pulled
+    # directories are never removed when a match is given
+    for directory in ("drop_dir", "drop_dir/drop_sub", "drop_dir/keep_sub", "keep_dir"):
+        assert await afc.isdir(posixpath.join(rm_match_tree, directory))
+
+
+async def test_rm_match_single_file(afc: AfcService, rm_match_tree: str) -> None:
+    keep = posixpath.join(rm_match_tree, "keep_top.txt")
+    drop = posixpath.join(rm_match_tree, "drop_top.txt")
+    assert await afc.rm(keep, match=re.compile(r"drop_")) == []
+    assert await afc.exists(keep)
+    assert await afc.rm(drop, match=re.compile(r"drop_")) == []
+    assert not await afc.exists(drop)
+
+
+async def test_rm_match_missing_path(afc: AfcService) -> None:
+    with pytest.raises(AfcFileNotFoundError):
+        await afc.rm(f"/pmd3_rm_match_missing_{uuid.uuid4().hex}", match=re.compile("x"))
 
 
 async def test_get_device_info(afc: AfcService) -> None:
