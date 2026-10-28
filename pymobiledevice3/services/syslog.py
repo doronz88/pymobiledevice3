@@ -1,3 +1,4 @@
+import re
 from collections.abc import AsyncGenerator
 from typing import Union
 
@@ -10,6 +11,38 @@ from pymobiledevice3.utils import try_decode
 CHUNK_SIZE = 4096
 TIME_FORMAT = "%H:%M:%S"
 SYSLOG_LINE_SPLITTER = b"\n\x00"
+
+# vis(3) escapes syslog_relay emits for bytes >= 0x80 and for backslash:
+#   \M-x -> 0x80 | x, \M^X -> 0x80 | (X ^ 0x40), \ddd -> octal byte value, \\ -> \
+_VIS_ESCAPE = re.compile(rb"\\(?:M-([\x21-\x7e])|M\^([@-_?])|([0-7]{3})|(\\))")
+
+
+def _decode_vis_escape(match: "re.Match[bytes]") -> bytes:
+    meta, meta_ctrl, octal, backslash = match.groups()
+    if meta is not None:
+        return bytes([meta[0] | 0x80])
+    if meta_ctrl is not None:
+        return bytes([(meta_ctrl[0] ^ 0x40) | 0x80])
+    if octal is not None:
+        value = int(octal, 8)
+        if 0x80 <= value <= 0xFF or 0x20 <= value < 0x7F:
+            return bytes([value])
+        return match.group(0)
+    return backslash
+
+
+def decode_vis(line: bytes) -> bytes:
+    """
+    Undo the vis(3) encoding syslog_relay applies, so non-ASCII (UTF-8) text becomes readable.
+
+    Only escapes for high bytes (``\\M-x``, ``\\M^X``, ``\\ddd``) and backslashes (``\\134``, ``\\\\``) are decoded.
+    Control-character escapes (``\\^X``, control-valued octal such as ``\\033``) and anything unrecognized are left
+    as-is: decoding them would write raw control bytes (e.g. ESC) to the terminal, letting a log line move the cursor
+    or recolor the output.
+    """
+    if b"\\" not in line:
+        return line
+    return _VIS_ESCAPE.sub(_decode_vis_escape, line)
 
 
 class SyslogService(LockdownService):
@@ -34,7 +67,8 @@ class SyslogService(LockdownService):
         Stream syslog lines from the device as they are emitted.
 
         Reads the relay in chunks, splits on the syslog line delimiter, buffers any partial trailing
-        line until the rest arrives, and decodes each complete line. Empty lines are skipped.
+        line until the rest arrives, and decodes each complete line, undoing the relay's vis(3) escaping
+        (see `decode_vis`). Empty lines are skipped.
 
         :yields: A single decoded syslog line (without the trailing delimiter), or the raw bytes
             when the line is not valid UTF-8.
@@ -63,4 +97,4 @@ class SyslogService(LockdownService):
                     if len(line) == 0:
                         continue
 
-                    yield try_decode(line)
+                    yield try_decode(decode_vis(line))
