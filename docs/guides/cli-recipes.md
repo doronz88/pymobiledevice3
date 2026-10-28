@@ -577,6 +577,13 @@ pymobiledevice3 developer core-device universal-hid-service tap -- 32768 32768
 # Drag from near the top to near the bottom (e.g. pull-down)
 pymobiledevice3 developer core-device universal-hid-service drag -- 32768 5000 32768 60000
 
+# Multi-finger (up to 5): two-finger tap at X Y pairs
+pymobiledevice3 developer core-device universal-hid-service multi-tap -- 26000 30000 40000 30000
+
+# Multi-finger drag, X1 Y1 X2 Y2 (start, end) per finger: apart = zoom in,
+# together = pinch, parallel = multi-finger swipe
+pymobiledevice3 developer core-device universal-hid-service multi-drag -- 28000 28000 12000 20000 37536 32000 53536 40000
+
 # Pure pointer-motion gesture (moves cursor without registering a contact)
 pymobiledevice3 developer core-device universal-hid-service swipe -- 100 400 700 400
 
