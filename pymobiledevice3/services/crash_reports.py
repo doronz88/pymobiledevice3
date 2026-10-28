@@ -230,8 +230,8 @@ class CrashReportsManager:
         the CrashReports directory and acknowledges with a ``ping`` once done.
         """
         ack = b"ping\x00"
-        service = await self.lockdown.start_lockdown_service(self.crash_mover_service_name)
-        response = await service.recvall(len(ack))
+        async with await self.lockdown.start_lockdown_service(self.crash_mover_service_name) as service:
+            response = await service.recvall(len(ack))
         if response != ack:
             raise ProtocolError(f"The crash report mover sent an unexpected acknowledgement: {response!r}")
 

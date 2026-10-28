@@ -39,13 +39,12 @@ class HeartbeatService:
             started; when None, the loop runs indefinitely.
         """
         start = time.time()
-        service = await self.lockdown.start_lockdown_service(self.service_name)
+        async with await self.lockdown.start_lockdown_service(self.service_name) as service:
+            while True:
+                response = await service.recv_plist()
+                self.logger.debug(response)
 
-        while True:
-            response = await service.recv_plist()
-            self.logger.debug(response)
+                if interval is not None and time.time() >= start + interval:
+                    break
 
-            if interval is not None and time.time() >= start + interval:
-                break
-
-            await service.send_plist({"Command": "Polo"})
+                await service.send_plist({"Command": "Polo"})

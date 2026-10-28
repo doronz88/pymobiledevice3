@@ -3,9 +3,8 @@ import dataclasses
 import logging
 import plistlib
 import xml.etree.ElementTree as ET
-from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, cast
 
 import questionary
 import requests
@@ -28,14 +27,6 @@ DEFAULT_HEADERS = {
 
 ACTIVATION_REQUESTS_SUBDIR = Path("offline_requests")
 NONCE_CYCLE_INTERVAL = 60 * 5
-
-
-@asynccontextmanager
-async def _aclosing(resource: Any):
-    try:
-        yield resource
-    finally:
-        await resource.aclose()
 
 
 @dataclasses.dataclass
@@ -250,7 +241,7 @@ class MobileActivationService:
             assert isinstance(self.lockdown, LockdownClient)
             return await self.lockdown._request("Deactivate")
 
-    async def create_activation_session_info(self):
+    async def create_activation_session_info(self) -> dict[str, Any]:
         """
         Request the device's session-based activation handshake info.
 
@@ -263,9 +254,9 @@ class MobileActivationService:
         error = response.get("Error")
         if error is not None:
             raise MobileActivationException(f"The device refused to create an activation session: {response}")
-        return response["Value"]
+        return cast(dict[str, Any], response["Value"])
 
-    async def create_activation_info_with_session(self, handshake_response: Any):
+    async def create_activation_info_with_session(self, handshake_response: Any) -> dict[str, Any]:
         """
         Build the device's activation info from a completed DRM handshake.
 
@@ -280,7 +271,7 @@ class MobileActivationService:
         error = response.get("Error")
         if error is not None:
             raise MobileActivationException(f"The device refused to create its activation info: {response}")
-        return response["Value"]
+        return cast(dict[str, Any], response["Value"])
 
     async def activate_with_lockdown(self, activation_record: bytes):
         """
@@ -321,7 +312,7 @@ class MobileActivationService:
         }
         if headers:
             data["ActivationResponseHeaders"] = dict(headers)
-        async with _aclosing(await self.lockdown.start_lockdown_service(self.SERVICE_NAME)) as service:
+        async with await self.lockdown.start_lockdown_service(self.SERVICE_NAME) as service:
             return await service.send_recv_plist(data)
 
     async def send_command(self, command: str, value: str = ""):
@@ -338,7 +329,7 @@ class MobileActivationService:
         data = {"Command": command}
         if value:
             data["Value"] = value
-        async with _aclosing(await self.lockdown.start_lockdown_service(self.SERVICE_NAME)) as service:
+        async with await self.lockdown.start_lockdown_service(self.SERVICE_NAME) as service:
             return await service.send_recv_plist(data)
 
     def post(
