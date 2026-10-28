@@ -9,6 +9,7 @@ interactive shell for navigating the device's file system rooted at /var/mobile/
 
 import asyncio
 import contextlib
+import hashlib
 import inspect
 import os
 import pathlib
@@ -104,8 +105,13 @@ class AfcOpcode(OpenIntEnum):
     SET_SOCKET_BS = 0x0000001A  # SetSocketBlockSize (0x800000)
     FILE_LOCK = 0x0000001B  # FileRefLock
     MAKE_LINK = 0x0000001C  # MakeLink
+    GET_FILE_HASH = 0x0000001D  # GetFileHash (SHA-1)
     SET_FILE_TIME = 0x0000001E  # set st_mtime
+    GET_FILE_HASH_RANGE = 0x0000001F  # GetFileHashWithRange (SHA-1)
+    GET_SIZE_OF_PATH_CONTENTS = 0x00000021  # GetSizeOfPathContents
     REMOVE_PATH_AND_CONTENTS = 0x00000022  # RemovePathAndContents (rm -rf, iOS 6+)
+    FILE_READ_OFFSET = 0x00000027  # FileRefReadWithOffset (pread)
+    FILE_WRITE_OFFSET = 0x00000028  # FileRefWriteWithOffset (pwrite)
 
 
 class AfcError(OpenIntEnum):
@@ -245,6 +251,52 @@ class AfcFileSeekRequest(BinaryStruct, byte_order="<"):
     handle: u64
     whence: u64
     offset: i64
+
+
+@dataclass
+class AfcFileSetSizeRequest(BinaryStruct, byte_order="<"):
+    handle: u64
+    size: u64
+
+
+@dataclass
+class AfcFreadOffsetRequest(BinaryStruct, byte_order="<"):
+    handle: u64
+    size: u64
+    offset: u64
+
+
+@dataclass
+class AfcFwriteOffsetHeader(BinaryStruct, byte_order="<"):
+    """Header payload of ``FILE_WRITE_OFFSET``; the data to write follows as the packet payload."""
+
+    handle: u64
+    offset: u64
+
+
+@dataclass
+class AfcTruncateRequest(BinaryStruct, byte_order="<"):
+    size: u64
+    filename: Annotated[str, CSTRING]
+
+
+@dataclass
+class AfcSetFileTimeRequest(BinaryStruct, byte_order="<"):
+    mtime: u64  # nanoseconds since the epoch
+    filename: Annotated[str, CSTRING]
+
+
+@dataclass
+class AfcFileHashRangeRequest(BinaryStruct, byte_order="<"):
+    start: u64
+    length: u64
+    filename: Annotated[str, CSTRING]
+
+
+@dataclass
+class AfcSizeOfPathContentsRequest(BinaryStruct, byte_order="<"):
+    flags: u64
+    filename: Annotated[str, CSTRING]
 
 
 def list_to_dict(raw: bytes) -> dict[str, str]:
@@ -861,6 +913,97 @@ class AfcService(LockdownService):
         )
 
     @path_to_str()
+    async def truncate(self, filename: str, size: int) -> None:
+        """
+        Truncate or extend a file to ``size`` bytes (``truncate(2)``).
+
+        :param filename: Path to the file.
+        :param size: The new file size in bytes.
+        :raises AfcFileNotFoundError: if the file does not exist.
+        :raises AfcException: if the operation fails.
+        """
+        await self._do_operation(AfcOpcode.TRUNCATE, AfcTruncateRequest(size=size, filename=filename).build(), filename)
+
+    @path_to_str()
+    async def set_file_time(self, filename: str, mtime: datetime) -> None:
+        """
+        Set the modification time of a file or directory.
+
+        The device stores the time with microsecond resolution, and moves ``st_birthtime`` back
+        to ``mtime`` when ``mtime`` is the earlier of the two.
+
+        :param filename: Path to the file or directory.
+        :param mtime: The new modification time (naive values are local time, as `stat` returns).
+        :raises AfcFileNotFoundError: if the path does not exist.
+        :raises AfcException: if the operation fails.
+        """
+        mtime_ns = round(mtime.timestamp() * 1_000_000) * 1000
+        await self._do_operation(
+            AfcOpcode.SET_FILE_TIME, AfcSetFileTimeRequest(mtime=mtime_ns, filename=filename).build(), filename
+        )
+
+    @path_to_str()
+    async def get_file_hash(self, filename: str) -> bytes:
+        """
+        Get the SHA-1 digest of a file, computed on the device.
+
+        :param filename: Path to the file.
+        :return: The 20-byte SHA-1 digest.
+        :raises AfcFileNotFoundError: if the file does not exist.
+        :raises AfcException: if the path is a directory (``OBJECT_IS_DIR``) or the operation fails.
+        """
+        try:
+            return await self._do_operation(AfcOpcode.GET_FILE_HASH, CSTRING.build(filename), filename)
+        except AfcException as e:
+            # The device rejects hashing an empty file with INVALID_ARG
+            if e.status != AfcError.INVALID_ARG or (await self.stat(filename))["st_size"] != 0:
+                raise
+            return hashlib.sha1(b"").digest()
+
+    @path_to_str()
+    async def get_file_hash_range(self, filename: str, start: int, length: int) -> bytes:
+        """
+        Get the SHA-1 digest of ``length`` bytes of a file starting at ``start``, computed on the device.
+
+        :param filename: Path to the file.
+        :param start: Offset of the first byte to hash.
+        :param length: Number of bytes to hash; the range must lie within the file.
+        :return: The 20-byte SHA-1 digest.
+        :raises AfcFileNotFoundError: if the file does not exist.
+        :raises AfcException: if the range exceeds the file (``INVALID_ARG``) or the operation fails.
+        """
+        return await self._do_operation(
+            AfcOpcode.GET_FILE_HASH_RANGE,
+            AfcFileHashRangeRequest(start=start, length=length, filename=filename).build(),
+            filename,
+        )
+
+    @path_to_str()
+    async def get_size_of_path_contents(self, filename: str) -> dict[str, int]:
+        """
+        Get the total size of the regular files under a directory, computed on the device.
+
+        :param filename: Path to the directory (a regular file reports zero).
+        :return: ``{"st_size": <bytes>, "st_blocks": <512-byte blocks>}``.
+        :raises AfcFileNotFoundError: if the path does not exist.
+        :raises AfcException: if the operation fails.
+        """
+        data = await self._do_operation(
+            AfcOpcode.GET_SIZE_OF_PATH_CONTENTS,
+            AfcSizeOfPathContentsRequest(flags=0, filename=filename).build(),
+            filename,
+        )
+        return {k: int(v) for k, v in list_to_dict(data).items()}
+
+    async def get_connection_info(self) -> dict[str, str]:
+        """
+        Query information about the AFC connection (e.g. the server ``Version``).
+
+        :return: Dictionary of connection attributes (all values are strings).
+        """
+        return list_to_dict(await self._do_operation(AfcOpcode.GET_CON_INFO))
+
+    @path_to_str()
     async def fopen(self, filename: str, mode: str = "r") -> int:
         """
         Open a file on the device and return its handle.
@@ -953,6 +1096,77 @@ class AfcService(LockdownService):
             AfcOpcode.FILE_SEEK,
             AfcFileSeekRequest(handle=handle, whence=whence, offset=offset).build(),
         )
+
+    async def ftell(self, handle: int) -> int:
+        """
+        Get the current position of an open file handle.
+
+        :param handle: Handle returned by `fopen`.
+        :return: The current byte offset.
+        :raises AfcException: if the tell operation fails.
+        """
+        return U64_LE.unpack(await self._do_operation(AfcOpcode.FILE_TELL, U64_LE.pack(handle)))[0]
+
+    async def ftruncate(self, handle: int, size: int) -> None:
+        """
+        Truncate or extend an open file to ``size`` bytes (``ftruncate(2)``).
+
+        The handle's position is left unchanged.
+
+        :param handle: Handle returned by `fopen` with a writable mode.
+        :param size: The new file size in bytes.
+        :raises AfcException: if the operation fails.
+        """
+        await self._do_operation(AfcOpcode.FILE_SET_SIZE, AfcFileSetSizeRequest(handle=handle, size=size).build())
+
+    async def pread(self, handle: int, size: int, offset: int) -> bytes:
+        """
+        Read from an open file handle at an absolute offset (``pread(2)``).
+
+        The handle's position is left unchanged. Reads past the end of the file are short.
+
+        :param handle: Handle returned by `fopen`.
+        :param size: Number of bytes to read. Reads larger than ``MAXIMUM_READ_SIZE`` are split
+            into successive operations.
+        :param offset: Byte offset to read from.
+        :return: The bytes read.
+        :raises AfcException: if a read operation fails.
+        """
+        data = b""
+        while size > 0:
+            to_read = min(size, MAXIMUM_READ_SIZE)
+            chunk = await self._do_operation(
+                AfcOpcode.FILE_READ_OFFSET,
+                AfcFreadOffsetRequest(handle=handle, size=to_read, offset=offset).build(),
+            )
+            data += chunk
+            if len(chunk) < to_read:
+                break
+            size -= to_read
+            offset += to_read
+        return data
+
+    async def pwrite(self, handle: int, data: bytes, offset: int, chunk_size: int = MAXIMUM_WRITE_SIZE) -> None:
+        """
+        Write to an open file handle at an absolute offset (``pwrite(2)``).
+
+        The handle's position is left unchanged; writing past the end extends the file.
+
+        :param handle: Handle returned by `fopen` with a writable mode.
+        :param data: Bytes to write.
+        :param offset: Byte offset to write at.
+        :param chunk_size: Maximum bytes per ``FILE_WRITE_OFFSET`` operation.
+        :raises AfcException: if a write operation fails.
+        """
+        for start in range(0, len(data), chunk_size):
+            header = AfcFwriteOffsetHeader(handle=handle, offset=offset + start).build()
+            status, _ = await self._send_and_wait(
+                AfcOpcode.FILE_WRITE_OFFSET,
+                header + data[start : start + chunk_size],
+                this_length=AFC_HEADER_SIZE + len(header),
+            )
+            if status != AfcError.SUCCESS:
+                raise AfcException("Failed to write to the file.", status)
 
     async def fwrite(self, handle: int, data: bytes, chunk_size: int = MAXIMUM_WRITE_SIZE) -> None:
         """
@@ -1613,6 +1827,41 @@ class AfcShell(InteractiveShell):
         """
         for k, v in (await self.afc.stat(self.relative_path(filename))).items():
             print(f"{k}: {v}")
+
+    @shell_command
+    async def _do_sha1sum(self, files: list[RemotePath]):
+        """
+        Print the SHA-1 digest of files, computed on the device.
+
+        :param files: Paths of the files to hash
+        """
+        for filename in files:
+            print(f"{(await self.afc.get_file_hash(self.relative_path(filename))).hex()}  {filename}")
+
+    @shell_command
+    async def _do_touch(self, files: list[RemotePath]):
+        """
+        Set the modification time of files to now, creating missing ones empty.
+
+        :param files: Paths of the files to touch
+        """
+        for filename in files:
+            path = self.relative_path(filename)
+            if await self.afc.exists(path):
+                await self.afc.set_file_time(path, datetime.now())
+            else:
+                await self.afc.set_file_contents(path, b"")
+
+    @shell_command
+    async def _do_truncate(self, files: list[RemotePath], *, size: Annotated[int, Arg("-s")]):
+        """
+        Shrink or extend files to a given size.
+
+        :param files: Paths of the files to resize
+        :param size: The new size in bytes
+        """
+        for filename in files:
+            await self.afc.truncate(self.relative_path(filename), size)
 
     @staticmethod
     def _write(data: bytes) -> None:

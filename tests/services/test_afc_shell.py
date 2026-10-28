@@ -1,9 +1,11 @@
 import asyncio
+import hashlib
 import os
 import shutil
 import sys
 from collections.abc import AsyncGenerator
 from contextlib import suppress
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -146,6 +148,19 @@ async def test_walk_head_hexdump_info(shell: AfcShell, capfd: pytest.CaptureFixt
     assert "68 65 6c 6c 6f" in capfd.readouterr().out.lower()
     assert await shell.run_line("info") == 0
     assert "FSTotalBytes" in capfd.readouterr().out
+
+
+async def test_sha1sum_touch_truncate(shell: AfcShell, afc: AfcService, capfd: pytest.CaptureFixture[str]) -> None:
+    assert await shell.run_line("sha1sum hello.txt blob.bin") == 0
+    hello_digest = hashlib.sha1(b"hello\nworld\n").hexdigest()
+    assert capfd.readouterr().out == f"{hello_digest}  hello.txt\n{hashlib.sha1(BINARY).hexdigest()}  blob.bin\n"
+    await afc.set_file_time(f"{TEST_DIR}/hello.txt", datetime(2020, 1, 1))
+    assert await shell.run_line("touch hello.txt new.txt") == 0
+    assert (await afc.stat(f"{TEST_DIR}/hello.txt"))["st_mtime"] > datetime(2020, 1, 1)
+    assert await afc.get_file_contents(f"{TEST_DIR}/new.txt") == b""
+    assert await shell.run_line("truncate -s 5 hello.txt && truncate --size 3 blob.bin") == 0
+    assert await afc.get_file_contents(f"{TEST_DIR}/hello.txt") == b"hello"
+    assert await afc.get_file_contents(f"{TEST_DIR}/blob.bin") == BINARY[:3]
 
 
 async def test_push_and_pull_round_trip(shell: AfcShell, tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
