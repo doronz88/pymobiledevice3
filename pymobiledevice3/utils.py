@@ -252,8 +252,10 @@ def start_ipython_shell(*, user_ns: Optional[dict[str, Any]] = None, header: Opt
     cast(Any, IPython).start_ipython(argv=[], config=config, user_ns=user_ns or {})
 
 
-def file_download(url: str, outfile: Path, chunk_size: int = 1024) -> None:
+def file_download(url: str, outfile: Path, chunk_size: int = 1024 * 1024) -> None:
     resp = requests.get(url, stream=True, timeout=30)
+    # Never save an HTTP error page as the requested file
+    resp.raise_for_status()
     total = int(resp.headers.get("content-length", 0))
     with (
         outfile.open("wb") as file,

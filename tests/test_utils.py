@@ -2,14 +2,20 @@ import asyncio
 import inspect
 import os
 import signal
+import threading
+from collections.abc import Generator
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import Any
 
 import pytest
+import requests
 from bytestruct import BinaryParseError
 
 from pymobiledevice3.utils import (
     bytes_to_uint,
     cancel_on_sigint,
+    file_download,
     hexdump,
     path_to_str,
     sigint_handler,
@@ -130,3 +136,41 @@ async def test_sigint_handler_takes_over_inside_cancel_on_sigint() -> None:
         assert signal.getsignal(signal.SIGINT) is handler
         assert not interrupted()
     task.cancel()
+
+
+class _ServeOrFail(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        if self.path == "/missing.ipsw":
+            self.send_error(404)
+            return
+        body = b"payload" * 1000
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - matches the overridden signature
+        pass
+
+
+@pytest.fixture
+def http_url() -> Generator[str, None, None]:
+    server = HTTPServer(("127.0.0.1", 0), _ServeOrFail)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+def test_file_download_writes_the_body(tmp_path: Path, http_url: str) -> None:
+    outfile = tmp_path / "fw.ipsw"
+    file_download(f"{http_url}/fw.ipsw", outfile)
+    assert outfile.read_bytes() == b"payload" * 1000
+
+
+def test_file_download_does_not_save_an_error_page(tmp_path: Path, http_url: str) -> None:
+    outfile = tmp_path / "missing.ipsw"
+    with pytest.raises(requests.HTTPError):
+        file_download(f"{http_url}/missing.ipsw", outfile)
+    assert not outfile.exists()
