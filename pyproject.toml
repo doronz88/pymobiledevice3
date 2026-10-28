@@ -60,7 +60,7 @@ dependencies = [
     "hyperframe",
     "qh3>=1.0.0,<2",
     "developer_disk_image>=0.3.0",
-    "opack2>=0.1.0",
+    "opack2>=0.2.0",
     "psutil",
     "pytun-pmd3>=3.0.3",
     "prompt_toolkit",
