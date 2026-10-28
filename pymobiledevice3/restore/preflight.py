@@ -9,6 +9,7 @@ for that chip during a restore. Apple's host only builds that payload for Apple 
 this is the only way to see the device's request before a restore.
 """
 
+from collections.abc import Mapping
 from typing import Any, Optional
 
 from ipsw_parser.ipsw import IPSW
@@ -30,7 +31,7 @@ UPDATER_FIRMWARE_PREFIXES: dict[str, tuple[str, ...]] = {
 }
 
 
-def build_tethered_preflight_payload(ipsw: IPSW, build_identity: dict[str, Any], updater: str) -> dict[str, Any]:
+def build_tethered_preflight_payload(ipsw: IPSW, build_identity: Mapping[str, Any], updater: str) -> dict[str, Any]:
     """The ``payload`` of a ``getdevicesidepreflightinfo`` request for one updater.
 
     :param ipsw: the firmware the device is being restored to.
@@ -57,7 +58,7 @@ def build_tethered_preflight_payload(ipsw: IPSW, build_identity: dict[str, Any],
 async def collect_device_side_preflight(
     rsd: RemoteServiceDiscoveryService,
     ipsw: IPSW,
-    build_identity: dict[str, Any],
+    build_identity: Mapping[str, Any],
     updaters: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Ask the device to build the TSS request of each updater, one restoreserviced command each.
