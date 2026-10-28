@@ -10,6 +10,7 @@ Apple documents only the Recovery mode sequences; the DFU sequences below are th
 """
 
 import asyncio
+import sys
 import time
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -22,6 +23,11 @@ from rich.text import Text
 
 from pymobiledevice3 import usbmux
 from pymobiledevice3.irecv._usb import APPLE_VENDOR_ID, Mode, UsbDevice, find
+
+if sys.platform == "darwin":
+    from ioregistry.ioentry import get_io_services_by_type
+else:
+    get_io_services_by_type = None
 
 KIS_PRODUCT_ID = 0x1881  # A16 and later in DFU mode (libirecovery 4472436)
 POLL_INTERVAL = 0.25
@@ -37,16 +43,30 @@ class UsbState(Enum):
     GONE = "not on USB"
 
 
+def _usb_product_ids() -> list[tuple[int, int]]:
+    """``(idVendor, idProduct)`` of every USB device on the host.
+
+    On macOS this asks IOKit: libusb does not list a device in KIS mode there (Apple's KIS driver claims it), so
+    an A16-or-later device in DFU mode would look absent.
+    """
+    if get_io_services_by_type is not None:
+        return [
+            (cast(int, entry.properties.get("idVendor", 0)), cast(int, entry.properties.get("idProduct", 0)))
+            for entry in get_io_services_by_type("IOUSBHostDevice")
+        ]
+    return [(device.idVendor, device.idProduct) for device in cast(list[UsbDevice], list(find(find_all=True)))]
+
+
 def special_mode_states() -> set[UsbState]:
     """The Recovery/DFU/KIS devices currently on USB, by their USB product IDs (no device is opened)."""
     states: set[UsbState] = set()
-    for device in cast(list[UsbDevice], list(find(find_all=True))):
-        if device.idVendor != APPLE_VENDOR_ID:
+    for vendor_id, product_id in _usb_product_ids():
+        if vendor_id != APPLE_VENDOR_ID:
             continue
-        if device.idProduct == KIS_PRODUCT_ID:
+        if product_id == KIS_PRODUCT_ID:
             states.add(UsbState.KIS)
             continue
-        mode = Mode.get_mode_from_value(device.idProduct)
+        mode = Mode.get_mode_from_value(product_id)
         if mode is None:
             continue
         states.add(UsbState.RECOVERY if mode.is_recovery else UsbState.DFU)

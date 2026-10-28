@@ -27,14 +27,22 @@ def test_iphone_sequence(product_type: str, expected: Optional[ButtonSequence]) 
 
 
 def test_special_mode_states_go_by_product_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    devices = [
-        SimpleNamespace(idVendor=APPLE_VENDOR_ID, idProduct=dfu_guide.KIS_PRODUCT_ID),
-        SimpleNamespace(idVendor=APPLE_VENDOR_ID, idProduct=Mode.RECOVERY_MODE_2.value),
-        SimpleNamespace(idVendor=APPLE_VENDOR_ID, idProduct=0x12A8),  # a booted iPhone
-        SimpleNamespace(idVendor=0x1234, idProduct=Mode.DFU_MODE.value),  # not Apple
+    product_ids = [
+        (APPLE_VENDOR_ID, dfu_guide.KIS_PRODUCT_ID),
+        (APPLE_VENDOR_ID, Mode.RECOVERY_MODE_2.value),
+        (APPLE_VENDOR_ID, 0x12A8),  # a booted iPhone
+        (0x1234, Mode.DFU_MODE.value),  # not Apple
     ]
-    monkeypatch.setattr(dfu_guide, "find", lambda find_all=False: devices)
+    monkeypatch.setattr(dfu_guide, "_usb_product_ids", lambda: product_ids)
     assert dfu_guide.special_mode_states() == {UsbState.KIS, UsbState.RECOVERY}
+
+
+def test_usb_product_ids_come_from_iokit_where_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    # libusb does not list a KIS device on macOS; IOKit does
+    entries = [SimpleNamespace(properties={"idVendor": APPLE_VENDOR_ID, "idProduct": dfu_guide.KIS_PRODUCT_ID})]
+    monkeypatch.setattr(dfu_guide, "get_io_services_by_type", lambda service_type: entries)
+    monkeypatch.setattr(dfu_guide, "find", lambda find_all=False: [])
+    assert dfu_guide._usb_product_ids() == [(APPLE_VENDOR_ID, dfu_guide.KIS_PRODUCT_ID)]
 
 
 _QUICK = ButtonSequence(
