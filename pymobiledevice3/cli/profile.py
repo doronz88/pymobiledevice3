@@ -10,7 +10,7 @@ from typer_injector import InjectingTyper
 from pymobiledevice3.ca import create_keybag_file
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
 from pymobiledevice3.services.mobile_activation import MobileActivationService
-from pymobiledevice3.services.mobile_config import MobileConfigService
+from pymobiledevice3.services.mobile_config import MobileConfigService, WallpaperScreen
 
 logger = logging.getLogger(__name__)
 
@@ -270,3 +270,103 @@ async def profile_install_restrictions_profile(
     await MobileConfigService(lockdown=service_provider).install_restrictions_profile(
         enforced_software_update_delay=enforced_software_update_delay, keybag_file=keybag
     )
+
+
+KeybagOption = Annotated[
+    Path,
+    typer.Option(
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        help="Supervision identity (PEM with the supervisor certificate and private key)",
+    ),
+]
+
+
+@cli.command("request-unlock-token")
+@async_command
+async def profile_request_unlock_token(
+    service_provider: ServiceProviderDep,
+    keybag: KeybagOption,
+    output: Annotated[Path, typer.Argument(dir_okay=False, help="File to write the raw unlock token to")],
+) -> None:
+    """
+    Save the passcode unlock token (supervised devices only)
+
+    The device must have no passcode set. The token can later be passed to `clear-passcode`.
+    """
+    async with MobileConfigService(lockdown=service_provider) as service:
+        await service.escalate(keybag)
+        token = await service.request_unlock_token()
+    output.touch(mode=0o600, exist_ok=True)
+    output.chmod(0o600)
+    output.write_bytes(token)
+    logger.info(f"wrote a {len(token)}-byte unlock token to {output}")
+
+
+@cli.command("clear-passcode")
+@async_command
+async def profile_clear_passcode(
+    service_provider: ServiceProviderDep,
+    keybag: KeybagOption,
+    token: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=True, dir_okay=False, help="Unlock token saved by request-unlock-token"),
+    ],
+) -> None:
+    """
+    Remove the device passcode using a saved unlock token (supervised devices only)
+
+    The device then drops this host's pairing; re-pair without a prompt using `lockdown pair-supervised`.
+    """
+    async with MobileConfigService(lockdown=service_provider) as service:
+        await service.escalate(keybag)
+        await service.clear_passcode(token.read_bytes())
+    logger.info(
+        "cleared the passcode; the device dropped this host's pairing (re-pair with `lockdown pair-supervised`)"
+    )
+
+
+@cli.command("clear-restrictions-password")
+@async_command
+async def profile_clear_restrictions_password(service_provider: ServiceProviderDep, keybag: KeybagOption) -> None:
+    """
+    Clear the Screen Time passcode (supervised devices only)
+
+    iOS 27.2 rejects it device-side (its sandbox blocks the Screen Time agent lookup).
+    """
+    async with MobileConfigService(lockdown=service_provider) as service:
+        await service.escalate(keybag)
+        await service.clear_restrictions_password()
+    logger.info("cleared the Screen Time passcode")
+
+
+@cli.command("security-info")
+@async_command
+async def profile_security_info(service_provider: ServiceProviderDep, keybag: KeybagOption) -> None:
+    """
+    Show the device's security status (supervised devices only)
+
+    PasscodePresent reliably tells whether a passcode is set, unlike lockdown's PasswordProtected.
+    """
+    async with MobileConfigService(lockdown=service_provider) as service:
+        await service.escalate(keybag)
+        print_json(await service.get_security_info())
+
+
+@cli.command("set-wallpaper")
+@async_command
+async def profile_set_wallpaper(
+    service_provider: ServiceProviderDep,
+    keybag: KeybagOption,
+    image: Annotated[Path, typer.Argument(exists=True, file_okay=True, dir_okay=False, help="JPEG or PNG image")],
+    screen: Annotated[
+        Literal["lock", "home", "both"],
+        typer.Option(help="Screen(s) to apply the wallpaper to; iOS 16+ may apply it to both regardless"),
+    ] = "home",
+) -> None:
+    """Set the wallpaper (supervised devices only)"""
+    async with MobileConfigService(lockdown=service_provider) as service:
+        await service.escalate(keybag)
+        await service.set_wallpaper(image.read_bytes(), WallpaperScreen[screen.upper()])
+    logger.info("set the wallpaper")

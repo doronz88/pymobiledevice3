@@ -129,6 +129,28 @@ pymobiledevice3 profile install my.mobileconfig
 pymobiledevice3 profile remove com.example.profile
 ```
 
+Supervised devices only: these commands escalate with the supervision identity passed as
+`--keybag` (a PEM holding the supervisor certificate and private key, e.g. from
+`profile create-keybag`).
+
+```shell
+# Save the passcode unlock token (the device must have no passcode yet); written with mode 0600
+pymobiledevice3 profile request-unlock-token --keybag keybag.pem unlock-token.bin
+
+# Later: remove the passcode without knowing it; the device then drops the pairing, so re-pair
+pymobiledevice3 profile clear-passcode --keybag keybag.pem unlock-token.bin
+pymobiledevice3 lockdown pair-supervised keybag.pem
+
+# Clear the Screen Time passcode (iOS 27.2 rejects it device-side)
+pymobiledevice3 profile clear-restrictions-password --keybag keybag.pem
+
+# Security status as JSON; PasscodePresent reliably tells whether a passcode is set
+pymobiledevice3 profile security-info --keybag keybag.pem
+
+# Set the wallpaper (--screen lock|home|both; iOS 16+ may apply it to both regardless)
+pymobiledevice3 profile set-wallpaper --keybag keybag.pem wallpaper.png --screen both
+```
+
 ## Cryptexes (iOS 17+, RSD tunnel)
 
 Talks to `cryptexd` directly. `cryptex list` reports a DeveloperDiskImage installed as a cryptex
