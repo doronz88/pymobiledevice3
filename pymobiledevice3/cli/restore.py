@@ -3,10 +3,12 @@ import contextlib
 import hashlib
 import logging
 import plistlib
+import re
 import sys
 import tempfile
 import threading
 from collections.abc import AsyncGenerator
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import IO, Annotated, Any, Callable, Optional, TypeVar, Union, cast
 
@@ -58,6 +60,8 @@ print(irecv.getenv('build-version'))
 """
 IPSWME_API = "https://api.ipsw.me/v4/device/"
 IPSW_DIR_ENV_VAR = "PYMOBILEDEVICE3_IPSW_DIR"
+APPLEDB_API = "https://api.appledb.dev/ios/"
+APPLEDB_BETAS_TO_LIST = 8
 
 T = TypeVar("T")
 
@@ -268,13 +272,26 @@ def ipsw_ctx_dependency(
             help="Directory of downloaded IPSWs: reuse a build already there, and download new ones into it.",
         ),
     ] = None,
+    beta: Annotated[
+        bool,
+        typer.Option(
+            "--beta",
+            help="Choose among the newest beta builds (listed by AppleDB) instead of signed releases (ipsw.me).",
+        ),
+    ] = False,
 ) -> contextlib.AbstractAsyncContextManager[IPSW]:
+    if ipsw_dir is not None:
+        # The env var is often set quoted, leaving "~" for us to expand
+        ipsw_dir = ipsw_dir.expanduser()
     if ipsw and not ipsw.startswith(("http://", "https://")):
         return ipsw_ctx(ipsw)
 
     if ipsw is not None:
+        if beta:
+            raise typer.BadParameter("--beta only applies when choosing a build interactively", param_hint="--beta")
         return download_ipsw_ctx(ipsw, ipsw_dir)
-    firmware = query_ipswme(cli_loop.run_until_complete(device.get_product_type()), ipsw_dir)
+    product_type = cli_loop.run_until_complete(device.get_product_type())
+    firmware = query_appledb_betas(product_type, ipsw_dir) if beta else query_ipswme(product_type, ipsw_dir)
     return download_ipsw_ctx(firmware["url"], ipsw_dir, firmware.get("sha256sum"))
 
 
@@ -316,12 +333,74 @@ def query_ipswme(identifier: str, ipsw_dir: Optional[Path] = None) -> dict[str, 
         typer.secho(f"Could not reach ipsw.me to list signed builds: {e}", err=True, fg="red")
         raise typer.Exit(code=1) from e
     signed: list[dict[str, Any]] = [entry for entry in resp.json()["firmwares"] if entry["signed"]]
+    return _choose_firmware(signed, ipsw_dir)
+
+
+def query_appledb_betas(product_type: str, ipsw_dir: Optional[Path] = None) -> dict[str, Any]:
+    """
+    Let the user pick one of the newest beta builds AppleDB lists an IPSW of for ``product_type``.
+
+    Costs one ~44 KB index plus one ~100 KB entry per candidate build, fetched in parallel. AppleDB's
+    signing status is only a hint (shown as "unsigned"); TSS decides during the restore.
+    """
+    os_str = "iPadOS" if product_type.startswith("iPad") else "iOS"
+    # Betas are <major><train><4 digits><letter>, e.g. 24B5110a; longer numbers are not betas
+    beta_key = re.compile(rf"{os_str};(\d+)([A-Z])(\d{{4}})([a-z])")
+    try:
+        index: list[str] = _appledb_get("index.json")
+        matches = [m for m in map(beta_key.fullmatch, index) if m is not None]
+        matches.sort(key=lambda m: (int(m[1]), m[2], int(m[3]), m[4]), reverse=True)
+        keys = [m[0] for m in matches[:APPLEDB_BETAS_TO_LIST]]
+        with ThreadPoolExecutor(max_workers=len(keys) or 1) as pool:
+            builds: list[dict[str, Any]] = list(pool.map(_appledb_get, [f"{key}.json" for key in keys]))
+    except requests.RequestException as e:
+        typer.secho(f"Could not reach AppleDB to list beta builds: {e}", err=True, fg="red")
+        raise typer.Exit(code=1) from e
+
+    firmwares: list[dict[str, Any]] = []
+    for build in builds:
+        sources: list[dict[str, Any]] = build.get("sources", [])
+        source = next((s for s in sources if s["type"] == "ipsw" and product_type in s["deviceMap"]), None)
+        if source is None:
+            continue
+        all_links: list[dict[str, Any]] = source.get("links", [])
+        links = [link for link in all_links if link.get("active", True)]
+        if not links:
+            continue
+        signed = build.get("signed")
+        firmwares.append({
+            "version": build["version"],
+            "buildid": build["build"],
+            "url": max(links, key=lambda link: bool(link.get("preferred")))["url"],
+            "sha256sum": source.get("hashes", {}).get("sha2-256"),
+            "signed": signed is True or (isinstance(signed, list) and product_type in signed),
+        })
+    if not firmwares:
+        typer.secho(
+            f"AppleDB lists no IPSW for {product_type} in the {len(keys)} newest {os_str} betas; "
+            "the device may not support the current beta release.",
+            err=True,
+            fg="red",
+        )
+        raise typer.Exit(code=1)
+    return _choose_firmware(firmwares, ipsw_dir)
+
+
+def _appledb_get(path: str) -> Any:
+    resp = requests.get(APPLEDB_API + path, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _choose_firmware(firmwares: list[dict[str, Any]], ipsw_dir: Optional[Path]) -> dict[str, Any]:
+    """Prompt for one of ``firmwares``, marking the ones already in ``ipsw_dir`` and those known unsigned."""
     display_list: list[str] = []
-    for entry in signed:
+    for entry in firmwares:
         local = ipsw_dir is not None and (ipsw_dir / entry["url"].split("/")[-1]).is_file()
-        display_list.append(f"{entry['version']}: {entry['buildid']}{' (local)' if local else ''}")
+        marks = (" (local)" if local else "") + ("" if entry.get("signed", True) else " (unsigned)")
+        display_list.append(f"{entry['version']}: {entry['buildid']}{marks}")
     idx: int = prompt_selection(display_list, "Choose version", idx=True)
-    return signed[idx]
+    return firmwares[idx]
 
 
 async def restore_update_task(

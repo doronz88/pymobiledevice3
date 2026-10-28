@@ -36,7 +36,7 @@ access and works from normal mode as well as recovery (the product type comes
 from lockdown or from the recovery-mode device table).
 
 To stop downloading the same multi-GB IPSW on every run, pass `--ipsw-dir`
-(or set `PYMOBILEDEVICE3_IPSW_DIR` once). Downloads then go into that directory
+(or set `PYMOBILEDEVICE3_IPSW_DIR` once; a leading `~` is expanded). Downloads then go into that directory
 under Apple's filename (e.g. `iPhone12,1_27.2_24B119_Restore.ipsw`) and are
 kept. A file already there with that name is used as-is, without re-hashing,
 and the interactive picker marks such builds `(local)`. A new download is
@@ -45,6 +45,12 @@ is renamed into place only once it matches its SHA-256 (the one Apple's CDN
 publishes for the file, else ipsw.me's); a mismatching download is discarded.
 A single Ctrl-C stops the download and keeps the `.part`. If ipsw.me can't be
 reached, the picker reports it and exits.
+
+`--beta` lists the newest beta builds instead, from
+[AppleDB](https://appledb.dev) (ipsw.me has no betas), restricted to those with
+an IPSW for the device: e.g. `27.2 beta 4: 24B5110a`. AppleDB's signing status
+is shown as `(unsigned)` but is only a hint; TSS decides at restore time.
+`--ipsw-dir`, resuming and SHA-256 verification work the same way.
 
 Whatever the source, the build must be signed by Apple at restore time, since
 the AP ticket comes from TSS. A `--tss` SHSH blob can be supplied for the AP
