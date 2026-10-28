@@ -339,3 +339,16 @@ async def profile_clear_restrictions_password(service_provider: ServiceProviderD
         await service.escalate(keybag)
         await service.clear_restrictions_password()
     logger.info("cleared the Screen Time passcode")
+
+
+@cli.command("security-info")
+@async_command
+async def profile_security_info(service_provider: ServiceProviderDep, keybag: KeybagOption) -> None:
+    """
+    Show the device's security status (supervised devices only)
+
+    PasscodePresent reliably tells whether a passcode is set, unlike lockdown's PasswordProtected.
+    """
+    async with MobileConfigService(lockdown=service_provider) as service:
+        await service.escalate(keybag)
+        print_json(await service.get_security_info())

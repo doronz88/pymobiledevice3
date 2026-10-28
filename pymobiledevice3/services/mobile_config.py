@@ -262,6 +262,23 @@ class MobileConfigService(LockdownService):
         """
         await self._send_recv({"RequestType": "ClearRestrictionsPassword"})
 
+    async def get_security_info(self) -> dict[str, Any]:
+        """
+        Query the device's security status. Read-only; performs no keybag operation.
+
+        Requires a connection escalated with `escalate` (unescalated, the device answers
+        ``CommandFormatError``). The reply includes ``PasscodePresent``, which reliably tells
+        whether a passcode is set, unlike lockdown's ``PasswordProtected`` (which reflects whether
+        the device is currently locked), along with passcode compliance, lock grace periods,
+        hardware encryption capabilities and management status.
+
+        :returns: the ``SecurityInfo`` dictionary.
+        """
+        info = (await self._send_recv({"RequestType": "SecurityInfo"})).get("SecurityInfo")
+        if not isinstance(info, dict):
+            raise ProfileError("The SecurityInfo response carries no SecurityInfo dictionary")
+        return cast(dict[str, Any], info)
+
     async def _send_recv(self, request: dict[str, Any], redact: bool = False) -> dict[str, Any]:
         response = await self.service.send_recv_plist(request)
         if response.get("Status", None) != "Acknowledged":

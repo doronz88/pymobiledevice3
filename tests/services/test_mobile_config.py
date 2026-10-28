@@ -100,3 +100,20 @@ async def test_unescalated_request_raises_profile_error() -> None:
 
     with pytest.raises(ProfileError, match="CommandFormatError"):
         await service.clear_restrictions_password()
+
+
+@pytest.mark.asyncio
+async def test_get_security_info_returns_the_security_info_dict() -> None:
+    info = {"PasscodePresent": True, "PasscodeCompliant": True, "HardwareEncryptionCaps": 3}
+    service, connection = _service([{**ACK, "SecurityInfo": info}])
+
+    assert await service.get_security_info() == info
+    assert connection.send_recv_plist.await_args_list == [call({"RequestType": "SecurityInfo"})]
+
+
+@pytest.mark.asyncio
+async def test_get_security_info_without_the_dict_raises() -> None:
+    service, _ = _service([ACK])
+
+    with pytest.raises(ProfileError, match="no SecurityInfo"):
+        await service.get_security_info()

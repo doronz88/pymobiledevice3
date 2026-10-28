@@ -1,3 +1,4 @@
+import json
 import stat
 import sys
 from pathlib import Path
@@ -39,6 +40,10 @@ class _FakeMobileConfigService:
     async def clear_restrictions_password(self) -> None:
         self.calls.append(("clear_restrictions_password", None))
 
+    async def get_security_info(self) -> dict[str, Any]:
+        self.calls.append(("get_security_info", None))
+        return {"PasscodePresent": False}
+
 
 @pytest.fixture(autouse=True)
 def _fake_service(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,3 +79,12 @@ def test_clear_restrictions_password_escalates(tmp_path: Path) -> None:
     profile_module.profile_clear_restrictions_password(_FAKE_SERVICE_PROVIDER, keybag)
 
     assert _FakeMobileConfigService.calls == [("escalate", keybag), ("clear_restrictions_password", None)]
+
+
+def test_security_info_escalates_and_prints_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    keybag = tmp_path / "keybag"
+
+    profile_module.profile_security_info(_FAKE_SERVICE_PROVIDER, keybag)
+
+    assert _FakeMobileConfigService.calls == [("escalate", keybag), ("get_security_info", None)]
+    assert json.loads(capsys.readouterr().out) == {"PasscodePresent": False}

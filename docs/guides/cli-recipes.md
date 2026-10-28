@@ -143,6 +143,9 @@ pymobiledevice3 lockdown pair-supervised keybag.pem
 
 # Clear the Screen Time passcode (iOS 27.2 rejects it device-side)
 pymobiledevice3 profile clear-restrictions-password --keybag keybag.pem
+
+# Security status as JSON; PasscodePresent reliably tells whether a passcode is set
+pymobiledevice3 profile security-info --keybag keybag.pem
 ```
 
 ## Cryptexes (iOS 17+, RSD tunnel)
