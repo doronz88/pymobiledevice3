@@ -5,9 +5,10 @@ import logging
 import plistlib
 import sys
 import tempfile
-from collections.abc import Generator
+import threading
+from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import IO, Annotated, Any, Optional, Union, cast
+from typing import IO, Annotated, Any, Callable, Optional, TypeVar, Union, cast
 
 import questionary
 import requests
@@ -57,6 +58,8 @@ print(irecv.getenv('build-version'))
 """
 IPSWME_API = "https://api.ipsw.me/v4/device/"
 IPSW_DIR_ENV_VAR = "PYMOBILEDEVICE3_IPSW_DIR"
+
+T = TypeVar("T")
 
 
 cli = InjectingTyper(
@@ -176,14 +179,16 @@ DeviceDep = Annotated[
 ]
 
 
-@contextlib.contextmanager
-def download_ipsw_ctx(url: str, ipsw_dir: Optional[Path], sha1: Optional[str] = None) -> Generator[IPSW, None, None]:
+@contextlib.asynccontextmanager
+async def download_ipsw_ctx(
+    url: str, ipsw_dir: Optional[Path], sha256: Optional[str] = None
+) -> AsyncGenerator[IPSW, None]:
     """
     Download ``url`` into ``ipsw_dir`` (a temporary directory if None) and open it.
 
-    A complete ``.ipsw`` already in ``ipsw_dir`` is trusted and reused as-is. A new download lands
-    in ``<name>.part`` and is only renamed into place once it matches ``sha1`` (when known), so an
-    interrupted or corrupt download is never mistaken for a complete one.
+    A complete ``.ipsw`` already in ``ipsw_dir`` is trusted and reused as-is. A new download lands in
+    ``<name>.part``, resumes from there if interrupted, and is only renamed into place once it matches
+    its SHA-256: the one Apple's CDN publishes for the file, else ``sha256`` (from the build listing).
     """
     with contextlib.ExitStack() as stack:
         if ipsw_dir is None:
@@ -194,26 +199,54 @@ def download_ipsw_ctx(url: str, ipsw_dir: Optional[Path], sha1: Optional[str] = 
             logger.info(f"Using {ipsw_path}")
         else:
             part_path = ipsw_path.with_name(ipsw_path.name + ".part")
-            file_download(url, part_path)
-            if sha1 is not None and _file_sha1(part_path) != sha1.lower():
+            expected = await asyncio.to_thread(_published_sha256, url) or sha256
+            await _run_stoppable(lambda stop: file_download(url, part_path, resume=True, stop=stop))
+            if expected is None:
+                logger.warning(f"No published SHA-256 for {ipsw_path.name}; using it unverified")
+            elif await _run_stoppable(lambda stop: _file_sha256(part_path, stop)) != expected.lower():
                 part_path.unlink()
-                typer.secho(f"{ipsw_path.name} does not match its published SHA1; discarded it.", err=True, fg="red")
+                typer.secho(f"{ipsw_path.name} does not match its published SHA-256; discarded it.", err=True, fg="red")
                 raise typer.Exit(code=1)
             part_path.replace(ipsw_path)
-        with ipsw_ctx(ipsw_path) as ipsw:
+        async with ipsw_ctx(ipsw_path) as ipsw:
             yield ipsw
 
 
-def _file_sha1(path: Path) -> str:
-    digest = hashlib.sha1()
+def _published_sha256(url: str) -> Optional[str]:
+    """Return the SHA-256 Apple's CDN publishes for ``url`` in its object metadata, if any."""
+    resp = requests.head(url, timeout=30, allow_redirects=True)
+    # Some servers refuse HEAD; the download itself reports real errors
+    return resp.headers.get("x-amz-meta-digest-sha256") if resp.ok else None
+
+
+async def _run_stoppable(func: Callable[[threading.Event], T]) -> T:
+    """
+    Run blocking ``func`` on a worker thread, keeping the loop free for Ctrl-C.
+
+    On cancellation, signal ``func`` through its stop event and wait for the thread to wind down.
+    """
+    stop = threading.Event()
+    task = asyncio.create_task(asyncio.to_thread(func, stop))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        stop.set()
+        await asyncio.gather(task, return_exceptions=True)
+        raise
+
+
+def _file_sha256(path: Path, stop: threading.Event) -> Optional[str]:
+    digest = hashlib.sha256()
     with path.open("rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            if stop.is_set():
+                return None
             digest.update(chunk)
     return digest.hexdigest()
 
 
-@contextlib.contextmanager
-def ipsw_ctx(path: Union[str, Path]) -> Generator[IPSW, None, None]:
+@contextlib.asynccontextmanager
+async def ipsw_ctx(path: Union[str, Path]) -> AsyncGenerator[IPSW, None]:
     yield IPSW.create_from_path(str(path))
 
 
@@ -235,18 +268,18 @@ def ipsw_ctx_dependency(
             help="Directory of downloaded IPSWs: reuse a build already there, and download new ones into it.",
         ),
     ] = None,
-) -> contextlib.AbstractContextManager[IPSW]:
+) -> contextlib.AbstractAsyncContextManager[IPSW]:
     if ipsw and not ipsw.startswith(("http://", "https://")):
         return ipsw_ctx(ipsw)
 
     if ipsw is not None:
         return download_ipsw_ctx(ipsw, ipsw_dir)
     firmware = query_ipswme(cli_loop.run_until_complete(device.get_product_type()), ipsw_dir)
-    return download_ipsw_ctx(firmware["url"], ipsw_dir, firmware["sha1sum"])
+    return download_ipsw_ctx(firmware["url"], ipsw_dir, firmware.get("sha256sum"))
 
 
 IPSWCtxDep = Annotated[
-    contextlib.AbstractContextManager[IPSW],
+    contextlib.AbstractAsyncContextManager[IPSW],
     Depends(ipsw_ctx_dependency),
 ]
 
@@ -436,11 +469,11 @@ async def restore_restart(device: DeviceDep) -> None:
 
 async def restore_tss_task(
     device: Device,
-    ipsw_ctx: contextlib.AbstractContextManager[IPSW],
+    ipsw_ctx: contextlib.AbstractAsyncContextManager[IPSW],
     out: Optional[IO[bytes]],
     behavior: Behavior = Behavior.Update,
 ) -> None:
-    with ipsw_ctx as ipsw:
+    async with ipsw_ctx as ipsw:
         tss = await Recovery(ipsw, device, behavior=behavior).fetch_tss_record()
     if out:
         plistlib.dump(tss, out)
@@ -498,7 +531,7 @@ async def restore_preflight_requests(
     uploads each updater's firmware to the device). Prints the requests, their ticket and manifest
     tags, and the updaters that failed.
     """
-    with ipsw_ctx as ipsw:
+    async with ipsw_ctx as ipsw:
         build_identity = Recovery(ipsw, device).build_identity
         print_json(await collect_device_side_preflight(rsd, ipsw, build_identity, updater))
 
@@ -509,7 +542,7 @@ async def restore_ramdisk(device: DeviceDep, ipsw_ctx: IPSWCtxDep) -> None:
     """
     Boot only the update ramdisk without performing a restore (IPSW path or URL accepted).
     """
-    with ipsw_ctx as ipsw:
+    async with ipsw_ctx as ipsw:
         await Recovery(ipsw, device).boot_ramdisk()
 
 
@@ -567,12 +600,13 @@ async def restore_update(
         device = await _reconnect_in_dfu(ecid, await guide_into_dfu(device))
     if exclusive_usb and sys.platform != "darwin":
         raise typer.BadParameter("--exclusive-usb is only supported on macOS", param_hint="--exclusive-usb")
-    with ipsw_ctx as ipsw, DeviceInterfacedControl() if exclusive_usb else contextlib.nullcontext():
-        await restore_update_task(
-            device,
-            ipsw,
-            tss,
-            erase,
-            ignore_fdr,
-            enable_tss_batch=tss_batch,
-        )
+    async with ipsw_ctx as ipsw:
+        with DeviceInterfacedControl() if exclusive_usb else contextlib.nullcontext():
+            await restore_update_task(
+                device,
+                ipsw,
+                tss,
+                erase,
+                ignore_fdr,
+                enable_tss_batch=tss_batch,
+            )

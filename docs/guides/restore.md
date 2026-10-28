@@ -40,9 +40,11 @@ To stop downloading the same multi-GB IPSW on every run, pass `--ipsw-dir`
 under Apple's filename (e.g. `iPhone12,1_27.2_24B119_Restore.ipsw`) and are
 kept. A file already there with that name is used as-is, without re-hashing,
 and the interactive picker marks such builds `(local)`. A new download is
-written to `<name>.part`, checked against the SHA1 ipsw.me publishes, and only
-then renamed into place; a mismatching download is discarded. If ipsw.me can't
-be reached, the picker reports it and exits.
+written to `<name>.part`, which a later run resumes after an interruption, and
+is renamed into place only once it matches its SHA-256 (the one Apple's CDN
+publishes for the file, else ipsw.me's); a mismatching download is discarded.
+A single Ctrl-C stops the download and keeps the `.part`. If ipsw.me can't be
+reached, the picker reports it and exits.
 
 Whatever the source, the build must be signed by Apple at restore time, since
 the AP ticket comes from TSS. A `--tss` SHSH blob can be supplied for the AP
