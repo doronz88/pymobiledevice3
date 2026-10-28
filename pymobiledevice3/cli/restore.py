@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import hashlib
 import logging
 import plistlib
 import sys
@@ -55,6 +56,7 @@ SHELL_USAGE = """
 print(irecv.getenv('build-version'))
 """
 IPSWME_API = "https://api.ipsw.me/v4/device/"
+IPSW_DIR_ENV_VAR = "PYMOBILEDEVICE3_IPSW_DIR"
 
 
 cli = InjectingTyper(
@@ -175,12 +177,39 @@ DeviceDep = Annotated[
 
 
 @contextlib.contextmanager
-def tempzip_download_ctx(url: str) -> Generator[IPSW, None, None]:
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpzip = Path(tmpdir) / url.split("/")[-1]
-        file_download(url, tmpzip)
-        with ipsw_ctx(tmpzip) as ipsw:
+def download_ipsw_ctx(url: str, ipsw_dir: Optional[Path], sha1: Optional[str] = None) -> Generator[IPSW, None, None]:
+    """
+    Download ``url`` into ``ipsw_dir`` (a temporary directory if None) and open it.
+
+    A complete ``.ipsw`` already in ``ipsw_dir`` is trusted and reused as-is. A new download lands
+    in ``<name>.part`` and is only renamed into place once it matches ``sha1`` (when known), so an
+    interrupted or corrupt download is never mistaken for a complete one.
+    """
+    with contextlib.ExitStack() as stack:
+        if ipsw_dir is None:
+            ipsw_dir = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+        ipsw_dir.mkdir(parents=True, exist_ok=True)
+        ipsw_path = ipsw_dir / url.split("/")[-1]
+        if ipsw_path.is_file():
+            logger.info(f"Using {ipsw_path}")
+        else:
+            part_path = ipsw_path.with_name(ipsw_path.name + ".part")
+            file_download(url, part_path)
+            if sha1 is not None and _file_sha1(part_path) != sha1.lower():
+                part_path.unlink()
+                typer.secho(f"{ipsw_path.name} does not match its published SHA1; discarded it.", err=True, fg="red")
+                raise typer.Exit(code=1)
+            part_path.replace(ipsw_path)
+        with ipsw_ctx(ipsw_path) as ipsw:
             yield ipsw
+
+
+def _file_sha1(path: Path) -> str:
+    digest = hashlib.sha1()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 @contextlib.contextmanager
@@ -198,14 +227,22 @@ def ipsw_ctx_dependency(
             help="Path or URL to an IPSW. If omitted, choose a signed build interactively.",
         ),
     ] = None,
+    ipsw_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--ipsw-dir",
+            envvar=IPSW_DIR_ENV_VAR,
+            help="Directory of downloaded IPSWs: reuse a build already there, and download new ones into it.",
+        ),
+    ] = None,
 ) -> contextlib.AbstractContextManager[IPSW]:
     if ipsw and not ipsw.startswith(("http://", "https://")):
         return ipsw_ctx(ipsw)
 
-    url = ipsw
-    if url is None:
-        url = query_ipswme(cli_loop.run_until_complete(device.get_product_type()))
-    return tempzip_download_ctx(url)
+    if ipsw is not None:
+        return download_ipsw_ctx(ipsw, ipsw_dir)
+    firmware = query_ipswme(cli_loop.run_until_complete(device.get_product_type()), ipsw_dir)
+    return download_ipsw_ctx(firmware["url"], ipsw_dir, firmware["sha1sum"])
 
 
 IPSWCtxDep = Annotated[
@@ -238,12 +275,20 @@ BehaviorOption = Annotated[
 ]
 
 
-def query_ipswme(identifier: str) -> str:
-    resp = requests.get(IPSWME_API + identifier, headers={"Accept": "application/json"}, timeout=30)
-    firmwares = resp.json()["firmwares"]
-    display_list = [f"{entry['version']}: {entry['buildid']}" for entry in firmwares if entry["signed"]]
-    idx = prompt_selection(display_list, "Choose version", idx=True)
-    return firmwares[idx]["url"]
+def query_ipswme(identifier: str, ipsw_dir: Optional[Path] = None) -> dict[str, Any]:
+    """Let the user pick a signed build from ipsw.me, marking the ones already in ``ipsw_dir``."""
+    try:
+        resp = requests.get(IPSWME_API + identifier, headers={"Accept": "application/json"}, timeout=30)
+    except requests.RequestException as e:
+        typer.secho(f"Could not reach ipsw.me to list signed builds: {e}", err=True, fg="red")
+        raise typer.Exit(code=1) from e
+    signed: list[dict[str, Any]] = [entry for entry in resp.json()["firmwares"] if entry["signed"]]
+    display_list: list[str] = []
+    for entry in signed:
+        local = ipsw_dir is not None and (ipsw_dir / entry["url"].split("/")[-1]).is_file()
+        display_list.append(f"{entry['version']}: {entry['buildid']}{' (local)' if local else ''}")
+    idx: int = prompt_selection(display_list, "Choose version", idx=True)
+    return signed[idx]
 
 
 async def restore_update_task(
