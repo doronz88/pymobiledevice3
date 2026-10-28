@@ -293,6 +293,9 @@ pymobiledevice3 restore update -i https://example.com/firmware.ipsw
 # Enable Developer Mode
 pymobiledevice3 amfi enable-developer-mode
 
+# Trust the developer app signer of an installed provisioning profile (UUID from `provision list`)
+pymobiledevice3 amfi trust-app-signer <profile-uuid>
+
 # Auto-mount DeveloperDiskImage
 pymobiledevice3 mounter auto-mount
 ```
