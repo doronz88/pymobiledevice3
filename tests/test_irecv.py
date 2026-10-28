@@ -1,6 +1,7 @@
 import binascii
 import struct
-from typing import Any, Optional, cast
+from array import array
+from typing import Any, Optional, Union, cast
 
 import pytest
 
@@ -8,7 +9,7 @@ from pymobiledevice3 import irecv
 from pymobiledevice3.exceptions import IRecvError, IRecvNoDeviceConnectedError
 from pymobiledevice3.irecv import client as irecv_client
 from pymobiledevice3.irecv import transfer
-from pymobiledevice3.irecv._usb import Device
+from pymobiledevice3.irecv._usb import UsbDevice
 from pymobiledevice3.irecv.device_info import DeviceInfo, parse_nonce
 
 DFU_SERIAL = "CPID:8150 CPRV:11 CPFM:03 SCEP:01 BDID:0C ECID:001074523440401C IBFL:3C SRTG:[iBoot-11881.0.111]"
@@ -54,14 +55,24 @@ class _FakeDfuDevice:
         self.dnloads: list[tuple[int, bytes]] = []
         self.writes: list[bytes] = []
 
-    def ctrl_transfer(self, bmRequestType: int, bRequest: int, timeout: Optional[int] = None, **kwargs: Any) -> Any:
+    def ctrl_transfer(
+        self,
+        bmRequestType: int,
+        bRequest: int,
+        wValue: int = 0,
+        wIndex: int = 0,
+        data_or_wLength: Union[None, int, bytes] = None,
+        timeout: Optional[int] = None,
+    ) -> Union["array[int]", int]:
         if bmRequestType == transfer.REQUEST_TYPE_CLASS_IN and bRequest == transfer.DfuRequest.GETSTATE:
-            return [transfer.DfuState.DFU_IDLE]
+            return array("B", [transfer.DfuState.DFU_IDLE])
         if bmRequestType == transfer.REQUEST_TYPE_CLASS_IN and bRequest == transfer.DfuRequest.GETSTATUS:
-            return [0, 0, 0, 0, self.final_state, 0]
+            return array("B", [0, 0, 0, 0, self.final_state, 0])
         if bmRequestType == transfer.REQUEST_TYPE_CLASS_OUT and bRequest == transfer.DfuRequest.DNLOAD:
-            self.dnloads.append((kwargs.get("wValue", 0), bytes(kwargs.get("data_or_wLength") or b"")))
-        return b""
+            data = data_or_wLength if isinstance(data_or_wLength, bytes) else b""
+            self.dnloads.append((wValue, data))
+            return len(data)
+        return 0
 
     def write(self, endpoint: int, data: bytes, timeout: Optional[int] = None) -> int:
         assert endpoint == transfer.RECOVERY_BULK_ENDPOINT
@@ -82,7 +93,7 @@ def test_dfu_upload_appends_the_crc_and_finishes(size: int, monkeypatch: pytest.
     buf = bytes(range(256)) * (size // 256) + bytes(size % 256)
     device = _FakeDfuDevice()
 
-    transfer.upload_dfu(device, buf, "test")
+    transfer.upload_dfu(cast(UsbDevice, device), buf, "test")
 
     *data_packets, finish = device.dnloads
     assert finish == ((len(buf) + transfer.DFU_PACKET_SIZE - 1) // transfer.DFU_PACKET_SIZE, b"")
@@ -96,14 +107,14 @@ def test_dfu_upload_gives_up_when_the_device_never_settles(monkeypatch: pytest.M
     sleeps: list[float] = []
     monkeypatch.setattr(transfer.time, "sleep", sleeps.append)
     with pytest.raises(IRecvError, match="did not reach"):
-        transfer.upload_dfu(_FakeDfuDevice(final_state=transfer.DfuState.DFU_ERROR), b"image", "test")
+        transfer.upload_dfu(cast(UsbDevice, _FakeDfuDevice(final_state=transfer.DfuState.DFU_ERROR)), b"image", "test")
     assert len(sleeps) == transfer.DFU_STATUS_RETRIES
 
 
 @pytest.mark.parametrize(("size", "zlp"), [(1000, False), (1024, True)])
 def test_recovery_upload_ends_full_packets_with_a_zlp(size: int, zlp: bool) -> None:
     device = _FakeDfuDevice()
-    transfer.upload_recovery(device, bytes(size), "test")
+    transfer.upload_recovery(cast(UsbDevice, device), bytes(size), "test")
     assert b"".join(device.writes) == bytes(size)
     assert (device.writes[-1] == b"") == zlp
 
@@ -133,7 +144,7 @@ def test_closing_releases_the_device(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(irecv_client, "dispose_resources", disposed.append)
     client = irecv.IRecv.__new__(irecv.IRecv)
     device = _FakeUsbDevice(1)
-    client._device = cast(Device, device)
+    client._device = cast(UsbDevice, device)
     client._mode = irecv.Mode.RECOVERY_MODE_2
     client._info = DeviceInfo.parse(device.serial_number)
     client.ap_nonce = client.sep_nonce = b"n"

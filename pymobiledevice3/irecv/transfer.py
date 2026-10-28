@@ -7,10 +7,10 @@ import struct
 import time
 from array import array
 from enum import IntEnum
-from typing import Any, cast
+from typing import Optional, Union, cast
 
 from pymobiledevice3.exceptions import IRecvError, PyMobileDevice3Exception
-from pymobiledevice3.irecv._usb import USB_TIMEOUT
+from pymobiledevice3.irecv._usb import USB_TIMEOUT, UsbDevice
 from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
 
 logger = logging.getLogger(__name__)
@@ -50,15 +50,44 @@ class DfuState(IntEnum):
     DFU_ERROR = 10
 
 
-def ctrl_transfer(
-    device: Any, bmRequestType: int, bRequest: int, timeout: int = USB_TIMEOUT, **kwargs: Any
+def control_in(
+    device: UsbDevice,
+    bmRequestType: int,
+    bRequest: int,
+    data_or_wLength: Union[int, bytes],
+    wValue: int = 0,
+    wIndex: int = 0,
+    timeout: Optional[int] = USB_TIMEOUT,
 ) -> "array[int]":
-    return cast("array[int]", device.ctrl_transfer(bmRequestType, bRequest, timeout=timeout, **kwargs))
+    """
+    A device-to-host control request reading ``data_or_wLength`` bytes (a length, or a buffer of that size).
+
+    A ``None`` timeout uses pyusb's default.
+    """
+    return cast(
+        "array[int]",
+        device.ctrl_transfer(bmRequestType, bRequest, wValue, wIndex, data_or_wLength=data_or_wLength, timeout=timeout),
+    )
 
 
-def dfu_state(device: Any) -> int:
+def control_out(
+    device: UsbDevice,
+    bmRequestType: int,
+    bRequest: int,
+    wValue: int = 0,
+    wIndex: int = 0,
+    data: Optional[bytes] = None,
+    timeout: int = USB_TIMEOUT,
+) -> int:
+    """A host-to-device control request; returns the number of payload bytes written."""
+    return cast(
+        int, device.ctrl_transfer(bmRequestType, bRequest, wValue, wIndex, data_or_wLength=data, timeout=timeout)
+    )
+
+
+def dfu_state(device: UsbDevice) -> int:
     """The bState field of a DFU GETSTATUS reply."""
-    return ctrl_transfer(device, REQUEST_TYPE_CLASS_IN, DfuRequest.GETSTATUS, data_or_wLength=b"\x00" * 6)[4]
+    return control_in(device, REQUEST_TYPE_CLASS_IN, DfuRequest.GETSTATUS, b"\x00" * 6)[4]
 
 
 def dfu_crc_trailer(buf: bytes) -> bytes:
@@ -67,7 +96,7 @@ def dfu_crc_trailer(buf: bytes) -> bytes:
     return _DFU_CRC_SALT + struct.pack("<I", crc)
 
 
-def _wait_for_dfu_state(device: Any, wanted: int, retries: int = DFU_STATUS_RETRIES) -> None:
+def _wait_for_dfu_state(device: UsbDevice, wanted: int, retries: int = DFU_STATUS_RETRIES) -> None:
     for _ in range(retries):
         if dfu_state(device) == wanted:
             return
@@ -75,14 +104,14 @@ def _wait_for_dfu_state(device: Any, wanted: int, retries: int = DFU_STATUS_RETR
     raise IRecvError(f"The device in DFU mode did not reach DFU state {wanted} after the upload.")
 
 
-def upload_recovery(device: Any, buf: bytes, desc: str) -> None:
+def upload_recovery(device: UsbDevice, buf: bytes, desc: str) -> None:
     """Upload ``buf`` to a device in Recovery mode over the bulk endpoint."""
-    ctrl_transfer(device, REQUEST_TYPE_VENDOR_INTERFACE_OUT, 0)
+    control_out(device, REQUEST_TYPE_VENDOR_INTERFACE_OUT, 0)
     with ProgressBar(total=len(buf), desc=desc, unit=BYTES_UNIT) as bar:
         for offset in range(0, len(buf), RECOVERY_PACKET_SIZE):
             chunk = buf[offset : offset + RECOVERY_PACKET_SIZE]
             bar.update(len(chunk))
-            n = cast(int, device.write(RECOVERY_BULK_ENDPOINT, chunk, timeout=USB_TIMEOUT))
+            n = device.write(RECOVERY_BULK_ENDPOINT, chunk, timeout=USB_TIMEOUT)
             if n != len(chunk):
                 raise OSError("failed to upload data")
 
@@ -91,24 +120,24 @@ def upload_recovery(device: Any, buf: bytes, desc: str) -> None:
         device.write(RECOVERY_BULK_ENDPOINT, b"", timeout=USB_TIMEOUT)
 
 
-def _start_dfu_upload(device: Any) -> None:
-    state = ctrl_transfer(device, REQUEST_TYPE_CLASS_IN, DfuRequest.GETSTATE, data_or_wLength=1)[0]
+def _start_dfu_upload(device: UsbDevice) -> None:
+    state = control_in(device, REQUEST_TYPE_CLASS_IN, DfuRequest.GETSTATE, 1)[0]
     logger.debug(f"irecv state: {state}")
     if state == DfuState.DFU_IDLE:
         return
     if state == DfuState.DFU_ERROR:
-        ctrl_transfer(device, REQUEST_TYPE_CLASS_OUT, DfuRequest.CLRSTATUS)
+        control_out(device, REQUEST_TYPE_CLASS_OUT, DfuRequest.CLRSTATUS)
         raise PyMobileDevice3Exception(
             "The device in DFU mode was in an error state, so the upload did not start. The error was "
             "cleared; retry the upload."
         )
-    ctrl_transfer(device, REQUEST_TYPE_CLASS_OUT, DfuRequest.ABORT)
+    control_out(device, REQUEST_TYPE_CLASS_OUT, DfuRequest.ABORT)
     raise PyMobileDevice3Exception(
         f"The device in DFU mode was not ready for an upload (DFU state {state}), so it was aborted. Retry the upload."
     )
 
 
-def upload_dfu(device: Any, buf: bytes, desc: str) -> None:
+def upload_dfu(device: UsbDevice, buf: bytes, desc: str) -> None:
     """
     Upload ``buf`` to a device in DFU or WTF mode and tell it the upload finished.
 
@@ -119,9 +148,7 @@ def upload_dfu(device: Any, buf: bytes, desc: str) -> None:
     num_packets = math.ceil(len(buf) / DFU_PACKET_SIZE)
 
     def dnload(packet_index: int, data: bytes) -> None:
-        ctrl_transfer(
-            device, REQUEST_TYPE_CLASS_OUT, DfuRequest.DNLOAD, wValue=packet_index, wIndex=0, data_or_wLength=data
-        )
+        control_out(device, REQUEST_TYPE_CLASS_OUT, DfuRequest.DNLOAD, wValue=packet_index, data=data)
 
     with ProgressBar(total=len(buf), desc=desc, unit=BYTES_UNIT) as bar:
         for offset in range(0, len(buf), DFU_PACKET_SIZE):
@@ -141,7 +168,7 @@ def upload_dfu(device: Any, buf: bytes, desc: str) -> None:
     _wait_for_dfu_state(device, DfuState.DFU_DNLOAD_IDLE)
 
     # a zero-length DNLOAD ends the upload
-    ctrl_transfer(device, REQUEST_TYPE_CLASS_OUT, DfuRequest.DNLOAD, wValue=num_packets, wIndex=0)
+    control_out(device, REQUEST_TYPE_CLASS_OUT, DfuRequest.DNLOAD, wValue=num_packets)
     for _ in range(2):
         # idevicerestore reads the status twice here too
         dfu_state(device)

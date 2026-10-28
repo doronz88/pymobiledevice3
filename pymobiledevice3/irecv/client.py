@@ -6,15 +6,15 @@ import time
 from array import array
 from collections.abc import Iterable
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional, cast
+from typing import TYPE_CHECKING, NamedTuple, Optional, Union, cast
 
 from pymobiledevice3.exceptions import IRecvError, IRecvNoDeviceConnectedError
 from pymobiledevice3.irecv import transfer
 from pymobiledevice3.irecv._usb import (
     APPLE_VENDOR_ID,
     USB_TIMEOUT,
-    Device,
     Mode,
+    UsbDevice,
     USBError,
     dispose_resources,
     find,
@@ -36,13 +36,13 @@ _FIND_POLL_INTERVAL = 0.1
 
 
 class _Found(NamedTuple):
-    device: Device
+    device: UsbDevice
     mode: Mode
     info: DeviceInfo
 
 
-def _read_device_info(device: Any) -> DeviceInfo:
-    serial_number = cast(Optional[str], device.serial_number)
+def _read_device_info(device: UsbDevice) -> DeviceInfo:
+    serial_number = device.serial_number
     if serial_number is None:
         raise IRecvError("The device in Recovery/DFU mode did not report its USB serial number.")
     return DeviceInfo.parse(serial_number)
@@ -57,16 +57,15 @@ def _find_device(ecid: Optional[int], timeout: float, is_recovery: Optional[bool
     end = time.time() + timeout
     while True:
         found: Optional[_Found] = None
-        for device in cast(Iterable[Device], find(find_all=True)):
-            usb_device: Any = device
-
+        # pyusb ships no types: this is where its Devices are taken to be UsbDevices
+        for device in cast(Iterable[UsbDevice], find(find_all=True)):
             # Match on the descriptor fields cached at enumeration. Reading string
             # descriptors (e.g. manufacturer) requires opening the device, which fails
             # for unrelated devices lacking a libusb-compatible driver (e.g. on Windows).
-            if usb_device.idVendor != APPLE_VENDOR_ID:
+            if device.idVendor != APPLE_VENDOR_ID:
                 continue
 
-            mode = Mode.get_mode_from_value(usb_device.idProduct)
+            mode = Mode.get_mode_from_value(device.idProduct)
             if mode is None:
                 # not one of Apple's special modes
                 continue
@@ -102,7 +101,7 @@ class IRecv:
     """A device in Recovery, DFU or WTF mode."""
 
     def __init__(self, ecid: Optional[int] = None, timeout: float = 0xFFFFFFFF, is_recovery: Optional[bool] = None):
-        self._device: Optional[Device] = None
+        self._device: Optional[UsbDevice] = None
         self._mode: Optional[Mode] = None
         self._info: Optional[DeviceInfo] = None
         self.ap_nonce: Optional[bytes] = None
@@ -110,7 +109,7 @@ class IRecv:
         self._reinit(ecid=ecid, timeout=timeout, is_recovery=is_recovery)
 
     @property
-    def device(self) -> Any:
+    def device(self) -> UsbDevice:
         """The connected USB device.
 
         :raises IRecvNoDeviceConnectedError: if no device is connected.
@@ -205,8 +204,7 @@ class IRecv:
         logger.debug(f"set_configuration: {configuration}")
         device = self.device
         try:
-            active_configuration: Any = device.get_active_configuration()
-            if active_configuration.bConfigurationValue == configuration:
+            if device.get_active_configuration().bConfigurationValue == configuration:
                 return
         except USBError:
             pass
@@ -214,13 +212,20 @@ class IRecv:
         device.set_configuration(configuration=configuration)
 
     def ctrl_transfer(
-        self, bmRequestType: int, bRequest: int, timeout: int = USB_TIMEOUT, **kwargs: Any
-    ) -> "array[int]":
-        return transfer.ctrl_transfer(self.device, bmRequestType, bRequest, timeout=timeout, **kwargs)
+        self,
+        bmRequestType: int,
+        bRequest: int,
+        wValue: int = 0,
+        wIndex: int = 0,
+        data_or_wLength: Union[None, int, bytes] = None,
+        timeout: int = USB_TIMEOUT,
+    ) -> Union["array[int]", int]:
+        """A raw control request; see ``UsbDevice.ctrl_transfer``."""
+        return self.device.ctrl_transfer(bmRequestType, bRequest, wValue, wIndex, data_or_wLength, timeout=timeout)
 
     def send_zero_length_download(self, timeout: int = USB_TIMEOUT) -> None:
         """Send an empty DFU DNLOAD request, which iBoot expects after a ``go``/``bootx`` command."""
-        self.ctrl_transfer(transfer.REQUEST_TYPE_CLASS_OUT, transfer.DfuRequest.DNLOAD, timeout=timeout)
+        transfer.control_out(self.device, transfer.REQUEST_TYPE_CLASS_OUT, transfer.DfuRequest.DNLOAD, timeout=timeout)
 
     def send_buffer(self, buf: bytes, desc: Optional[str] = None) -> None:
         """Upload ``buf``. In DFU/WTF mode the device then runs it, so it is reset and looked up again."""
@@ -241,8 +246,8 @@ class IRecv:
         self._reinit(ecid=self.ecid)
 
     def send_command(self, cmd: str, timeout: int = USB_TIMEOUT, b_request: int = 0) -> None:
-        self.device.ctrl_transfer(
-            transfer.REQUEST_TYPE_VENDOR_OUT, b_request, 0, 0, cmd.encode() + b"\0", timeout=timeout
+        transfer.control_out(
+            self.device, transfer.REQUEST_TYPE_VENDOR_OUT, b_request, data=cmd.encode() + b"\0", timeout=timeout
         )
 
     def getenv(self, name: str) -> Optional[bytearray]:
@@ -250,7 +255,7 @@ class IRecv:
             self.send_command(f"getenv {name}")
         except USBError:
             return None
-        return bytearray(self.device.ctrl_transfer(transfer.REQUEST_TYPE_VENDOR_IN, 0, 0, 0, 255))
+        return bytearray(transfer.control_in(self.device, transfer.REQUEST_TYPE_VENDOR_IN, 0, 255, timeout=None))
 
     def set_autoboot(self, enable: bool) -> None:
         self.send_command(f"setenv auto-boot {str(enable).lower()}")
