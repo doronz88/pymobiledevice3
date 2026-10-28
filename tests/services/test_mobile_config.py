@@ -1,8 +1,10 @@
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, call
 
 import pytest
 
+from pymobiledevice3.ca import create_keybag_file
 from pymobiledevice3.exceptions import PasscodeSetError, ProfileError
 from pymobiledevice3.services.mobile_config import MobileConfigService, WallpaperScreen
 
@@ -153,3 +155,16 @@ async def test_set_wallpaper_without_item_status_raises() -> None:
 
     with pytest.raises(ProfileError, match="no item status"):
         await service.set_wallpaper(b"img")
+
+
+@pytest.mark.asyncio
+async def test_supervise_skips_the_newer_setup_panes(tmp_path: Path) -> None:
+    keybag = tmp_path / "keybag"
+    create_keybag_file(keybag, "org")
+    service, connection = _service([ACK])
+
+    await service.supervise("org", keybag)
+
+    skip_setup = connection.send_recv_plist.await_args_list[0].args[0]["CloudConfiguration"]["SkipSetup"]
+    assert {"AgeAssurance", "DeviceFeaturesTour", "OSShowcase"} <= set(skip_setup)
+    assert len(skip_setup) == len(set(skip_setup))

@@ -527,6 +527,8 @@ class MobileConfigService(LockdownService):
                 "Tips",
                 "AgeBasedSafetySettings",
                 "LiquidGlass",
+                "AgeAssurance",
+                "DeviceFeaturesTour",
             ],
             "SupervisorHostCertificates": [public_key],
         })
