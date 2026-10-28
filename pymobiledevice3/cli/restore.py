@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 import plistlib
+import sys
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
@@ -33,6 +34,7 @@ from pymobiledevice3.irecv import IRecv
 from pymobiledevice3.lockdown import SERVICE_PORT as LOCKDOWN_PORT
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.restore.device import Device
+from pymobiledevice3.restore.deviceinterfaced import DeviceInterfacedControl
 from pymobiledevice3.restore.preflight import UPDATER_FIRMWARE_PREFIXES, collect_device_side_preflight
 from pymobiledevice3.restore.recovery import Behavior, Recovery
 from pymobiledevice3.restore.restore import Restore
@@ -410,11 +412,25 @@ async def restore_update(
             ),
         ),
     ] = False,
+    exclusive_usb: Annotated[
+        bool,
+        typer.Option(
+            "--exclusive-usb",
+            help=(
+                "Experimental, macOS only: keep deviceinterfaced from claiming the USB device during the "
+                "restore (it can win the race while the device re-enumerates). Boots the "
+                "daemon out, or keeps killing it where that is refused, and restores it afterwards; the launchctl "
+                "calls run through sudo, which may prompt for your password."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """
     Update or restore the device using an IPSW (local path or URL).
     """
-    with ipsw_ctx as ipsw:
+    if exclusive_usb and sys.platform != "darwin":
+        raise typer.BadParameter("--exclusive-usb is only supported on macOS", param_hint="--exclusive-usb")
+    with ipsw_ctx as ipsw, DeviceInterfacedControl() if exclusive_usb else contextlib.nullcontext():
         await restore_update_task(
             device,
             ipsw,

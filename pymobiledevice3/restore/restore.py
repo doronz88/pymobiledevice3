@@ -37,7 +37,7 @@ from pymobiledevice3.restore.fdr import FDRClient, fdr_type, start_fdr_task
 from pymobiledevice3.restore.ftab import Ftab
 from pymobiledevice3.restore.mbn import mbn_mav25_stitch, mbn_stitch
 from pymobiledevice3.restore.recovery import Behavior, Recovery
-from pymobiledevice3.restore.restore_options import RestoreOptions
+from pymobiledevice3.restore.restore_options import RestoreOptions, recovery_os_partition_size
 from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.restore.tss import PREFETCHABLE_UPDATERS, TSSRequest, TSSResponse
 from pymobiledevice3.service_connection import ServiceConnection
@@ -220,6 +220,11 @@ class Restore(BaseRestore):
             "RecoveryOSASRImage": self.send_filesystem,
             # Send RecoveryOS RTD
             "RecoveryOSRootTicketData": self.send_recovery_os_root_ticket,
+            # iOS RecoveryOS (served from the build identity named by Info.RecoveryVariant)
+            "RecoveryOSFileAssetImage": self.send_recovery_os_file_asset_image,
+            "RecoveryOSIBootFWFilesImages": self.send_recovery_os_iboot_fw_files_images,
+            "RecoveryOSImage": self.send_recovery_os_image,
+            "RecoveryOSVersionData": self.send_recovery_os_version_data,
             # send RootTicket (== APTicket from the TSS request)
             "RootTicket": self.send_root_ticket,
             "NORData": self.send_nor,
@@ -511,6 +516,107 @@ class Restore(BaseRestore):
 
         self.logger.info("Sending RecoveryOSRootTicket now...")
         await service.send_plist(req)
+
+    def _require_recovery_variant(self) -> BuildIdentity:
+        if self.recovery_variant is None:
+            raise PyMobileDevice3Exception("The BuildManifest has no RecoveryOS variant for this device.")
+        return self.recovery_variant
+
+    async def _get_recovery_os_personalized_data(self, component: str) -> bytes:
+        tss = self.recovery.tss_recoveryos_root_ticket
+        if tss is None:
+            raise PyMobileDevice3Exception(f"Cannot personalize {component}: no recovery OS TSS ticket was obtained.")
+        return await self.get_personalized_data(component, tss=tss, build_identity=self._require_recovery_variant())
+
+    async def send_recovery_os_file_asset_image(self, message: dict[str, Any]) -> None:
+        fw_override_key = message.get("Arguments", {}).get("FWOverrideKey")
+        if not isinstance(fw_override_key, str):
+            raise ProtocolError(f"RecoveryOSFileAssetImage request without a FWOverrideKey: {message}")
+
+        assert self._restored is not None
+        prefix = "RecoveryOS"
+        if not fw_override_key.startswith(prefix):
+            self.logger.error(f"FWOverrideKey {fw_override_key!r} has unexpected prefix")
+            await self._restored.send({"RecoveryOSNoAssetFound": True})
+            return
+
+        # like idevicerestore, a missing asset is reported to restored instead of failing the restore
+        component = fw_override_key[len(prefix) :]
+        try:
+            data = await self._get_recovery_os_personalized_data(component)
+        except Exception:
+            self.logger.exception(f"Unable to get personalized component {component}. Trying to continue anyway.")
+            await self._restored.send({"RecoveryOSNoAssetFound": True})
+            return
+
+        self.logger.info(f"Sending {fw_override_key}")
+        await self._restored.send({"AdditionalBootImages": data})
+
+    async def send_recovery_os_iboot_fw_files_images(self, message: dict[str, Any]) -> None:
+        build_id_manifest = self._require_recovery_variant()["Manifest"]
+
+        firmware_files: dict[str, bytes] = {}
+        for component, manifest_entry in build_id_manifest.items():
+            if not isinstance(manifest_entry, dict):
+                continue
+            info = typing.cast(dict[str, Any], manifest_entry).get("Info", {})
+            if info.get("IsLoadedByiBoot") is not True and info.get("IsLoadedByiBootStage1") is not True:
+                continue
+            if "Path" not in info:
+                continue
+            try:
+                firmware_files[component] = await self._get_recovery_os_personalized_data(component)
+            except Exception:
+                self.logger.exception(f"Unable to get personalized component {component}, skipping it")
+
+        assert self._restored is not None
+        if not firmware_files:
+            self.logger.info("No iBoot firmware files. Continuing.")
+            await self._restored.send({"RecoveryOSNoAssetFound": True})
+            return
+
+        self.logger.info("Sending iBoot additional firmware files")
+        await self._restored.send({"AdditionalBootImages": firmware_files})
+
+    async def send_recovery_os_image(self, message: dict[str, Any]) -> None:
+        component = "OS"
+        path = self._require_recovery_variant().get_component_path(component)
+        service = await self._get_service_for_data_request(message)
+
+        self.logger.info(f"Sending RecoveryOS {component} now ({path})...")
+        chunk_size = 8192
+        with self.ipsw.open_path(path) as f:
+            first = True
+            while chunk := f.read(chunk_size):
+                await service.send_plist({"FileData": chunk}, fmt=FILE_DATA_FORMAT)
+                if first and chunk.startswith(b"AEA1"):
+                    self.logger.debug("First chunk in a AEA")
+                    try:
+                        url_asset_request = await asyncio.wait_for(service.recv_plist(), timeout=3)
+                        if "Arguments" in url_asset_request:
+                            await self.send_url_asset(url_asset_request)
+                        else:
+                            self.logger.debug(f"Unexpected message received: {url_asset_request}")
+                    except asyncio.exceptions.TimeoutError:
+                        self.logger.debug("No URLAsset was requested. Assuming it is not necessary")
+                first = False
+
+        await service.send_plist({"FileDataDone": True})
+        self.logger.info(f"Done sending RecoveryOS {component}")
+
+    async def send_recovery_os_version_data(self, message: dict[str, Any]) -> None:
+        recovery_variant = self._require_recovery_variant()
+        info = recovery_variant["Info"]
+        version_data = {key: info[key] for key in ("BuildNumber", "Variant", "BuildTrain") if key in info}
+        # idevicerestore reads Info.ProductMarketingVersion, which real manifests carry at the
+        # build identity's top level instead
+        product_version = info.get("ProductMarketingVersion", recovery_variant.get("ProductMarketingVersion"))
+        if product_version is not None:
+            version_data["ProductVersion"] = product_version
+
+        self.logger.info("Sending RecoveryOS version data")
+        assert self._restored is not None
+        await self._restored.send({"RecoveryOSVersionData": plistlib.dumps(version_data)})
 
     async def send_root_ticket(self, message: dict[str, Any]) -> None:
         self.logger.info("About to send RootTicket...")
@@ -1839,6 +1945,8 @@ class Restore(BaseRestore):
             spp=spp,
             restore_behavior=self.build_identity.restore_behavior,
             msp=self.build_identity.minimum_system_partition,
+            recovery_variant=self.recovery_variant,
+            recovery_os_partition_sizes=self._recovery_os_partition_sizes(),
         )
 
         # start the restore process
@@ -1863,6 +1971,12 @@ class Restore(BaseRestore):
                 # there might be some other message types i'm not aware of, but I think
                 # at least the "previous error logs" messages usually end up here
                 self.logger.warning(f"unhandled message type received: {message}")
+
+    def _recovery_os_partition_sizes(self) -> Optional[tuple[int, int]]:
+        if self.recovery_variant is None:
+            return None
+        file_sizes = {member.filename: member.file_size for member in self.ipsw.filelist}
+        return recovery_os_partition_size(self.recovery_variant, file_sizes)
 
     async def update(self):
         self._preflight_info = await self.device.get_preflight_info()

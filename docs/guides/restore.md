@@ -51,6 +51,15 @@ usable data volume, or to wipe it.
 `--ignore-fdr` is a debugging option: the host connects to the FDR service but
 does not proxy its traffic.
 
+## Keeping deviceinterfaced off the device
+
+macOS's `deviceinterfaced` can claim the USB device while it re-enumerates
+during a restore, so the device in DFU mode is never seen. `--exclusive-usb` (experimental, macOS only) keeps
+the daemon off for the restore: it boots it out, or keeps killing it where
+System Integrity Protection refuses that, and loads and starts it again when the
+restore ends. The `launchctl` calls run through `sudo` and may prompt for your
+password.
+
 ## Several devices at once
 
 Each restore stays on its own device, so several can run side by side: start
