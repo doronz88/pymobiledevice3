@@ -138,16 +138,27 @@ async def test_sigint_handler_takes_over_inside_cancel_on_sigint() -> None:
     task.cancel()
 
 
+BODY = b"payload" * 1000
+
+
 class _ServeOrFail(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/missing.ipsw":
             self.send_error(404)
             return
-        body = b"payload" * 1000
-        self.send_response(200)
-        self.send_header("Content-Length", str(len(body)))
+        start = 0
+        range_header = self.headers.get("Range")
+        if range_header and self.path != "/no-ranges.ipsw":
+            start = int(range_header.removeprefix("bytes=").rstrip("-"))
+            if start >= len(BODY):
+                self.send_error(416)
+                return
+            self.send_response(206)
+        else:
+            self.send_response(200)
+        self.send_header("Content-Length", str(len(BODY) - start))
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(BODY[start:])
 
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - matches the overridden signature
         pass
@@ -166,7 +177,7 @@ def http_url() -> Generator[str, None, None]:
 def test_file_download_writes_the_body(tmp_path: Path, http_url: str) -> None:
     outfile = tmp_path / "fw.ipsw"
     file_download(f"{http_url}/fw.ipsw", outfile)
-    assert outfile.read_bytes() == b"payload" * 1000
+    assert outfile.read_bytes() == BODY
 
 
 def test_file_download_does_not_save_an_error_page(tmp_path: Path, http_url: str) -> None:
@@ -174,3 +185,29 @@ def test_file_download_does_not_save_an_error_page(tmp_path: Path, http_url: str
     with pytest.raises(requests.HTTPError):
         file_download(f"{http_url}/missing.ipsw", outfile)
     assert not outfile.exists()
+
+
+@pytest.mark.parametrize("path", ["/fw.ipsw", "/no-ranges.ipsw"], ids=["range", "server-ignores-range"])
+def test_file_download_resumes_a_partial_file(tmp_path: Path, http_url: str, path: str) -> None:
+    outfile = tmp_path / "fw.ipsw.part"
+    outfile.write_bytes(BODY[:1234])
+
+    assert file_download(f"{http_url}{path}", outfile, resume=True)
+    assert outfile.read_bytes() == BODY
+
+
+def test_file_download_resume_of_a_complete_file_is_a_no_op(tmp_path: Path, http_url: str) -> None:
+    outfile = tmp_path / "fw.ipsw.part"
+    outfile.write_bytes(BODY)
+
+    assert file_download(f"{http_url}/fw.ipsw", outfile, resume=True)
+    assert outfile.read_bytes() == BODY
+
+
+def test_file_download_stops_when_asked_and_keeps_what_it_wrote(tmp_path: Path, http_url: str) -> None:
+    outfile = tmp_path / "fw.ipsw.part"
+    stop = threading.Event()
+    stop.set()
+
+    assert not file_download(f"{http_url}/fw.ipsw", outfile, stop=stop)
+    assert outfile.exists()
