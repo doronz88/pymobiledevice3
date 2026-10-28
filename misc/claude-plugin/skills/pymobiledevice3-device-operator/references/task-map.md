@@ -77,7 +77,7 @@ Use WebInspector for Safari/WebView automation and WDA for device UI automation.
 - `developer core-device`: file/process/app/device-info operations through CoreDevice flows; `launch-application --console` prints the app's stdout/stderr; `write-file` / `stat` / `rename` / `remove-file` / `create-directory` / `create-symlink` edit a file-service domain and `watch` streams its file changes (iOS 27+).
 - `developer debugserver`: debugserver launch and LLDB bridging.
 - `developer fetch-symbols`: symbol acquisition; `download` keeps symbols it already downloaded unless given `--force`.
-- `developer accessibility`: audits, settings, notifications, item listing.
+- `developer accessibility`: audits, settings, notifications, item listing, element attributes.
 - `developer simulate-location`: DVT-based location simulation.
 - `developer arbitration`: device arbitration (check-in/check-out for exclusive use).
 - `developer shell`: IPython shell connected to a named developer service (exploration/R&D).
