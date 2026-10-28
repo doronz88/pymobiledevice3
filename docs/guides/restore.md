@@ -35,6 +35,17 @@ device's product type and lets you pick one interactively; that needs network
 access and works from normal mode as well as recovery (the product type comes
 from lockdown or from the recovery-mode device table).
 
+To stop downloading the same multi-GB IPSW on every run, pass `--ipsw-dir`
+(or set `PYMOBILEDEVICE3_IPSW_DIR` once). Downloads then go into that directory
+under Apple's filename (e.g. `iPhone12,1_27.2_24B119_Restore.ipsw`) and are
+kept. A file already there with that name is used as-is, without re-hashing,
+and the interactive picker marks such builds `(local)`. A new download is
+written to `<name>.part`, which a later run resumes after an interruption, and
+is renamed into place only once it matches its SHA-256 (the one Apple's CDN
+publishes for the file, else ipsw.me's); a mismatching download is discarded.
+A single Ctrl-C stops the download and keeps the `.part`. If ipsw.me can't be
+reached, the picker reports it and exits.
+
 Whatever the source, the build must be signed by Apple at restore time, since
 the AP ticket comes from TSS. A `--tss` SHSH blob can be supplied for the AP
 ticket instead of asking TSS; the peripheral tickets are still requested live.

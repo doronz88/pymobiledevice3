@@ -5,6 +5,7 @@ import os
 import signal
 import struct
 import sys
+import threading
 import traceback
 from collections.abc import Coroutine, Generator
 from functools import wraps
@@ -252,13 +253,39 @@ def start_ipython_shell(*, user_ns: Optional[dict[str, Any]] = None, header: Opt
     cast(Any, IPython).start_ipython(argv=[], config=config, user_ns=user_ns or {})
 
 
-def file_download(url: str, outfile: Path, chunk_size: int = 1024) -> None:
-    resp = requests.get(url, stream=True, timeout=30)
-    total = int(resp.headers.get("content-length", 0))
+def file_download(
+    url: str,
+    outfile: Path,
+    chunk_size: int = 1024 * 1024,
+    resume: bool = False,
+    stop: Optional[threading.Event] = None,
+) -> bool:
+    """
+    Download ``url`` into ``outfile``.
+
+    :param resume: continue a partial ``outfile`` with a range request (restarting if the server ignores it)
+    :param stop: checked between chunks; once set, the download stops and keeps what it wrote so far
+    :returns: whether the download completed
+    """
+    offset = outfile.stat().st_size if resume and outfile.exists() else 0
+    headers = {"Range": f"bytes={offset}-"} if offset else {}
+    resp = requests.get(url, stream=True, timeout=30, headers=headers)
+    if offset and resp.status_code == 416:
+        # Nothing left to fetch: the partial file is already complete
+        return True
+    # Never save an HTTP error page as the requested file
+    resp.raise_for_status()
+    if resp.status_code != 206:
+        offset = 0
+    total = offset + int(resp.headers.get("content-length", 0))
     with (
-        outfile.open("wb") as file,
+        outfile.open("ab" if offset else "wb") as file,
         ProgressBar(total=total, desc=outfile.name, unit=BYTES_UNIT) as bar,
     ):
+        bar.update(offset)
         for data in resp.iter_content(chunk_size=chunk_size):
+            if stop is not None and stop.is_set():
+                return False
             size = file.write(data)
             bar.update(size)
+    return True
