@@ -299,9 +299,9 @@ class WebinspectorService(LockdownService):
 
         * Web Inspector is disabled on the device.
         * The gate it puts on consecutive sessions has not elapsed: a new session is admitted only
-          about ten seconds after the previous one started, a hair longer than
-          DEFAULT_SSL_HANDSHAKE_TIMEOUT. Reattaching right after a session ended - restarting the
-          CDP bridge, or opening an automation session once inspection is done - hits this.
+          about ten seconds after the previous one started. DEFAULT_SSL_HANDSHAKE_TIMEOUT now
+          outlasts that wait, so a reattach right after a session ended - restarting the CDP bridge,
+          or opening an automation session once inspection is done - normally just waits it out.
         * It is not up yet because the device is still booting. `--reconnect` re-runs a command the
           moment lockdownd answers again, which is seconds before webinspectord serves anything.
 
