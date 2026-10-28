@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import logging
 from asyncio import IncompleteReadError
+from typing import Optional
 
 from pymobiledevice3.exceptions import (
     AmfiError,
@@ -20,12 +21,14 @@ class AmfiService:
 
     Each method opens its own connection to the ``com.apple.amfi.lockdown`` service and sends a single
     ``action`` request. The actions correspond to revealing the Developer Mode toggle in Settings,
-    requesting that it be enabled, and confirming the post-restart prompt.
+    requesting that it be enabled, confirming the post-restart prompt, and trusting the developer
+    app signer of an installed provisioning profile.
     """
 
     DEVELOPER_MODE_REVEAL = 0
     DEVELOPER_MODE_ENABLE = 1
     DEVELOPER_MODE_ACCEPT = 2
+    TRUST_APP_SIGNER = 4
 
     SERVICE_NAME = "com.apple.amfi.lockdown"
 
@@ -98,3 +101,23 @@ class AmfiService:
         resp = await service.send_recv_plist({"action": self.DEVELOPER_MODE_ACCEPT})
         if not resp.get("success"):
             raise DeveloperModeError(f"The device did not confirm Developer Mode after restarting: {resp}")
+
+    async def trust_app_signer(self, profile_uuid: str) -> Optional[bool]:
+        """
+        Trust the developer app signer of an installed provisioning profile.
+
+        Equivalent to tapping "Trust" under Settings > General > VPN & Device Management.
+
+        :param profile_uuid: UUID of the installed provisioning profile whose signer should be trusted.
+        :return: The ``status`` value of the reply, or None if the device omitted it.
+        :raises AmfiError: if the device does not report success (e.g. no profile with that UUID).
+        """
+        service = await self._lockdown.start_lockdown_service(self.SERVICE_NAME)
+        resp = await service.send_recv_plist({"action": self.TRUST_APP_SIGNER, "input_profile_uuid": profile_uuid})
+        error = resp.get("Error")
+        if error is not None:
+            raise AmfiError(f"AMFI refused to trust the app signer of profile {profile_uuid}: {error}")
+        if not resp.get("success"):
+            raise AmfiError(f"The device did not trust the app signer of profile {profile_uuid}: {resp}")
+        status = resp.get("status")
+        return status if isinstance(status, bool) else None
