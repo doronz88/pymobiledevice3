@@ -1,9 +1,10 @@
 import tempfile
+from unittest.mock import Mock
 
 import pytest
 
 from pymobiledevice3.restore.restore import Restore
-from pymobiledevice3.restore.restore_options import SUPPORTED_MESSAGE_TYPES
+from pymobiledevice3.restore.restore_options import SUPPORTED_MESSAGE_TYPES, RestoreOptions
 
 
 def _restore() -> Restore:
@@ -56,3 +57,12 @@ async def test_fdr_submit_is_logged_but_never_acknowledged():
     restore = _restore()
     restore._restored = None  # a stray ack would have to go through this and blow up
     await restore.handle_fdr_submit_msg({"DataClass": "Vinyl", "DataInstance": "1", "DataPayload": b"p"})
+
+
+@pytest.mark.parametrize("macos", [False, True])
+def test_restore_options_advertise_supported_async_data_types(macos: bool) -> None:
+    if macos:
+        options = RestoreOptions(macos_variant=Mock(), build_identity=Mock(macos_variant="macOS Customer"))
+    else:
+        options = RestoreOptions()
+    assert options.to_dict()["SupportedAsyncDataTypes"]["URLAsset"] is True
