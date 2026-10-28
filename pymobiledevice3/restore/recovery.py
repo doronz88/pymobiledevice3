@@ -4,6 +4,7 @@ import hashlib
 import logging
 from typing import Any, Optional
 
+from ipsw_parser.build_identity import BuildIdentity
 from ipsw_parser.ipsw import IPSW
 from usb import USBError
 
@@ -65,7 +66,7 @@ class Recovery(BaseRestore):
 
         return tss.img4_create_local_manifest(build_identity=self.build_identity)
 
-    async def get_tss_response(self) -> TSSResponse:
+    async def get_tss_response(self, build_identity: Optional[BuildIdentity] = None) -> TSSResponse:
         # populate parameters
         parameters: dict[str, Any] = {}
 
@@ -86,7 +87,7 @@ class Recovery(BaseRestore):
         else:
             parameters["ApSupportsImg4"] = False
 
-        self.populate_tss_request_from_manifest(parameters)
+        self.populate_tss_request_from_manifest(parameters, build_identity=build_identity)
 
         tss = TSSRequest()
         tss.add_common_tags(parameters)
@@ -288,7 +289,9 @@ class Recovery(BaseRestore):
             info = self.build_identity["Info"]
             recovery_variant = info.get("RecoveryVariant")
             if recovery_variant is not None:
-                self.tss_recoveryos_root_ticket = await self.get_tss_response()
+                if self.recovery_variant is None:
+                    raise PyMobileDevice3Exception(f"Variant {recovery_variant!r} not found in the BuildManifest.")
+                self.tss_recoveryos_root_ticket = await self.get_tss_response(self.recovery_variant)
 
         return self.tss
 
