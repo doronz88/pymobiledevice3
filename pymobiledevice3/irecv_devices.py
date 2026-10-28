@@ -2233,7 +2233,7 @@ IRECV_DEVICES: tuple[IRecvDevice, ...] = (
         product_type="Mac18,5",
         hardware_model="j873gap",
         board_id=0x24,
-        chip_id=0x6050,
+        chip_id=0x8152,
         display_name="Mac mini (M6, 2026)",
     ),
     # Apple Silicon VMs (supported by Virtualization.framework on macOS 12)
