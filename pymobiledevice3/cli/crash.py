@@ -40,12 +40,20 @@ async def crash_clear(
             help="flush before clear",
         ),
     ] = False,
+    match: Annotated[
+        Optional[str],
+        typer.Option(
+            "--match",
+            "-m",
+            help="Only remove what `pull --match` would pull for the given basename regex (without copying)",
+        ),
+    ] = None,
 ) -> None:
     """clear(/remove) all crash reports inside the remote_file argument"""
     async with CrashReportsManager(service_provider) as crash_manager:
         if flush:
             await crash_manager.flush()
-        await crash_manager.clear(remote_file)
+        await crash_manager.clear(remote_file, match=match)
 
 
 @cli.command("parse")

@@ -92,20 +92,27 @@ class CrashReportsManager:
         """Close the underlying AFC connection."""
         await self.afc.aclose()
 
-    async def clear(self, path: str = "/") -> None:
+    async def clear(self, path: str = "/", match: Optional[str] = None) -> None:
         """
-        Delete all crash reports under a path.
+        Delete crash reports under a path.
 
-        Lists the immediate children of ``path`` and removes each recursively. A
-        ``com.apple.appstored`` entry that the device may recreate immediately after deletion is
+        Without ``match``, lists the immediate children of ``path`` and removes each recursively.
+        With ``match``, removes exactly the files `pull` would copy for the same regex (see
+        `AfcService.rm`), without copying them; directories are kept.
+
+        A ``com.apple.appstored`` entry that the device may recreate immediately after deletion is
         tolerated; any other item that could not be deleted is treated as an error.
 
         :param path: Path under the crash reports directory to clear. Defaults to '/'.
+        :param match: Optional regex over entry basenames, applied as `pull` applies it.
         :raises AfcException: If any item other than ``com.apple.appstored`` could not be deleted.
         """
         undeleted_items: list[str] = []
-        for filename in await self.ls(path, depth=1):
-            undeleted_items.extend(await self.afc.rm(filename, force=True))
+        if match is not None:
+            undeleted_items.extend(await self.afc.rm(path, match=re.compile(match), force=True))
+        else:
+            for filename in await self.ls(path, depth=1):
+                undeleted_items.extend(await self.afc.rm(filename, force=True))
 
         for item in undeleted_items:
             # special case of file that sometimes created automatically right after delete,
