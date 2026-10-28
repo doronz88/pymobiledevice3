@@ -52,6 +52,17 @@ class Device:
     def set_irecv(self, value: Optional[IRecv]) -> None:
         self.irecv = value
 
+    def replace_irecv(self, value: IRecv) -> None:
+        """Switch to a different irecv device (e.g. the Mac behind a Port DFU controller), dropping the
+        identity cached from the previous one."""
+        self.irecv = value
+        self._ecid = None
+        self._is_image4_supported = None
+        self._ap_nonce = None
+        self._ap_nonce_loaded = False
+        self._sep_nonce = None
+        self._sep_nonce_loaded = False
+
     async def get_is_lockdown(self) -> bool:
         return self.lockdown is not None
 

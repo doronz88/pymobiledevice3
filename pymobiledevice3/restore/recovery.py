@@ -9,9 +9,10 @@ from ipsw_parser.build_manifest import BuildManifest
 from ipsw_parser.ipsw import IPSW
 from usb import USBError
 
-from pymobiledevice3.exceptions import PyMobileDevice3Exception, TSSError
+from pymobiledevice3.exceptions import IRecvNoDeviceConnectedError, PyMobileDevice3Exception, TSSError
 from pymobiledevice3.irecv import IRecv, Mode
 from pymobiledevice3.lockdown import create_using_usbmux
+from pymobiledevice3.restore.ace3 import build_port_dfu_tss_parameters, create_ace3_binary
 from pymobiledevice3.restore.base_restore import BaseRestore, Behavior
 from pymobiledevice3.restore.consts import lpol_file
 from pymobiledevice3.restore.device import Device
@@ -20,6 +21,10 @@ from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
 RESTORE_VARIANT_ERASE_INSTALL = "Erase Install (IPSW)"
 RESTORE_VARIANT_UPGRADE_INSTALL = "Upgrade Install (IPSW)"
 RESTORE_VARIANT_MACOS_RECOVERY_OS = "macOS Customer"
+
+# how long the Mac takes to come back in DFU mode once its port controller booted the Ace3Binary
+# (idevicerestore: 5 s to disconnect + 20 s to reconnect)
+PORT_DFU_RECONNECT_TIMEOUT = 25
 
 
 class Recovery(BaseRestore):
@@ -500,7 +505,70 @@ class Recovery(BaseRestore):
         self.logger.debug("Waiting for device to reconnect in recovery mode...")
         await self.reconnect_irecv(is_recovery=True)
 
+    async def port_dfu_restore(self) -> None:
+        """
+        Bring a Mac whose USB-C port controller is in Port DFU mode into DFU mode, by booting the controller's
+        personalized firmware (idevicerestore e4a5ac4).
+        """
+        irecv = self.device.irecv
+        assert irecv is not None and irecv.mode == Mode.PORT_DFU_MODE
+        board_id = irecv.port_dfu_board_id
+        chip_id = irecv.chip_id
+        product_revision = irecv.product_revision
+        # the Port DFU nonce is reported backwards
+        nonce = irecv.ap_nonce[::-1] if irecv.ap_nonce else None
+
+        build_identity = cast(
+            dict[str, Any],
+            self.ipsw.build_manifest.get_build_identity(
+                self.device.get_hardware_model_value(), variant=RESTORE_VARIANT_ERASE_INSTALL
+            ),
+        )
+        manifest_chip_id = _manifest_uint(build_identity.get("USBPortController1,ChipID"))
+        if manifest_chip_id != chip_id:
+            raise PyMobileDevice3Exception(
+                f"CPID {chip_id:#04x} doesn't match USBPortController1,ChipID in the build identity "
+                f"({manifest_chip_id:#04x})."
+            )
+        manifest_board_id = _manifest_uint(build_identity.get("USBPortController1,BoardID"))
+        if manifest_board_id != board_id:
+            raise PyMobileDevice3Exception(
+                f"BDID {board_id:#x} doesn't match USBPortController1,BoardID in the build identity "
+                f"({manifest_board_id:#x})."
+            )
+        is_mac = "MacOSVariant" in cast(dict[str, Any], build_identity["Info"])
+
+        parameters = build_port_dfu_tss_parameters(build_identity, irecv.ecid, nonce)
+        firmware_path = cast(
+            str, cast(dict[str, Any], build_identity["Manifest"])["USBPortController1,USBFirmware"]["Info"]["Path"]
+        )
+        uarp_fw = self.ipsw.read(firmware_path)
+
+        request = TSSRequest()
+        request.update(parameters)
+        response = await request.send_receive()
+        self.logger.info("Received USBPortController1,Ticket")
+
+        self.logger.info("Creating Ace3Binary")
+        ace3_binary = create_ace3_binary(uarp_fw, board_id, product_revision, response)
+        irecv.send_buffer(ace3_binary, desc="Ace3Binary", small_packets=True)
+
+        self.logger.debug("Waiting for the device to reconnect in DFU mode...")
+        try:
+            dfu = IRecv(timeout=PORT_DFU_RECONNECT_TIMEOUT, mode=Mode.DFU_MODE)
+        except IRecvNoDeviceConnectedError as e:
+            message = "The device did not reconnect in DFU mode. Port DFU failed."
+            if is_mac:
+                message += " Make sure to use the correct USB port for this model, see https://support.apple.com/120694"
+            raise PyMobileDevice3Exception(message) from e
+        # from here on the device is the Mac itself, with its own ECID and nonces
+        self.device.replace_irecv(dfu)
+        self.logger.info("Port DFU restore successful. Continuing.")
+
     async def boot_ramdisk(self) -> None:
+        if self.device.irecv is not None and self.device.irecv.mode == Mode.PORT_DFU_MODE:
+            await self.port_dfu_restore()
+
         if self.tss is None:
             self.logger.info("fetching TSS record")
             await self.fetch_tss_record()
@@ -533,3 +601,10 @@ class Recovery(BaseRestore):
 
         # now finally do the magic to put the device into restore mode
         await self.enter_restore()
+
+
+def _manifest_uint(value: Any) -> Optional[int]:
+    """A build identity number, which BuildManifest.plist may also spell as a hex string."""
+    if isinstance(value, str):
+        return int(value, 0)
+    return cast(Optional[int], value)
