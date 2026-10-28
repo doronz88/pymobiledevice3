@@ -9,7 +9,6 @@ from types import TracebackType
 from typing import TYPE_CHECKING, NamedTuple, Optional, Union, cast
 
 from pymobiledevice3.exceptions import IRecvError, IRecvNoDeviceConnectedError
-from pymobiledevice3.irecv import transfer
 from pymobiledevice3.irecv._usb import (
     APPLE_VENDOR_ID,
     USB_TIMEOUT,
@@ -21,6 +20,7 @@ from pymobiledevice3.irecv._usb import (
     get_string,
 )
 from pymobiledevice3.irecv.device_info import DeviceInfo, parse_nonce
+from pymobiledevice3.irecv.transport import DfuTransport, RecoveryTransport
 from pymobiledevice3.irecv_devices import IRecvDevice
 
 if TYPE_CHECKING:
@@ -104,6 +104,7 @@ class IRecv:
         self._device: Optional[UsbDevice] = None
         self._mode: Optional[Mode] = None
         self._info: Optional[DeviceInfo] = None
+        self._transport: Optional[Union[RecoveryTransport, DfuTransport]] = None
         self.ap_nonce: Optional[bytes] = None
         self.sep_nonce: Optional[bytes] = None
         self._reinit(ecid=ecid, timeout=timeout, is_recovery=is_recovery)
@@ -193,7 +194,29 @@ class IRecv:
     @property
     def status(self) -> int:
         """The DFU state the device reports (DFU/WTF mode)."""
-        return transfer.dfu_state(self.device)
+        return self._dfu_transport().state
+
+    def _current_transport(self) -> Union[RecoveryTransport, DfuTransport]:
+        """
+        How to talk to the device in its current mode, valid only until it re-enumerates (a reset or a mode change).
+
+        :raises IRecvNoDeviceConnectedError: if no device is connected.
+        """
+        if self._transport is None:
+            raise IRecvNoDeviceConnectedError("No device in Recovery or DFU mode is connected.")
+        return self._transport
+
+    def _recovery_transport(self) -> RecoveryTransport:
+        transport = self._current_transport()
+        if not isinstance(transport, RecoveryTransport):
+            raise IRecvError(f"Only a device in Recovery mode takes iBoot commands; this one is in {self.mode.name}.")
+        return transport
+
+    def _dfu_transport(self) -> DfuTransport:
+        transport = self._current_transport()
+        if not isinstance(transport, DfuTransport):
+            raise IRecvError(f"Only a device in DFU or WTF mode reports a DFU state; this one is in {self.mode.name}.")
+        return transport
 
     def set_interface_altsetting(self, interface: Optional[int] = None, alternate_setting: Optional[int] = None):
         logger.debug(f"set_interface_altsetting: {interface} {alternate_setting}")
@@ -225,14 +248,15 @@ class IRecv:
 
     def send_zero_length_download(self, timeout: int = USB_TIMEOUT) -> None:
         """Send an empty DFU DNLOAD request, which iBoot expects after a ``go``/``bootx`` command."""
-        transfer.control_out(self.device, transfer.REQUEST_TYPE_CLASS_OUT, transfer.DfuRequest.DNLOAD, timeout=timeout)
+        self._recovery_transport().send_zero_length_download(timeout=timeout)
 
     def send_buffer(self, buf: bytes, desc: Optional[str] = None) -> None:
         """Upload ``buf``. In DFU/WTF mode the device then runs it, so it is reset and looked up again."""
-        if self.mode.is_recovery:
-            transfer.upload_recovery(self.device, buf, desc or "recovery upload")
+        transport = self._current_transport()
+        if isinstance(transport, RecoveryTransport):
+            transport.upload(buf, desc or "recovery upload")
             return
-        transfer.upload_dfu(self.device, buf, desc or "DFU upload")
+        transport.upload(buf, desc or "DFU upload")
         self.reset()
 
     def reset(self) -> None:
@@ -246,22 +270,31 @@ class IRecv:
         self._reinit(ecid=self.ecid)
 
     def send_command(self, cmd: str, timeout: int = USB_TIMEOUT, b_request: int = 0) -> None:
-        transfer.control_out(
-            self.device, transfer.REQUEST_TYPE_VENDOR_OUT, b_request, data=cmd.encode() + b"\0", timeout=timeout
-        )
+        """
+        :raises IRecvError: if the device is not in Recovery mode.
+        """
+        self._recovery_transport().send_command(cmd, timeout=timeout, b_request=b_request)
 
     def getenv(self, name: str) -> Optional[bytearray]:
+        """Read an iBoot environment variable; ``None`` if the device is not in Recovery mode or the read failed."""
+        transport = self._current_transport()
+        if not isinstance(transport, RecoveryTransport):
+            return None
         try:
-            self.send_command(f"getenv {name}")
+            transport.send_command(f"getenv {name}")
         except USBError:
             return None
-        return bytearray(transfer.control_in(self.device, transfer.REQUEST_TYPE_VENDOR_IN, 0, 255, timeout=None))
+        return transport.read_command_reply()
 
     def set_autoboot(self, enable: bool) -> None:
         self.send_command(f"setenv auto-boot {str(enable).lower()}")
         self.send_command("saveenv")
 
     def reboot(self) -> None:
+        """Reboot a device in Recovery mode; a device in DFU mode takes no commands, so it is left as is."""
+        if not isinstance(self._current_transport(), RecoveryTransport):
+            logger.warning(f"A device in {self.mode.name} takes no commands, so it cannot be rebooted from here.")
+            return
         with contextlib.suppress(USBError):
             self.send_command("reboot")
 
@@ -275,6 +308,7 @@ class IRecv:
         self._device = None
         self._mode = None
         self._info = None
+        self._transport = None
         self.ap_nonce = None
         self.sep_nonce = None
 
@@ -284,6 +318,7 @@ class IRecv:
         if found is None:
             raise IRecvNoDeviceConnectedError("No device in Recovery or DFU mode was found.")
         self._device, self._mode, self._info = found
+        self._transport = RecoveryTransport(found.device) if found.mode.is_recovery else DfuTransport(found.device)
 
         descriptor = get_string(self.device, 1)
         if descriptor is None:
