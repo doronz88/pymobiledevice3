@@ -58,7 +58,6 @@ dependencies = [
     "ipsw_parser>=1.8.4",
     "ifaddr",
     "hyperframe",
-    "srptools",
     "qh3>=1.0.0,<2",
     "developer_disk_image>=0.3.0",
     "opack2>=0.1.0",

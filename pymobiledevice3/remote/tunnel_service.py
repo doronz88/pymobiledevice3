@@ -1,9 +1,7 @@
 import asyncio
 import base64
-import binascii
 import contextlib
 import dataclasses
-import hashlib
 import inspect
 import json
 import logging
@@ -57,9 +55,6 @@ from qh3.quic import packet_builder
 from qh3.quic.configuration import QuicConfiguration
 from qh3.quic.connection import QuicConnection
 from qh3.quic.events import ConnectionTerminated, DatagramFrameReceived, QuicEvent, StreamDataReceived
-from srptools import SRPClientSession, SRPContext, SRPServerSession
-from srptools import utils as _srptools_utils
-from srptools.constants import PRIME_3072, PRIME_3072_GEN
 
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
@@ -104,6 +99,7 @@ from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService, parse_device_kvs_data
 from pymobiledevice3.remote.siphash import compute_auth_tag, validate_auth_tag
+from pymobiledevice3.remote.srp import SrpClient, SrpServer
 from pymobiledevice3.remote.utils import get_rsds, resume_remoted_if_required, stop_remoted_if_required
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
 from pymobiledevice3.service_connection import ServiceConnection
@@ -117,7 +113,6 @@ opack_loads = cast(Callable[[bytes], Mapping[Any, Any]], cast(Any, opack2).loads
 aioquic_connect = cast(
     Callable[..., AbstractAsyncContextManager[QuicConnectionProtocol]], cast(Any, _aioquic_client).connect
 )
-hex_from = cast(Callable[[Any], Union[str, bytes]], cast(Any, _srptools_utils).hex_from)
 
 DEFAULT_INTERFACE_NAME = "pymobiledevice3-tunnel"
 TIMEOUT = 1
@@ -645,7 +640,7 @@ class RemotePairingProtocol(StartTcpTunnel):
         self.x25519_private_key = X25519PrivateKey.generate()
         self.ed25519_private_key = Ed25519PrivateKey.generate()
         self.identifier = generate_host_id()
-        self.srp_context = None
+        self.srp_context: Optional[SrpClient] = None
         self.encryption_key = None
         self.signature = None
         self.peer_alt_irk: Optional[bytes] = None
@@ -940,17 +935,15 @@ class RemotePairingProtocol(StartTcpTunnel):
     def _init_srp_context(self, pairing_consent_result: PairConsentResult) -> None:
         # Receive server public and salt and process them.
         pin = pairing_consent_result.pin or "000000"
-        client_session: Any = SRPClientSession(
-            SRPContext("Pair-Setup", password=pin, prime=PRIME_3072, generator=PRIME_3072_GEN, hash_func=hashlib.sha512)
-        )
-        client_session.process(pairing_consent_result.public_key.hex(), pairing_consent_result.salt.hex())
+        client_session = SrpClient(pin)
+        client_session.process(pairing_consent_result.public_key, pairing_consent_result.salt)
         self.srp_context = client_session
-        self.encryption_key = binascii.unhexlify(self.srp_context.key)
+        self.encryption_key = client_session.key
 
     async def _verify_proof(self) -> None:
         assert self.srp_context is not None
-        client_public = binascii.unhexlify(self.srp_context.public)
-        client_session_key_proof = binascii.unhexlify(self.srp_context.key_proof)
+        client_public = self.srp_context.public
+        client_session_key_proof = self.srp_context.proof
 
         tlv = PairingDataComponentTLVBuf.build([
             PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x03"),
@@ -966,7 +959,7 @@ class RemotePairingProtocol(StartTcpTunnel):
             "startNewSession": False,
         })
         data = self.decode_tlv(PairingDataComponentTLVBuf.parse(response))
-        assert self.srp_context.verify_proof(data[PairingDataComponentType.PROOF].hex().encode())
+        assert self.srp_context.verify_server_proof(data[PairingDataComponentType.PROOF])
 
     async def _save_pair_record_on_peer(self) -> list[Any]:
         assert self.encryption_key is not None
@@ -1883,18 +1876,13 @@ class PairableHost:
         salt = bytearray(secrets.token_bytes(16))
         salt[0] |= 0x80  # keep a stable 16-byte / even-hex representation
         salt = bytes(salt)
-        salt_hex = salt.hex()
 
         pin = f"{secrets.randbelow(1_000_000):06d}"
-        context: Any = SRPContext(
-            SRP_USERNAME, password=pin, prime=PRIME_3072, generator=PRIME_3072_GEN, hash_func=hashlib.sha512
-        )
-        verifier = hex_from(context.get_common_password_verifier(context.get_common_password_hash(int(salt_hex, 16))))
 
         # B is computed from a fresh random server private; regenerate on the rare short value
         while True:
-            srp_server: Any = SRPServerSession(context, verifier)
-            server_public = binascii.unhexlify(srp_server.public)
+            srp_server = SrpServer(pin, salt, username=SRP_USERNAME)
+            server_public = srp_server.public
             if len(server_public) == SRP_PUBLIC_KEY_SIZE:
                 break
 
@@ -1918,10 +1906,8 @@ class PairableHost:
         if not client_public or not client_proof:
             raise PairingError("The device's pairing reply is missing its public key or proof.")
 
-        srp_server.process(client_public.hex(), salt_hex)
-        # srptools compares against value_encode() output (a hex *bytes* object), so the proof
-        # must be passed as hexlify() bytes rather than a str.
-        if not srp_server.verify_proof(binascii.hexlify(client_proof)):
+        srp_server.process(client_public)
+        if not srp_server.verify_client_proof(client_proof):
             self.logger.warning("SRP client proof verification failed (wrong PIN?)")
             await self._send_pairing_data(
                 PairingDataComponentTLVBuf.build([
@@ -1931,14 +1917,14 @@ class PairableHost:
             )
             raise PairingError("Pairing failed: the PIN did not match.")
 
-        session_key = binascii.unhexlify(srp_server.key)
+        session_key = srp_server.key
 
         # M4: send server proof
         self.logger.debug("Sending pair-setup M4 (server proof)")
         await self._send_pairing_data(
             PairingDataComponentTLVBuf.build([
                 PairingDataComponentTLV8(PairingDataComponentType.STATE, b"\x04"),
-                PairingDataComponentTLV8(PairingDataComponentType.PROOF, binascii.unhexlify(srp_server.key_proof_hash)),
+                PairingDataComponentTLV8(PairingDataComponentType.PROOF, srp_server.proof),
             ])
         )
 
