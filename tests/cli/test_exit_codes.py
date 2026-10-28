@@ -270,10 +270,6 @@ def test_debugserver_lldb_exits_nonzero_when_the_app_is_not_installed(monkeypatc
         async def get_apps(self, bundle_identifiers: list[str]) -> dict[str, Any]:
             return {}
 
-    async def create_using_usbmux() -> object:
-        return object()
-
-    monkeypatch.setattr(debugserver, "create_using_usbmux", create_using_usbmux)
     monkeypatch.setattr(debugserver, "InstallationProxyService", FakeInstallationProxyService)
 
     with pytest.raises(typer.Exit) as exc_info:

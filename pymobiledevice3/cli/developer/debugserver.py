@@ -19,7 +19,7 @@ from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, ServiceProviderDep, async_command, print_json
 from pymobiledevice3.exceptions import RoutableTunnelRequiredError, RSDRequiredError
-from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
+from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
@@ -221,7 +221,7 @@ async def debugserver_lldb(
 
     commands.append("platform select remote-ios")
 
-    async with InstallationProxyService(await create_using_usbmux()) as installation_proxy:
+    async with InstallationProxyService(lockdown=service_provider) as installation_proxy:
         if install_source is not None:
             logger.info("Installing app")
             await installation_proxy.install_from_local(install_source)
