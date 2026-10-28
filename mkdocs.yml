@@ -150,6 +150,7 @@ nav:
       - diagnostics: cli/diagnostics.md
       - doctor: cli/doctor.md
       - lockdown: cli/lockdown.md
+      - mobilesync: cli/mobilesync.md
       - mounter: cli/mounter.md
       - notification: cli/notification.md
       - pcap: cli/pcap.md

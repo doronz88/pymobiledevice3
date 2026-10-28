@@ -110,6 +110,7 @@ CLI_GROUPS = {
     "diagnostics": "diagnostics",
     "doctor": "doctor",
     "lockdown": "lockdown",
+    "mobilesync": "mobilesync",
     "mounter": "mounter",
     "notification": "notification",
     "pcap": "pcap",
