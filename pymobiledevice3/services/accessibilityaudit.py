@@ -564,6 +564,60 @@ class AccessibilityAudit:
 
         await self._invoke("deviceElement:performAction:withValue:", serialized_element, action, 0, expects_reply=False)
 
+    @staticmethod
+    def _serialize_element(element: bytes) -> dict[str, typing.Any]:
+        """Wrap a platform element value as the archived ``AXAuditElement_v1`` the daemon expects."""
+        return {
+            "ObjectType": "AXAuditElement_v1",
+            "Value": {
+                "ObjectType": "passthrough",
+                "Value": {
+                    "PlatformElementValue_v1": {"ObjectType": "passthrough", "Value": element},
+                },
+            },
+        }
+
+    @staticmethod
+    def _serialize_attribute(name: str) -> dict[str, typing.Any]:
+        """Wrap an attribute name as the archived ``AXAuditElementAttribute_v1`` the daemon expects."""
+        return {
+            "ObjectType": "AXAuditElementAttribute_v1",
+            "Value": {
+                "ObjectType": "passthrough",
+                "Value": {
+                    "AttributeNameValue_v1": {"ObjectType": "passthrough", "Value": name},
+                },
+            },
+        }
+
+    async def element_attribute(self, element: bytes, attribute: str) -> typing.Any:
+        """
+        Read a single accessibility attribute of an element.
+
+        The daemon resolves only the element that currently holds the inspector focus (see
+        `move_focus_and_wait`); other elements read as None.
+
+        :param element: The platform element value identifying the element
+            (`AXAuditElement_v1.identifier`).
+        :param attribute: The attribute name, for example ``Label``, ``Identifier`` or ``Value``.
+        :returns: The deserialized attribute value, or None when the element has no such value.
+        """
+        await self._ensure_ready()
+        reply = await self._invoke(
+            "deviceElement:valueForAttribute:", self._serialize_element(element), self._serialize_attribute(attribute)
+        )
+        return deserialize_object(reply)
+
+    async def element_attributes(self, element: bytes, attributes: list[str]) -> dict[str, typing.Any]:
+        """
+        Read several accessibility attributes of an element.
+
+        :param element: The platform element value identifying the element.
+        :param attributes: The attribute names to read.
+        :returns: A mapping of each attribute name to its deserialized value.
+        """
+        return {attribute: await self.element_attribute(element, attribute) for attribute in attributes}
+
     async def move_focus(self, direction: Direction) -> None:
         """
         Move the inspector focus in the given direction.
@@ -590,6 +644,45 @@ class AccessibilityAudit:
         }
 
         await self._invoke("deviceInspectorMoveWithOptions:", options, expects_reply=False)
+
+    async def move_focus_and_wait(self, direction: Direction, timeout: float = 5.0) -> AXAuditInspectorFocus_v1:
+        """
+        Move the inspector focus and wait for the element that receives it.
+
+        Enables app monitoring so the device publishes focus changes.
+
+        :param direction: The `Direction` to move the focus.
+        :param timeout: Seconds to wait for the focus-change event.
+        :returns: The newly focused element.
+        :raises TimeoutError: If the device reports no focus change in time.
+        """
+        await self._ensure_ready()
+        await self.set_app_monitoring_enabled(True)
+        await self.set_monitored_event_type()
+        await self.move_focus(direction)
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise TimeoutError("timed out waiting for an accessibility focus change")
+            assert self._event_queue is not None
+            try:
+                name, args = await asyncio.wait_for(self._event_queue.get(), timeout=remaining)
+            except asyncio.TimeoutError as err:
+                raise TimeoutError("timed out waiting for an accessibility focus change") from err
+            if name != "hostInspectorCurrentElementChanged:":
+                continue
+            payload = self._extract_event_payload(args)
+            if payload is None:
+                continue
+            data = deserialize_object(payload)
+            if isinstance(data, list):
+                if not data:
+                    continue
+                data = typing.cast(list[typing.Any], data)[0]
+            return typing.cast(AXAuditInspectorFocus_v1, data)
 
     async def set_setting(self, name: str, value: typing.Any) -> None:
         """

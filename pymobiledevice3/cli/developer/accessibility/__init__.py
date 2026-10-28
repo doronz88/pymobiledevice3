@@ -1,6 +1,8 @@
 import logging
-from typing import Any
+from enum import Enum
+from typing import Annotated, Any, Optional
 
+import typer
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import (
@@ -12,9 +14,19 @@ from pymobiledevice3.cli.cli_common import (
     print_json_line,
 )
 from pymobiledevice3.cli.developer.accessibility import settings
-from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit
+from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit, Direction
 
 logger = logging.getLogger(__name__)
+
+
+class FocusDirection(str, Enum):
+    FIRST = "first"
+    NEXT = "next"
+    PREVIOUS = "previous"
+    LAST = "last"
+
+    def to_direction(self) -> Direction:
+        return Direction[self.value.capitalize()]
 
 
 cli = InjectingTyper(
@@ -81,3 +93,34 @@ async def accessibility_list_items(service_provider: ServiceProviderDep) -> None
         async for element in service.iter_elements():
             elements.append(element.to_dict())
     print_json(elements)
+
+
+@cli.command("element-attributes")
+@async_command
+async def accessibility_element_attributes(
+    service_provider: ServiceProviderDep,
+    attributes: Annotated[
+        Optional[list[str]],
+        typer.Argument(help="Attribute names to read (default: Label, Identifier, Value)."),
+    ] = None,
+    direction: Annotated[
+        FocusDirection,
+        typer.Option(help="How to move the inspector focus before reading the newly focused element."),
+    ] = FocusDirection.NEXT,
+) -> None:
+    """Move the accessibility inspector focus and read attributes (label, identifier, value, ...) of the focused element."""
+    if not attributes:
+        attributes = ["Label", "Identifier", "Value"]
+    async with AccessibilityAudit(service_provider) as service:
+        try:
+            focus = await service.move_focus_and_wait(direction.to_direction())
+        except TimeoutError:
+            logger.error(f"The focus did not move ({direction.value}); it may already be on that element.")
+            raise typer.Exit(1) from None
+        element = focus.element
+        if element is None:
+            logger.error("The focused item does not identify an element.")
+            raise typer.Exit(1)
+        result = focus.to_dict()
+        result["attributes"] = await service.element_attributes(element.identifier, attributes)
+    print_json(result)
