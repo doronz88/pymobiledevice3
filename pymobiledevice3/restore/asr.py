@@ -94,11 +94,7 @@ class ASRClient:
 
         await self.send_buffer(oob_data)
 
-    async def perform_validation(self, filesystem: typing.IO[bytes]) -> None:
-        filesystem.seek(0, os.SEEK_END)
-        length = filesystem.tell()
-        filesystem.seek(0, os.SEEK_SET)
-
+    async def send_validation_packet_info(self, length: int) -> None:
         payload_info = {
             "Port": 1,
             "Size": length,
@@ -117,6 +113,14 @@ class ASRClient:
 
         await self.send_plist(packet_info)
 
+    async def perform_validation(self, filesystem: typing.IO[bytes]) -> None:
+        filesystem.seek(0, os.SEEK_END)
+        length = filesystem.tell()
+        filesystem.seek(0, os.SEEK_SET)
+
+        # Expected by the device after every Initiate
+        await self.send_validation_packet_info(length)
+
         while True:
             packet = await self.recv_plist()
             self.logger.debug(f"perform_validation: {packet}")
@@ -124,6 +128,14 @@ class ASRClient:
 
             if command == "Payload":
                 break
+
+            elif command == "Initiate":
+                # First seen in iBridgeOS 9.0: a second Initiate may switch Checksum Chunks on
+                checksum_chunks = packet.get("Checksum Chunks")
+                if isinstance(checksum_chunks, bool):
+                    self.checksum_chunks = checksum_chunks
+                self.logger.debug(f"Checksum Chunks: {self.checksum_chunks}")
+                await self.send_validation_packet_info(length)
 
             elif command == "OOBData":
                 await self.handle_oob_data_request(packet, filesystem)
