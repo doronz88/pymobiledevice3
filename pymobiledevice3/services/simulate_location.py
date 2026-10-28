@@ -22,8 +22,8 @@ class DtSimulateLocation(LockdownService, LocationSimulationBase):
 
     async def clear(self) -> None:
         """Stop simulating a location and restore the device's real location."""
-        service = await self.lockdown.start_lockdown_developer_service(self.SERVICE_NAME)
-        await service.sendall(struct.pack(">I", 1))
+        async with await self.lockdown.start_lockdown_developer_service(self.SERVICE_NAME) as service:
+            await service.sendall(struct.pack(">I", 1))
 
     async def set(self, latitude: float, longitude: float) -> None:
         """
@@ -32,9 +32,9 @@ class DtSimulateLocation(LockdownService, LocationSimulationBase):
         :param latitude: Latitude in decimal degrees.
         :param longitude: Longitude in decimal degrees.
         """
-        service = await self.lockdown.start_lockdown_developer_service(self.SERVICE_NAME)
-        await service.sendall(struct.pack(">I", 0))
         encoded_latitude = str(latitude).encode()
         encoded_longitude = str(longitude).encode()
-        await service.sendall(struct.pack(">I", len(encoded_latitude)) + encoded_latitude)
-        await service.sendall(struct.pack(">I", len(encoded_longitude)) + encoded_longitude)
+        async with await self.lockdown.start_lockdown_developer_service(self.SERVICE_NAME) as service:
+            await service.sendall(struct.pack(">I", 0))
+            await service.sendall(struct.pack(">I", len(encoded_latitude)) + encoded_latitude)
+            await service.sendall(struct.pack(">I", len(encoded_longitude)) + encoded_longitude)

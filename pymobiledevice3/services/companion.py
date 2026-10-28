@@ -28,8 +28,8 @@ class CompanionProxyService(LockdownService):
         :returns: the list of paired devices (the ``PairedDevicesArray`` entry), or an empty list
             if none are present.
         """
-        service = await self.lockdown.start_lockdown_service(self.service_name)
-        return (await service.send_recv_plist({"Command": "GetDeviceRegistry"})).get("PairedDevicesArray", [])
+        async with await self.lockdown.start_lockdown_service(self.service_name) as service:
+            return (await service.send_recv_plist({"Command": "GetDeviceRegistry"})).get("PairedDevicesArray", [])
 
     async def listen_for_devices(self):
         """
@@ -40,10 +40,10 @@ class CompanionProxyService(LockdownService):
 
         :returns: an async generator of device registry change events.
         """
-        service = await self.lockdown.start_lockdown_service(self.service_name)
-        await service.send_plist({"Command": "StartListeningForDevices"})
-        while True:
-            yield await service.recv_plist()
+        async with await self.lockdown.start_lockdown_service(self.service_name) as service:
+            await service.send_plist({"Command": "StartListeningForDevices"})
+            while True:
+                yield await service.recv_plist()
 
     async def get_value(self, udid: str, key: str):
         """
@@ -56,12 +56,12 @@ class CompanionProxyService(LockdownService):
         :returns: the retrieved value dictionary.
         :raises PyMobileDevice3Exception: if the device returns an error instead of a value.
         """
-        service = await self.lockdown.start_lockdown_service(self.service_name)
-        response = await service.send_recv_plist({
-            "Command": "GetValueFromRegistry",
-            "GetValueGizmoUDIDKey": udid,
-            "GetValueKeyKey": key,
-        })
+        async with await self.lockdown.start_lockdown_service(self.service_name) as service:
+            response = await service.send_recv_plist({
+                "Command": "GetValueFromRegistry",
+                "GetValueGizmoUDIDKey": udid,
+                "GetValueKeyKey": key,
+            })
 
         value = response.get("RetrievedValueDictionary")
         if value is not None:

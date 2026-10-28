@@ -45,8 +45,8 @@ class AmfiService:
 
         :raises PyMobileDevice3Exception: if the device does not report success.
         """
-        service = await self._lockdown.start_lockdown_service(self.SERVICE_NAME)
-        resp = await service.send_recv_plist({"action": self.DEVELOPER_MODE_REVEAL})
+        async with await self._lockdown.start_lockdown_service(self.SERVICE_NAME) as service:
+            resp = await service.send_recv_plist({"action": self.DEVELOPER_MODE_REVEAL})
         if not resp.get("success"):
             raise PyMobileDevice3Exception(f"The device did not reveal the Developer Mode setting: {resp}")
 
@@ -65,8 +65,8 @@ class AmfiService:
         :raises AmfiError: if AMFI returns any other error.
         :raises DeveloperModeError: if the enable or post-restart confirmation request does not succeed.
         """
-        service = await self._lockdown.start_lockdown_service(self.SERVICE_NAME)
-        resp = await service.send_recv_plist({"action": self.DEVELOPER_MODE_ENABLE})
+        async with await self._lockdown.start_lockdown_service(self.SERVICE_NAME) as service:
+            resp = await service.send_recv_plist({"action": self.DEVELOPER_MODE_ENABLE})
         error = resp.get("Error")
 
         if error is not None:
@@ -97,8 +97,8 @@ class AmfiService:
 
         :raises DeveloperModeError: if the device does not report success.
         """
-        service = await self._lockdown.start_lockdown_service(self.SERVICE_NAME)
-        resp = await service.send_recv_plist({"action": self.DEVELOPER_MODE_ACCEPT})
+        async with await self._lockdown.start_lockdown_service(self.SERVICE_NAME) as service:
+            resp = await service.send_recv_plist({"action": self.DEVELOPER_MODE_ACCEPT})
         if not resp.get("success"):
             raise DeveloperModeError(f"The device did not confirm Developer Mode after restarting: {resp}")
 
