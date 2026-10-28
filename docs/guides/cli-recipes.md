@@ -80,6 +80,9 @@ pymobiledevice3 apps list
 # Query specific app bundle IDs
 pymobiledevice3 apps query BUNDLE_ID1 BUNDLE_ID2
 
+# Dump contacts / calendars / Safari bookmarks / mail accounts without a backup
+pymobiledevice3 mobilesync dump contacts
+
 # Full backup
 pymobiledevice3 backup2 backup --full DIRECTORY
 

@@ -22,6 +22,7 @@ Explicit tunnel setup is rarely needed: on iOS 17.4+, commands that require an R
 - `afc`: media-domain shell, pull, push, ls, rm.
 - `apps`: list/query/install/uninstall apps and work with app AFC/container helpers.
 - `crash`: browse, pull, clear, watch crash reports and sysdiagnose artifacts.
+- `mobilesync`: dump contacts, calendars, Safari bookmarks and mail accounts without a backup.
 - Services to inspect when extending: `services/afc.py`, `services/house_arrest.py`, `services/installation_proxy.py`, `services/crash_reports.py`.
 
 Use these for browsing files, copying artifacts, or handling app containers.
