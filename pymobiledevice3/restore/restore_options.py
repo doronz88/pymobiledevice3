@@ -1,7 +1,9 @@
 # extracted from ac2
 import logging
+import math
 import uuid
-from typing import Any, Optional
+from collections.abc import Mapping
+from typing import Any, Optional, cast
 
 from ipsw_parser.build_identity import BuildIdentity
 
@@ -112,6 +114,45 @@ SUPPORTED_MESSAGE_TYPES = {
 # data requests over. Only the usbmuxd socket is implemented here.
 SUPPORTED_HOST_PROTOCOLS = ["MuxSocket"]
 
+# components that are always counted into the RecoveryOS partition size, on top of everything
+# loaded by iBoot (idevicerestore `_restore_calculate_recovery_os_partition_size`)
+RECOVERY_OS_PARTITION_ASSETS = (
+    "OS",
+    "KernelCache",
+    "DeviceTree",
+    "iBEC",
+    "AppleLogo",
+    "StaticTrustCache",
+    "iBootData",
+    "Diags",
+    "Ap,SystemVolumeCanonicalMetadata",
+    "SystemVolume",
+    "BaseSystemVolume",
+    "Ap,BaseSystemTrustCache",
+    "AVISP1,RTKitOS",
+)
+
+
+def recovery_os_partition_size(recovery_variant: BuildIdentity, file_sizes: Mapping[str, int]) -> tuple[int, int]:
+    """
+    Calculate the (minimum, maximum) RecoveryOS partition size in MiB, the way idevicerestore does.
+
+    :param recovery_variant: the build identity of the recovery OS
+    :param file_sizes: IPSW member path -> size in bytes (components missing from it are not counted)
+    """
+    total = 0.0
+    for component, entry in cast(dict[str, Any], recovery_variant["Manifest"]).items():
+        if not isinstance(entry, dict):
+            continue
+        info = cast(dict[str, Any], entry).get("Info", {})
+        if component not in RECOVERY_OS_PARTITION_ASSETS and info.get("IsLoadedByiBoot") is not True:
+            continue
+        size = file_sizes.get(info.get("Path", ""))
+        if size is not None:
+            total += size / 0x100000
+    total = math.ceil(total)
+    return int(total * 1.05 + 25), int(total * 1.25 + 25)
+
 
 class RestoreOptions:
     def __init__(
@@ -124,6 +165,8 @@ class RestoreOptions:
         spp: Optional[dict[str, Any]] = None,
         restore_behavior: Optional[str] = None,
         msp: Optional[int] = None,
+        recovery_variant: Optional[BuildIdentity] = None,
+        recovery_os_partition_sizes: Optional[tuple[int, int]] = None,
     ):
         self.AutoBootDelay = 0
 
@@ -191,6 +234,17 @@ class RestoreOptions:
             self.RestoreBundlePath = "/tmp/Per2.tmp"
             self.SystemImageType = "User"
             self.UpdateBaseband = False
+
+            if recovery_variant is not None:
+                self.InstallRecoveryOS = True
+                self.RecoveryOSBundlePath = "/tmp/Per2.tmp"
+                self.AuthInstallRecoveryOSVariant = cast(dict[str, Any], recovery_variant["Info"])["Variant"]
+                if recovery_os_partition_sizes is not None:
+                    min_size, max_size = recovery_os_partition_sizes
+                    logger.info(f"Calculated recoveryOSPartitionSize as {min_size} MB")
+                    logger.info(f"Calculated recoveryOSMaxPartitionSize as {max_size} MB")
+                    self.recoveryOSPartitionSize = min_size
+                    self.recoveryOSMaxPartitionSize = max_size
 
             # Added for iOS 18.0 beta1
             self.HostHasFixFor99053849 = True

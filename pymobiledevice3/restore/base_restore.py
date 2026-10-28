@@ -2,6 +2,7 @@ import logging
 from enum import Enum
 from typing import Any, Optional, cast
 
+from ipsw_parser.build_identity import BuildIdentity
 from ipsw_parser.exceptions import NoSuchBuildIdentityError
 from ipsw_parser.ipsw import IPSW
 
@@ -68,6 +69,21 @@ class BaseRestore:
         if device_class is None:
             raise PyMobileDevice3Exception('The build identity has no "DeviceClass" element.')
 
+        # iOS RecoveryOS: the build identity may name a separate one (Info.RecoveryVariant) for the
+        # recovery OS that gets installed next to the main OS (a missing one fails the TSS fetch)
+        self.recovery_variant: Optional[BuildIdentity] = None
+        recovery_variant = build_info.get("RecoveryVariant")
+        if self.macos_variant is None and recovery_variant is not None:
+            self.recovery_variant = self._get_build_identity_with_exact_variant(hardware_model, recovery_variant)
+
+    def _get_build_identity_with_exact_variant(self, hardware_model: str, variant: str) -> Optional[BuildIdentity]:
+        """BuildManifest.get_build_identity() matches the variant as a substring; this one requires it whole."""
+        for build_identity in cast(list[BuildIdentity], cast(Any, self.ipsw.build_manifest).build_identities):
+            info = cast(dict[str, Any], build_identity["Info"])
+            if str(info.get("DeviceClass", "")).lower() == hardware_model and info.get("Variant") == variant:
+                return build_identity
+        return None
+
     async def ensure_image4_supported(self) -> None:
         if not await self.device.get_is_image4_supported():
             raise NotImplementedError("is_image4_supported is False")
@@ -89,19 +105,27 @@ class BaseRestore:
         *,
         tss: TSSResponse,
         path: Optional[str] = None,
+        build_identity: Optional[BuildIdentity] = None,
     ) -> bytes:
+        if build_identity is None:
+            build_identity = self.build_identity
         return stitch_component(
             component_name,
-            cast(Any, self.build_identity).get_component(component_name, tss=tss, data=data, path=path).data,
+            cast(Any, build_identity).get_component(component_name, tss=tss, data=data, path=path).data,
             tss,
-            self.build_identity,
+            build_identity,
             await self.device.get_ap_parameters(),
         )
 
     def populate_tss_request_from_manifest(
-        self, parameters: dict[str, Any], additional_keys: Optional[list[str]] = None
+        self,
+        parameters: dict[str, Any],
+        additional_keys: Optional[list[str]] = None,
+        build_identity: Optional[BuildIdentity] = None,
     ) -> None:
         """equivalent to idevicerestore:tss_parameters_add_from_manifest"""
+        if build_identity is None:
+            build_identity = self.build_identity
         key_list = ["ApBoardID", "ApChipID"]
         if additional_keys is None:
             key_list += [
@@ -152,13 +176,15 @@ class BaseRestore:
                 "Timer,SecurityDomain,2",
                 "Manifest",
                 "NeRDEpoch",
+                # set by the RecoveryOS identity; TSS refuses its ticket without it
+                "AllowNeRDBoot",
             ]
         else:
             key_list += additional_keys
 
         for k in key_list:
             try:
-                v = cast(dict[str, Any], self.build_identity)[k]
+                v = cast(dict[str, Any], build_identity)[k]
                 if isinstance(v, str) and v.startswith("0x"):
                     v = int(v, 16)
                 parameters[k] = v
@@ -167,7 +193,7 @@ class BaseRestore:
 
         if additional_keys is None:
             # special treat for RequiresUIDMode
-            info = cast(dict[str, Any], self.build_identity).get("Info")
+            info = cast(dict[str, Any], build_identity).get("Info")
             if info is None:
                 return
             requires_uid_mode = info.get("RequiresUIDMode")
