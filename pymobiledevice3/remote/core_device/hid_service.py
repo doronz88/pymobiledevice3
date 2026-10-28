@@ -24,8 +24,8 @@ import asyncio
 import contextlib
 import struct
 import time
-from collections.abc import AsyncGenerator, Iterable
-from typing import Any, Optional
+from collections.abc import AsyncGenerator, Iterable, Sequence
+from typing import Any, NamedTuple, Optional
 
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -61,19 +61,26 @@ HID_BUTTON_STATE_CANCELED = 3
 #        | byte  | meaning                                  |
 #        |-------|------------------------------------------|
 #        | 0     | report ID (0x09)                         |
-#        | 1-2   | constants 0x01 0x05                      |
-#        | 3     | state: 0xC2 = contact, 0x02 = release    |
-#        | 4-5   | X position (UInt16 LE)                   |
-#        | 6-7   | Y position (UInt16 LE)                   |
-#        | 8-39  | 32 reserved bytes (all 0 in captures)    |
+#        | 1     | number of contacts in this report        |
+#        | 2     | maximum contacts (constant 0x05)         |
+#        | 3-27  | five 5-byte contact slots (see below)    |
+#        | 28-39 | 12 reserved bytes (all 0 in captures)    |
 #        | 40-43 | constant 0x02 0x00 0x00 0x00             |
 #        | 44-49 | host timestamp (Mach-abs, 6 bytes LE)    |
 #        | 50-57 | 8 reserved bytes (all 0 in captures)     |
+#
+#    Each contact slot is ``[state][X: UInt16 LE][Y: UInt16 LE]``. ``state``
+#    is ``0xC0 | identity`` while touching (bits 7-6 = touch + in-range) and
+#    the bare ``identity`` (0..4) on release. The single-contact reports Xcode
+#    sends use identity 2, hence ``0xC2`` = contact, ``0x02`` = release.
 #
 #    A **tap** is one ``CONTACT`` + one ``RELEASE`` at the same (X, Y).
 #    A **drag** is a stream of ``CONTACT`` reports advancing X/Y, terminated
 #    by one ``RELEASE`` at the final position — there is no separate
 #    touch-begin/end opcode; every ``CONTACT`` is "in contact at this position".
+#    With several fingers, every report carries every contact still down,
+#    each keeping its identity, and a release is that contact reported once
+#    more without the touch bits. Layout from jkcoxson/idevice ``hid.rs``.
 #
 # 3) **Virtual keyboard** — 39-byte report (rid=0x01). Unlike the two touch
 #    surfaces this one isn't pre-registered on the device; the host has to
@@ -113,6 +120,11 @@ TOUCHSCREEN_REPORT_ID = 0x09  # mainTouchscreen — rid byte
 KEYBOARD_REPORT_ID = 0x01  # virtual keyboard — rid byte
 TOUCHSCREEN_STATE_CONTACT = 0xC2  # "contact in progress at this position"
 TOUCHSCREEN_STATE_RELEASE = 0x02  # release contact
+TOUCHSCREEN_STATE_TOUCHING = 0xC0  # touch + in-range bits, OR'd with the contact identity
+TOUCHSCREEN_CONTACT_COUNT_MAXIMUM = 5
+_TOUCHSCREEN_REPORT_SIZE = 58
+_TOUCHSCREEN_CONTACTS_OFFSET = 3
+_TOUCHSCREEN_CONTACT_SIZE = 5
 
 # _ServiceIDs of statically-registered surfaces (see ``list_connected_services``):
 DIGITIZER_SURFACE_MAIN_TOUCHSCREEN = 257  # 0x101 — true digitizer (58-byte rid=0x09)
@@ -344,16 +356,52 @@ def build_touchscreen_report(
     :param timestamp: 48-bit Mach-abs-style monotonic value (defaults to
         ``time.monotonic_ns()`` truncated to 48 bits).
     """
+    return _build_touchscreen_report([(state, x, y)], timestamp)
+
+
+class TouchscreenContact(NamedTuple):
+    """One finger in a multi-contact mainTouchscreen report."""
+
+    identity: int
+    """Stable 0..4 identity for the lifetime of this contact."""
+    x: int
+    y: int
+    touching: bool = True
+    """``False`` lifts the contact (send it once more with the same identity)."""
+
+
+def build_multitouch_report(contacts: Sequence[TouchscreenContact], timestamp: Optional[int] = None) -> bytes:
+    """Build a 58-byte mainTouchscreen report carrying up to five contacts.
+
+    Every contact still down must be in every report. To lift one, include it
+    once more with ``touching=False`` and the identity it was down with.
+    """
+    if len(contacts) > TOUCHSCREEN_CONTACT_COUNT_MAXIMUM:
+        raise ValueError(f"at most {TOUCHSCREEN_CONTACT_COUNT_MAXIMUM} contacts per report, got {len(contacts)}")
+    identities = [contact.identity for contact in contacts]
+    for identity in identities:
+        if not 0 <= identity < TOUCHSCREEN_CONTACT_COUNT_MAXIMUM:
+            raise ValueError(f"contact identity must be 0..{TOUCHSCREEN_CONTACT_COUNT_MAXIMUM - 1}, got {identity}")
+    if len(set(identities)) != len(identities):
+        raise ValueError(f"duplicate contact identity in {identities}")
+    return _build_touchscreen_report(
+        [((TOUCHSCREEN_STATE_TOUCHING if c.touching else 0) | c.identity, c.x, c.y) for c in contacts],
+        timestamp,
+    )
+
+
+def _build_touchscreen_report(slots: Sequence[tuple[int, int, int]], timestamp: Optional[int]) -> bytes:
+    """Lay out ``(state, x, y)`` contact slots in a mainTouchscreen report."""
     if timestamp is None:
         timestamp = time.monotonic_ns() & ((1 << 48) - 1)
-    return (
-        bytes([TOUCHSCREEN_REPORT_ID, 0x01, 0x05, state])
-        + struct.pack("<HH", x & 0xFFFF, y & 0xFFFF)
-        + b"\x00" * 32
-        + b"\x02\x00\x00\x00"
-        + timestamp.to_bytes(6, "little")
-        + b"\x00" * 8
-    )
+    report = bytearray(_TOUCHSCREEN_REPORT_SIZE)
+    report[0:3] = bytes([TOUCHSCREEN_REPORT_ID, len(slots), TOUCHSCREEN_CONTACT_COUNT_MAXIMUM])
+    for index, (state, x, y) in enumerate(slots):
+        offset = _TOUCHSCREEN_CONTACTS_OFFSET + index * _TOUCHSCREEN_CONTACT_SIZE
+        report[offset : offset + _TOUCHSCREEN_CONTACT_SIZE] = struct.pack("<BHH", state, x & 0xFFFF, y & 0xFFFF)
+    report[40:44] = b"\x02\x00\x00\x00"
+    report[44:50] = (timestamp & ((1 << 48) - 1)).to_bytes(6, "little")
+    return bytes(report)
 
 
 class IndigoHIDService(RemoteService):
@@ -453,6 +501,60 @@ class UniversalHIDServiceService(RemoteService):
         sample or :data:`TOUCHSCREEN_STATE_RELEASE` to lift.
         """
         await self.send_report(service_id, build_touchscreen_report(state, x, y, timestamp))
+
+    async def send_multitouch(
+        self,
+        contacts: Sequence[TouchscreenContact],
+        service_id: int = DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
+        timestamp: Optional[int] = None,
+    ) -> None:
+        """Send one mainTouchscreen report carrying up to five contacts.
+
+        See :func:`build_multitouch_report` for how contacts go down and up.
+        """
+        await self.send_report(service_id, build_multitouch_report(contacts, timestamp))
+
+    async def multi_tap(
+        self,
+        positions: Sequence[tuple[int, int]],
+        service_id: int = DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
+        hold: float = 0.05,
+    ) -> None:
+        """Tap one to five (x, y) positions at once, as simultaneous fingers."""
+        await self.multi_drag([(x, y, x, y) for x, y in positions], steps=0, duration=hold, service_id=service_id)
+
+    async def multi_drag(
+        self,
+        paths: Sequence[tuple[int, int, int, int]],
+        steps: int = 30,
+        duration: float = 0.6,
+        service_id: int = DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
+    ) -> None:
+        """Move one to five fingers together, each along its own straight line.
+
+        Each path is ``(x1, y1, x2, y2)``. All fingers go down at their start
+        points in one report, advance together over ``steps`` reports spread
+        across ``duration`` seconds, and lift together at their end points.
+        Two fingers moving apart zoom in, towards each other pinch, and in
+        parallel make a two-finger swipe. ``steps=0`` holds the fingers still
+        for ``duration`` (a multi-finger tap).
+        """
+        if not 1 <= len(paths) <= TOUCHSCREEN_CONTACT_COUNT_MAXIMUM:
+            raise ValueError(f"need 1..{TOUCHSCREEN_CONTACT_COUNT_MAXIMUM} contacts, got {len(paths)}")
+
+        def frame(t: float, touching: bool = True) -> list[TouchscreenContact]:
+            return [
+                TouchscreenContact(identity, round(x1 + (x2 - x1) * t), round(y1 + (y2 - y1) * t), touching)
+                for identity, (x1, y1, x2, y2) in enumerate(paths)
+            ]
+
+        await self.send_multitouch(frame(0), service_id)
+        if steps <= 0:
+            await asyncio.sleep(duration)
+        for i in range(1, max(steps, 0) + 1):
+            await asyncio.sleep(duration / steps)
+            await self.send_multitouch(frame(i / steps), service_id)
+        await self.send_multitouch(frame(1, touching=False), service_id)
 
     async def create_keyboard_service(
         self,

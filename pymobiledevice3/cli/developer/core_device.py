@@ -6,7 +6,7 @@ import time
 from contextlib import AsyncExitStack, nullcontext
 from enum import Enum
 from pathlib import Path
-from typing import IO, Annotated, Optional
+from typing import IO, Annotated, Optional, cast
 
 import typer
 from typer_injector import InjectingTyper
@@ -35,6 +35,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
     KEY_RIGHT,
     KEY_TAB,
     KEY_UP,
+    TOUCHSCREEN_CONTACT_COUNT_MAXIMUM,
     TOUCHSCREEN_STATE_CONTACT,
     TOUCHSCREEN_STATE_RELEASE,
     IndigoHIDService,
@@ -795,6 +796,58 @@ async def core_device_universal_hid_service_drag(
     """
     async with touch_session(service_provider) as service:
         await _do_drag(service, x1, y1, x2, y2, steps, duration, tsid=_parse_int_auto(touch_service_id))
+
+
+def _group_coordinates(values: list[int], size: int) -> list[tuple[int, ...]]:
+    if len(values) % size:
+        raise typer.BadParameter(f"expected groups of {size} coordinates, got {len(values)} values")
+    groups = [tuple(values[i : i + size]) for i in range(0, len(values), size)]
+    if not 1 <= len(groups) <= TOUCHSCREEN_CONTACT_COUNT_MAXIMUM:
+        raise typer.BadParameter(f"expected 1..{TOUCHSCREEN_CONTACT_COUNT_MAXIMUM} fingers, got {len(groups)}")
+    return groups
+
+
+@universal_hid_service_cli.command("multi-tap")
+@async_command
+async def core_device_universal_hid_service_multi_tap(
+    service_provider: RSDServiceProviderDep,
+    coordinates: Annotated[list[int], typer.Argument(help="X Y per finger (1..5 fingers, 0..65535 each)")],
+    hold: Annotated[float, typer.Option("--hold", help="Seconds the fingers stay down")] = 0.05,
+    touch_service_id: Annotated[
+        str,
+        typer.Option("--touch-service-id", help="mainTouchscreen _ServiceID"),
+    ] = str(DIGITIZER_SURFACE_MAIN_TOUCHSCREEN),
+) -> None:
+    """Tap with several fingers at once — e.g. ``multi-tap -- 25000 32768 40000 32768`` is a two-finger tap."""
+    positions = cast(list[tuple[int, int]], _group_coordinates(coordinates, 2))
+    async with touch_session(service_provider) as service:
+        await service.multi_tap(positions, service_id=_parse_int_auto(touch_service_id), hold=hold)
+
+
+@universal_hid_service_cli.command("multi-drag")
+@async_command
+async def core_device_universal_hid_service_multi_drag(
+    service_provider: RSDServiceProviderDep,
+    coordinates: Annotated[
+        list[int], typer.Argument(help="X1 Y1 X2 Y2 (start, end) per finger (1..5 fingers, 0..65535 each)")
+    ],
+    steps: Annotated[int, typer.Option("--steps")] = 30,
+    duration: Annotated[float, typer.Option("--duration", help="Drag time, seconds")] = 0.6,
+    touch_service_id: Annotated[
+        str,
+        typer.Option("--touch-service-id", help="mainTouchscreen _ServiceID"),
+    ] = str(DIGITIZER_SURFACE_MAIN_TOUCHSCREEN),
+) -> None:
+    """Drag several fingers together, each from its (X1, Y1) to its (X2, Y2).
+
+    Fingers moving apart zoom in, towards each other pinch, in parallel make a
+    multi-finger swipe. E.g. zoom in around the center::
+
+        multi-drag -- 28000 32768 12000 32768  37536 32768 53536 32768
+    """
+    paths = cast(list[tuple[int, int, int, int]], _group_coordinates(coordinates, 4))
+    async with touch_session(service_provider) as service:
+        await service.multi_drag(paths, steps=steps, duration=duration, service_id=_parse_int_auto(touch_service_id))
 
 
 @universal_hid_service_cli.command("swipe")
