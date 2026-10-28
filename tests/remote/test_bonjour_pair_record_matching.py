@@ -147,6 +147,16 @@ def test_pair_setup_records_the_device_alt_irk(monkeypatch, tmp_path):
     assert plistlib.loads(service.pair_record_path.read_bytes())[PEER_ALT_IRK_KEY] == ALT_IRK
 
 
+def test_pair_setup_records_the_alt_irk_from_back_referenced_info(monkeypatch, tmp_path):
+    # Devices compress repeated values with OPACK back-references; `model` here refers back to `name`'s
+    # value (0xA1), which opack2 < 0.2.0 could not decode, silently dropping the altIRK.
+    monkeypatch.setattr(tunnel_service, "create_pairing_records_cache_folder", lambda: tmp_path)
+    service = RemotePairingTunnelService("MINE", "10.0.0.1", 49152)
+    info = b"\xe3\x44name\x46iPhone\x45model\xa1\x46altIRK\x80" + ALT_IRK
+
+    assert service._parse_peer_alt_irk({PairingDataComponentType.INFO: info}) == ALT_IRK
+
+
 @pytest.mark.parametrize(
     "device_tlv",
     [{}, {PairingDataComponentType.INFO: b"\xff"}, {PairingDataComponentType.INFO: dumps({"altIRK": b"short"})}],
