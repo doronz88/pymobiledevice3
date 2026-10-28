@@ -10,7 +10,7 @@ from typer_injector import InjectingTyper
 from pymobiledevice3.ca import create_keybag_file
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
 from pymobiledevice3.services.mobile_activation import MobileActivationService
-from pymobiledevice3.services.mobile_config import MobileConfigService
+from pymobiledevice3.services.mobile_config import MobileConfigService, WallpaperScreen
 
 logger = logging.getLogger(__name__)
 
@@ -352,3 +352,21 @@ async def profile_security_info(service_provider: ServiceProviderDep, keybag: Ke
     async with MobileConfigService(lockdown=service_provider) as service:
         await service.escalate(keybag)
         print_json(await service.get_security_info())
+
+
+@cli.command("set-wallpaper")
+@async_command
+async def profile_set_wallpaper(
+    service_provider: ServiceProviderDep,
+    keybag: KeybagOption,
+    image: Annotated[Path, typer.Argument(exists=True, file_okay=True, dir_okay=False, help="JPEG or PNG image")],
+    screen: Annotated[
+        Literal["lock", "home", "both"],
+        typer.Option(help="Screen(s) to apply the wallpaper to; iOS 16+ may apply it to both regardless"),
+    ] = "home",
+) -> None:
+    """Set the wallpaper (supervised devices only)"""
+    async with MobileConfigService(lockdown=service_provider) as service:
+        await service.escalate(keybag)
+        await service.set_wallpaper(image.read_bytes(), WallpaperScreen[screen.upper()])
+    logger.info("set the wallpaper")

@@ -146,6 +146,9 @@ pymobiledevice3 profile clear-restrictions-password --keybag keybag.pem
 
 # Security status as JSON; PasscodePresent reliably tells whether a passcode is set
 pymobiledevice3 profile security-info --keybag keybag.pem
+
+# Set the wallpaper (--screen lock|home|both; iOS 16+ may apply it to both regardless)
+pymobiledevice3 profile set-wallpaper --keybag keybag.pem wallpaper.png --screen both
 ```
 
 ## Cryptexes (iOS 17+, RSD tunnel)

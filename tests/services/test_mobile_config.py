@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, call
 import pytest
 
 from pymobiledevice3.exceptions import PasscodeSetError, ProfileError
-from pymobiledevice3.services.mobile_config import MobileConfigService
+from pymobiledevice3.services.mobile_config import MobileConfigService, WallpaperScreen
 
 ACK = {"Status": "Acknowledged"}
 TOKEN = b"\x01secret-unlock-token\x02"
@@ -117,3 +117,39 @@ async def test_get_security_info_without_the_dict_raises() -> None:
 
     with pytest.raises(ProfileError, match="no SecurityInfo"):
         await service.get_security_info()
+
+
+@pytest.mark.asyncio
+async def test_set_wallpaper_sends_the_settings_item() -> None:
+    service, connection = _service([{**ACK, "Settings": [{"Item": "Wallpaper", "Status": "Acknowledged"}]}])
+
+    await service.set_wallpaper(b"\x89PNG", WallpaperScreen.BOTH)
+
+    assert connection.send_recv_plist.await_args_list == [
+        call({"RequestType": "Settings", "Settings": [{"Item": "Wallpaper", "Where": 3, "Image": b"\x89PNG"}]})
+    ]
+
+
+@pytest.mark.asyncio
+async def test_set_wallpaper_defaults_to_the_home_screen() -> None:
+    service, connection = _service([{**ACK, "Settings": [{"Status": "Acknowledged"}]}])
+
+    await service.set_wallpaper(b"img")
+
+    assert connection.send_recv_plist.await_args_list[0].args[0]["Settings"][0]["Where"] == 2
+
+
+@pytest.mark.asyncio
+async def test_set_wallpaper_rejected_item_raises() -> None:
+    service, _ = _service([{**ACK, "Settings": [{"Item": "Wallpaper", "Status": "Error"}]}])
+
+    with pytest.raises(ProfileError, match="rejected the wallpaper"):
+        await service.set_wallpaper(b"img")
+
+
+@pytest.mark.asyncio
+async def test_set_wallpaper_without_item_status_raises() -> None:
+    service, _ = _service([ACK])
+
+    with pytest.raises(ProfileError, match="no item status"):
+        await service.set_wallpaper(b"img")

@@ -30,6 +30,14 @@ class Purpose(Enum):
     PostSetupInstallation = "PostSetupInstallation"
 
 
+class WallpaperScreen(Enum):
+    """The ``Where`` value of a ``Wallpaper`` settings item."""
+
+    LOCK = 1
+    HOME = 2
+    BOTH = 3
+
+
 class MobileConfigService(LockdownService):
     """
     Manage configuration profiles and cloud (supervision) configuration.
@@ -278,6 +286,27 @@ class MobileConfigService(LockdownService):
         if not isinstance(info, dict):
             raise ProfileError("The SecurityInfo response carries no SecurityInfo dictionary")
         return cast(dict[str, Any], info)
+
+    async def set_wallpaper(self, image: bytes, screen: WallpaperScreen = WallpaperScreen.HOME) -> None:
+        """
+        Set the device wallpaper via the ``Settings`` request's ``Wallpaper`` item.
+
+        Requires a connection escalated with `escalate`. Since iOS 16 the lock and home screen
+        wallpapers form a pair, so the device may apply the image to both regardless of `screen`.
+
+        :param image: JPEG or PNG image bytes.
+        :param screen: which screen(s) to apply the wallpaper to.
+        """
+        response = await self._send_recv({
+            "RequestType": "Settings",
+            "Settings": [{"Item": "Wallpaper", "Where": screen.value, "Image": image}],
+        })
+        settings = response.get("Settings")
+        if not isinstance(settings, list) or not settings or not isinstance(settings[0], dict):
+            raise ProfileError(f"The wallpaper Settings response carries no item status: {response}")
+        item = cast(dict[str, Any], settings[0])
+        if item.get("Status") != "Acknowledged":
+            raise ProfileError(f"The device rejected the wallpaper: {item}")
 
     async def _send_recv(self, request: dict[str, Any], redact: bool = False) -> dict[str, Any]:
         response = await self.service.send_recv_plist(request)

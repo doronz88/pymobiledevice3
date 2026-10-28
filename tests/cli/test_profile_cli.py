@@ -8,6 +8,7 @@ import pytest
 
 from pymobiledevice3.cli import profile as profile_module
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.services.mobile_config import WallpaperScreen
 
 pytestmark = [pytest.mark.cli]
 
@@ -43,6 +44,9 @@ class _FakeMobileConfigService:
     async def get_security_info(self) -> dict[str, Any]:
         self.calls.append(("get_security_info", None))
         return {"PasscodePresent": False}
+
+    async def set_wallpaper(self, image: bytes, screen: WallpaperScreen) -> None:
+        self.calls.append(("set_wallpaper", (image, screen)))
 
 
 @pytest.fixture(autouse=True)
@@ -88,3 +92,16 @@ def test_security_info_escalates_and_prints_json(tmp_path: Path, capsys: pytest.
 
     assert _FakeMobileConfigService.calls == [("escalate", keybag), ("get_security_info", None)]
     assert json.loads(capsys.readouterr().out) == {"PasscodePresent": False}
+
+
+def test_set_wallpaper_escalates_and_sends_the_image(tmp_path: Path) -> None:
+    keybag = tmp_path / "keybag"
+    image = tmp_path / "wallpaper.png"
+    image.write_bytes(b"\x89PNG")
+
+    profile_module.profile_set_wallpaper(_FAKE_SERVICE_PROVIDER, keybag, image, "lock")
+
+    assert _FakeMobileConfigService.calls == [
+        ("escalate", keybag),
+        ("set_wallpaper", (b"\x89PNG", WallpaperScreen.LOCK)),
+    ]
