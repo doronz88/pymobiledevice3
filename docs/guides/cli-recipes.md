@@ -83,6 +83,9 @@ pymobiledevice3 apps query BUNDLE_ID1 BUNDLE_ID2
 # Full backup
 pymobiledevice3 backup2 backup --full DIRECTORY
 
+# Turn iCloud Backup on / off (needs a signed-in iCloud account)
+pymobiledevice3 backup2 cloud on
+
 # Preserve only selected backup payloads
 pymobiledevice3 backup2 backup --only messages DIRECTORY
 pymobiledevice3 backup2 backup --only messages --patch-manifest DIRECTORY
