@@ -302,3 +302,14 @@ def test_query_appledb_betas_reports_an_unreachable_appledb(monkeypatch: pytest.
 def test_beta_is_refused_with_an_explicit_ipsw_url() -> None:
     with pytest.raises(typer.BadParameter):
         restore_cli.ipsw_ctx_dependency(cast(Any, None), ipsw="https://example.invalid/x.ipsw", beta=True)
+
+
+def test_ipsw_dir_expands_a_tilde(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Windows
+    used: list[Optional[Path]] = []
+    monkeypatch.setattr(restore_cli, "download_ipsw_ctx", lambda url, ipsw_dir, sha256=None: used.append(ipsw_dir))
+
+    restore_cli.ipsw_ctx_dependency(cast(Any, None), ipsw=URL, ipsw_dir=Path("~/ipsw"))
+
+    assert used == [tmp_path / "ipsw"]

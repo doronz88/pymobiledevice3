@@ -36,7 +36,7 @@ access and works from normal mode as well as recovery (the product type comes
 from lockdown or from the recovery-mode device table).
 
 To stop downloading the same multi-GB IPSW on every run, pass `--ipsw-dir`
-(or set `PYMOBILEDEVICE3_IPSW_DIR` once). Downloads then go into that directory
+(or set `PYMOBILEDEVICE3_IPSW_DIR` once; a leading `~` is expanded). Downloads then go into that directory
 under Apple's filename (e.g. `iPhone12,1_27.2_24B119_Restore.ipsw`) and are
 kept. A file already there with that name is used as-is, without re-hashing,
 and the interactive picker marks such builds `(local)`. A new download is

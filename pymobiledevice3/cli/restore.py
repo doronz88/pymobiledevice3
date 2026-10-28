@@ -280,6 +280,9 @@ def ipsw_ctx_dependency(
         ),
     ] = False,
 ) -> contextlib.AbstractAsyncContextManager[IPSW]:
+    if ipsw_dir is not None:
+        # The env var is often set quoted, leaving "~" for us to expand
+        ipsw_dir = ipsw_dir.expanduser()
     if ipsw and not ipsw.startswith(("http://", "https://")):
         return ipsw_ctx(ipsw)
 
