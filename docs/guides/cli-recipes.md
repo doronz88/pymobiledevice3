@@ -86,6 +86,11 @@ pymobiledevice3 apps query BUNDLE_ID1 BUNDLE_ID2
 # Dump contacts / calendars / Safari bookmarks / mail accounts without a backup
 pymobiledevice3 mobilesync dump contacts
 
+# Add or modify records (keyed by record id from `dump`; unknown ids add new records), then delete one
+# Use a plist instead of JSON for records with dates, such as calendar events
+pymobiledevice3 mobilesync push contacts changes.json
+pymobiledevice3 mobilesync delete contacts RECORD_ID
+
 # Full backup
 pymobiledevice3 backup2 backup --full DIRECTORY
 
