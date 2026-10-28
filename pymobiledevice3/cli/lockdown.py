@@ -286,3 +286,13 @@ async def lockdown_assistive_touch(
     else:
         # enable/disable
         await service_provider.set_assistive_touch(state == "on")
+
+
+@cli.command("auto-answer")
+@async_command
+async def lockdown_auto_answer(
+    service_provider: ServiceProviderDep,
+    state: Annotated[Literal["on", "off"], typer.Argument()],
+) -> None:
+    """set whether incoming calls are answered automatically (Accessibility > Call Audio Routing)"""
+    await service_provider.set_auto_answer_calls(state == "on")

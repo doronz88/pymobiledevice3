@@ -111,6 +111,18 @@ class LockdownServiceProvider:
         value = await self.get_value(domain="com.apple.Accessibility", key="AssistiveTouchEnabledByiTunes")
         return bool(value)
 
+    async def set_auto_answer_calls(self, value: bool) -> None:
+        """Enable or disable Accessibility's Auto-Answer Calls (``CallAudioRoutingAutoAnswerEnabledPreference``
+        key in the ``com.apple.Accessibility`` domain).
+
+        lockdownd forwards any key of this domain to libAccessibility, which stores it as an Accessibility
+        preference. Reading it back through lockdownd is not possible, as it only serves the
+        ``*EnabledByiTunes`` keys.
+
+        :param value: True to auto-answer incoming calls, False to stop doing so.
+        """
+        await self.set_value(int(value), "com.apple.Accessibility", "CallAudioRoutingAutoAnswerEnabledPreference")
+
     async def set_voice_over(self, value: bool) -> None:
         """Enable or disable VoiceOver (``VoiceOverTouchEnabledByiTunes`` key in the
         ``com.apple.Accessibility`` domain).
