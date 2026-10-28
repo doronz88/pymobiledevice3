@@ -196,13 +196,6 @@ class RestoreOptions:
             self.HostHasFixFor99053849 = True
             self.SystemImageFormat = "AEAWrappedDiskImage"
             self.WaitForDeviceConnectionToFinishStateMachine = False
-            self.SupportedAsyncDataTypes = {
-                "BasebandData": False,
-                "RecoveryOSASRImage": False,
-                "StreamedImageDecryptionKey": False,
-                "SystemImageData": False,
-                "URLAsset": True,
-            }
 
             if sep is not None:
                 required_capacity = sep.get("RequiredCapacity")
@@ -211,6 +204,15 @@ class RestoreOptions:
                     self.TZ0RequiredCapacity = required_capacity
 
             self.PersonalizedDuringPreflight = True
+
+        # Added for iOS 18.0 and macOS 15.0
+        self.SupportedAsyncDataTypes = {
+            "BasebandData": False,
+            "RecoveryOSASRImage": False,
+            "StreamedImageDecryptionKey": False,
+            "SystemImageData": False,
+            "URLAsset": True,
+        }
 
         self.RootToInstall = False
         self.UUID = str(uuid.uuid4()).upper()
