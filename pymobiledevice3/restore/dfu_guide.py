@@ -30,7 +30,7 @@ else:
     get_io_services_by_type = None
 
 KIS_PRODUCT_ID = 0x1881  # A16 and later in DFU mode (libirecovery 4472436)
-POLL_INTERVAL = 0.25
+POLL_INTERVAL = 0.1
 
 
 class UsbState(Enum):
@@ -43,24 +43,37 @@ class UsbState(Enum):
     GONE = "not on USB"
 
 
-def _usb_product_ids() -> list[tuple[int, int]]:
-    """``(idVendor, idProduct)`` of every USB device on the host.
+@dataclass(frozen=True)
+class _UsbEntry:
+    vendor_id: int
+    product_id: int
+    # the USB serial number string; only known where it can be read without opening the device (IOKit)
+    serial: Optional[str] = None
+
+
+def _usb_devices() -> list[_UsbEntry]:
+    """Every USB device on the host.
 
     On macOS this asks IOKit: libusb does not list a device in KIS mode there (Apple's KIS driver claims it), so
-    an A16-or-later device in DFU mode would look absent.
+    an A16-or-later device in DFU mode would look absent. IOKit also has each device's serial number at hand.
     """
     if get_io_services_by_type is not None:
         return [
-            (cast(int, entry.properties.get("idVendor", 0)), cast(int, entry.properties.get("idProduct", 0)))
+            _UsbEntry(
+                cast(int, entry.properties.get("idVendor", 0)),
+                cast(int, entry.properties.get("idProduct", 0)),
+                cast(Optional[str], entry.properties.get("USB Serial Number")),
+            )
             for entry in get_io_services_by_type("IOUSBHostDevice")
         ]
-    return [(device.idVendor, device.idProduct) for device in cast(list[UsbDevice], list(find(find_all=True)))]
+    return [_UsbEntry(device.idVendor, device.idProduct) for device in cast(list[UsbDevice], list(find(find_all=True)))]
 
 
-def special_mode_states() -> set[UsbState]:
-    """The Recovery/DFU/KIS devices currently on USB, by their USB product IDs (no device is opened)."""
+def special_mode_states(devices: Optional[list[_UsbEntry]] = None) -> set[UsbState]:
+    """The Recovery/DFU/KIS devices on USB, by their USB product IDs (no device is opened)."""
     states: set[UsbState] = set()
-    for vendor_id, product_id in _usb_product_ids():
+    for device in _usb_devices() if devices is None else devices:
+        vendor_id, product_id = device.vendor_id, device.product_id
         if vendor_id != APPLE_VENDOR_ID:
             continue
         if product_id == KIS_PRODUCT_ID:
@@ -77,14 +90,20 @@ async def current_state(udid: Optional[str]) -> UsbState:
     """
     Where the device is: a special mode wins (it is what the guide waits for), then normal mode for ``udid``.
     """
-    states = special_mode_states()
+    devices = _usb_devices()
+    states = special_mode_states(devices)
     for state in (UsbState.KIS, UsbState.DFU, UsbState.RECOVERY):
         if state in states:
             return state
-    if udid is not None:
-        for device in await usbmux.list_devices():
-            if device.is_usb and device.matches_udid(udid):
-                return UsbState.NORMAL
+    if udid is None:
+        return UsbState.GONE
+    if get_io_services_by_type is not None:
+        # IOKit spells the UDID without its separator; the same snapshot answers right away
+        wanted = udid.replace("-", "")
+        return UsbState.NORMAL if any(device.serial == wanted for device in devices) else UsbState.GONE
+    for device in await usbmux.list_devices():
+        if device.is_usb and device.matches_udid(udid):
+            return UsbState.NORMAL
     return UsbState.GONE
 
 
@@ -113,8 +132,12 @@ FACE_ID_IPHONE = ButtonSequence(
     name="iPhone 8 or later",
     buttons="VOLUME UP, VOLUME DOWN and the SIDE button",
     steps=(
-        Step("Press and quickly release [b]VOLUME UP[/b], then [b]VOLUME DOWN[/b]", 2),
-        Step("Press and [b]hold the SIDE button[/b] until the screen goes black", 12, until=_SCREEN_BLACK),
+        Step(
+            "Press and quickly release [b]VOLUME UP[/b], then [b]VOLUME DOWN[/b], then press and "
+            "[b]hold the SIDE button[/b] until the screen goes black",
+            15,
+            until=_SCREEN_BLACK,
+        ),
         Step("Keep holding SIDE, and also press and [b]hold VOLUME DOWN[/b]", 5),
         Step("[b]Release SIDE[/b], keep holding VOLUME DOWN", 10, until=_IN_DFU),
     ),
@@ -148,10 +171,11 @@ IPAD_WITHOUT_HOME_BUTTON = ButtonSequence(
     buttons="both VOLUME buttons and the TOP button",
     steps=(
         Step(
-            "Press and quickly release the [b]VOLUME button nearest the TOP button[/b], then the [b]other VOLUME[/b]",
-            2,
+            "Press and quickly release the [b]VOLUME button nearest the TOP button[/b], then the "
+            "[b]other VOLUME[/b], then press and [b]hold the TOP button[/b] until the screen goes black",
+            15,
+            until=_SCREEN_BLACK,
         ),
-        Step("Press and [b]hold the TOP button[/b] until the screen goes black", 12, until=_SCREEN_BLACK),
         Step("Keep holding TOP, and also press and [b]hold VOLUME DOWN[/b]", 5),
         Step("[b]Release TOP[/b], keep holding VOLUME DOWN", 10, until=_IN_DFU),
     ),

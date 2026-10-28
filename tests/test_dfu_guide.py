@@ -26,23 +26,33 @@ def test_iphone_sequence(product_type: str, expected: Optional[ButtonSequence]) 
     assert dfu_guide.iphone_sequence(product_type) is expected
 
 
-def test_special_mode_states_go_by_product_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    product_ids = [
-        (APPLE_VENDOR_ID, dfu_guide.KIS_PRODUCT_ID),
-        (APPLE_VENDOR_ID, Mode.RECOVERY_MODE_2.value),
-        (APPLE_VENDOR_ID, 0x12A8),  # a booted iPhone
-        (0x1234, Mode.DFU_MODE.value),  # not Apple
+def test_special_mode_states_go_by_product_id() -> None:
+    devices = [
+        dfu_guide._UsbEntry(APPLE_VENDOR_ID, dfu_guide.KIS_PRODUCT_ID),
+        dfu_guide._UsbEntry(APPLE_VENDOR_ID, Mode.RECOVERY_MODE_2.value),
+        dfu_guide._UsbEntry(APPLE_VENDOR_ID, 0x12A8),  # a booted iPhone
+        dfu_guide._UsbEntry(0x1234, Mode.DFU_MODE.value),  # not Apple
     ]
-    monkeypatch.setattr(dfu_guide, "_usb_product_ids", lambda: product_ids)
-    assert dfu_guide.special_mode_states() == {UsbState.KIS, UsbState.RECOVERY}
+    assert dfu_guide.special_mode_states(devices) == {UsbState.KIS, UsbState.RECOVERY}
 
 
-def test_usb_product_ids_come_from_iokit_where_available(monkeypatch: pytest.MonkeyPatch) -> None:
-    # libusb does not list a KIS device on macOS; IOKit does
-    entries = [SimpleNamespace(properties={"idVendor": APPLE_VENDOR_ID, "idProduct": dfu_guide.KIS_PRODUCT_ID})]
+def _iokit(monkeypatch: pytest.MonkeyPatch, *devices: tuple[int, Optional[str]]) -> None:
+    entries = [
+        SimpleNamespace(properties={"idVendor": APPLE_VENDOR_ID, "idProduct": product_id, "USB Serial Number": serial})
+        for product_id, serial in devices
+    ]
     monkeypatch.setattr(dfu_guide, "get_io_services_by_type", lambda service_type: entries)
     monkeypatch.setattr(dfu_guide, "find", lambda find_all=False: [])
-    assert dfu_guide._usb_product_ids() == [(APPLE_VENDOR_ID, dfu_guide.KIS_PRODUCT_ID)]
+
+
+@pytest.mark.asyncio
+async def test_iokit_sees_kis_and_the_booted_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    # libusb does not list a KIS device on macOS; IOKit does, and has the booted device's UDID too
+    _iokit(monkeypatch, (0x12A8, "00008150001074523440401C"))
+    assert await dfu_guide.current_state("00008150-001074523440401C") == UsbState.NORMAL
+    assert await dfu_guide.current_state("00008150-0000000000000000") == UsbState.GONE
+    _iokit(monkeypatch, (dfu_guide.KIS_PRODUCT_ID, None))
+    assert await dfu_guide.current_state("00008150-001074523440401C") == UsbState.KIS
 
 
 _QUICK = ButtonSequence(
