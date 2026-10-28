@@ -693,17 +693,28 @@ def any_service_provider_dependency(
 
         return _record_resolved(_prompt_device(devices))
 
+    return _usbmux_service_provider(udid, usbmux)
+
+
+def _usbmux_service_provider(
+    udid: Optional[str], usbmux: Optional[str], autopair: bool = True
+) -> LockdownServiceProvider:
+    """Connect to ``udid``, the only USB device, or the USB device the user picks."""
     if udid is not None:
-        return _record_resolved(cli_loop.run_until_complete(create_using_usbmux(serial=udid, usbmux_address=usbmux)))
+        return _record_resolved(
+            cli_loop.run_until_complete(create_using_usbmux(serial=udid, autopair=autopair, usbmux_address=usbmux))
+        )
 
     devices = cli_loop.run_until_complete(
         usbmuxd.select_devices_by_connection_type(connection_type="USB", usbmux_address=usbmux)
     )
     if len(devices) <= 1:
-        return _record_resolved(cli_loop.run_until_complete(create_using_usbmux(usbmux_address=usbmux)))
+        return _record_resolved(
+            cli_loop.run_until_complete(create_using_usbmux(autopair=autopair, usbmux_address=usbmux))
+        )
 
     lockdownds = [
-        cli_loop.run_until_complete(create_using_usbmux(serial=device.serial, usbmux_address=usbmux))
+        cli_loop.run_until_complete(create_using_usbmux(serial=device.serial, autopair=autopair, usbmux_address=usbmux))
         for device in devices
     ]
     return _record_resolved(_prompt_device(lockdownds))
@@ -713,6 +724,14 @@ def no_autopair_service_provider_dependency(
     rsd_service_provider: Annotated[
         Optional[RemoteServiceDiscoveryService],
         Depends(make_rsd_dependency(allow_none=True)),
+    ] = None,
+    usbmux: Annotated[
+        Optional[str],
+        typer.Option(
+            envvar=USBMUX_ENV_VARS,
+            help=USBMUX_OPTION_HELP,
+            rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
+        ),
     ] = None,
     udid: Annotated[
         Optional[str],
@@ -730,7 +749,7 @@ def no_autopair_service_provider_dependency(
     if rsd_service_provider is not None:
         return _record_resolved(rsd_service_provider)
 
-    return _record_resolved(cli_loop.run_until_complete(create_using_usbmux(serial=udid, autopair=False)))
+    return _usbmux_service_provider(udid, usbmux, autopair=False)
 
 
 def _narrow_to_lockdown_client(ctx: typer.Context, service_provider: LockdownServiceProvider) -> LockdownClient:
