@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import plistlib
@@ -5,9 +6,10 @@ import signal
 import struct
 import subprocess
 import sys
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import FrameType
 from typing import Annotated, Optional
 from zipfile import ZipFile
 
@@ -17,13 +19,16 @@ from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, ServiceProviderDep, async_command, print_json
 from pymobiledevice3.exceptions import RoutableTunnelRequiredError, RSDRequiredError
-from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
+from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.debugserver_applist import DebugServerAppList
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.tcp_forwarder import LockdownTcpForwarder
+
+DEBUGPROXY_SERVICE_NAME = "com.apple.internal.dt.remote.debugproxy"
 
 DEBUGSERVER_CONNECTION_STEPS = """
 Follow the following connections steps from LLDB:
@@ -74,7 +79,7 @@ async def debugserver_start_server(
     if Version(service_provider.product_version) < Version("17.0"):
         service_name = "com.apple.debugserver.DVTSecureSocketProxy"
     else:
-        service_name = "com.apple.internal.dt.remote.debugproxy"
+        service_name = DEBUGPROXY_SERVICE_NAME
 
     if local_port is not None:
         print(DEBUGSERVER_CONNECTION_STEPS.format(host=host, port=local_port))
@@ -146,15 +151,6 @@ async def debugserver_lldb(
         logger.error("lldb is only supported on iOS >= 17.0")
         raise typer.Exit(1)
 
-    if service_provider.is_in_process_tunnel:
-        # The flow spawns an external lldb and feeds it `process connect connect://[<device>]:<port>`;
-        # that address lives only on this process's userspace stack and is unreachable from lldb.
-        raise RoutableTunnelRequiredError(
-            "debugserver lldb cannot run over a userspace tunnel: it drives an external lldb process, "
-            "which cannot reach the in-process tunnel address. Use a kernel-routable tunnel instead "
-            "(run `sudo pymobiledevice3 remote tunneld` and drop --userspace, or use --tunnel)."
-        )
-
     commands: list[str] = []
     temp_dir = None
     local_app: Optional[Path] = None
@@ -225,7 +221,7 @@ async def debugserver_lldb(
 
     commands.append("platform select remote-ios")
 
-    async with InstallationProxyService(await create_using_usbmux()) as installation_proxy:
+    async with InstallationProxyService(lockdown=service_provider) as installation_proxy:
         if install_source is not None:
             logger.info("Installing app")
             await installation_proxy.install_from_local(install_source)
@@ -252,35 +248,65 @@ async def debugserver_lldb(
                 launched_suspended = True
             logger.info(f"Attaching to pid {bundle_mode_attach_pid}")
 
-    debugserver_port = service_provider.get_service_port("com.apple.internal.dt.remote.debugproxy")
+    try:
+        # lldb is an external process, so it cannot reach an in-process (userspace) tunnel address.
+        # Forwarding debugproxy to a loopback port works the same over every transport.
+        async with _forward_debugproxy(service_provider) as local_port:
+            # Add connection and launch commands
+            commands.append(f"process connect connect://127.0.0.1:{local_port}")
+            if bundle_mode_attach_pid is not None:
+                commands.append(f"process attach --pid {bundle_mode_attach_pid}")
 
-    # Add connection and launch commands
-    commands.append(f"process connect connect://[{service_provider.service.address[0]}]:{debugserver_port}")
-    if bundle_mode_attach_pid is not None:
-        commands.append(f"process attach --pid {bundle_mode_attach_pid}")
+            if breakpoints:
+                for bp in breakpoints:
+                    commands.append(f'breakpoint set -n "{bp}"')
 
-    if breakpoints:
-        for bp in breakpoints:
-            commands.append(f'breakpoint set -n "{bp}"')
+            if launch and local_app is not None:
+                commands.append("process launch")
+            elif launch and launched_suspended:
+                commands.append("process continue")
 
-    if launch and local_app is not None:
-        commands.append("process launch")
-    elif launch and launched_suspended:
-        commands.append("process continue")
+            if user_commands:
+                # Add user commands
+                commands += user_commands
 
-    if user_commands:
-        # Add user commands
-        commands += user_commands
+            logger.info("Starting lldb with automated setup and connection")
+            await _run_lldb(lldb_command, commands)
+    finally:
+        if temp_dir is not None:
+            temp_dir.cleanup()
 
-    logger.info("Starting lldb with automated setup and connection")
 
+@asynccontextmanager
+async def _forward_debugproxy(service_provider: LockdownServiceProvider) -> AsyncGenerator[int, None]:
+    """Forward debugproxy to an ephemeral loopback port for the lifetime of the context."""
+    listening = asyncio.Event()
+    forwarder = LockdownTcpForwarder(service_provider, 0, DEBUGPROXY_SERVICE_NAME, listening_event=listening)
+    forwarder_task = asyncio.create_task(forwarder.start())
+    listening_task = asyncio.create_task(listening.wait())
+    try:
+        await asyncio.wait({forwarder_task, listening_task}, return_when=asyncio.FIRST_COMPLETED)
+        if not listening.is_set():
+            # The listener failed to bind; surface its error
+            forwarder_task.result()
+        port = forwarder.listening_port
+        assert port is not None  # set once the listener is up
+        yield port
+    finally:
+        listening_task.cancel()
+        forwarder.stop()
+        await asyncio.gather(forwarder_task, return_exceptions=True)
+
+
+async def _run_lldb(lldb_command: str, commands: list[str]) -> None:
+    """Run lldb on a pty, feed it the setup commands, then hand the terminal over to the user."""
     # Works only on unix-based systems, so keep these imports here
     import fcntl
     import pty
-    import select as select_module
     import termios
     import tty
 
+    loop = asyncio.get_running_loop()
     master, slave = pty.openpty()
 
     process = None  # Initialize process variable for signal handler
@@ -300,10 +326,7 @@ async def debugserver_lldb(
     resize_pty()
 
     # Set up signal handler for window resize
-    def handle_sigwinch(signum: int, frame: Optional[FrameType]) -> None:
-        resize_pty()
-
-    old_sigwinch_handler = signal.signal(signal.SIGWINCH, handle_sigwinch)
+    loop.add_signal_handler(signal.SIGWINCH, resize_pty)
 
     # Save original terminal settings
     old_tty = termios.tcgetattr(sys.stdin)
@@ -322,36 +345,38 @@ async def debugserver_lldb(
         for command in commands:
             os.write(master, (command + "\n").encode())
 
-        # Now redirect stdin from the terminal to lldb so user can interact
-        while True:
-            rlist, _, _ = select_module.select([sys.stdin, master], [], [])
+        # Now redirect stdin from the terminal to lldb so user can interact. Relay on the event loop
+        # so the debugproxy forwarder keeps running alongside.
+        done = loop.create_future()
 
-            if sys.stdin in rlist:
-                # User typed something
-                data = os.read(sys.stdin.fileno(), 1024)
-                if not data:
-                    break
-                os.write(master, data)
+        def finish() -> None:
+            if not done.done():
+                done.set_result(None)
 
-            if master in rlist:
-                # lldb has output
-                try:
-                    data = os.read(master, 1024)
-                    if not data:
-                        break
-                    os.write(sys.stdout.fileno(), data)
-                except OSError:
-                    break
+        def relay(src: int, dst: int) -> None:
+            try:
+                data = os.read(src, 1024)
+            except OSError:
+                data = b""
+            if not data:
+                finish()
+                return
+            os.write(dst, data)
+
+        loop.add_reader(sys.stdin.fileno(), relay, sys.stdin.fileno(), master)
+        loop.add_reader(master, relay, master, sys.stdout.fileno())
+        try:
+            await done
+        finally:
+            loop.remove_reader(sys.stdin.fileno())
+            loop.remove_reader(master)
     except (KeyboardInterrupt, OSError):
         pass
     finally:
         # Restore terminal settings
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_tty)
-        # Restore original SIGWINCH handler
-        signal.signal(signal.SIGWINCH, old_sigwinch_handler)
+        loop.remove_signal_handler(signal.SIGWINCH)
         os.close(master)
         if process is not None:
             process.terminate()
             process.wait()
-        if temp_dir is not None:
-            temp_dir.cleanup()
