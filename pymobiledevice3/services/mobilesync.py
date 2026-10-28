@@ -1,4 +1,5 @@
-from contextlib import suppress
+from collections.abc import AsyncGenerator, Mapping
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, Optional, cast
 
@@ -8,6 +9,7 @@ from pymobiledevice3.services.device_link import DeviceLink, DLMessage
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 EMPTY_PARAMETER_STRING = "___EmptyParameterString___"
+ENTITY_NAME_KEY = "com.apple.syncservices.RecordEntityName"
 
 # Every data class iOS still ships a data source for (MobileSync.framework), mapped to the storage version
 # the host announces; the device replies with its own. com.apple.Notes is refused ("No Data Store").
@@ -25,10 +27,10 @@ class MobileSyncError(PyMobileDevice3Exception):
 
 class MobileSyncService(LockdownService):
     """
-    Read the device's contacts, calendars, Safari bookmarks and mail accounts via the ``com.apple.mobilesync``
-    service, the iTunes-era sync protocol (DeviceLink transport).
+    Read and change the device's contacts, calendars, Safari bookmarks and mail accounts via the
+    ``com.apple.mobilesync`` service, the iTunes-era sync protocol (DeviceLink transport).
 
-    Sessions only pull records from the device; nothing is sent back, so device data is left unchanged.
+    `get_all_records` only reads; `push_changes` adds, modifies or deletes records.
     """
 
     SERVICE_NAME = "com.apple.mobilesync"
@@ -64,10 +66,61 @@ class MobileSyncService(LockdownService):
             ``com.apple.syncservices.RecordEntityName``.
         :raises MobileSyncError: The device refused or cancelled the sync session.
         """
+        async with self._session(data_class, data_class_version):
+            # The device then waits for the host's changes; the session finishes without sending any.
+            return await self._receive_device_changes(data_class, "SDMessageGetAllRecordsFromDevice")
+
+    async def push_changes(
+        self,
+        data_class: str,
+        changes: Mapping[str, Optional[Mapping[str, Any]]],
+        data_class_version: Optional[int] = None,
+    ) -> dict[str, str]:
+        """
+        Add, modify or delete records of a data class on the device.
+
+        A key that is a device record identifier modifies that record; any other key adds a new record.
+        A record names its entity type under ``com.apple.syncservices.RecordEntityName`` and uses the field
+        names `get_all_records` returns.
+
+        :param data_class: Data class to change, e.g. ``com.apple.Contacts``.
+        :param changes: Records keyed by identifier; ``None`` deletes the record with that identifier.
+        :param data_class_version: Storage version to announce; defaults to the one in `DATA_CLASS_VERSIONS`.
+        :returns: The device identifiers of added records, keyed by the identifiers given in ``changes``.
+        :raises MobileSyncError: The device refused, cancelled or failed to commit the changes.
+        """
+        async with self._session(data_class, data_class_version):
+            # Only the device's changes since the last session are pulled, not every record.
+            await self._receive_device_changes(data_class, "SDMessageGetChangesFromDevice")
+            entity_names = sorted({record[ENTITY_NAME_KEY] for record in changes.values() if record is not None})
+            await self.service.send_plist([
+                "SDMessageProcessChanges",
+                data_class,
+                {
+                    identifier: EMPTY_PARAMETER_STRING if record is None else dict(record)
+                    for identifier, record in changes.items()
+                },
+                False,  # no more changes follow
+                {
+                    "SyncDeviceLinkEntityNamesKey": entity_names,
+                    # ask the device to report the identifiers it assigns to added records
+                    "SyncDeviceLinkAllRecordsOfPulledEntityTypeSentKey": True,
+                },
+            ])
+            reply = await self._receive()
+            if reply[0] != "SDMessageRemapRecordIdentifiers":
+                raise ProtocolError(f"Unexpected reply to {data_class} changes: {reply}")
+            return cast(dict[str, str], reply[2]) if isinstance(reply[2], dict) else {}
+
+    @asynccontextmanager
+    async def _session(self, data_class: str, data_class_version: Optional[int]) -> AsyncGenerator[None, None]:
+        """
+        Run one sync session of a data class: finish it on success, cancel it on an error so the connection
+        can start another.
+        """
         if data_class_version is None:
             data_class_version = DATA_CLASS_VERSIONS[data_class]
         await self._get_device_link()
-
         await self.service.send_plist([
             "SDMessageSyncDataClassWithDevice",
             data_class,
@@ -81,9 +134,24 @@ class MobileSyncService(LockdownService):
             raise MobileSyncError(f"The device refused to sync {data_class}: {reply[2]}")
         if reply[0] != "SDMessageSyncDataClassWithComputer":
             raise ProtocolError(f"Unexpected reply to a {data_class} sync request: {reply}")
+        try:
+            yield
+        except MobileSyncError:
+            # the device cancelled the session itself
+            raise
+        except Exception as e:
+            with suppress(ConnectionTerminatedError):
+                await self.service.send_plist(["SDMessageCancelSession", data_class, str(e)])
+            raise
+        await self.service.send_plist(["SDMessageFinishSessionOnDevice", data_class])
+        reply = await self._receive()
+        if reply[0] != "SDMessageDeviceFinishedSession":
+            raise ProtocolError(f"Unexpected reply when finishing the {data_class} sync session: {reply}")
 
+    async def _receive_device_changes(self, data_class: str, request: str) -> dict[str, Any]:
+        """Request the device's records or changes and acknowledge them until it is ready for the host's."""
         records: dict[str, Any] = {}
-        await self.service.send_plist(["SDMessageGetAllRecordsFromDevice", data_class])
+        await self.service.send_plist([request, data_class])
         while True:
             message = await self._receive()
             if message[0] != "SDMessageProcessChanges":
@@ -95,15 +163,9 @@ class MobileSyncService(LockdownService):
             # index 3 is "has more changes"
             if not message[3]:
                 break
-
-        # The device now waits for the host's changes; finish the session without sending any.
         reply = await self._receive()
         if reply[0] != "SDMessageDeviceReadyToReceiveChanges":
             raise ProtocolError(f"Unexpected message after receiving {data_class} records: {reply}")
-        await self.service.send_plist(["SDMessageFinishSessionOnDevice", data_class])
-        reply = await self._receive()
-        if reply[0] != "SDMessageDeviceFinishedSession":
-            raise ProtocolError(f"Unexpected reply when finishing the {data_class} sync session: {reply}")
         return records
 
     async def close(self) -> None:

@@ -85,6 +85,7 @@ Ask before running commands that can:
 - erase, restore, reboot, or move the device into or out of recovery
 - install or remove apps, profiles, provisioning data, or activation state
 - write or delete files on AFC or app containers
+- add, modify or delete contacts, calendar events, bookmarks or mail accounts (`mobilesync push`/`delete`)
 - toggle Developer Mode, mount developer images, simulate location, or signal/kill processes
 - drive the UI through WDA or automation sessions in ways that change app/device state
 
