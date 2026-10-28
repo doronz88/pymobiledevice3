@@ -6,7 +6,7 @@ import sqlite3
 import struct
 import time
 from collections.abc import Iterable, Iterator
-from contextlib import closing
+from contextlib import asynccontextmanager, closing
 from pathlib import Path
 from ssl import SSLEOFError
 from unittest.mock import AsyncMock, Mock, call
@@ -206,6 +206,28 @@ async def test_observe_backup_notifications_registers_passcode_and_backup_notifi
 
     notification_proxy.notify_register_dispatch.assert_has_awaits([
         call(notification) for notification in BACKUP_OBSERVED_NOTIFICATIONS
+    ])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_set_cloud_backup_sends_enable_cloud_backup(tmp_path: Path, enabled: bool) -> None:
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(return_value=["DLMessageProcessMessage", {"ErrorCode": 0}])
+    device_link = DeviceLink(service, tmp_path)
+
+    @asynccontextmanager
+    async def fake_device_link(_backup_directory: Path):
+        yield device_link
+
+    backup = object.__new__(Mobilebackup2Service)
+    backup.lockdown = Mock(udid="UDID")
+    backup.device_link = fake_device_link  # pyright: ignore[reportAttributeAccessIssue]
+    await backup.set_cloud_backup(enabled)
+
+    service.send_plist.assert_awaited_once_with([
+        "DLMessageProcessMessage",
+        {"MessageName": "EnableCloudBackup", "TargetIdentifier": "UDID", "CloudBackupState": enabled},
     ])
 
 

@@ -325,6 +325,19 @@ async def encryption(
 
 @cli.command()
 @async_command
+async def cloud(
+    service_provider: ServiceProviderDep,
+    mode: Annotated[Literal["on", "off"], typer.Argument(case_sensitive=False)],
+) -> None:
+    """
+    Turn iCloud Backup on / off.
+    """
+    async with Mobilebackup2Service(service_provider) as backup_client:
+        await backup_client.set_cloud_backup(mode.lower() == "on")
+
+
+@cli.command()
+@async_command
 async def change_password(
     service_provider: ServiceProviderDep,
     old_password: str,

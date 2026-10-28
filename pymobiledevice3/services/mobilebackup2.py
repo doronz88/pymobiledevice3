@@ -544,6 +544,24 @@ class Mobilebackup2Service(LockdownService):
             await dl.send_process_message(message)
             await dl.dl_loop()
 
+    async def set_cloud_backup(self, enabled: bool) -> None:
+        """
+        Turn iCloud Backup on or off.
+
+        The device refuses with ``MBErrorDomain/1`` when no iCloud account is signed in.
+
+        :param enabled: True to turn iCloud Backup on, False to turn it off.
+        """
+        # no files are exchanged, but the device link needs a root directory
+        with tempfile.TemporaryDirectory() as root:
+            async with self.device_link(Path(root)) as dl:
+                await dl.send_process_message({
+                    "MessageName": "EnableCloudBackup",
+                    "TargetIdentifier": self.lockdown.udid,
+                    "CloudBackupState": enabled,
+                })
+                await dl.dl_loop()
+
     async def erase_device(self, backup_directory: Union[str, Path] = ".") -> None:
         """
         Erase the device, restoring it to factory state.
