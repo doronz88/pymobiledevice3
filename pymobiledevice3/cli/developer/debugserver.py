@@ -156,7 +156,6 @@ async def debugserver_lldb(
     local_app: Optional[Path] = None
     install_source: Optional[Path] = None
     bundle_identifier: Optional[str] = None
-    launched_suspended = False
     bundle_mode_attach_pid: Optional[int] = None
 
     target = project_or_ipa_or_bundle_id.strip()
@@ -245,7 +244,6 @@ async def debugserver_lldb(
                 bundle_mode_attach_pid = await process_control.launch(
                     bundle_id=bundle_identifier, kill_existing=False, start_suspended=True
                 )
-                launched_suspended = True
             logger.info(f"Attaching to pid {bundle_mode_attach_pid}")
 
     try:
@@ -263,7 +261,8 @@ async def debugserver_lldb(
 
             if launch and local_app is not None:
                 commands.append("process launch")
-            elif launch and launched_suspended:
+            elif launch:
+                # Attaching stops the process, whether we launched it suspended or it was already running
                 commands.append("process continue")
 
             if user_commands:
