@@ -11,10 +11,17 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.hazmat.primitives.serialization.pkcs7 import PKCS7Options, PKCS7SignatureBuilder
 
-from pymobiledevice3.exceptions import CloudConfigurationAlreadyPresentError, ConnectionTerminatedError, ProfileError
+from pymobiledevice3.exceptions import (
+    CloudConfigurationAlreadyPresentError,
+    ConnectionTerminatedError,
+    PasscodeSetError,
+    ProfileError,
+)
 from pymobiledevice3.services.lockdown_service import LockdownService
 
 ERROR_CLOUD_CONFIGURATION_ALREADY_PRESENT = 14002
+KEYBAG_ERROR_DOMAIN = "DMCKeybagErrorDomain"
+ERROR_KEYBAG_PASSCODE_SET = 37002
 GLOBAL_HTTP_PROXY_UUID = "86a52338-52f7-4c09-b005-52baf3dc4882"
 GLOBAL_RESTRICTIONS_UUID = "e22a0a66-08a8-43f5-9bbc-5279af35bb2b"
 
@@ -217,14 +224,67 @@ class MobileConfigService(LockdownService):
         })
         await self._send_recv({"RequestType": "RemoveProfile", "ProfileIdentifier": data})
 
-    async def _send_recv(self, request: dict[str, Any]) -> dict[str, Any]:
+    async def request_unlock_token(self) -> bytes:
+        """
+        Fetch the passcode unlock token, which `clear_passcode` can later use to remove a passcode.
+
+        Requires a connection escalated with `escalate`. The device must have no passcode set:
+        while one is active the keybag refuses to mint a token.
+
+        :returns: the raw unlock token.
+        :raises PasscodeSetError: the device has a passcode set.
+        """
+        response = await self._send_recv({"RequestType": "RequestUnlockToken"}, redact=True)
+        token = response.get("UnlockToken")
+        if not isinstance(token, bytes):
+            raise ProfileError("The RequestUnlockToken response carries no UnlockToken")
+        return token
+
+    async def clear_passcode(self, unlock_token: bytes) -> None:
+        """
+        Remove the device passcode without knowing it.
+
+        Requires a connection escalated with `escalate`. The device drops this host's pairing
+        afterwards, as it does whenever the passcode changes; re-pair with `pair_supervised`.
+
+        :param unlock_token: a token previously fetched by `request_unlock_token`, before the
+            passcode was set.
+        """
+        await self._send_recv({"RequestType": "ClearPasscode", "UnlockToken": unlock_token}, redact=True)
+
+    async def clear_restrictions_password(self) -> None:
+        """
+        Clear the Screen Time (restrictions) passcode. No unlock token is needed.
+
+        Requires a connection escalated with `escalate`. iOS 27.2 always fails it with a
+        ``ScreenTimeSettingsServiceClientError``: the device's own sandbox denies mc_mobile_tunnel
+        the lookup of ``com.apple.ScreenTimeSettingsAgent.private``.
+        """
+        await self._send_recv({"RequestType": "ClearRestrictionsPassword"})
+
+    async def _send_recv(self, request: dict[str, Any], redact: bool = False) -> dict[str, Any]:
         response = await self.service.send_recv_plist(request)
         if response.get("Status", None) != "Acknowledged":
-            error_chain = response.get("ErrorChain")
-            if error_chain is not None:
-                error_code = cast(list[dict[str, Any]], error_chain)[0]["ErrorCode"]
+            error_chain = cast(list[dict[str, Any]], response.get("ErrorChain") or [])
+            if error_chain:
+                error_code = error_chain[0].get("ErrorCode")
                 if error_code == ERROR_CLOUD_CONFIGURATION_ALREADY_PRESENT:
                     raise CloudConfigurationAlreadyPresentError()
+            if any(
+                error.get("ErrorDomain") == KEYBAG_ERROR_DOMAIN and error.get("ErrorCode") == ERROR_KEYBAG_PASSCODE_SET
+                for error in error_chain
+            ):
+                raise PasscodeSetError()
+            if redact:
+                # The response may echo or carry an unlock token, so only describe the failure.
+                errors = "; ".join(
+                    f"{error.get('ErrorDomain')}({error.get('ErrorCode')}): {error.get('LocalizedDescription')}"
+                    for error in error_chain
+                )
+                raise ProfileError(
+                    f"The device rejected the {request['RequestType']} request: Status={response.get('Status')}"
+                    + (f"; {errors}" if errors else "")
+                )
             raise ProfileError(f"The device rejected the profile request: {response}")
         return response
 

@@ -56,6 +56,7 @@ __all__ = [
     "PairingDialogResponsePendingError",
     "PairingError",
     "PasscodeRequiredError",
+    "PasscodeSetError",
     "PasswordRequiredError",
     "ProcessInspectionError",
     "ProfileError",
@@ -506,6 +507,10 @@ class CloudConfigurationAlreadyPresentError(ProfileError):
     """A cloud configuration is already present on the device. Erase the device before installing a new one:
     `pymobiledevice3 profile erase-device`.
     """
+
+
+class PasscodeSetError(ProfileError):
+    """The device has a passcode set, so its keybag refuses to mint an unlock token. Remove the passcode first."""
 
 
 class IRecvError(PyMobileDevice3Exception):
