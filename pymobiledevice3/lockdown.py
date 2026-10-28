@@ -68,6 +68,7 @@ from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.pair_records import (
     create_pairing_records_cache_folder,
     generate_host_id,
+    get_local_pairing_record,
     get_preferred_pair_record,
     get_usbmux_pairing_record,
 )
@@ -654,6 +655,25 @@ class LockdownClient(ABC, LockdownServiceProvider):
         """
         pair_record = self.pair_record if host_id is None else {"HostID": host_id}
         await self._request("Unpair", {"PairRecord": pair_record, "ProtocolVersion": "2"}, verify_request=False)
+        unpaired_host_id = pair_record.get("HostID") if pair_record is not None else None
+        if unpaired_host_id is not None:
+            await self._forget_pair_record(unpaired_host_id)
+
+    async def _forget_pair_record(self, host_id: str) -> None:
+        """Delete the host-side pair records the device no longer accepts after an ``Unpair``.
+
+        Only records belonging to ``host_id`` are removed, so unpairing another host leaves ours intact.
+
+        :param host_id: HostID of the pairing that was removed from the device.
+        """
+        if self.pair_record is not None and self.pair_record.get("HostID") == host_id:
+            self.pair_record = None
+            self.paired = False
+        if self.identifier is None or self.pairing_records_cache_folder is None:
+            return
+        local_record = get_local_pairing_record(self.identifier, self.pairing_records_cache_folder)
+        if local_record is not None and local_record.get("HostID") == host_id:
+            device_file_path(self.pairing_records_cache_folder, self.identifier, ".plist").unlink()
 
     async def get_value(self, domain: Optional[str] = None, key: Optional[str] = None) -> Any:
         """Read a value from the device via a ``GetValue`` request.
@@ -1140,6 +1160,29 @@ class PlistUsbmuxLockdownClient(UsbmuxLockdownClient):
         async with await usbmux.create_mux() as client:
             if isinstance(client, PlistMuxConnection) and self.service.mux_device is not None:
                 await client.save_pair_record(self.identifier, self.service.mux_device.devid, record_data)
+
+    async def _forget_pair_record(self, host_id: str) -> None:
+        """Like `_forget_pair_record`, but also deletes usbmuxd's record for the device when it belongs to
+        ``host_id``.
+
+        :param host_id: HostID of the pairing that was removed from the device.
+        """
+        await super()._forget_pair_record(host_id)
+        if self.identifier is None:
+            return
+        async with await usbmux.create_mux(usbmux_address=self.usbmux_address) as mux:
+            # this client is only created when usbmuxd speaks the plist protocol
+            client = cast(PlistMuxConnection, mux)
+            try:
+                usbmux_record = await client.get_pair_record(self.identifier)
+            except NotPairedError:
+                return
+            if usbmux_record.get("HostID") != host_id:
+                return
+            try:
+                await client.delete_pair_record(self.identifier)
+            except MuxException as e:
+                self.logger.warning(f"Failed to delete usbmuxd pair record for {self.identifier}: {e}")
 
 
 class TcpLockdownClient(LockdownClient):

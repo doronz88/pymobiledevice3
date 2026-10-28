@@ -451,6 +451,9 @@ class PlistMuxConnection(BinaryMuxConnection):
             "DeviceID": device_id,
         })
 
+    async def delete_pair_record(self, serial: str) -> None:
+        await self._send_receive({"MessageType": "DeletePairRecord", "PairRecordID": serial})
+
     async def _connect(self, device_id: int, port: int):
         await self._send_receive({"MessageType": "Connect", "DeviceID": device_id, "PortNumber": port})
 

@@ -160,3 +160,21 @@ async def test_plist_mux_roundtrip() -> None:
     finally:
         client.close()
         server.close()
+
+
+async def test_plist_mux_delete_pair_record() -> None:
+    client, server = socket.socketpair()
+    client.setblocking(False)
+    try:
+        mux = PlistMuxConnection(client)
+        reply = plistlib.dumps({"MessageType": "Result", "Number": 0})
+        server.sendall(_packet(UsbmuxdMessageType.PLIST, reply, version=1, tag=1))
+        await mux.delete_pair_record("00008110-001234567890001E")
+        request = parse_usbmuxd_response(server.recv(4096))
+        assert isinstance(request.data, bytes)
+        message = plistlib.loads(request.data)
+        assert message["MessageType"] == "DeletePairRecord"
+        assert message["PairRecordID"] == "00008110-001234567890001E"
+    finally:
+        client.close()
+        server.close()
