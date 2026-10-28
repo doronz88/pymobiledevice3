@@ -10,7 +10,7 @@ from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, Conne
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.service_connection import ServiceConnection
-from pymobiledevice3.services.afc import MAXIMUM_READ_SIZE, AfcError, AfcService
+from pymobiledevice3.services.afc import MAXIMUM_READ_SIZE, AfcError, AfcOpcode, AfcService
 
 TEST_FILENAME = "test"
 TEST_FOLDER_NAME = "test_folder"
@@ -68,6 +68,27 @@ async def test_rm_file_doesnt_exist(afc: AfcService, path: str) -> None:
     with pytest.raises(AfcFileNotFoundError) as e:
         await afc.rm(path)
     assert e.value.status == AfcError.OBJECT_NOT_FOUND
+
+
+async def test_rm_tree_in_one_request(afc: AfcService, monkeypatch: pytest.MonkeyPatch) -> None:
+    await afc.rm(TEST_FOLDER_NAME, force=True)
+    for d in range(3):
+        await afc.makedirs(f"{TEST_FOLDER_NAME}/d{d}/sub")
+        await afc.set_file_contents(f"{TEST_FOLDER_NAME}/d{d}/sub/file", b"data")
+    opcodes = []
+    do_operation = afc._do_operation
+
+    async def recording_do_operation(opcode, *args, **kwargs):
+        opcodes.append(opcode)
+        return await do_operation(opcode, *args, **kwargs)
+
+    monkeypatch.setattr(afc, "_do_operation", recording_do_operation)
+    try:
+        assert await afc.rm(TEST_FOLDER_NAME) == []
+        assert opcodes == [AfcOpcode.REMOVE_PATH_AND_CONTENTS]
+        assert not await afc.exists(TEST_FOLDER_NAME)
+    finally:
+        await afc.rm(TEST_FOLDER_NAME, force=True)
 
 
 async def test_get_device_info(afc: AfcService) -> None:
