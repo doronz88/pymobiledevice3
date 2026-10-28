@@ -195,3 +195,110 @@ def test_query_ipswme_reports_an_unreachable_ipswme(monkeypatch: pytest.MonkeyPa
         restore_cli.query_ipswme("iPhone12,1")
 
     assert exc_info.value.exit_code == 1
+
+
+def _appledb_build(version: str, build: str, product_types: list[str], signed: Any = True) -> dict[str, Any]:
+    url = f"https://updates.cdn-apple.com/2026FallSeed/x/{product_types[0]}_{build}_Restore.ipsw"
+    return {
+        "version": version,
+        "build": build,
+        "signed": signed,
+        "sources": [
+            {"type": "ota", "deviceMap": product_types, "links": [{"url": "https://ota.invalid/x.zip"}]},
+            {
+                "type": "ipsw",
+                "deviceMap": product_types,
+                "links": [
+                    {"url": url.replace("https://", "http://"), "preferred": False, "active": True},
+                    {"url": url, "preferred": True, "active": True},
+                ],
+                "hashes": {"sha2-256": f"sha-{build}"},
+            },
+        ],
+    }
+
+
+@pytest.fixture
+def appledb(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    entries: dict[str, Any] = {
+        "index.json": [
+            "iOS;24B119",  # release
+            "iOS;23D770890b",  # not a beta: number too long
+            "iPadOS;24B5110a",  # other OS
+            "iOS;24B5089g",
+            "iOS;24A5430a",
+            "iOS;24B5110a",
+            "iOS;24B5110a-RC",
+        ],
+        "iOS;24B5110a.json": _appledb_build("27.2 beta 4", "24B5110a", ["iPhone12,1", "iPhone12,3"]),
+        "iOS;24B5089g.json": _appledb_build("27.2 beta 2", "24B5089g", ["iPhone12,3"]),
+        "iOS;24A5430a.json": _appledb_build("27.0 beta 8", "24A5430a", ["iPhone12,1"], signed=["iPhone12,3"]),
+    }
+    requested: list[str] = []
+
+    def get(path: str) -> Any:
+        requested.append(path)
+        return entries[path]
+
+    monkeypatch.setattr(restore_cli, "_appledb_get", get)
+    entries["requested"] = requested
+    return entries
+
+
+def test_query_appledb_betas_lists_the_newest_betas_with_an_ipsw_for_the_device(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, appledb: dict[str, Any]
+) -> None:
+    shown: list[list[str]] = []
+
+    def prompt_selection(choices: list[str], message: str, idx: bool = False) -> int:
+        shown.append(choices)
+        return 0
+
+    monkeypatch.setattr(restore_cli, "prompt_selection", prompt_selection)
+    (tmp_path / "iPhone12,1_24B5110a_Restore.ipsw").write_bytes(PAYLOAD)
+
+    firmware = restore_cli.query_appledb_betas("iPhone12,1", tmp_path)
+
+    assert sorted(appledb["requested"]) == sorted([
+        "index.json",
+        "iOS;24B5110a.json",
+        "iOS;24B5089g.json",
+        "iOS;24A5430a.json",
+    ])
+    assert shown == [["27.2 beta 4: 24B5110a (local)", "27.0 beta 8: 24A5430a (unsigned)"]]
+    assert firmware["url"] == "https://updates.cdn-apple.com/2026FallSeed/x/iPhone12,1_24B5110a_Restore.ipsw"
+    assert firmware["sha256sum"] == "sha-24B5110a"
+
+
+def test_query_appledb_betas_fetches_only_the_newest_candidates(
+    monkeypatch: pytest.MonkeyPatch, appledb: dict[str, Any]
+) -> None:
+    monkeypatch.setattr(restore_cli, "APPLEDB_BETAS_TO_LIST", 1)
+    monkeypatch.setattr(restore_cli, "prompt_selection", lambda choices, message, idx=False: 0)
+
+    assert restore_cli.query_appledb_betas("iPhone12,1")["buildid"] == "24B5110a"
+    assert sorted(appledb["requested"]) == ["iOS;24B5110a.json", "index.json"]
+
+
+def test_query_appledb_betas_reports_a_device_without_recent_betas(appledb: dict[str, Any]) -> None:
+    with pytest.raises(typer.Exit) as exc_info:
+        restore_cli.query_appledb_betas("iPhone8,1")
+
+    assert exc_info.value.exit_code == 1
+
+
+def test_query_appledb_betas_reports_an_unreachable_appledb(monkeypatch: pytest.MonkeyPatch) -> None:
+    def get(path: str) -> Any:
+        raise requests.ConnectionError("no route to host")
+
+    monkeypatch.setattr(restore_cli, "_appledb_get", get)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        restore_cli.query_appledb_betas("iPhone12,1")
+
+    assert exc_info.value.exit_code == 1
+
+
+def test_beta_is_refused_with_an_explicit_ipsw_url() -> None:
+    with pytest.raises(typer.BadParameter):
+        restore_cli.ipsw_ctx_dependency(cast(Any, None), ipsw="https://example.invalid/x.ipsw", beta=True)

@@ -46,6 +46,12 @@ publishes for the file, else ipsw.me's); a mismatching download is discarded.
 A single Ctrl-C stops the download and keeps the `.part`. If ipsw.me can't be
 reached, the picker reports it and exits.
 
+`--beta` lists the newest beta builds instead, from
+[AppleDB](https://appledb.dev) (ipsw.me has no betas), restricted to those with
+an IPSW for the device: e.g. `27.2 beta 4: 24B5110a`. AppleDB's signing status
+is shown as `(unsigned)` but is only a hint; TSS decides at restore time.
+`--ipsw-dir`, resuming and SHA-256 verification work the same way.
+
 Whatever the source, the build must be signed by Apple at restore time, since
 the AP ticket comes from TSS. A `--tss` SHSH blob can be supplied for the AP
 ticket instead of asking TSS; the peripheral tickets are still requested live.
