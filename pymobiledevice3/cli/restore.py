@@ -8,10 +8,13 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import IO, Annotated, Any, Optional, Union, cast
 
+import questionary
 import requests
 import typer
 from ipsw_parser.ipsw import IPSW
 from pygments import formatters, highlight, lexers
+from rich.console import Console
+from rich.panel import Panel
 from typer_injector import Depends, InjectingTyper
 
 from pymobiledevice3 import usbmux
@@ -30,9 +33,10 @@ from pymobiledevice3.exceptions import (
     MissingValueError,
     PyMobileDevice3Exception,
 )
-from pymobiledevice3.irecv import IRecv
+from pymobiledevice3.irecv import IRecv, Mode
 from pymobiledevice3.lockdown import SERVICE_PORT as LOCKDOWN_PORT
 from pymobiledevice3.lockdown import create_using_usbmux
+from pymobiledevice3.restore import dfu_guide
 from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.deviceinterfaced import DeviceInterfacedControl
 from pymobiledevice3.restore.preflight import UPDATER_FIRMWARE_PREFIXES, collect_device_side_preflight
@@ -40,7 +44,7 @@ from pymobiledevice3.restore.recovery import Behavior, Recovery
 from pymobiledevice3.restore.restore import Restore
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.diagnostics import DiagnosticsService
-from pymobiledevice3.utils import file_download, start_ipython_shell
+from pymobiledevice3.utils import ask_prompt, file_download, start_ipython_shell
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +268,84 @@ async def restore_update_task(
     ).update()
 
 
+async def _choose_dfu_sequence(product_type: str) -> dfu_guide.ButtonSequence:
+    sequence = dfu_guide.iphone_sequence(product_type)
+    if sequence is not None:
+        return sequence
+    if product_type.startswith("iPad"):
+        has_home_button = ask_prompt(questionary.confirm("Does your iPad have a Home button?", default=False))
+        return dfu_guide.HOME_BUTTON if has_home_button else dfu_guide.IPAD_WITHOUT_HOME_BUTTON
+    raise typer.BadParameter(f"The DFU guide does not know the buttons of {product_type}.")
+
+
+async def guide_into_dfu(device: Device) -> dfu_guide.UsbState:
+    """
+    Walk the user through putting ``device`` into DFU mode, retrying until it works or they give up.
+
+    :returns: the DFU flavor the device came up in (``DFU`` or ``KIS``).
+    """
+    if device.irecv is not None and device.irecv.mode in (Mode.DFU_MODE, Mode.WTF_MODE):
+        return dfu_guide.UsbState.DFU
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        typer.secho("Entering DFU mode is guided interactively and needs a terminal.", err=True, fg="red")
+        raise typer.Exit(code=1)
+
+    product_type = await device.get_product_type()
+    sequence = await _choose_dfu_sequence(product_type)
+    udid = device.lockdown.udid if device.lockdown is not None else None
+    if device.lockdown is not None:
+        # the device is about to drop off USB
+        await device.lockdown.close()
+
+    console = Console()
+    console.print(
+        Panel.fit(
+            f"Let's put your [b]{product_type}[/b] into [b]DFU mode[/b].\n\n"
+            f"Keep it plugged into this computer. You'll use {sequence.buttons}.\n"
+            "Each step shows a countdown and what the device is doing, and moves on as soon as it reacts.\n"
+            "Nothing on the device is erased by this.",
+            title="DFU mode",
+            border_style="cyan",
+        )
+    )
+    while True:
+        ask_prompt(
+            questionary.press_any_key_to_continue(
+                f"Rest your fingers on {sequence.buttons}, but don't press them yet. "
+                "When ready, press any key on your KEYBOARD to start..."
+            )
+        )
+        for count in (3, 2, 1):
+            console.print(f"[bold]{count}...[/bold]")
+            await asyncio.sleep(1)
+        result = await dfu_guide.run_sequence(console, sequence, udid)
+        if result.in_dfu:
+            console.print(
+                f"\n[bold green]Done! The device is in {result.state.value}.[/bold green] You can let go of the buttons."
+            )
+            return result.state
+        console.print(f"\n[bold red]Not in DFU mode yet[/bold red] (the device is {result.state.value}).")
+        if result.hint is not None:
+            console.print(result.hint)
+        if not ask_prompt(questionary.confirm("Try again?", default=True)):
+            raise typer.Exit(code=1)
+
+
+async def _reconnect_in_dfu(ecid: int, state: dfu_guide.UsbState) -> Device:
+    if state == dfu_guide.UsbState.KIS:
+        raise PyMobileDevice3Exception(
+            "The device came up in DFU mode over Debug USB (KIS), which restores do not support yet."
+        )
+    return Device(irecv=IRecv(ecid=ecid, is_recovery=False))
+
+
+@cli.command("enter-dfu")
+@async_command
+async def restore_enter_dfu(device: DeviceDep) -> None:
+    """Guide you, step by step, through the buttons that put the device into DFU mode."""
+    await guide_into_dfu(device)
+
+
 @cli.command("shell")
 def restore_shell(device: DeviceDep) -> None:
     """create an IPython shell for interacting with iBoot"""
@@ -424,10 +506,20 @@ async def restore_update(
             ),
         ),
     ] = False,
+    dfu: Annotated[
+        bool,
+        typer.Option(
+            "--dfu",
+            help="Restore from DFU mode: first guide you, step by step, through the buttons that put the device into it.",
+        ),
+    ] = False,
 ) -> None:
     """
     Update or restore the device using an IPSW (local path or URL).
     """
+    if dfu:
+        ecid = await device.get_ecid()
+        device = await _reconnect_in_dfu(ecid, await guide_into_dfu(device))
     if exclusive_usb and sys.platform != "darwin":
         raise typer.BadParameter("--exclusive-usb is only supported on macOS", param_hint="--exclusive-usb")
     with ipsw_ctx as ipsw, DeviceInterfacedControl() if exclusive_usb else contextlib.nullcontext():

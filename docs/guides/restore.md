@@ -51,6 +51,26 @@ usable data volume, or to wipe it.
 `--ignore-fdr` is a debugging option: the host connects to the FDR service but
 does not proxy its traffic.
 
+## Restoring from DFU mode
+
+DFU mode is entered with a button sequence; nothing on the host can trigger it.
+`--dfu` walks you through it before the restore starts, and `restore enter-dfu`
+does just that part:
+
+```shell
+pymobiledevice3 restore update -i iPhone.ipsw --dfu
+pymobiledevice3 restore enter-dfu
+```
+
+The guide picks the buttons for the model (iPhones by product type; for an iPad
+it asks whether there is a Home button), counts each step down, and watches the
+device over USB: its screen going black, then the device coming back in DFU mode
+(classic DFU, or Debug USB/KIS on A16 and later), in recovery, or booted
+normally. Each step moves on as soon as the device reacts, and if it ends up
+anywhere but DFU the guide says what to change and offers another try. Apple
+documents only the recovery mode sequences; the DFU ones are the widely used
+sequences.
+
 ## Keeping deviceinterfaced off the device
 
 macOS's `deviceinterfaced` can claim the USB device while it re-enumerates

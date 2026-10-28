@@ -8,7 +8,7 @@ import pytest
 from pymobiledevice3 import irecv
 from pymobiledevice3.cli import restore as restore_cli
 from pymobiledevice3.exceptions import ConnectionFailedError, IRecvError
-from pymobiledevice3.irecv import IRecv
+from pymobiledevice3.irecv import client as irecv_client
 from pymobiledevice3.restore import fdr, restored_client
 from pymobiledevice3.restore.restored_client import RestoredClient
 from pymobiledevice3.usbmux import MuxDevice
@@ -40,14 +40,12 @@ class _FakeUsbDevice:
         self.serial_number = f"CPID:8150 CPRV:11 BDID:0C ECID:{ecid:016X} IBFL:3C SRNM:[ABCDEFGHIJ]"
 
 
-def _find(monkeypatch: pytest.MonkeyPatch, devices: list[_FakeUsbDevice], ecid: Optional[int]) -> IRecv:
-    monkeypatch.setattr(irecv, "find", lambda find_all=False, **kwargs: list(devices))
-    client = IRecv.__new__(IRecv)
-    client._device = None
-    client._mode = None
-    client._device_info = {}
-    client._find(ecid=ecid, timeout=1)
-    return client
+def _find(monkeypatch: pytest.MonkeyPatch, devices: list[_FakeUsbDevice], ecid: Optional[int]) -> irecv.DeviceInfo:
+    monkeypatch.setattr(irecv_client, "find", lambda find_all=False, **kwargs: list(devices))
+    monkeypatch.setattr(irecv_client, "dispose_resources", lambda device: None)
+    found = irecv_client._find_device(ecid=ecid, timeout=1, is_recovery=None)
+    assert found is not None
+    return found.info
 
 
 @pytest.mark.parametrize("target", [ECID_A, ECID_B])

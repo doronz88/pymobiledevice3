@@ -320,7 +320,7 @@ class Recovery(BaseRestore):
         await self.send_component(component)
         assert self.device.irecv is not None
         self.device.irecv.send_command("go", b_request=1)
-        self.device.irecv.ctrl_transfer(0x21, 1)
+        self.device.irecv.send_zero_length_download()
 
     async def send_applelogo(self, allow_missing: bool = True):
         component = "RestoreLogo"
@@ -383,7 +383,7 @@ class Recovery(BaseRestore):
         await self.send_component(component)
         assert self.device.irecv is not None
         with contextlib.suppress(USBError):
-            self.device.irecv.ctrl_transfer(0x21, 1)
+            self.device.irecv.send_zero_length_download()
 
         if self.restore_boot_args:
             self.device.irecv.send_command(f"setenv boot-args {self.restore_boot_args}")
@@ -453,7 +453,7 @@ class Recovery(BaseRestore):
         await self.reconnect_irecv()
 
         assert self.device.irecv is not None
-        if "SRTG" in self.device.irecv._device_info:
+        if self.device.irecv.secure_rom_tag is not None:
             raise PyMobileDevice3Exception(
                 "The device failed to enter recovery mode: it is still in DFU mode after receiving iBSS."
             )
@@ -491,7 +491,7 @@ class Recovery(BaseRestore):
 
                 if self.build_identity.build_manifest.build_major < 20:
                     with contextlib.suppress(USBError):
-                        self.device.irecv.ctrl_transfer(0x21, 1, timeout=5000)
+                        self.device.irecv.send_zero_length_download(timeout=5000)
 
                 self.logger.debug("Waiting for device to disconnect...")
                 await asyncio.sleep(10)
