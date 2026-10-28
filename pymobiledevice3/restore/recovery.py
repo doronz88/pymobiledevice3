@@ -2,9 +2,8 @@ import asyncio
 import contextlib
 import hashlib
 import logging
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
-from ipsw_parser.build_manifest import BuildManifest
 from ipsw_parser.ipsw import IPSW
 from usb import USBError
 
@@ -286,7 +285,7 @@ class Recovery(BaseRestore):
             self.tss_localpolicy = await self.get_local_policy_tss_response()
             self.tss_recoveryos_root_ticket = await self.get_recoveryos_root_ticket_tss_response()
         else:
-            info = cast(dict[str, Any], self.build_identity["Info"])
+            info = self.build_identity["Info"]
             recovery_variant = info.get("RecoveryVariant")
             if recovery_variant is not None:
                 self.tss_recoveryos_root_ticket = await self.get_tss_response()
@@ -336,7 +335,7 @@ class Recovery(BaseRestore):
         self.device.irecv.send_command("bgcolor 0 0 0")
 
     async def send_loaded_by_iboot(self):
-        manifest = cast(dict[str, Any], self.build_identity["Manifest"])
+        manifest = self.build_identity["Manifest"]
         for key, node in manifest.items():
             iboot = node["Info"].get("IsLoadedByiBoot", False)
             iboot_stg1 = node["Info"].get("IsLoadedByiBootStage1", False)
@@ -349,7 +348,7 @@ class Recovery(BaseRestore):
                 await self.send_component_and_command(key, "firmware")
 
     async def send_iboot_stage1_components(self):
-        manifest = cast(dict[str, Any], self.build_identity["Manifest"])
+        manifest = self.build_identity["Manifest"]
         for key, node in manifest.items():
             iboot = node["Info"].get("IsLoadedByiBoot", False)
             iboot_stg1 = node["Info"].get("IsLoadedByiBootStage1", False)
@@ -456,7 +455,7 @@ class Recovery(BaseRestore):
                 "The device failed to enter recovery mode: it is still in DFU mode after receiving iBSS."
             )
 
-        if cast(BuildManifest, self.build_identity.build_manifest).build_major > 8:
+        if self.build_identity.build_manifest.build_major > 8:
             old_nonce = self.device.irecv.ap_nonce
 
             # reconnect
@@ -487,7 +486,7 @@ class Recovery(BaseRestore):
                 await asyncio.sleep(1)
                 self.device.irecv.send_command("go", b_request=1)
 
-                if cast(BuildManifest, self.build_identity.build_manifest).build_major < 20:
+                if self.build_identity.build_manifest.build_major < 20:
                     with contextlib.suppress(USBError):
                         self.device.irecv.ctrl_transfer(0x21, 1, timeout=5000)
 

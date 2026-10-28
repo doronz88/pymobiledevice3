@@ -55,7 +55,7 @@ dependencies = [
     "wsproto",
     "Pillow",
     "questionary>=2.0.0",
-    "ipsw_parser>=1.8.4",
+    "ipsw_parser>=1.9.0",
     "ifaddr",
     "hyperframe",
     "qh3>=1.0.0,<2",

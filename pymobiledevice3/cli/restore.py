@@ -370,7 +370,7 @@ async def restore_preflight_requests(
     tags, and the updaters that failed.
     """
     with ipsw_ctx as ipsw:
-        build_identity = cast(dict[str, Any], Recovery(ipsw, device).build_identity)
+        build_identity = Recovery(ipsw, device).build_identity
         print_json(await collect_device_side_preflight(rsd, ipsw, build_identity, updater))
 
 
