@@ -112,3 +112,24 @@ def test_libusb_lists_devices() -> None:
     finally:
         for device in devices:
             device.close()
+
+
+def test_libusb_reads_the_languages_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    device = _libusb_device.LibUsbDevice.__new__(_libusb_device.LibUsbDevice)
+    device._language = None
+    requests: list[tuple[int, int]] = []
+
+    def control_in(
+        bmRequestType: int, bRequest: int, wValue: int, wIndex: int, length: int, timeout: Any = None
+    ) -> bytes:
+        requests.append((wValue, wIndex))
+        if wValue == 0x300:
+            # string descriptor 0: English (US)
+            return bytes([4, 3, 0x09, 0x04])
+        return bytes([6, 3]) + "ab".encode("utf-16-le")
+
+    monkeypatch.setattr(device, "control_in", control_in)
+    assert device.get_string(1) == "ab"
+    assert device.get_string(2) == "ab"
+    # as pyusb: string descriptor 0 is read for the first string only
+    assert requests == [(0x300, 0), (0x301, 0x409), (0x302, 0x409)]

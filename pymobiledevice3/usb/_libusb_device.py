@@ -61,6 +61,8 @@ class LibUsbDevice:
         self._descriptor = descriptor
         self._handle: Optional[int] = None
         self._serial_number: Optional[str] = None
+        # the first language of string descriptor 0, read once as pyusb does; None until read, 0 for none
+        self._language: Optional[int] = None
         self._configuration: Optional[int] = None
         self._claimed: set[int] = set()
         # the alternate setting selected on each interface, when it is not the default one
@@ -148,14 +150,20 @@ class LibUsbDevice:
         # as pyusb: no string at index 0; otherwise the string in the first language from string descriptor 0
         if index == 0:
             return None
-        languages = self.control_in(
-            _REQUEST_DIRECTION_IN, _GET_DESCRIPTOR, _STRING_DESCRIPTOR << 8, 0, _STRING_DESCRIPTOR_SIZE
-        )
-        if len(languages) < 4 or languages[0] < 4 or languages[0] & 1:
+        if self._language is None:
+            languages = self.control_in(
+                _REQUEST_DIRECTION_IN, _GET_DESCRIPTOR, _STRING_DESCRIPTOR << 8, 0, _STRING_DESCRIPTOR_SIZE
+            )
+            valid = len(languages) >= 4 and languages[0] >= 4 and not languages[0] & 1
+            self._language = languages[2] | (languages[3] << 8) if valid else 0
+        if not self._language:
             return None
-        language = languages[2] | (languages[3] << 8)
         descriptor = self.control_in(
-            _REQUEST_DIRECTION_IN, _GET_DESCRIPTOR, (_STRING_DESCRIPTOR << 8) | index, language, _STRING_DESCRIPTOR_SIZE
+            _REQUEST_DIRECTION_IN,
+            _GET_DESCRIPTOR,
+            (_STRING_DESCRIPTOR << 8) | index,
+            self._language,
+            _STRING_DESCRIPTOR_SIZE,
         )
         if len(descriptor) < 2:
             raise UsbError(f"USB string descriptor {index} is invalid.")
