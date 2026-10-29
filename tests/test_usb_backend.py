@@ -47,6 +47,6 @@ class _StallingDevice:
 def test_pyusb_errors_become_usb_errors() -> None:
     device = PyUsbDevice(_StallingDevice())
     with pytest.raises(UsbError, match="0x40/0x00") as excinfo:
-        device.ctrl_transfer(0x40, 0, data_or_wLength=b"reboot\0")
+        device.control_out(0x40, 0, data=b"reboot\0")
     assert excinfo.value.code == -9
     assert isinstance(excinfo.value.__cause__, USBError)

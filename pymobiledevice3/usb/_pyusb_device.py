@@ -2,9 +2,8 @@
 
 import contextlib
 import time
-from array import array
 from collections.abc import Generator
-from typing import TYPE_CHECKING, Any, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from usb.core import USBError
 
@@ -59,20 +58,30 @@ class PyUsbDevice:
         with _translated(f"Reading USB string descriptor {index}"):
             return get_string(self._device, index)
 
-    def ctrl_transfer(
+    def control_in(
+        self, bmRequestType: int, bRequest: int, wValue: int, wIndex: int, length: int, timeout: Optional[int] = None
+    ) -> bytes:
+        with _translated(f"USB control request {bmRequestType:#04x}/{bRequest:#04x}"):
+            return bytes(
+                self._device.ctrl_transfer(
+                    bmRequestType, bRequest, wValue, wIndex, data_or_wLength=length, timeout=timeout
+                )
+            )
+
+    def control_out(
         self,
         bmRequestType: int,
         bRequest: int,
         wValue: int = 0,
         wIndex: int = 0,
-        data_or_wLength: Union[int, bytes, None] = None,
+        data: bytes = b"",
         timeout: Optional[int] = None,
-    ) -> Union["array[int]", int]:
+    ) -> int:
         with _translated(f"USB control request {bmRequestType:#04x}/{bRequest:#04x}"):
             return cast(
-                Union["array[int]", int],
+                int,
                 self._device.ctrl_transfer(
-                    bmRequestType, bRequest, wValue, wIndex, data_or_wLength=data_or_wLength, timeout=timeout
+                    bmRequestType, bRequest, wValue, wIndex, data_or_wLength=data, timeout=timeout
                 ),
             )
 

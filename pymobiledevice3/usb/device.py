@@ -1,7 +1,6 @@
 """What a USB device backend provides, and the error it raises."""
 
-from array import array
-from typing import Optional, Protocol, Union
+from typing import Optional, Protocol
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 
@@ -38,16 +37,22 @@ class UsbDevice(Protocol):
         """The string descriptor ``index`` in the device's first language."""
         ...
 
-    def ctrl_transfer(
+    def control_in(
+        self, bmRequestType: int, bRequest: int, wValue: int, wIndex: int, length: int, timeout: Optional[int] = None
+    ) -> bytes:
+        """A device-to-host control request reading up to ``length`` bytes."""
+        ...
+
+    def control_out(
         self,
         bmRequestType: int,
         bRequest: int,
         wValue: int = 0,
         wIndex: int = 0,
-        data_or_wLength: Union[int, bytes, None] = None,
+        data: bytes = b"",
         timeout: Optional[int] = None,
-    ) -> Union["array[int]", int]:
-        """Return the bytes read for a device-to-host request, the number of bytes written otherwise."""
+    ) -> int:
+        """A host-to-device control request; return the number of bytes of ``data`` written."""
         ...
 
     def write(self, endpoint: int, data: bytes, timeout: Optional[int] = None) -> int:

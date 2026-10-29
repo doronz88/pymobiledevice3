@@ -10,9 +10,8 @@ mode (Debug USB / KIS).
 
 import ctypes
 import time
-from array import array
 from ctypes import POINTER, Structure, byref, c_int32, c_uint8, c_uint16, c_uint32, c_void_p
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 from pymobiledevice3.usb import _iokit
 from pymobiledevice3.usb.device import DEFAULT_TIMEOUT, UsbError
@@ -260,44 +259,53 @@ class IOKitUsbDevice:
 
     def get_string(self, index: int) -> Optional[str]:
         # as pyusb: the first language from string descriptor 0, then the string in it
-        languages = self.ctrl_transfer(_REQUEST_DIRECTION_IN, _GET_DESCRIPTOR, _STRING_DESCRIPTOR << 8, 0, 255)
-        assert isinstance(languages, array)
+        languages = self.control_in(_REQUEST_DIRECTION_IN, _GET_DESCRIPTOR, _STRING_DESCRIPTOR << 8, 0, 255)
         if len(languages) < 4:
             return None
         language = languages[2] | (languages[3] << 8)
-        descriptor = self.ctrl_transfer(
+        descriptor = self.control_in(
             _REQUEST_DIRECTION_IN, _GET_DESCRIPTOR, (_STRING_DESCRIPTOR << 8) | index, language, 255
         )
-        assert isinstance(descriptor, array)
         if len(descriptor) < 2:
             return None
-        return bytes(descriptor[2 : descriptor[0]]).decode("utf-16-le")
+        return descriptor[2 : descriptor[0]].decode("utf-16-le")
 
-    def ctrl_transfer(
+    def control_in(
+        self, bmRequestType: int, bRequest: int, wValue: int, wIndex: int, length: int, timeout: Optional[int] = None
+    ) -> bytes:
+        buffer = ctypes.create_string_buffer(max(length, 1))
+        received = self._control(bmRequestType, bRequest, wValue, wIndex, buffer, length, timeout)
+        return buffer.raw[:received]
+
+    def control_out(
         self,
         bmRequestType: int,
         bRequest: int,
         wValue: int = 0,
         wIndex: int = 0,
-        data_or_wLength: Union[int, bytes, None] = None,
+        data: bytes = b"",
         timeout: Optional[int] = None,
-    ) -> Union["array[int]", int]:
+    ) -> int:
+        buffer = ctypes.create_string_buffer(bytes(data), max(len(data), 1))
+        return self._control(bmRequestType, bRequest, wValue, wIndex, buffer, len(data), timeout)
+
+    def _control(
+        self,
+        bmRequestType: int,
+        bRequest: int,
+        wValue: int,
+        wIndex: int,
+        buffer: "ctypes.Array[ctypes.c_char]",
+        length: int,
+        timeout: Optional[int],
+    ) -> int:
+        """Run a control request on ``length`` bytes of ``buffer``; return how many were transferred."""
         if (
             bmRequestType & _REQUEST_RECIPIENT_MASK == _REQUEST_RECIPIENT_INTERFACE
             and bmRequestType & _REQUEST_TYPE_MASK != _REQUEST_TYPE_VENDOR
         ):
             # pyusb claims the interface a class/standard request is addressed to
             self._claim(wIndex & 0xFF)
-        is_in = bool(bmRequestType & _REQUEST_DIRECTION_IN)
-        if data_or_wLength is None:
-            length = 0
-        elif isinstance(data_or_wLength, int):
-            length = data_or_wLength
-        else:
-            length = len(data_or_wLength)
-        buffer = ctypes.create_string_buffer(
-            data_or_wLength if isinstance(data_or_wLength, bytes) else b"", max(length, 1)
-        )
         timeout = DEFAULT_TIMEOUT if timeout is None else timeout
         request = _DevRequestTO(
             bmRequestType,
@@ -314,8 +322,6 @@ class IOKitUsbDevice:
             f"USB control request {bmRequestType:#04x}/{bRequest:#04x}",
             self._call(_DEV_REQUEST_TO, [POINTER(_DevRequestTO)], byref(request)),
         )
-        if is_in:
-            return array("B", buffer.raw[: request.wLenDone])
         return request.wLenDone
 
     def _owner(self, endpoint: int) -> _Interface:

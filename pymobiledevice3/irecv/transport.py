@@ -12,9 +12,8 @@ import logging
 import math
 import struct
 import time
-from array import array
 from enum import IntEnum
-from typing import NamedTuple, Optional, Union, cast
+from typing import NamedTuple, Optional
 
 from pymobiledevice3.exceptions import IRecvError, PyMobileDevice3Exception
 from pymobiledevice3.irecv._usb import USB_TIMEOUT, UsbDevice
@@ -29,6 +28,7 @@ REQUEST_TYPE_CLASS_IN = 0xA1  # device-to-host, class, interface
 REQUEST_TYPE_VENDOR_OUT = 0x40  # host-to-device, vendor, device
 REQUEST_TYPE_VENDOR_INTERFACE_OUT = 0x41  # host-to-device, vendor, interface
 REQUEST_TYPE_VENDOR_IN = 0xC0  # device-to-host, vendor, device
+REQUEST_DIRECTION_IN = 0x80
 
 RECOVERY_PACKET_SIZE = 0x8000
 RECOVERY_BULK_ENDPOINT = 0x04
@@ -96,22 +96,17 @@ class UsbTransport:
         self,
         bmRequestType: int,
         bRequest: int,
-        data_or_wLength: Union[int, bytes],
+        length: int,
         wValue: int = 0,
         wIndex: int = 0,
         timeout: Optional[int] = USB_TIMEOUT,
-    ) -> "array[int]":
+    ) -> bytes:
         """
-        A device-to-host control request reading ``data_or_wLength`` bytes (a length, or a buffer of that size).
+        A device-to-host control request reading up to ``length`` bytes.
 
         A ``None`` timeout uses pyusb's default.
         """
-        return cast(
-            "array[int]",
-            self.device.ctrl_transfer(
-                bmRequestType, bRequest, wValue, wIndex, data_or_wLength=data_or_wLength, timeout=timeout
-            ),
-        )
+        return self.device.control_in(bmRequestType, bRequest, wValue, wIndex, length, timeout=timeout)
 
     def control_out(
         self,
@@ -119,14 +114,11 @@ class UsbTransport:
         bRequest: int,
         wValue: int = 0,
         wIndex: int = 0,
-        data: Optional[bytes] = None,
+        data: bytes = b"",
         timeout: int = USB_TIMEOUT,
     ) -> int:
         """A host-to-device control request; returns the number of payload bytes written."""
-        return cast(
-            int,
-            self.device.ctrl_transfer(bmRequestType, bRequest, wValue, wIndex, data_or_wLength=data, timeout=timeout),
-        )
+        return self.device.control_out(bmRequestType, bRequest, wValue, wIndex, data, timeout=timeout)
 
 
 class RecoveryTransport(UsbTransport):
@@ -165,7 +157,7 @@ class DfuTransport(UsbTransport):
     @property
     def state(self) -> int:
         """The bState field of a DFU GETSTATUS reply."""
-        return self.control_in(REQUEST_TYPE_CLASS_IN, DfuRequest.GETSTATUS, b"\x00" * 6)[4]
+        return self.control_in(REQUEST_TYPE_CLASS_IN, DfuRequest.GETSTATUS, 6)[4]
 
     def _wait_for_state(self, wanted: int, retries: int = DFU_STATUS_RETRIES) -> None:
         for _ in range(retries):

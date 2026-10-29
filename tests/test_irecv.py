@@ -1,7 +1,7 @@
 import binascii
 import struct
 from array import array
-from typing import Any, Optional, Union, cast
+from typing import Any, Optional, cast
 
 import pytest
 
@@ -57,24 +57,27 @@ class _FakeDfuDevice:
         self.dnloads: list[tuple[int, bytes]] = []
         self.writes: list[bytes] = []
 
-    def ctrl_transfer(
+    def control_in(
+        self, bmRequestType: int, bRequest: int, wValue: int, wIndex: int, length: int, timeout: Optional[int] = None
+    ) -> bytes:
+        if bmRequestType == transport.REQUEST_TYPE_CLASS_IN and bRequest == transport.DfuRequest.GETSTATE:
+            return bytes([transport.DfuState.DFU_IDLE])
+        if bmRequestType == transport.REQUEST_TYPE_CLASS_IN and bRequest == transport.DfuRequest.GETSTATUS:
+            return bytes([0, 0, 0, 0, self.final_state, 0])
+        return b""
+
+    def control_out(
         self,
         bmRequestType: int,
         bRequest: int,
         wValue: int = 0,
         wIndex: int = 0,
-        data_or_wLength: Union[None, int, bytes] = None,
+        data: bytes = b"",
         timeout: Optional[int] = None,
-    ) -> Union["array[int]", int]:
-        if bmRequestType == transport.REQUEST_TYPE_CLASS_IN and bRequest == transport.DfuRequest.GETSTATE:
-            return array("B", [transport.DfuState.DFU_IDLE])
-        if bmRequestType == transport.REQUEST_TYPE_CLASS_IN and bRequest == transport.DfuRequest.GETSTATUS:
-            return array("B", [0, 0, 0, 0, self.final_state, 0])
+    ) -> int:
         if bmRequestType == transport.REQUEST_TYPE_CLASS_OUT and bRequest == transport.DfuRequest.DNLOAD:
-            data = data_or_wLength if isinstance(data_or_wLength, bytes) else b""
             self.dnloads.append((wValue, data))
-            return len(data)
-        return 0
+        return len(data)
 
     def write(self, endpoint: int, data: bytes, timeout: Optional[int] = None) -> int:
         assert endpoint == transport.RECOVERY_BULK_ENDPOINT
@@ -160,6 +163,16 @@ def test_closing_releases_the_device() -> None:
     assert client._transport is None
     with pytest.raises(IRecvNoDeviceConnectedError):
         _ = client.device
+
+
+def test_ctrl_transfer_keeps_the_pyusb_shape() -> None:
+    device = _FakeDfuDevice()
+    client = _client_in(irecv.Mode.DFU_MODE, device)
+
+    status = client.ctrl_transfer(transport.REQUEST_TYPE_CLASS_IN, transport.DfuRequest.GETSTATUS, 0, 0, 6)
+    assert status == array("B", [0, 0, 0, 0, transport.DfuState.DFU_DNLOAD_IDLE, 0])
+    assert client.ctrl_transfer(transport.REQUEST_TYPE_CLASS_OUT, transport.DfuRequest.DNLOAD, 3, 0, b"abc") == 3
+    assert device.dnloads == [(3, b"abc")]
 
 
 def _client_in(mode: irecv.Mode, device: Any) -> irecv.IRecv:
