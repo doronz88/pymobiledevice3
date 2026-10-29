@@ -104,7 +104,7 @@ class UsbTransport:
         """
         A device-to-host control request reading up to ``length`` bytes.
 
-        A ``None`` timeout uses pyusb's default.
+        A ``None`` timeout uses ``pymobiledevice3.usb.device.DEFAULT_TIMEOUT``.
         """
         return self.device.control_in(bmRequestType, bRequest, wValue, wIndex, length, timeout=timeout)
 
@@ -128,7 +128,7 @@ class RecoveryTransport(UsbTransport):
         self.control_out(REQUEST_TYPE_VENDOR_OUT, b_request, data=cmd.encode() + b"\0", timeout=timeout)
 
     def read_command_reply(self) -> bytearray:
-        """The reply to the last command (e.g. a ``getenv``), read with pyusb's default timeout."""
+        """The reply to the last command (e.g. a ``getenv``), read with the default USB timeout."""
         return bytearray(self.control_in(REQUEST_TYPE_VENDOR_IN, 0, 255, timeout=None))
 
     def send_zero_length_download(self, timeout: int = USB_TIMEOUT) -> None:

@@ -4,7 +4,7 @@ from typing import Optional, Protocol
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 
-# pyusb's default timeout, used when a call passes ``timeout=None``
+# the default timeout pyusb had, used when a call passes ``timeout=None``
 DEFAULT_TIMEOUT = 1000  # milliseconds
 
 
