@@ -46,7 +46,13 @@ from pygnuutils.cli.ls import ls as ls_cli
 from pygnuutils.ls import Ls, LsStub
 
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import AfcException, AfcFileNotFoundError, ArgumentError, ConnectionTerminatedError
+from pymobiledevice3.exceptions import (
+    AfcDeleteError,
+    AfcException,
+    AfcFileNotFoundError,
+    ArgumentError,
+    ConnectionTerminatedError,
+)
 from pymobiledevice3.interactive_shell import Arg, CompletionContext, InteractiveShell, shell_command
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.progress import BYTES_UNIT, ProgressBar
@@ -699,13 +705,16 @@ class AfcService(LockdownService):
         with the same pattern, and matching files are removed. Directories (including ``filename``
         itself) are never removed in this mode.
 
+        A path removed by someone else while the tree is walked counts as deleted.
+
         :param filename: Path to the file or directory to remove.
         :param match: Optional regex over entry basenames, applied as `pull` applies it. None removes
             the whole tree.
         :param force: If True, suppress the final `AfcException` and instead return the
             list of paths that could not be deleted.
         :return: List of paths that could not be deleted (empty on full success).
-        :raises AfcException: if any path could not be deleted and ``force`` is False.
+        :raises AfcException: if ``filename`` does not exist and ``force`` is False.
+        :raises AfcDeleteError: if any path could not be deleted and ``force`` is False; its ``failures`` say why.
         """
         if match is None:
             # let the device delete the whole tree in one round-trip; on any failure fall back to
@@ -714,67 +723,70 @@ class AfcService(LockdownService):
                 await self._do_operation(AfcOpcode.REMOVE_PATH_AND_CONTENTS, CSTRING.build(filename), filename)
                 return []
 
-        if not await self.exists(filename) and not await self.rm_single(filename, force=force):
-            return [filename]
-
-        if match is not None:
-            undeleted_matching = await self._rm_matching(filename, match)
-            if undeleted_matching and not force:
-                # AfcException mis-annotates `status` as str; it accepts AfcError/None at runtime
-                raise AfcException(f"Failed to delete: {', '.join(undeleted_matching)}", None)
-            return undeleted_matching
-
-        # single file
-        if not await self.isdir(filename):
-            if await self.rm_single(filename, force=force):
-                return []
-            return [filename]
-
-        # directory content
-        undeleted_items: list[str] = []
-        for entry in await self.listdir(filename):
-            current_filename = posixpath.join(filename, entry)
-
-            if await self.isdir(current_filename):
-                ret_undeleted_items = await self.rm(current_filename, force=True)
-                undeleted_items.extend(ret_undeleted_items)
-            else:
-                if not await self.rm_single(current_filename, force=True):
-                    undeleted_items.append(current_filename)
-
-        # directory path
-        try:
+        if not await self.exists(filename):
+            # a missing path is an error (a dangling link, which cannot be stat'ed, is still removed here)
             if not await self.rm_single(filename, force=force):
-                undeleted_items.append(filename)
-                return undeleted_items
-        except AfcException:
-            if undeleted_items:
-                undeleted_items.append(filename)
-            else:
-                raise
+                return [filename]
+            return []
 
-        if undeleted_items:
-            # AfcException mis-annotates `status` as str; it accepts AfcError/None at runtime
-            raise AfcException(
-                f"Failed to delete: {', '.join(undeleted_items)}",
-                None,
+        failures = await self._rm_tree(filename) if match is None else await self._rm_matching(filename, match)
+        if failures and not force:
+            raise AfcDeleteError(
+                "Failed to delete: "
+                + ", ".join(f"{path} ({getattr(status, 'name', status)})" for path, status in failures.items()),
+                dict(failures),
             )
+        return list(failures)
 
-        return []
+    async def _remove(self, filename: str) -> Optional[AfcError]:
+        """Remove a file or an empty directory; the device's reason when it did not, None when it is gone."""
+        try:
+            await self._do_operation(AfcOpcode.REMOVE_PATH, CSTRING.build(filename), filename)
+        except AfcException as e:
+            if e.status == AfcError.OBJECT_NOT_FOUND:
+                # removed meanwhile (e.g. by the device itself): what was asked for holds
+                return None
+            return AfcError(e.status) if e.status is not None else AfcError.UNKNOWN_ERROR
+        return None
 
-    async def _rm_matching(self, filename: str, match: Pattern[str]) -> list[str]:
-        """Remove the files under ``filename`` that `pull` would copy for ``match``; return the undeleted ones."""
-        if not await self.isdir(filename):
-            if not match.search(posixpath.basename(filename)) or await self.rm_single(filename, force=True):
-                return []
-            return [filename]
+    async def _rm_tree(self, filename: str) -> dict[str, AfcError]:
+        """Remove ``filename`` and, for a directory, everything under it depth-first; return what was not removed."""
+        try:
+            is_dir = await self.isdir(filename)
+        except AfcFileNotFoundError:
+            # gone, or a dangling link the device cannot stat: removing it settles both
+            is_dir = False
+        failures: dict[str, AfcError] = {}
+        if is_dir:
+            try:
+                entries = await self.listdir(filename)
+            except AfcFileNotFoundError:
+                entries = []
+            for entry in entries:
+                failures.update(await self._rm_tree(posixpath.join(filename, entry)))
+        status = await self._remove(filename)
+        if status is not None:
+            failures[filename] = status
+        return failures
 
-        undeleted_items: list[str] = []
+    async def _rm_matching(self, filename: str, match: Pattern[str]) -> dict[str, AfcError]:
+        """Remove the files under ``filename`` that `pull` would copy for ``match``; return what was not removed."""
+        try:
+            is_dir = await self.isdir(filename)
+        except AfcFileNotFoundError:
+            return {}
+        if not is_dir:
+            if not match.search(posixpath.basename(filename)):
+                return {}
+            status = await self._remove(filename)
+            return {} if status is None else {filename: status}
+
+        failures: dict[str, AfcError] = {}
         for entry in await self.listdir(filename):
             if not match.search(entry):
                 continue
-            undeleted_items.extend(await self._rm_matching(posixpath.join(filename, entry), match))
-        return undeleted_items
+            failures.update(await self._rm_matching(posixpath.join(filename, entry), match))
+        return failures
 
     async def get_device_info(self):
         """

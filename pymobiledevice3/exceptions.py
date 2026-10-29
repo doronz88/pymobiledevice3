@@ -1,5 +1,6 @@
 __all__ = [
     "AccessDeniedError",
+    "AfcDeleteError",
     "AfcException",
     "AfcFileNotFoundError",
     "AlreadyMountedError",
@@ -268,6 +269,14 @@ class AfcException(PyMobileDevice3Exception, OSError):
 
 class AfcFileNotFoundError(AfcException):
     """The file does not exist on the device."""
+
+
+class AfcDeleteError(AfcException):
+    """Some paths could not be deleted; ``failures`` maps each one to the device's AfcError code for it."""
+
+    def __init__(self, message: str, failures: dict[str, int]) -> None:
+        super().__init__(message, None)
+        self.failures = failures
 
 
 class DvtException(PyMobileDevice3Exception):
