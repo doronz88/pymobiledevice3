@@ -9,13 +9,16 @@ module calls the client API of DeviceInterface.framework that does so.
 
 import ctypes
 import os
+import sys
 import tempfile
 import time
 from ctypes import c_bool, c_uint32, c_uint64, c_void_p
 from typing import Any, NamedTuple, Optional, cast
 
-from pymobiledevice3.usb import _iokit
 from pymobiledevice3.usb.device import UsbError
+
+if sys.platform == "darwin":
+    from pymobiledevice3.usb import _iokit
 
 _FRAMEWORK = "/Library/Apple/System/Library/PrivateFrameworks/DeviceInterface.framework/DeviceInterface"
 _LIBC = "/usr/lib/libc.dylib"
