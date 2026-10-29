@@ -443,8 +443,8 @@ async def restore_update_task(
     ).update()
 
 
-async def _choose_dfu_sequence(product_type: str) -> dfu_guide.ButtonSequence:
-    sequence = dfu_guide.iphone_sequence(product_type)
+async def _choose_dfu_sequence(product_type: str, assisted: bool) -> dfu_guide.ButtonSequence:
+    sequence = dfu_guide.iphone_sequence(product_type, assisted=assisted)
     if sequence is not None:
         return sequence
     if product_type.startswith("iPad"):
@@ -453,9 +453,12 @@ async def _choose_dfu_sequence(product_type: str) -> dfu_guide.ButtonSequence:
     raise typer.BadParameter(f"The DFU guide does not know the buttons of {product_type}.")
 
 
-async def guide_into_dfu(device: Device) -> dfu_guide.UsbState:
+async def guide_into_dfu(device: Device, manual: bool = False) -> dfu_guide.UsbState:
     """
     Walk the user through putting ``device`` into DFU mode, retrying until it works or they give up.
+
+    A booted device is restarted from here, so only the buttons that pick DFU mode are left to the user, unless
+    ``manual`` asks for the whole button sequence.
 
     :returns: the DFU flavor the device came up in (``DFU`` or ``KIS``).
     """
@@ -466,11 +469,20 @@ async def guide_into_dfu(device: Device) -> dfu_guide.UsbState:
         raise typer.Exit(code=1)
 
     product_type = await device.get_product_type()
-    sequence = await _choose_dfu_sequence(product_type)
-    udid = device.lockdown.udid if device.lockdown is not None else None
-    if device.lockdown is not None:
+    lockdown = device.lockdown
+    sequence = await _choose_dfu_sequence(product_type, assisted=lockdown is not None and not manual)
+    udid = lockdown.udid if lockdown is not None else None
+
+    async def restart() -> None:
+        assert lockdown is not None
+        # the device goes down once the service connection closes
+        async with DiagnosticsService(lockdown) as diagnostics:
+            await diagnostics.restart()
+        await lockdown.close()
+
+    if lockdown is not None and not any(step.restart_after for step in sequence.steps):
         # the device is about to drop off USB
-        await device.lockdown.close()
+        await lockdown.close()
 
     console = Console()
     console.print(
@@ -493,7 +505,7 @@ async def guide_into_dfu(device: Device) -> dfu_guide.UsbState:
         for count in (3, 2, 1):
             console.print(f"[bold]{count}...[/bold]")
             await asyncio.sleep(1)
-        result = await dfu_guide.run_sequence(console, sequence, udid)
+        result = await dfu_guide.run_sequence(console, sequence, udid, restart)
         if result.in_dfu:
             console.print(
                 f"\n[bold green]Done! The device is in {result.state.value}.[/bold green] You can let go of the buttons."
@@ -510,11 +522,20 @@ async def _reconnect_in_dfu(ecid: int) -> Device:
     return Device(irecv=IRecv(ecid=ecid, is_recovery=False))
 
 
+ManualDfuOption = Annotated[
+    bool,
+    typer.Option(
+        "--manual",
+        help="Do the whole DFU button sequence yourself, instead of having a booted device restarted from here.",
+    ),
+]
+
+
 @cli.command("enter-dfu")
 @async_command
-async def restore_enter_dfu(device: DeviceDep) -> None:
+async def restore_enter_dfu(device: DeviceDep, manual: ManualDfuOption = False) -> None:
     """Guide you, step by step, through the buttons that put the device into DFU mode."""
-    await guide_into_dfu(device)
+    await guide_into_dfu(device, manual=manual)
 
 
 @cli.command("shell")
@@ -750,6 +771,7 @@ async def restore_update(
             help="Restore from DFU mode: first guide you, step by step, through the buttons that put the device into it.",
         ),
     ] = False,
+    manual_dfu: ManualDfuOption = False,
 ) -> None:
     """
     Update or restore the device using an IPSW (local path or URL).
@@ -758,7 +780,7 @@ async def restore_update(
         raise typer.BadParameter("--exclusive-usb is only supported on macOS", param_hint="--exclusive-usb")
     if dfu:
         ecid = await device.get_ecid()
-        await guide_into_dfu(device)
+        await guide_into_dfu(device, manual=manual_dfu)
         device = await _reconnect_in_dfu(ecid)
     if exclusive_usb and device.irecv is not None and device.irecv.is_kis:
         raise typer.BadParameter(

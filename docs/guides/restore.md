@@ -70,7 +70,7 @@ does not proxy its traffic.
 
 ## Restoring from DFU mode
 
-DFU mode is entered with a button sequence; nothing on the host can trigger it.
+DFU mode is entered with a button sequence; the host cannot enter it alone.
 `--dfu` walks you through it before the restore starts, and `restore enter-dfu`
 does just that part:
 
@@ -87,6 +87,11 @@ normally. Each step moves on as soon as the device reacts, and if it ends up
 anywhere but DFU the guide says what to change and offers another try. Apple
 documents only the recovery mode sequences; the DFU ones are the widely used
 sequences.
+
+On an iPhone 8 or later that is booted, the host restarts the phone itself, so
+the quick VOLUME UP, VOLUME DOWN, SIDE presses go away: you hold VOLUME DOWN,
+the phone restarts, you add SIDE once it went down, then release SIDE. `--manual`
+keeps the full button sequence instead.
 
 On macOS, an A16-or-later device in DFU mode (Debug USB/KIS) can only be opened
 by Apple's `deviceinterfaced`, so the restore loads its images through that
