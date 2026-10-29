@@ -20,7 +20,13 @@ from pymobiledevice3.irecv._usb import (
     list_devices,
 )
 from pymobiledevice3.irecv.device_info import DeviceInfo, parse_nonce
-from pymobiledevice3.irecv.transport import DeviceInterfaceTransport, DfuTransport, KisTransport, RecoveryTransport
+from pymobiledevice3.irecv.transport import (
+    REQUEST_DIRECTION_IN,
+    DeviceInterfaceTransport,
+    DfuTransport,
+    KisTransport,
+    RecoveryTransport,
+)
 from pymobiledevice3.irecv_devices import IRecvDevice
 from pymobiledevice3.usb import device_interface
 
@@ -338,8 +344,13 @@ class IRecv:
         data_or_wLength: Union[int, bytes, None] = None,
         timeout: int = USB_TIMEOUT,
     ) -> Union["array[int]", int]:
-        """A raw control request; see ``UsbDevice.ctrl_transfer``."""
-        return self.device.ctrl_transfer(bmRequestType, bRequest, wValue, wIndex, data_or_wLength, timeout=timeout)
+        """A raw control request, as pyusb takes it: the bytes read for a device-to-host request, the number of bytes
+        written otherwise."""
+        if bmRequestType & REQUEST_DIRECTION_IN:
+            length = data_or_wLength if isinstance(data_or_wLength, int) else len(data_or_wLength or b"")
+            return array("B", self.device.control_in(bmRequestType, bRequest, wValue, wIndex, length, timeout=timeout))
+        data = b"" if isinstance(data_or_wLength, int) else bytes(data_or_wLength or b"")
+        return self.device.control_out(bmRequestType, bRequest, wValue, wIndex, data, timeout=timeout)
 
     def send_zero_length_download(self, timeout: int = USB_TIMEOUT) -> None:
         """Send an empty DFU DNLOAD request, which iBoot expects after a ``go``/``bootx`` command."""

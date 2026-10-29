@@ -5,7 +5,7 @@ from typing import Optional
 
 from pymobiledevice3.usb import UsbDevice, UsbError, list_devices
 
-# the name this error had under pyusb
+# the name this error had when pyusb was the backend
 USBError = UsbError
 
 __all__ = [

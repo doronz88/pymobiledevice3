@@ -1,12 +1,11 @@
 import sys
+from collections.abc import Generator
 from typing import Any
 
 import pytest
-from usb.core import USBError
 
 from pymobiledevice3 import usb
-from pymobiledevice3.usb import USB_BACKEND_ENV_VAR, UsbError
-from pymobiledevice3.usb._pyusb_device import PyUsbDevice
+from pymobiledevice3.usb import USB_BACKEND_ENV_VAR, UsbError, _libusb, _libusb_device
 
 
 @pytest.mark.parametrize(
@@ -36,17 +35,41 @@ def test_backend_selection_rejects(monkeypatch: pytest.MonkeyPatch, platform: st
         usb.uses_iokit()
 
 
-class _StallingDevice:
-    idVendor = 0x05AC
-    idProduct = 0x1281
+@pytest.fixture(scope="module")
+def libusb() -> Generator[None, None, None]:
+    """libusb, exited afterwards: the package keeps its context, and the fds that holds, until the process ends."""
+    try:
+        library = _libusb.library()
+    except UsbError as e:
+        pytest.skip(str(e))
+    yield
+    library.lib.libusb_exit(library.context)
+    _libusb._library = None
 
-    def ctrl_transfer(self, *args: Any, **kwargs: Any) -> Any:
-        raise USBError("Pipe error", errno=32, error_code=-9)
+
+@pytest.mark.usefixtures("libusb")
+def test_libusb_errors_become_usb_errors() -> None:
+    with pytest.raises(UsbError, match="0x40/0x00 failed: LIBUSB_ERROR_PIPE") as excinfo:
+        _libusb.check("USB control request 0x40/0x00", _libusb.LIBUSB_ERROR_PIPE)
+    assert excinfo.value.code == _libusb.LIBUSB_ERROR_PIPE
+    assert _libusb.check("anything", 3) == 3
 
 
-def test_pyusb_errors_become_usb_errors() -> None:
-    device = PyUsbDevice(_StallingDevice())
-    with pytest.raises(UsbError, match="0x40/0x00") as excinfo:
-        device.ctrl_transfer(0x40, 0, data_or_wLength=b"reboot\0")
-    assert excinfo.value.code == -9
-    assert isinstance(excinfo.value.__cause__, USBError)
+def test_libusb_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_libusb, "_locate", lambda: None)
+    # load it anew, without the library
+    monkeypatch.setattr(_libusb, "_library", None)
+    with pytest.raises(UsbError, match=r"libusb-1\.0 was not found"):
+        _libusb.library()
+
+
+@pytest.mark.usefixtures("libusb")
+def test_libusb_lists_devices() -> None:
+    devices = _libusb_device.list_devices()
+    try:
+        for device in devices:
+            assert 0 <= device.idVendor <= 0xFFFF
+            assert 0 <= device.idProduct <= 0xFFFF
+    finally:
+        for device in devices:
+            device.close()

@@ -41,7 +41,6 @@ dependencies = [
     "pygments",
     "daemonize",
     "pykdebugparser>=1.10.0",
-    "pyusb>=1.2.1",
     "rich>=13.0.0",
     "ansilogs>=1.1.0",
     "requests",
