@@ -18,10 +18,13 @@ from pymobiledevice3.cli.cli_common import (
     OSUTILS,
     USBMUX_ENV_VARS,
     USBMUX_OPTION_HELP,
+    OutputFormat,
+    OutputFormatOption,
     RSDServiceProviderDep,
     async_command,
     default_transport_preference,
     print_json,
+    print_json_line,
     prompt_device_list,
     sudo_required,
     user_requested_colored_output,
@@ -206,12 +209,21 @@ async def tunnel_task(
     script_mode: bool = False,
     max_idle_timeout: float = MAX_IDLE_TIMEOUT,
     protocol: TunnelProtocol = TunnelProtocol.DEFAULT,
+    output_format: OutputFormat = OutputFormat.TEXT,
 ) -> None:
     async with start_tunnel(
         service, secrets=secrets, max_idle_timeout=max_idle_timeout, protocol=protocol
     ) as tunnel_result:
         logger.info("tunnel created")
-        if script_mode:
+        if output_format is OutputFormat.JSON:
+            print_json_line({
+                "identifier": service.remote_identifier,
+                "interface": tunnel_result.interface,
+                "protocol": tunnel_result.protocol,
+                "address": tunnel_result.address,
+                "port": tunnel_result.port,
+            })
+        elif script_mode:
             print(f"{tunnel_result.address} {tunnel_result.port}", flush=True)
         else:
             if user_requested_colored_output():
@@ -265,6 +277,7 @@ async def start_tunnel_task(
     script_mode: bool = False,
     max_idle_timeout: float = MAX_IDLE_TIMEOUT,
     protocol: TunnelProtocol = TunnelProtocol.DEFAULT,
+    output_format: OutputFormat = OutputFormat.TEXT,
 ) -> None:
     if start_tunnel is None:
         raise NotImplementedError("failed to start the tunnel on your platform")
@@ -290,11 +303,18 @@ async def start_tunnel_task(
         service = prompt_device_list(tunnel_services)
 
     await tunnel_task(
-        service, secrets=secrets, script_mode=script_mode, max_idle_timeout=max_idle_timeout, protocol=protocol
+        service,
+        secrets=secrets,
+        script_mode=script_mode,
+        max_idle_timeout=max_idle_timeout,
+        protocol=protocol,
+        output_format=output_format,
     )
 
 
-async def native_tunnel_task(udid: Optional[str] = None, script_mode: bool = False) -> None:
+async def native_tunnel_task(
+    udid: Optional[str] = None, script_mode: bool = False, output_format: OutputFormat = OutputFormat.TEXT
+) -> None:
     # establish_native_rsd holds the tunnel assertion for the process lifetime and releases it at
     # interpreter exit; the RSD address is kernel-routable (Apple's tunnel), so other processes can
     # use the printed --rsd directly.
@@ -303,7 +323,11 @@ async def native_tunnel_task(udid: Optional[str] = None, script_mode: bool = Fal
     rsd = await establish_native_rsd(serial=udid)
     address, port = rsd.service.address
     logger.info("native tunnel is up")
-    if script_mode:
+    if output_format is OutputFormat.JSON:
+        # Serialise what the tunnel's own RSD connection already holds: a second connection with another
+        # handshake UUID makes iOS 27.2+ drop every service listener on the tunnel.
+        print_json_line({"udid": rsd.udid, "address": address, "port": port, "peer_info": rsd.peer_info})
+    elif script_mode:
         print(f"{address} {port}", flush=True)
     else:
         if user_requested_colored_output():
@@ -374,8 +398,13 @@ async def cli_start_tunnel(
             "(root) tunnel, as does passing any of the classic-tunnel options.",
         ),
     ] = None,
+    output_format: OutputFormatOption = OutputFormat.TEXT,
 ) -> None:
     """start tunnel (classic root tunnel by default; --native piggybacks Apple's tunnel on macOS, no root)"""
+    if script_mode and output_format is OutputFormat.JSON:
+        raise typer.BadParameter(
+            "--script-mode cannot be combined with --format json (the JSON line is the script output)"
+        )
     # Detect explicitly-passed classic-tunnel options via sentinel Nones rather than value-vs-default
     # (TunnelProtocol.DEFAULT is version-dependent -- QUIC on Python <3.13, TCP otherwise -- so a
     # value comparison cannot tell an explicit `--protocol quic` on 3.12 from the default).
@@ -412,7 +441,7 @@ async def cli_start_tunnel(
             if protocol is not None:
                 raise typer.BadParameter("--protocol cannot be combined with --native")
             raise typer.BadParameter("--max-idle-timeout cannot be combined with --native")
-        await native_tunnel_task(udid, script_mode=script_mode)
+        await native_tunnel_task(udid, script_mode=script_mode, output_format=output_format)
         return
     if not OSUTILS.is_admin:
         raise AccessDeniedError()
@@ -426,6 +455,7 @@ async def cli_start_tunnel(
             script_mode,
             max_idle_timeout=MAX_IDLE_TIMEOUT if max_idle_timeout is None else max_idle_timeout,
             protocol=protocol if protocol is not None else TunnelProtocol.DEFAULT,
+            output_format=output_format,
         )
 
 

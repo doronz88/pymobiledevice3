@@ -288,6 +288,25 @@ How it works (all via `ctypes` + libxpc, no pyobjc):
   without `--native` it builds the classic root tunnel). `remote browse` lists the devices
   `remotepairingd` reports — that is the macOS default, since browsing opens no RSD connection
   (`--no-native` forces the bonjour browse).
+- **Reading the device's identity without a second connection:** on iOS 27.2+, a second RSD
+  connection to this tunnel that presents a different handshake UUID (which is what
+  `remote rsd-info --rsd HOST PORT` does) makes the device re-attach and close every service
+  listener, breaking the tunnel. `remote start-tunnel --native --format json` instead prints one
+  NDJSON line from the RSD connection it already holds, then keeps the tunnel up, so a tool can
+  learn the UDID, OS version and services without opening another connection:
+
+  ```shell
+  pymobiledevice3 remote start-tunnel --native --udid <UDID> --format json
+  ```
+
+  ```json
+  {"udid": "00008110-001234567890401E", "address": "fd7b:e5b:6f53::1", "port": 64337, "peer_info": {"Properties": {"OSVersion": "27.2", "...": "..."}, "Services": {"...": "..."}}}
+  ```
+
+  `peer_info` is the `remote rsd-info` document (bytes appear as `{"$hex": "..."}`). `--format json`
+  cannot be combined with `--script-mode`. When the classic tunnel is built instead (no `--native`
+  and no `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native`), it prints
+  `{"identifier", "interface", "protocol", "address", "port"}`.
 - **When it is used:** only when asked for (`--native`, `PYMOBILEDEVICE3_NATIVE=1`, or
   `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native`), and automatically for iOS 17.0-17.3 on macOS, which
   the userspace tunnel cannot serve (no CoreDeviceProxy). The built-in default everywhere is the

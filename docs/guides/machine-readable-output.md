@@ -72,3 +72,5 @@ Streams that also have a human-readable text rendering default to it and accept
 - `developer dvt netstat`
 - `developer accessibility notifications`
 - `crash watch`
+- `remote start-tunnel` (one line with the tunnel's address, then it holds the tunnel; see the
+  [network stacks guide](network-stacks.md))
