@@ -21,10 +21,9 @@ from rich.live import Live
 from rich.text import Text
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.irecv._usb import APPLE_VENDOR_ID, Mode
+from pymobiledevice3.irecv._usb import APPLE_VENDOR_ID, KIS_PRODUCT_ID, Mode
 from pymobiledevice3.usb import list_devices, uses_iokit
 
-KIS_PRODUCT_ID = 0x1881  # A16 and later in DFU mode (libirecovery 4472436)
 POLL_INTERVAL = 0.1
 
 
@@ -109,6 +108,8 @@ class Step:
     seconds: float
     # stop the countdown early once the device reaches one of these
     until: frozenset[UsbState] = frozenset()
+    # the host restarts the device once this step's countdown ends
+    restart_after: bool = False
 
 
 @dataclass(frozen=True)
@@ -133,6 +134,23 @@ FACE_ID_IPHONE = ButtonSequence(
             until=_SCREEN_BLACK,
         ),
         Step("Keep holding SIDE, and also press and [b]hold VOLUME DOWN[/b]", 5),
+        Step("[b]Release SIDE[/b], keep holding VOLUME DOWN", 10, until=_IN_DFU),
+    ),
+)
+
+# iPhone 8 and later, booted: the host restarts it instead of the quick VOLUME UP, VOLUME DOWN, SIDE presses.
+# SIDE is pressed only once the phone went down, as SIDE with VOLUME DOWN on a running phone brings up Emergency SOS.
+FACE_ID_IPHONE_ASSISTED = ButtonSequence(
+    name="iPhone 8 or later",
+    buttons="VOLUME DOWN and the SIDE button",
+    steps=(
+        Step(
+            "Press and [b]hold VOLUME DOWN[/b] (only that); this computer then restarts the phone",
+            3,
+            restart_after=True,
+        ),
+        Step("Keep holding VOLUME DOWN while the phone restarts", 30, until=_SCREEN_BLACK),
+        Step("Keep holding VOLUME DOWN, and also press and [b]hold SIDE[/b]", 5),
         Step("[b]Release SIDE[/b], keep holding VOLUME DOWN", 10, until=_IN_DFU),
     ),
 )
@@ -176,13 +194,17 @@ IPAD_WITHOUT_HOME_BUTTON = ButtonSequence(
 )
 
 
-def iphone_sequence(product_type: str) -> Optional[ButtonSequence]:
-    """The sequence for an iPhone ``product_type`` (e.g. ``iPhone18,4``), or None for anything else."""
+def iphone_sequence(product_type: str, assisted: bool = False) -> Optional[ButtonSequence]:
+    """
+    The sequence for an iPhone ``product_type`` (e.g. ``iPhone18,4``), or None for anything else.
+
+    :param assisted: the host can restart the device (it is booted), so a sequence relying on that may be returned
+    """
     if not product_type.startswith("iPhone"):
         return None
     major = int(product_type[len("iPhone") :].split(",")[0])
     if major >= 10:
-        return FACE_ID_IPHONE
+        return FACE_ID_IPHONE_ASSISTED if assisted else FACE_ID_IPHONE
     if major == 9:
         return IPHONE_7
     return HOME_BUTTON
@@ -227,8 +249,17 @@ async def _countdown(
     return current
 
 
-async def run_sequence(console: Console, sequence: ButtonSequence, udid: Optional[str]) -> GuideResult:
-    """Show each step with its countdown and report where the device ended up."""
+async def run_sequence(
+    console: Console,
+    sequence: ButtonSequence,
+    udid: Optional[str],
+    restart: Optional[Callable[[], Awaitable[None]]] = None,
+) -> GuideResult:
+    """
+    Show each step with its countdown and report where the device ended up.
+
+    :param restart: restarts the device, for a step with ``restart_after``
+    """
 
     async def state() -> UsbState:
         return await current_state(udid)
@@ -237,6 +268,10 @@ async def run_sequence(console: Console, sequence: ButtonSequence, udid: Optiona
     current = await state()
     for index, step in enumerate(sequence.steps, start=1):
         current = await _countdown(console, step, index, total, state)
+        if step.restart_after:
+            if restart is None:
+                raise ValueError(f"{sequence.name}: a step restarts the device, but no way to restart it was given")
+            await restart()
     # the device may need a moment to enumerate after the last release
     deadline = time.monotonic() + 3
     while current not in _IN_DFU and time.monotonic() < deadline:

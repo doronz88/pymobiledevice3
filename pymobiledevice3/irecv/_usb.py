@@ -10,6 +10,7 @@ USBError = UsbError
 
 __all__ = [
     "APPLE_VENDOR_ID",
+    "KIS_PRODUCT_ID",
     "USB_TIMEOUT",
     "Mode",
     "USBError",
@@ -19,6 +20,8 @@ __all__ = [
 
 APPLE_VENDOR_ID = 0x05AC
 USB_TIMEOUT = 10000  # milliseconds
+# A16 and later in DFU mode enumerate as a Debug USB ("KIS") device and report their mode through it
+KIS_PRODUCT_ID = 0x1881
 
 
 class Mode(Enum):

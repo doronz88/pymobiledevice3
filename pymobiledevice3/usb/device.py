@@ -54,6 +54,14 @@ class UsbDevice(Protocol):
         """A bulk write to ``endpoint``, claiming the interface it belongs to."""
         ...
 
+    def read(self, endpoint: int, size: int, timeout: Optional[int] = None) -> bytes:
+        """A bulk read of up to ``size`` bytes from ``endpoint`` (an IN address), claiming its interface."""
+        ...
+
+    def wait_until_gone(self, timeout: float) -> bool:
+        """Wait up to ``timeout`` seconds for the device to leave the bus; return whether it did."""
+        ...
+
     def reset(self) -> None:
         """Reset the device; it re-enumerates, so this handle is done."""
         ...

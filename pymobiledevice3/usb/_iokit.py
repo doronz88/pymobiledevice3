@@ -213,12 +213,21 @@ def get_property(entry: int, key: str) -> Any:
     if not value:
         return None
     try:
-        data = _cf.CFPropertyListCreateData(None, value, _CF_PROPERTY_LIST_BINARY_FORMAT, 0, None)
+        return cf_to_python(value)
     finally:
         _cf.CFRelease(value)
+
+
+def cf_to_python(value: int) -> Any:
+    """A CoreFoundation property-list object as a Python value, or None when it is not one; ``value`` is kept."""
+    data = _cf.CFPropertyListCreateData(None, value, _CF_PROPERTY_LIST_BINARY_FORMAT, 0, None)
     if not data:
         return None
     try:
         return plistlib.loads(ctypes.string_at(_cf.CFDataGetBytePtr(data), _cf.CFDataGetLength(data)))
     finally:
         _cf.CFRelease(data)
+
+
+def cf_release(value: int) -> None:
+    _cf.CFRelease(value)

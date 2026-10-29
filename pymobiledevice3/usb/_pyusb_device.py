@@ -1,6 +1,7 @@
 """USB devices through pyusb (libusb), translating its errors to ``UsbError``."""
 
 import contextlib
+import time
 from array import array
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
@@ -18,6 +19,9 @@ if TYPE_CHECKING:
 else:
     from usb.core import find
     from usb.util import dispose_resources, get_string
+
+# how often wait_until_gone scans the bus
+_GONE_POLL_INTERVAL = 0.1
 
 
 @contextlib.contextmanager
@@ -75,6 +79,22 @@ class PyUsbDevice:
     def write(self, endpoint: int, data: bytes, timeout: Optional[int] = None) -> int:
         with _translated(f"USB write to endpoint {endpoint:#04x}"):
             return cast(int, self._device.write(endpoint, data, timeout=timeout))
+
+    def read(self, endpoint: int, size: int, timeout: Optional[int] = None) -> bytes:
+        with _translated(f"USB read from endpoint {endpoint:#04x}"):
+            return bytes(self._device.read(endpoint, size, timeout=timeout))
+
+    def wait_until_gone(self, timeout: float) -> bool:
+        location = (self._device.bus, self._device.address)
+        deadline = time.monotonic() + timeout
+        while True:
+            with _translated("Listing USB devices"):
+                present = any((device.bus, device.address) == location for device in find(find_all=True))
+            if not present:
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(_GONE_POLL_INTERVAL)
 
     def reset(self) -> None:
         with _translated("USB reset"):
