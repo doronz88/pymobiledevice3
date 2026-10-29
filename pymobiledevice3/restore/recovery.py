@@ -6,7 +6,6 @@ from typing import Any, Optional
 
 from ipsw_parser.build_identity import BuildIdentity
 from ipsw_parser.ipsw import IPSW
-from usb import USBError
 
 from pymobiledevice3.exceptions import PyMobileDevice3Exception, TSSError
 from pymobiledevice3.irecv import IRecv, Mode
@@ -15,6 +14,7 @@ from pymobiledevice3.restore.base_restore import BaseRestore, Behavior
 from pymobiledevice3.restore.consts import lpol_file
 from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
+from pymobiledevice3.usb import UsbError
 
 RESTORE_VARIANT_ERASE_INSTALL = "Erase Install (IPSW)"
 RESTORE_VARIANT_UPGRADE_INSTALL = "Upgrade Install (IPSW)"
@@ -382,13 +382,13 @@ class Recovery(BaseRestore):
 
         await self.send_component(component)
         assert self.device.irecv is not None
-        with contextlib.suppress(USBError):
+        with contextlib.suppress(UsbError):
             self.device.irecv.send_zero_length_download()
 
         if self.restore_boot_args:
             self.device.irecv.send_command(f"setenv boot-args {self.restore_boot_args}")
 
-        with contextlib.suppress(USBError):
+        with contextlib.suppress(UsbError):
             self.device.irecv.send_command("bootx", b_request=1)
 
     def set_autoboot(self, enable: bool):
@@ -443,7 +443,7 @@ class Recovery(BaseRestore):
 
         if self.build_identity.has_component("RestoreSEP"):
             # attempt to send rsepfirmware and load it, otherwise continue
-            with contextlib.suppress(USBError):
+            with contextlib.suppress(UsbError):
                 await self.send_component_and_command("RestoreSEP", "rsepfirmware")
 
         await self.send_kernelcache()
@@ -490,7 +490,7 @@ class Recovery(BaseRestore):
                 self.device.irecv.send_command("go", b_request=1)
 
                 if self.build_identity.build_manifest.build_major < 20:
-                    with contextlib.suppress(USBError):
+                    with contextlib.suppress(UsbError):
                         self.device.irecv.send_zero_length_download(timeout=5000)
 
                 self.logger.debug("Waiting for device to disconnect...")
@@ -523,7 +523,7 @@ class Recovery(BaseRestore):
 
         elif self.device.irecv.mode.is_recovery:
             # now we load the iBEC
-            with contextlib.suppress(USBError):
+            with contextlib.suppress(UsbError):
                 await self.send_ibec()
 
             await self.reconnect_irecv(is_recovery=True)

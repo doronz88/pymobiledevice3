@@ -126,23 +126,24 @@ class _FakeUsbDevice:
 
     def __init__(self, ecid: int) -> None:
         self.serial_number = f"CPID:8150 CPRV:11 BDID:0C ECID:{ecid:016X} IBFL:3C SRNM:[ABCDEFGHIJ]"
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def test_find_device_releases_the_devices_it_skips(monkeypatch: pytest.MonkeyPatch) -> None:
     devices = [_FakeUsbDevice(1), _FakeUsbDevice(2), _FakeUsbDevice(3)]
-    disposed: list[Any] = []
-    monkeypatch.setattr(irecv_client, "find", lambda find_all=False, **kwargs: list(devices))
-    monkeypatch.setattr(irecv_client, "dispose_resources", disposed.append)
+    monkeypatch.setattr(irecv_client, "list_devices", lambda: list(devices))
 
     found = irecv_client._find_device(ecid=2, timeout=0, is_recovery=None)
 
     assert found is not None and found.device is devices[1]
-    assert disposed == [devices[0]]
+    # the ones before it were skipped and the one after it never looked at: all but the found one are released
+    assert [device.closed for device in devices] == [True, False, True]
 
 
-def test_closing_releases_the_device(monkeypatch: pytest.MonkeyPatch) -> None:
-    disposed: list[Any] = []
-    monkeypatch.setattr(irecv_client, "dispose_resources", disposed.append)
+def test_closing_releases_the_device() -> None:
     client = irecv.IRecv.__new__(irecv.IRecv)
     device = _FakeUsbDevice(1)
     client._device = cast(UsbDevice, device)
@@ -153,7 +154,7 @@ def test_closing_releases_the_device(monkeypatch: pytest.MonkeyPatch) -> None:
     with client:
         assert client.ecid == 1
 
-    assert disposed == [device]
+    assert device.closed
     assert client.ap_nonce is None
     assert client._transport is None
     with pytest.raises(IRecvNoDeviceConnectedError):

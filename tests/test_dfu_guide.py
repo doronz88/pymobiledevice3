@@ -38,11 +38,11 @@ def test_special_mode_states_go_by_product_id() -> None:
 
 def _iokit(monkeypatch: pytest.MonkeyPatch, *devices: tuple[int, Optional[str]]) -> None:
     entries = [
-        SimpleNamespace(properties={"idVendor": APPLE_VENDOR_ID, "idProduct": product_id, "USB Serial Number": serial})
+        SimpleNamespace(idVendor=APPLE_VENDOR_ID, idProduct=product_id, serial_number=serial, close=lambda: None)
         for product_id, serial in devices
     ]
-    monkeypatch.setattr(dfu_guide, "get_io_services_by_type", lambda service_type: entries)
-    monkeypatch.setattr(dfu_guide, "find", lambda find_all=False: [])
+    monkeypatch.setattr(dfu_guide, "uses_iokit", lambda: True)
+    monkeypatch.setattr(dfu_guide, "list_devices", lambda: entries)
 
 
 @pytest.mark.asyncio

@@ -97,6 +97,17 @@ System Integrity Protection refuses that, and loads and starts it again when the
 restore ends. The `launchctl` calls run through `sudo` and may prompt for your
 password.
 
+## How the host reaches the device
+
+On macOS, devices in recovery and DFU mode are reached through IOKit; elsewhere
+through libusb. IOKit also sees A16-or-later devices in DFU mode, which libusb
+does not on macOS. `restore --libusb` (or `PYMOBILEDEVICE3_USB_BACKEND=libusb`)
+switches macOS to libusb, e.g. to compare the two:
+
+```shell
+pymobiledevice3 restore --libusb update -i iPhone.ipsw
+```
+
 ## Several devices at once
 
 Each restore stays on its own device, so several can run side by side: start

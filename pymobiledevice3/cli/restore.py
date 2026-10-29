@@ -49,7 +49,7 @@ from pymobiledevice3.restore.recovery import Behavior, Recovery
 from pymobiledevice3.restore.restore import Restore
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.diagnostics import DiagnosticsService
-from pymobiledevice3.usb import power_delivery
+from pymobiledevice3.usb import USB_BACKEND_ENV_VAR, power_delivery
 from pymobiledevice3.utils import ask_prompt, file_download, start_ipython_shell
 
 logger = logging.getLogger(__name__)
@@ -73,6 +73,22 @@ cli = InjectingTyper(
     help="Restore/erase IPSWs, fetch blobs, and manage devices in Recovery/DFU.",
     no_args_is_help=True,
 )
+
+
+@cli.callback()
+def callback(
+    libusb: Annotated[
+        bool,
+        typer.Option(
+            "--libusb",
+            help=f"macOS: reach Recovery/DFU devices through libusb instead of IOKit (same as "
+            f"{USB_BACKEND_ENV_VAR}=libusb). libusb cannot see A16-or-later devices in DFU mode.",
+        ),
+    ] = False,
+) -> None:
+    if libusb:
+        os.environ[USB_BACKEND_ENV_VAR] = "libusb"
+
 
 # How long the device prompt waits on each device for its description.
 DEVICE_DESCRIPTION_TIMEOUT = 5.0

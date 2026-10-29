@@ -61,7 +61,8 @@ pymobiledevice3 --install-completion
 Additional requirements:
 
 - **OpenSSL** is explicitly required for older iOS versions (`< 13`).
-- **Recovery/DFU** support requires `libusb`.
+- **Recovery/DFU** support requires `libusb` on Linux and Windows. On macOS it goes through IOKit and
+  needs nothing extra (`pymobiledevice3 restore --libusb ...` uses libusb there too, if installed).
 
 ## iOS 17+ developer services
 

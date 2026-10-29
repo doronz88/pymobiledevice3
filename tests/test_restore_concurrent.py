@@ -39,10 +39,12 @@ class _FakeUsbDevice:
     def __init__(self, ecid: int) -> None:
         self.serial_number = f"CPID:8150 CPRV:11 BDID:0C ECID:{ecid:016X} IBFL:3C SRNM:[ABCDEFGHIJ]"
 
+    def close(self) -> None:
+        pass
+
 
 def _find(monkeypatch: pytest.MonkeyPatch, devices: list[_FakeUsbDevice], ecid: Optional[int]) -> irecv.DeviceInfo:
-    monkeypatch.setattr(irecv_client, "find", lambda find_all=False, **kwargs: list(devices))
-    monkeypatch.setattr(irecv_client, "dispose_resources", lambda device: None)
+    monkeypatch.setattr(irecv_client, "list_devices", lambda: list(devices))
     found = irecv_client._find_device(ecid=ecid, timeout=1, is_recovery=None)
     assert found is not None
     return found.info
