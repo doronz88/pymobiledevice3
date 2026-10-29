@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import hashlib
 import logging
+import os
 import plistlib
 import re
 import sys
@@ -48,6 +49,7 @@ from pymobiledevice3.restore.recovery import Behavior, Recovery
 from pymobiledevice3.restore.restore import Restore
 from pymobiledevice3.service_connection import ServiceConnection
 from pymobiledevice3.services.diagnostics import DiagnosticsService
+from pymobiledevice3.usb import power_delivery
 from pymobiledevice3.utils import ask_prompt, file_download, start_ipython_shell
 
 logger = logging.getLogger(__name__)
@@ -533,10 +535,76 @@ def restore_exit() -> None:
     irecv.reboot()
 
 
+def _choose_vdm_port(ecid: Optional[str]) -> power_delivery.ApplePort:
+    ports = power_delivery.list_apple_ports()
+    if ecid is not None:
+        ecid_value = int(ecid, 0)
+        ports = [port for port in ports if port.ecid == ecid_value]
+    if not ports:
+        typer.secho(
+            "No Apple device is connected directly to a Thunderbolt/USB4 port of this Mac"
+            + ("" if ecid is None else f" with ECID {ecid}")
+            + ". Connect it to one of those ports with no hub in between (USB-C power messages only reach the "
+            "device at the other end of the cable), or restart it without --vdm.",
+            err=True,
+            fg="red",
+        )
+        raise typer.Exit(code=1)
+    if len(ports) == 1:
+        return ports[0]
+    selected = cast(
+        int,
+        prompt_selection(
+            [port.describe() for port in ports],
+            "Choose device",
+            idx=True,
+            hint="Pass --ecid to choose a device non-interactively.",
+        ),
+    )
+    return ports[selected]
+
+
+def _restart_over_power_delivery(ecid: Optional[str]) -> None:
+    if sys.platform != "darwin":
+        typer.secho("--vdm is only supported on macOS.", err=True, fg="red")
+        raise typer.Exit(code=1)
+    if os.geteuid() != 0:
+        typer.secho("--vdm needs root: rerun the command with sudo.", err=True, fg="red")
+        raise typer.Exit(code=1)
+    try:
+        port = _choose_vdm_port(ecid)
+        logger.info(f"Restarting the {port.describe()}")
+        power_delivery.reboot(port.port)
+    except power_delivery.PowerDeliveryError as e:
+        typer.secho(str(e), err=True, fg="red")
+        raise typer.Exit(code=1) from e
+
+
 @cli.command("restart")
 @async_command
-async def restore_restart(device: DeviceDep) -> None:
+async def restore_restart(
+    ecid: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Target device ECID; defaults to the first connected USB device or waits for Recovery/DFU.",
+        ),
+    ] = None,
+    vdm: Annotated[
+        bool,
+        typer.Option(
+            "--vdm",
+            help="macOS, needs root: restart through the USB-C port controller with Apple's USB Power Delivery "
+            "reboot message. Needs no pairing and works in Recovery mode; the device must be directly on a "
+            "Thunderbolt/USB4 port.",
+        ),
+    ] = False,
+) -> None:
     """restarts device"""
+    if vdm:
+        _restart_over_power_delivery(ecid)
+        return
+    device = await _device_dependency_async(ecid)
+    assert device is not None  # only None while completing the command line
     if await device.get_is_lockdown():
         assert device.lockdown is not None  # get_is_lockdown() guarantees it
         async with DiagnosticsService(device.lockdown) as diagnostics:

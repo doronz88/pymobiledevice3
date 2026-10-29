@@ -117,12 +117,30 @@ option takes either form.
 
 - `restore enter` puts a normal-mode device into recovery; `restore exit`
   re-enables auto-boot and reboots a recovery-mode device back to iOS;
-  `restore restart` reboots either.
+  `restore restart` reboots either (see below for `--vdm`).
 - `restore tss` requests (and with `--out` saves) the AP ticket for a build
   without restoring, `--behavior Update|Erase` selecting the identity.
 - `restore ramdisk` boots the IPSW's restore ramdisk and stops there.
 - `restore shell` opens an IPython shell with the iBoot (`irecv`) client of a
   recovery/DFU device.
+
+## Restarting over USB-C (macOS)
+
+`restore restart --vdm` restarts the device with Apple's USB Power Delivery
+reboot message, sent by the Mac's own USB-C port controller. The device's USB-C
+controller handles it, not iOS, so it needs no pairing or trust and works in
+recovery mode too:
+
+```shell
+sudo pymobiledevice3 restore restart --vdm
+```
+
+- It needs root: only root can open the port controller.
+- The device has to be on a Thunderbolt/USB4 port, the ports with Apple's PD
+  controller, and connected directly: a hub in between does not pass the
+  message on.
+- With several Apple devices on such ports, the command asks which one to
+  restart; `--ecid` picks it non-interactively.
 
 ## Inspecting the preflight data
 
