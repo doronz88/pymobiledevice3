@@ -64,7 +64,7 @@ async def test_select_process_from_snapshot_first_and_last_follow_sorted_order(
 
 
 @pytest.mark.asyncio
-async def test_sysmon_process_single_task_writes_json_to_buffer(service_provider) -> None:
+async def test_sysmon_process_single_task_writes_json_to_buffer(dvt, service_provider) -> None:
     out = StringIO()
 
     await sysmon_process_single_task(service_provider, keys=["pid", "name"], out=out)
@@ -76,7 +76,7 @@ async def test_sysmon_process_single_task_writes_json_to_buffer(service_provider
 
 
 @pytest.mark.asyncio
-async def test_sysmon_process_monitor_threshold_task_writes_jsonl_to_buffer(service_provider) -> None:
+async def test_sysmon_process_monitor_threshold_task_writes_jsonl_to_buffer(dvt, service_provider) -> None:
     out = StringIO()
 
     await sysmon_process_monitor_threshold_task(service_provider, threshold=0.0, duration=500, keys=["pid"], out=out)
@@ -88,7 +88,7 @@ async def test_sysmon_process_monitor_threshold_task_writes_jsonl_to_buffer(serv
 
 
 @pytest.mark.asyncio
-async def test_sysmon_process_monitor_process_task_keep_monitoring_streams_by_filter(service_provider) -> None:
+async def test_sysmon_process_monitor_process_task_keep_monitoring_streams_by_filter(dvt, service_provider) -> None:
     out = StringIO()
 
     await sysmon_process_monitor_process_task(
