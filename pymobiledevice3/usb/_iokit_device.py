@@ -45,6 +45,7 @@ _INTF_GET_INTERFACE_NUMBER = 17
 _INTF_GET_NUM_ENDPOINTS = 19
 _INTF_SET_ALTERNATE_INTERFACE = 22
 _INTF_GET_PIPE_PROPERTIES = 26
+_INTF_READ_PIPE_TO = 39
 _INTF_WRITE_PIPE_TO = 40
 
 _IO_RETURN_EXCLUSIVE_ACCESS = 0xE00002C5
@@ -317,20 +318,19 @@ class IOKitUsbDevice:
             return array("B", buffer.raw[: request.wLenDone])
         return request.wLenDone
 
-    def write(self, endpoint: int, data: bytes, timeout: Optional[int] = None) -> int:
-        target = None
+    def _owner(self, endpoint: int) -> _Interface:
+        """The claimed interface ``endpoint`` belongs to."""
         for interface in self._interfaces.values():
             if endpoint in interface.pipes:
-                target = interface
-                break
-        if target is None:
-            # as pyusb: claim the interface the endpoint belongs to
-            for number in self._interface_numbers():
-                if number not in self._interfaces and endpoint in self._claim(number).pipes:
-                    target = self._interfaces[number]
-                    break
-        if target is None:
-            raise UsbError(f"The USB device has no endpoint {endpoint:#04x} in its current settings.")
+                return interface
+        # as pyusb: claim the interface the endpoint belongs to
+        for number in self._interface_numbers():
+            if number not in self._interfaces and endpoint in self._claim(number).pipes:
+                return self._interfaces[number]
+        raise UsbError(f"The USB device has no endpoint {endpoint:#04x} in its current settings.")
+
+    def write(self, endpoint: int, data: bytes, timeout: Optional[int] = None) -> int:
+        target = self._owner(endpoint)
         timeout = DEFAULT_TIMEOUT if timeout is None else timeout
         buffer = ctypes.create_string_buffer(bytes(data), max(len(data), 1))
         kr = target.call(
@@ -345,13 +345,40 @@ class IOKitUsbDevice:
         self._check(f"USB write to endpoint {endpoint:#04x}", kr)
         return len(data)
 
+    def read(self, endpoint: int, size: int, timeout: Optional[int] = None) -> bytes:
+        source = self._owner(endpoint)
+        timeout = DEFAULT_TIMEOUT if timeout is None else timeout
+        buffer = ctypes.create_string_buffer(max(size, 1))
+        received = c_uint32(size)
+        kr = source.call(
+            _INTF_READ_PIPE_TO,
+            [c_uint8, c_void_p, POINTER(c_uint32), c_uint32, c_uint32],
+            source.pipes[endpoint],
+            ctypes.cast(buffer, c_void_p),
+            byref(received),
+            timeout,
+            timeout,
+        )
+        self._check(f"USB read from endpoint {endpoint:#04x}", kr)
+        return buffer.raw[: received.value]
+
+    def wait_until_gone(self, timeout: float) -> bool:
+        try:
+            entry_id = _iokit.registry_entry_id(self._service)
+        except _iokit.IOKitError:
+            # no longer in the registry
+            return True
+        deadline = time.monotonic() + timeout
+        while _iokit.is_registered(entry_id):
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(_REENUMERATE_POLL_INTERVAL)
+        return True
+
     def reset(self) -> None:
-        entry_id = _iokit.registry_entry_id(self._service)
         self._check("USB re-enumeration", self._call(_DEV_REENUMERATE, [c_uint32], 0))
         # as libusb, wait for the device to leave so the next lookup cannot find it again
-        deadline = time.monotonic() + _REENUMERATE_TIMEOUT
-        while _iokit.is_registered(entry_id) and time.monotonic() < deadline:
-            time.sleep(_REENUMERATE_POLL_INTERVAL)
+        self.wait_until_gone(_REENUMERATE_TIMEOUT)
         self.close()
 
     def get_configuration(self) -> int:

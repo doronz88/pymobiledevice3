@@ -21,10 +21,9 @@ from rich.live import Live
 from rich.text import Text
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.irecv._usb import APPLE_VENDOR_ID, Mode
+from pymobiledevice3.irecv._usb import APPLE_VENDOR_ID, KIS_PRODUCT_ID, Mode
 from pymobiledevice3.usb import list_devices, uses_iokit
 
-KIS_PRODUCT_ID = 0x1881  # A16 and later in DFU mode (libirecovery 4472436)
 POLL_INTERVAL = 0.1
 
 

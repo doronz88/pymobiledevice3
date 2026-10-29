@@ -506,11 +506,7 @@ async def guide_into_dfu(device: Device) -> dfu_guide.UsbState:
             raise typer.Exit(code=1)
 
 
-async def _reconnect_in_dfu(ecid: int, state: dfu_guide.UsbState) -> Device:
-    if state == dfu_guide.UsbState.KIS:
-        raise PyMobileDevice3Exception(
-            "The device came up in DFU mode over Debug USB (KIS), which restores do not support yet."
-        )
+async def _reconnect_in_dfu(ecid: int) -> Device:
     return Device(irecv=IRecv(ecid=ecid, is_recovery=False))
 
 
@@ -758,11 +754,18 @@ async def restore_update(
     """
     Update or restore the device using an IPSW (local path or URL).
     """
-    if dfu:
-        ecid = await device.get_ecid()
-        device = await _reconnect_in_dfu(ecid, await guide_into_dfu(device))
     if exclusive_usb and sys.platform != "darwin":
         raise typer.BadParameter("--exclusive-usb is only supported on macOS", param_hint="--exclusive-usb")
+    if dfu:
+        ecid = await device.get_ecid()
+        await guide_into_dfu(device)
+        device = await _reconnect_in_dfu(ecid)
+    if exclusive_usb and device.irecv is not None and device.irecv.is_kis:
+        raise typer.BadParameter(
+            "On macOS a device in DFU mode behind KIS is reached through deviceinterfaced, which --exclusive-usb "
+            "boots out.",
+            param_hint="--exclusive-usb",
+        )
     async with ipsw_ctx as ipsw:
         with DeviceInterfacedControl() if exclusive_usb else contextlib.nullcontext():
             await restore_update_task(

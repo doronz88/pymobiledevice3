@@ -88,6 +88,10 @@ anywhere but DFU the guide says what to change and offers another try. Apple
 documents only the recovery mode sequences; the DFU ones are the widely used
 sequences.
 
+On macOS, an A16-or-later device in DFU mode (Debug USB/KIS) can only be opened
+by Apple's `deviceinterfaced`, so the restore loads its images through that
+daemon; elsewhere it talks KIS to the device over libusb.
+
 ## Keeping deviceinterfaced off the device
 
 macOS's `deviceinterfaced` can claim the USB device while it re-enumerates
@@ -95,13 +99,14 @@ during a restore, so the device in DFU mode is never seen. `--exclusive-usb` (ex
 the daemon off for the restore: it boots it out, or keeps killing it where
 System Integrity Protection refuses that, and loads and starts it again when the
 restore ends. The `launchctl` calls run through `sudo` and may prompt for your
-password.
+password. It cannot be used with an A16-or-later device in DFU mode on macOS,
+which is reached through that daemon.
 
 ## How the host reaches the device
 
 On macOS, devices in recovery and DFU mode are reached through IOKit; elsewhere
-through libusb. IOKit also sees A16-or-later devices in DFU mode, which libusb
-does not on macOS. `restore --libusb` (or `PYMOBILEDEVICE3_USB_BACKEND=libusb`)
+through libusb. A16-or-later devices in DFU mode go through `deviceinterfaced`
+on macOS (see above). `restore --libusb` (or `PYMOBILEDEVICE3_USB_BACKEND=libusb`)
 switches macOS to libusb, e.g. to compare the two:
 
 ```shell
