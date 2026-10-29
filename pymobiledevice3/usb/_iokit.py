@@ -43,6 +43,13 @@ _iokit.IOServiceGetMatchingServices.argtypes = [c_uint32, c_void_p, POINTER(c_ui
 _iokit.IOIteratorNext.restype = c_uint32
 _iokit.IOIteratorNext.argtypes = [c_uint32]
 _iokit.IOObjectRelease.argtypes = [c_uint32]
+_iokit.IOObjectRetain.argtypes = [c_uint32]
+_iokit.IORegistryEntryGetRegistryEntryID.restype = c_int32
+_iokit.IORegistryEntryGetRegistryEntryID.argtypes = [c_uint32, POINTER(ctypes.c_uint64)]
+_iokit.IORegistryEntryIDMatching.restype = c_void_p
+_iokit.IORegistryEntryIDMatching.argtypes = [ctypes.c_uint64]
+_iokit.IOServiceGetMatchingService.restype = c_uint32
+_iokit.IOServiceGetMatchingService.argtypes = [c_uint32, c_void_p]
 _iokit.IOObjectConformsTo.restype = c_uint32
 _iokit.IOObjectConformsTo.argtypes = [c_uint32, c_char_p]
 _iokit.IORegistryEntryGetParentEntry.restype = c_int32
@@ -139,6 +146,15 @@ def matching_services(class_name: str) -> Generator[list[int], None, None]:
             _iokit.IOObjectRelease(service)
 
 
+def iterator_objects(iterator: int) -> list[int]:
+    """Drain and release ``iterator``; the caller releases the returned objects."""
+    objects: list[int] = []
+    while obj := _iokit.IOIteratorNext(iterator):
+        objects.append(obj)
+    _iokit.IOObjectRelease(iterator)
+    return objects
+
+
 def ancestor(entry: int, class_name: str) -> int:
     """The closest IOService-plane ancestor of ``entry`` that is a ``class_name``; the caller releases it."""
     current = entry
@@ -156,6 +172,27 @@ def ancestor(entry: int, class_name: str) -> int:
 
 def release_object(entry: int) -> None:
     _iokit.IOObjectRelease(entry)
+
+
+def retain_object(entry: int) -> None:
+    _iokit.IOObjectRetain(entry)
+
+
+def registry_entry_id(entry: int) -> int:
+    entry_id = ctypes.c_uint64()
+    kr = _iokit.IORegistryEntryGetRegistryEntryID(entry, byref(entry_id))
+    if kr != KERN_SUCCESS:
+        raise IOKitError("IORegistryEntryGetRegistryEntryID", kr)
+    return entry_id.value
+
+
+def is_registered(entry_id: int) -> bool:
+    """Whether the service with registry entry ID ``entry_id`` is still matchable (not terminated)."""
+    service = _iokit.IOServiceGetMatchingService(0, _iokit.IORegistryEntryIDMatching(entry_id))
+    if not service:
+        return False
+    _iokit.IOObjectRelease(service)
+    return True
 
 
 def name(entry: int) -> str:

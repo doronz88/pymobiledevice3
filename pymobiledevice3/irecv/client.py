@@ -4,9 +4,8 @@ import contextlib
 import logging
 import time
 from array import array
-from collections.abc import Iterable
 from types import TracebackType
-from typing import TYPE_CHECKING, NamedTuple, Optional, Union, cast
+from typing import TYPE_CHECKING, NamedTuple, Optional, Union
 
 from pymobiledevice3.exceptions import IRecvError, IRecvNoDeviceConnectedError
 from pymobiledevice3.irecv._usb import (
@@ -15,9 +14,7 @@ from pymobiledevice3.irecv._usb import (
     Mode,
     UsbDevice,
     USBError,
-    dispose_resources,
-    find,
-    get_string,
+    list_devices,
 )
 from pymobiledevice3.irecv.device_info import DeviceInfo, parse_nonce
 from pymobiledevice3.irecv.transport import DfuTransport, RecoveryTransport
@@ -57,40 +54,46 @@ def _find_device(ecid: Optional[int], timeout: float, is_recovery: Optional[bool
     end = time.time() + timeout
     while True:
         found: Optional[_Found] = None
-        # pyusb ships no types: this is where its Devices are taken to be UsbDevices
-        for device in cast(Iterable[UsbDevice], find(find_all=True)):
-            # Match on the descriptor fields cached at enumeration. Reading string
-            # descriptors (e.g. manufacturer) requires opening the device, which fails
-            # for unrelated devices lacking a libusb-compatible driver (e.g. on Windows).
-            if device.idVendor != APPLE_VENDOR_ID:
-                continue
-
-            mode = Mode.get_mode_from_value(device.idProduct)
-            if mode is None:
-                # not one of Apple's special modes
-                continue
-
-            if is_recovery is not None and mode.is_recovery != is_recovery:
-                continue
-
-            if found is not None:
-                raise IRecvError("More than one device was found connected in recovery mode; select one by its ECID")
-
-            try:
-                info = _read_device_info(device)
-                if ecid is not None and info.ecid != ecid:
-                    # wrong device - move on
-                    dispose_resources(device)
+        devices = list_devices()
+        try:
+            for device in devices:
+                # Match on the descriptor fields cached at enumeration. Reading string
+                # descriptors (e.g. manufacturer) requires opening the device, which fails
+                # for unrelated devices lacking a libusb-compatible driver (e.g. on Windows).
+                if device.idVendor != APPLE_VENDOR_ID:
                     continue
-            except (ValueError, NotImplementedError, USBError, IRecvError):
-                # unreadable device (e.g. missing driver or permissions) - move on
-                dispose_resources(device)
-                continue
 
-            found = _Found(device, mode, info)
-            if ecid is not None:
-                # Other devices may be in Recovery/DFU too, e.g. while another restore runs.
-                break
+                mode = Mode.get_mode_from_value(device.idProduct)
+                if mode is None:
+                    # not one of Apple's special modes
+                    continue
+
+                if is_recovery is not None and mode.is_recovery != is_recovery:
+                    continue
+
+                if found is not None:
+                    raise IRecvError(
+                        "More than one device was found connected in recovery mode; select one by its ECID"
+                    )
+
+                try:
+                    info = _read_device_info(device)
+                    if ecid is not None and info.ecid != ecid:
+                        # wrong device - move on
+                        continue
+                except (ValueError, NotImplementedError, USBError, IRecvError):
+                    # unreadable device (e.g. missing driver or permissions) - move on
+                    continue
+
+                found = _Found(device, mode, info)
+                if ecid is not None:
+                    # Other devices may be in Recovery/DFU too, e.g. while another restore runs.
+                    break
+        finally:
+            # release every device but the one found
+            for device in devices:
+                if found is None or device is not found.device:
+                    device.close()
 
         if found is not None or time.time() >= end:
             return found
@@ -218,16 +221,16 @@ class IRecv:
             raise IRecvError(f"Only a device in DFU or WTF mode reports a DFU state; this one is in {self.mode.name}.")
         return transport
 
-    def set_interface_altsetting(self, interface: Optional[int] = None, alternate_setting: Optional[int] = None):
+    def set_interface_altsetting(self, interface: int, alternate_setting: int) -> None:
         logger.debug(f"set_interface_altsetting: {interface} {alternate_setting}")
         if interface == 1:
             self.device.set_interface_altsetting(interface=interface, alternate_setting=alternate_setting)
 
-    def set_configuration(self, configuration: Optional[int] = None):
+    def set_configuration(self, configuration: int = 1) -> None:
         logger.debug(f"set_configuration: {configuration}")
         device = self.device
         try:
-            if device.get_active_configuration().bConfigurationValue == configuration:
+            if device.get_configuration() == configuration:
                 return
         except USBError:
             pass
@@ -240,7 +243,7 @@ class IRecv:
         bRequest: int,
         wValue: int = 0,
         wIndex: int = 0,
-        data_or_wLength: Union[None, int, bytes] = None,
+        data_or_wLength: Union[int, bytes, None] = None,
         timeout: int = USB_TIMEOUT,
     ) -> Union["array[int]", int]:
         """A raw control request; see ``UsbDevice.ctrl_transfer``."""
@@ -301,10 +304,10 @@ class IRecv:
     def _close(self) -> None:
         """Release the USB device and forget everything learned about it."""
         if self._device is not None:
-            # Release the libusb handle explicitly rather than relying on garbage collection: a caller
+            # Release the USB handle explicitly rather than relying on garbage collection: a caller
             # may keep a reference to the Device across reset()->_reinit(), which would keep its handle
             # claimed, block the reset device from re-enumerating cleanly and hang the next lookup.
-            dispose_resources(self._device)
+            self._device.close()
         self._device = None
         self._mode = None
         self._info = None
@@ -320,7 +323,7 @@ class IRecv:
         self._device, self._mode, self._info = found
         self._transport = RecoveryTransport(found.device) if found.mode.is_recovery else DfuTransport(found.device)
 
-        descriptor = get_string(self.device, 1)
+        descriptor = self.device.get_string(1)
         if descriptor is None:
             raise IRecvError("Could not read the USB string descriptor of the device in Recovery/DFU mode.")
         self.ap_nonce = parse_nonce(descriptor, "NONC")

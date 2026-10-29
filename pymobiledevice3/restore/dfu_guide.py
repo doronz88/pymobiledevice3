@@ -10,24 +10,19 @@ Apple documents only the Recovery mode sequences; the DFU sequences below are th
 """
 
 import asyncio
-import sys
 import time
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Optional, cast
+from typing import Callable, Optional
 
 from rich.console import Console
 from rich.live import Live
 from rich.text import Text
 
 from pymobiledevice3 import usbmux
-from pymobiledevice3.irecv._usb import APPLE_VENDOR_ID, Mode, UsbDevice, find
-
-if sys.platform == "darwin":
-    from ioregistry.ioentry import get_io_services_by_type
-else:
-    get_io_services_by_type = None
+from pymobiledevice3.irecv._usb import APPLE_VENDOR_ID, Mode
+from pymobiledevice3.usb import list_devices, uses_iokit
 
 KIS_PRODUCT_ID = 0x1881  # A16 and later in DFU mode (libirecovery 4472436)
 POLL_INTERVAL = 0.1
@@ -54,19 +49,18 @@ class _UsbEntry:
 def _usb_devices() -> list[_UsbEntry]:
     """Every USB device on the host.
 
-    On macOS this asks IOKit: libusb does not list a device in KIS mode there (Apple's KIS driver claims it), so
-    an A16-or-later device in DFU mode would look absent. IOKit also has each device's serial number at hand.
+    On macOS this goes through IOKit: libusb does not list a device in KIS mode there (Apple's KIS driver claims
+    it), so an A16-or-later device in DFU mode would look absent. IOKit also has each device's serial number at
+    hand without opening the device; libusb would have to open it, so it is left out there.
     """
-    if get_io_services_by_type is not None:
-        return [
-            _UsbEntry(
-                cast(int, entry.properties.get("idVendor", 0)),
-                cast(int, entry.properties.get("idProduct", 0)),
-                cast(Optional[str], entry.properties.get("USB Serial Number")),
-            )
-            for entry in get_io_services_by_type("IOUSBHostDevice")
-        ]
-    return [_UsbEntry(device.idVendor, device.idProduct) for device in cast(list[UsbDevice], list(find(find_all=True)))]
+    iokit = uses_iokit()
+    entries: list[_UsbEntry] = []
+    for device in list_devices():
+        try:
+            entries.append(_UsbEntry(device.idVendor, device.idProduct, device.serial_number if iokit else None))
+        finally:
+            device.close()
+    return entries
 
 
 def special_mode_states(devices: Optional[list[_UsbEntry]] = None) -> set[UsbState]:
@@ -97,7 +91,7 @@ async def current_state(udid: Optional[str]) -> UsbState:
             return state
     if udid is None:
         return UsbState.GONE
-    if get_io_services_by_type is not None:
+    if uses_iokit():
         # IOKit spells the UDID without its separator; the same snapshot answers right away
         wanted = udid.replace("-", "")
         return UsbState.NORMAL if any(device.serial == wanted for device in devices) else UsbState.GONE
