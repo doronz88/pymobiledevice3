@@ -71,6 +71,8 @@ the mounted image before assuming the code is broken.
 - Privileged tunnel creation can require `sudo` because it creates a TUN/TAP interface.
 - For agent-driven `start-tunnel`, use `--script-mode`, read the RSD host and port from
   stdout, and reuse those exact values in later commands via `--rsd HOST PORT`.
+  To also get the device's UDID, version or services from a native tunnel, use
+  `remote start-tunnel --native --format json`, not a second `--rsd` connection (it re-attaches on iOS 27.2+).
 - `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` overrides which transport the automatic
   selection prefers (the required-RSD default and the CLI retry). Built-in default: `userspace`.
   Set `native` to prefer the macOS native tunnel, or `tunneld` to opt out of the no-root default
