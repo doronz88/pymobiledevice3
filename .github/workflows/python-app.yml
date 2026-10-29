@@ -54,6 +54,26 @@ jobs:
         env:
           SKIP: pyright
         run: uvx pre-commit run --all-files
+      - name: Install libusb (Windows)
+        # Windows ships no libusb; without it the tests using the real library skip. Pinned release
+        # archive, checksum-verified; the binding loads the DLL from PATH. Fails if it can't load it.
+        if: runner.os == 'Windows'
+        env:
+          LIBUSB_VERSION: "1.0.30"
+          LIBUSB_SHA256: 7fb1dfec805b97983763d7d0ae244320da12add1003d4249c96cc4d586398c79
+        run: |
+          $archive = "$env:RUNNER_TEMP\libusb.7z"
+          Invoke-WebRequest -Uri "https://github.com/libusb/libusb/releases/download/v$env:LIBUSB_VERSION/libusb-$env:LIBUSB_VERSION.7z" -OutFile $archive
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash
+          if ($hash -ne $env:LIBUSB_SHA256) { throw "libusb archive checksum mismatch: $hash" }
+          $arch = if ($env:RUNNER_ARCH -eq 'ARM64') { 'ARM64' } else { 'MS64' }
+          $dir = "$env:RUNNER_TEMP\libusb"
+          7z e $archive "VS2025\$arch\dll\libusb-1.0.dll" "-o$dir" -y
+          if ($LASTEXITCODE -ne 0) { throw "7z failed to extract libusb-1.0.dll" }
+          $env:PATH = "$dir;$env:PATH"
+          uv run python -c "from pymobiledevice3.usb import _libusb; _libusb.library()"
+          if ($LASTEXITCODE -ne 0) { throw "pymobiledevice3 can't load $dir\libusb-1.0.dll" }
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
       - name: Run device-free tests
         run: uv run --extra test pytest -m "not device"
       - name: CLI smoke
