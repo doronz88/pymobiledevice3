@@ -375,7 +375,10 @@ async def cli_start_tunnel(
         ),
     ] = None,
 ) -> None:
-    """start tunnel (classic root tunnel by default; --native piggybacks Apple's tunnel on macOS, no root)"""
+    """start tunnel (classic root tunnel by default; --native piggybacks Apple's tunnel on macOS, no root)
+
+    Rarely needed: commands build their own no-root tunnel. Use it when another process needs --rsd.
+    """
     # Detect explicitly-passed classic-tunnel options via sentinel Nones rather than value-vs-default
     # (TunnelProtocol.DEFAULT is version-dependent -- QUIC on Python <3.13, TCP otherwise -- so a
     # value comparison cannot tell an explicit `--protocol quic` on 3.12 from the default).
