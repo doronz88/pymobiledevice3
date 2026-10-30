@@ -607,7 +607,8 @@ pymobiledevice3 developer core-device universal-hid-service key backspace --coun
 ### Screen streaming (HEVC video)
 
 Two ways to view (and control) the device's screen live, both fed by the same
-device-initiated HEVC stream over the RSD tunnel:
+device-initiated HEVC stream over the RSD tunnel. Both need **iOS 27 or later**:
+older devices never send the stream, so these commands refuse to start on them.
 
 - **`serve-web`** — serves the screen over HTTP for any modern browser; the
   HEVC decode happens in-browser via WebCodecs, so it works cross-platform with

@@ -9,6 +9,12 @@ from pymobiledevice3.remote.core_device.vnc_server import VncStreamServer
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 
+def _rsd() -> RemoteServiceDiscoveryService:
+    rsd = RemoteServiceDiscoveryService(("127.0.0.1", 0))
+    rsd.peer_info = {"Properties": {"OSVersion": "27.0"}, "Services": {}}
+    return rsd
+
+
 class _Transport:
     port = 0
 
@@ -52,7 +58,7 @@ async def test_shutdown_leaves_other_tasks_running_and_stops_its_clients(monkeyp
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
-    server = VncStreamServer(RemoteServiceDiscoveryService(("127.0.0.1", 0)), port=port)
+    server = VncStreamServer(_rsd(), port=port)
     other = asyncio.create_task(asyncio.Event().wait())
     serve = asyncio.create_task(server.serve())
     await serving.wait()
@@ -79,7 +85,7 @@ async def test_shutdown_leaves_other_tasks_running_and_stops_its_clients(monkeyp
 
 
 async def test_audio_keepalive_starts_before_any_audio_arrives() -> None:
-    server = VncStreamServer(RemoteServiceDiscoveryService(("127.0.0.1", 0)))
+    server = VncStreamServer(_rsd())
     server._audio_rtcp_dest = ("fd00::1", 5000)
     server._audio_local_ssrc = 1
     server._audio_remote_ssrc = 2

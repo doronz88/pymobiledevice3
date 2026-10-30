@@ -5,12 +5,14 @@ from typing import Any, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import CoreDeviceError
+from pymobiledevice3.exceptions import CoreDeviceError, DeviceVersionNotSupportedError
 from pymobiledevice3.remote.core_device.display_service import (
     MEDIA_IN_USE_ERROR_CODE,
     DisplayService,
     is_media_in_use_error,
 )
+from pymobiledevice3.remote.core_device.screen_stream import ScreenStreamServer
+from pymobiledevice3.remote.core_device.vnc_server import VncStreamServer
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.remotexpc import RemoteXPCConnection
 from pymobiledevice3.remote.xpc_message import XpcUInt64Type
@@ -35,10 +37,10 @@ class FakeConnection:
         self.closed = True
 
 
-def _make_rsd() -> RemoteServiceDiscoveryService:
+def _make_rsd(os_version: str = "26.0") -> RemoteServiceDiscoveryService:
     rsd = RemoteServiceDiscoveryService(("127.0.0.1", 0))
     rsd.peer_info = {
-        "Properties": {"OSVersion": "26.0"},
+        "Properties": {"OSVersion": os_version},
         "Services": {DISPLAY_SERVICE: {"Port": "1024", "Properties": {"Features": [STOP_FEATURE]}}},
     }
     rsd.udid = "udid"
@@ -123,3 +125,33 @@ def test_is_media_in_use_error_matches_code_9022() -> None:
     assert not is_media_in_use_error(CoreDeviceError("other", code=1))
     assert not is_media_in_use_error(CoreDeviceError("no code"))
     assert not is_media_in_use_error(ValueError("unrelated"))
+
+
+@pytest.mark.asyncio
+async def test_start_video_stream_refuses_devices_before_ios_27() -> None:
+    # iOS 26 accepts the start request but never sends a frame (#2151), so it is not sent at all
+    service, connection = _make_display_service()
+    with pytest.raises(DeviceVersionNotSupportedError, match=r"iOS 27\.0 or later"):
+        await service.start_video_stream(receiver_ip="::1", receiver_port=1, sender_ip="::2")
+    assert connection.sent == []
+
+
+async def _never_called(*args: Any, **kwargs: Any) -> None:
+    raise AssertionError("reached the device")
+
+
+@pytest.mark.asyncio
+async def test_serve_web_refuses_devices_before_ios_27(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Its eager stream start swallows failures, so the version is checked before it
+    monkeypatch.setattr(ScreenStreamServer, "_eager_stream_start", _never_called)
+    server = ScreenStreamServer(_make_rsd("26.5.2"), http_port=0)
+    with pytest.raises(DeviceVersionNotSupportedError):
+        await server.serve()
+
+
+@pytest.mark.asyncio
+async def test_serve_vnc_refuses_devices_before_ios_27(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(DisplayService, "connect", _never_called)
+    server = VncStreamServer(_make_rsd("26.5.2"), port=0)
+    with pytest.raises(DeviceVersionNotSupportedError):
+        await server.serve()
