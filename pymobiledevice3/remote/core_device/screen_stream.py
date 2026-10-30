@@ -47,6 +47,7 @@ from pymobiledevice3.remote.core_device.display_service import (
     MEDIA_IN_USE_MESSAGE,
     DisplayService,
     is_media_in_use_error,
+    require_video_stream_support,
 )
 from pymobiledevice3.remote.core_device.hid_service import (
     DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
@@ -2632,7 +2633,7 @@ class ScreenStreamServer:
         # forever. Retry the PLI twice, then stop asking nicely and force
         # a session restart — a fresh session always opens with a clean
         # IDR without any PLI involved. Don't keep spamming PLIs beyond
-        # that: on iOS 26/27 a PLI barrage is itself what corrupts or
+        # that: on iOS 27 a PLI barrage is itself what corrupts or
         # stalls the encoder (see ``_fire_decoder_refresh``).
         async def _bootstrap_key_escalation():
             for attempt in range(3):
@@ -3029,6 +3030,9 @@ class ScreenStreamServer:
 
     async def serve(self) -> None:
         """Run the HTTP server until cancelled / Ctrl-C."""
+        # Checked up front: the eager start below swallows every other failure, which on an older
+        # device would serve a viewer that stays black
+        require_video_stream_support(self._rsd)
         # Preflight the device-side stream before binding the HTTP server. If
         # the camera or microphone is in use there is nothing to serve, so fail
         # fast with a clean, actionable error (a non-zero exit, no traceback)

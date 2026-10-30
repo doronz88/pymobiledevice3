@@ -46,6 +46,7 @@ from pymobiledevice3.remote.core_device.display_service import (
     MEDIA_IN_USE_MESSAGE,
     DisplayService,
     is_media_in_use_error,
+    require_video_stream_support,
 )
 from pymobiledevice3.remote.core_device.hevc_rps import HevcRpsTracker, is_slice_nal
 from pymobiledevice3.remote.core_device.hid_service import (
@@ -1488,6 +1489,7 @@ class VncStreamServer:
 
     # ----- top-level orchestration ------------------------------------------
     async def serve(self) -> None:
+        require_video_stream_support(self._rsd)
         # 1) Start device-side video stream + open the RTP receiver on the right transport:
         # the pytcp stack over the userspace tunnel (a host kernel socket is unreachable from
         # the device), a host kernel socket otherwise. Generate a single client_session_id up

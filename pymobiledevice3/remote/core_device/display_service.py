@@ -2,7 +2,9 @@ import random
 import uuid
 from typing import Any, Optional
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError, CoreDeviceError
+from packaging.version import Version
+
+from pymobiledevice3.exceptions import ConnectionTerminatedError, CoreDeviceError, DeviceVersionNotSupportedError
 from pymobiledevice3.remote.core_device.core_device_service import CoreDeviceService
 from pymobiledevice3.remote.core_device.media_stream_offer import (
     build_negotiator_offer_audio,
@@ -35,6 +37,19 @@ MEDIA_IN_USE_MESSAGE = (
 def is_media_in_use_error(exc: BaseException) -> bool:
     """True if *exc* is CoreDevice's "camera or microphone is in use" rejection (code 9022)."""
     return isinstance(exc, CoreDeviceError) and exc.code == MEDIA_IN_USE_ERROR_CODE
+
+
+# Earliest iOS whose ``dtremotedisplayd`` streams the screen. Older versions accept the
+# start request and the HID input, but never send a frame: the viewer stays black.
+VIDEO_STREAM_MIN_VERSION = Version("27.0")
+
+
+def require_video_stream_support(rsd: RemoteServiceDiscoveryService) -> None:
+    """Raise `DeviceVersionNotSupportedError` if the device is older than `VIDEO_STREAM_MIN_VERSION`."""
+    if Version(rsd.product_version) < VIDEO_STREAM_MIN_VERSION:
+        raise DeviceVersionNotSupportedError(
+            f"Screen streaming needs iOS {VIDEO_STREAM_MIN_VERSION} or later; this device runs iOS {rsd.product_version}"
+        )
 
 
 # Bit mask captured from devicectl. Bits identify host-side feature support.
@@ -119,7 +134,9 @@ class DisplayService(CoreDeviceService):
                              why ``VRAE:0`` must stay out of it).
         :return: Response dict with ``connection`` (carries ``sender`` port + full
                  ``streamConfig``) and ``negotiatorAnswer``.
+        :raises DeviceVersionNotSupportedError: The device is older than `VIDEO_STREAM_MIN_VERSION`.
         """
+        require_video_stream_support(self.rsd)
         if client_session_id is None:
             client_session_id = uuid.uuid4()
         call_id = new_call_id()

@@ -7,6 +7,12 @@ from pymobiledevice3.remote.core_device.screen_stream import ScreenStreamServer
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 
+def _rsd() -> RemoteServiceDiscoveryService:
+    rsd = RemoteServiceDiscoveryService(("127.0.0.1", 0))
+    rsd.peer_info = {"Properties": {"OSVersion": "27.0"}, "Services": {}}
+    return rsd
+
+
 async def test_cancelling_serve_leaves_other_tasks_running(monkeypatch):
     serving = asyncio.Event()
 
@@ -20,7 +26,7 @@ async def test_cancelling_serve_leaves_other_tasks_running(monkeypatch):
     monkeypatch.setattr(ScreenStreamServer, "_keep_awake_loop", keep_awake)
     monkeypatch.setattr(DisplayService, "stop_all_streams", no_device)
 
-    server = ScreenStreamServer(RemoteServiceDiscoveryService(("127.0.0.1", 0)), http_port=0)
+    server = ScreenStreamServer(_rsd(), http_port=0)
     other = asyncio.create_task(asyncio.Event().wait())
     serve = asyncio.create_task(server.serve())
     await serving.wait()
@@ -54,7 +60,7 @@ async def test_shutdown_stops_connection_handlers_before_the_device_side(monkeyp
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
-    server = ScreenStreamServer(RemoteServiceDiscoveryService(("127.0.0.1", 0)), http_port=port)
+    server = ScreenStreamServer(_rsd(), http_port=port)
     serve = asyncio.create_task(server.serve())
     await serving.wait()
 

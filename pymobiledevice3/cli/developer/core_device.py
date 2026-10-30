@@ -1070,7 +1070,7 @@ async def core_device_display_start_video_stream(
     duration: Annotated[float, typer.Option("--duration", help="Seconds to capture")] = 5.0,
     receiver_port: Annotated[int, typer.Option("--port")] = 0,
 ) -> None:
-    """Capture raw RTP/HEVC packets from a display into a file.
+    """Capture raw RTP/HEVC packets from a display into a file (iOS 27+).
 
     Each packet is written as ``[4-byte BE length][packet bytes]``. Use
     ``misc/rtp_dump.py`` to depacketize into an Annex-B ``.h265`` bitstream.
@@ -1224,7 +1224,7 @@ async def core_device_display_serve_web(
         ),
     ] = True,
 ) -> None:
-    """Serve the device's screen via HTTP — view in any modern browser.
+    """Serve the device's screen via HTTP — view in any modern browser (iOS 27+).
 
     Pipeline (no external executables):
 
@@ -1314,7 +1314,7 @@ async def core_device_display_serve_vnc(
         ),
     ] = False,
 ) -> None:
-    """Serve the device's screen as a VNC (RFB 3.8) server.
+    """Serve the device's screen as a VNC (RFB 3.8) server (iOS 27+).
 
     Connect from any VNC client. macOS Finder: ``Cmd+K`` -> enter
     ``vnc://<bind>:<port>`` (default ``vnc://127.0.0.1:5901``; port
