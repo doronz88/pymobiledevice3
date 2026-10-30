@@ -33,6 +33,7 @@ from pymobiledevice3.lockdown import LockdownClient, TcpLockdownClient, create_u
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.remotexpc import rsd_handshake_uuid
 from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, TunneldAddress, get_tunneld_devices
 from pymobiledevice3.utils import ask_prompt, cancel_on_sigint, get_asyncio_loop, hexdump
 
@@ -559,7 +560,8 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
 
         # Explicit tunnel sources take precedence.
         if rsd is not None:
-            rsd_service = RemoteServiceDiscoveryService(rsd)
+            handshake_uuid = rsd_handshake_uuid(rsd[0])
+            rsd_service = RemoteServiceDiscoveryService(rsd, handshake_uuid=handshake_uuid)
             cli_loop.run_until_complete(rsd_service.connect())
             return rsd_service
         if tunnel is not None:

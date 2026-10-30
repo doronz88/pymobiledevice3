@@ -1,15 +1,19 @@
+import asyncio
 import ctypes
 import os
 import platform
 import socket
 import struct
+import subprocess
+import sys
 import uuid
 from typing import Any, Optional, cast
 
 import pytest
 
 from pymobiledevice3.exceptions import DeviceNotFoundError, UserspaceTunnelUnavailableError
-from pymobiledevice3.remote import native_tunnel
+from pymobiledevice3.remote import native_tunnel, remotexpc
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 
 def _pcblist_with_one_connection(pid: int, addr: bytes, port: int) -> bytes:
@@ -716,3 +720,38 @@ def test_cli_exit_hook_closes_the_session_although_threads_are_refused(monkeypat
     assert closed == [True]
     assert tunnel._session is None
     assert native_tunnel._cli_native_tunnel is None
+
+
+@pytest.mark.device
+@pytest.mark.asyncio
+@pytest.mark.skipif(platform.system() != "Darwin", reason="the native tunnel is macOS-only")
+async def test_rsd_to_a_native_tunnel_keeps_the_service_listeners(udid_option: Optional[str]) -> None:
+    """`--rsd` against the address `remote start-tunnel --native` prints, from another process.
+
+    On iOS 27.2+ a handshake with any UUID but remoted's makes the device re-attach and close every
+    advertised service port (#2140), so the ports must still accept connections afterwards.
+    """
+    command = [sys.executable, "-m", "pymobiledevice3", "remote", "start-tunnel", "--native", "--script-mode"]
+    if udid_option is not None:
+        command += ["--udid", udid_option]
+    tunnel = await asyncio.create_subprocess_exec(*command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    try:
+        assert tunnel.stdout is not None
+        line = await asyncio.wait_for(tunnel.stdout.readline(), timeout=60)
+        address, port = line.decode().split()
+
+        handshake_uuid = remotexpc.rsd_handshake_uuid(address)
+        assert handshake_uuid is not None
+        assert handshake_uuid == remotexpc.remoted_handshake_uuid()
+
+        async with RemoteServiceDiscoveryService((address, int(port)), handshake_uuid=handshake_uuid) as rsd:
+            assert rsd.peer_info is not None
+            service_ports = sorted({int(service["Port"]) for service in rsd.peer_info["Services"].values()})[:10]
+            assert service_ports
+            for service_port in service_ports:
+                _, writer = await asyncio.wait_for(asyncio.open_connection(address, service_port), timeout=5)
+                writer.close()
+                await writer.wait_closed()
+    finally:
+        tunnel.terminate()
+        await tunnel.wait()
