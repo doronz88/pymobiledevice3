@@ -6,7 +6,7 @@ import time
 import uuid
 from datetime import datetime, timedelta
 from types import MethodType
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import pytest
 from bytestruct import BinaryBuildError, BinaryParseError, TruncatedDataError, UnexpectedConstantError
@@ -749,3 +749,69 @@ def test_padding_is_relative_to_each_object_not_the_container() -> None:
         XpcMessageType.NULL,
     ]
     assert parsed.data[1].data == "a"
+
+
+_REMOTECTL_DUMPSTATE_WITH_LINKS = (
+    _REMOTECTL_DUMPSTATE
+    + """\tProperties: {
+\t\tInterfaceName => anpi0
+\t}
+Found coredevice-9 (coredevice-device)
+\tState: connected (connectable)
+\tProperties: {
+\t\tHWModel => N104AP
+\t\tInterfaceName => utun4
+\t}
+"""
+)
+
+
+def test_parse_remotectl_interfaces_lists_every_link() -> None:
+    assert remotexpc.parse_remotectl_interfaces(_REMOTECTL_DUMPSTATE_WITH_LINKS) == {"anpi0", "utun4"}
+    assert remotexpc.parse_remotectl_interfaces(_REMOTECTL_DUMPSTATE) == set()
+
+
+def _fake_links(monkeypatch: pytest.MonkeyPatch, routed_interface: Optional[str]) -> list[str]:
+    routed: list[str] = []
+
+    def route_interface(host: str) -> Optional[str]:
+        routed.append(host)
+        return routed_interface
+
+    monkeypatch.setattr(remotexpc, "_IS_DARWIN", True)
+    monkeypatch.setattr(remotexpc, "route_interface", route_interface)
+    monkeypatch.setattr(remotexpc, "_remotectl_dumpstate", lambda: _REMOTECTL_DUMPSTATE_WITH_LINKS)
+    monkeypatch.setattr(remotexpc, "host_remoted_uuid", lambda: _HOST_REMOTED_UUID)
+    return routed
+
+
+def test_rsd_handshake_uuid_is_remoteds_on_remoteds_tunnel(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `remote start-tunnel --native` prints an address on remoted's tunnel; the host id there makes
+    # iOS 27.2+ close every service listener.
+    routed = _fake_links(monkeypatch, "utun4")
+
+    assert remotexpc.rsd_handshake_uuid("fdd4:4e11:4789::1") == _HOST_REMOTED_UUID
+    assert routed == ["fdd4:4e11:4789::1"]
+
+
+@pytest.mark.parametrize("routed_interface", ["utun7", None], ids=["own-tunnel", "no-route"])
+def test_rsd_handshake_uuid_is_the_default_off_remoteds_links(
+    monkeypatch: pytest.MonkeyPatch, routed_interface: Optional[str]
+) -> None:
+    _fake_links(monkeypatch, routed_interface)
+    assert remotexpc.rsd_handshake_uuid("fd7b:e5b:6f53::1") is None
+
+
+def test_rsd_handshake_uuid_is_the_default_off_macos(monkeypatch: pytest.MonkeyPatch) -> None:
+    def route_interface(host: str) -> Optional[str]:
+        raise AssertionError("route lookup is macOS-only")
+
+    monkeypatch.setattr(remotexpc, "_IS_DARWIN", False)
+    monkeypatch.setattr(remotexpc, "route_interface", route_interface)
+
+    assert remotexpc.rsd_handshake_uuid("fd7b:e5b:6f53::1") is None
+
+
+def test_route_interface_is_none_when_route_is_unusable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(remotexpc, "_ROUTE_PATH", "/nonexistent/route")
+    assert remotexpc.route_interface("fd7b:e5b:6f53::1") is None

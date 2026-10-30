@@ -632,7 +632,7 @@ def test_core_device_read_file_prints_to_stdout_without_output(monkeypatch, no_t
     class _FakeRsd:
         udid = "FAKE-UDID"
 
-        def __init__(self, address):
+        def __init__(self, address, handshake_uuid=None):
             pass
 
         async def connect(self):

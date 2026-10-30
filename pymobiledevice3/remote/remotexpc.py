@@ -77,6 +77,10 @@ _IS_DARWIN = platform.system() == "Darwin"
 _REMOTECTL_PATH = "/usr/libexec/remotectl"
 _REMOTECTL_TIMEOUT = 10.0
 _REMOTECTL_LOCAL_UUID_RE = re.compile(r"^Local device\n\s+UUID: (?P<uuid>[0-9A-Fa-f-]{36})$", re.MULTILINE)
+# Each device remoted reaches lists the interface of its link among its properties.
+_REMOTECTL_INTERFACE_RE = re.compile(r"^\s+InterfaceName => (?P<name>\S+)$", re.MULTILINE)
+_ROUTE_PATH = "/sbin/route"
+_ROUTE_INTERFACE_RE = re.compile(r"^\s*interface: (?P<name>\S+)$", re.MULTILINE)
 
 
 @functools.cache
@@ -130,11 +134,51 @@ def remoted_handshake_uuid() -> Optional[uuid.UUID]:
     return host_remoted_uuid() if _IS_DARWIN else None
 
 
+def rsd_handshake_uuid(host: str) -> Optional[uuid.UUID]:
+    """The UUID for an RSD handshake to a user-given ``host`` (``--rsd``); ``None`` means the default.
+
+    The address ``remote start-tunnel --native`` prints is on remoted's own tunnel, where the device
+    expects remoted's UUID (see `remoted_handshake_uuid`); presenting the host id there makes iOS
+    27.2+ close every service listener. Tell such a link by the interface the kernel routes ``host``
+    through: ``remotectl dumpstate`` names the interface of every link remoted uses. Anywhere else --
+    our own tunnels, or off macOS -- `default_handshake_uuid` applies.
+    """
+    if not _IS_DARWIN:
+        return None
+    interface = route_interface(host)
+    if interface is None or interface not in parse_remotectl_interfaces(_remotectl_dumpstate()):
+        return None
+    return remoted_handshake_uuid()
+
+
+def route_interface(host: str) -> Optional[str]:
+    """The interface the kernel routes ``host`` through (macOS ``route get``); ``None`` if unknown."""
+    family = ["-inet6"] if ":" in host else []
+    try:
+        result = subprocess.run(
+            [_ROUTE_PATH, "-n", "get", *family, host],
+            capture_output=True,
+            text=True,
+            timeout=_REMOTECTL_TIMEOUT,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        logger.debug("route unavailable: %r", e)
+        return None
+    match = _ROUTE_INTERFACE_RE.search(result.stdout)
+    return match.group("name") if match is not None else None
+
+
 def host_remoted_uuid() -> Optional[uuid.UUID]:
     """The UUID the host's ``remoted`` identifies itself with in its RSD handshake; ``None`` if unknown.
 
     ``remotectl dumpstate`` reports it without root.
     """
+    return parse_remotectl_local_uuid(_remotectl_dumpstate())
+
+
+def _remotectl_dumpstate() -> str:
+    """``remotectl dumpstate``'s output; empty if it can't be run."""
     try:
         result = subprocess.run(
             [_REMOTECTL_PATH, "dumpstate"],
@@ -145,8 +189,13 @@ def host_remoted_uuid() -> Optional[uuid.UUID]:
         )
     except (OSError, subprocess.SubprocessError) as e:
         logger.debug("remotectl unavailable: %r", e)
-        return None
-    return parse_remotectl_local_uuid(result.stdout)
+        return ""
+    return result.stdout
+
+
+def parse_remotectl_interfaces(text: str) -> set[str]:
+    """The interfaces of the links remoted uses, from ``remotectl dumpstate`` output."""
+    return {match.group("name") for match in _REMOTECTL_INTERFACE_RE.finditer(text)}
 
 
 def parse_remotectl_local_uuid(text: str) -> Optional[uuid.UUID]:
