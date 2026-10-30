@@ -218,7 +218,10 @@ async def cli_start_tunnel(
         typer.Option(help="Show only HOST and port number to allow easy parsing from external shell scripts"),
     ] = False,
 ) -> None:
-    """start tunnel"""
+    """start tunnel
+
+    Rarely needed: commands build their own no-root tunnel. Use it when another process needs --rsd.
+    """
     await async_cli_start_tunnel(service_provider, script_mode)
 
 

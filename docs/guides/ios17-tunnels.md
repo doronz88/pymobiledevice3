@@ -34,11 +34,12 @@ built when the command starts and torn down when it exits: an **in-process users
 using a pure-Python network stack (PyTCP) — no kernel interface, so no root/admin either, on every
 host.
 
-On macOS, `--native` instead rides Apple's own `remoted` tunnel by piggybacking `remotepairingd` —
-also no root and no Xcode, and its address is kernel-routable, so it is faster host->device and
-lower latency than the userspace stack. It is opt-in because on that tunnel the device keeps a
-single RSD connection, which ours and `remoted`'s keep evicting from each other; see
-[Native remoted tunnel](network-stacks.md#native-remoted-tunnel-macos-only).
+This is the right choice almost every time. When you do need more throughput or lower latency than
+the userspace stack gives, use a kernel-routable tunnel. On macOS the opt-in `--native` transport,
+which rides Apple's own `remoted` tunnel, is the fastest and needs no root, but it is less stable
+because it competes with `remoted` for the device; see
+[Native remoted tunnel](network-stacks.md#native-remoted-tunnel-macos-only). Otherwise use a
+privileged `tunneld` (below).
 
 If the userspace tunnel can't serve the device it falls back automatically (the native tunnel on
 macOS, then `tunneld`). Either way you just run the command. This covers iOS 17.4+ over USB with no privileges (it uses the
@@ -81,6 +82,8 @@ below) when:
   to a local port and *does* work over the userspace tunnel).
 - **You want one shared/persistent tunnel** reused across many invocations instead of rebuilding it
   per command.
+- **You need more performance** than the userspace stack gives, such as bulk transfers. On macOS,
+  `--native` is faster still but less stable (see above).
 - **iOS 17.0-17.3.1 on Linux/Windows** — routed to `tunneld` automatically; see the warning above.
 
 ## Running `tunneld`
@@ -188,16 +191,16 @@ python3 -m pymobiledevice3 developer dvt ls /
 
 ## Starting a tunnel manually
 
-```shell
-# macOS, no sudo: publishes Apple's own remoted tunnel (kernel-routable, so
-# other tools can use the printed --rsd too). It competes with remoted for the
-# device; see "Native remoted tunnel" in the network stacks guide.
-python3 -m pymobiledevice3 remote start-tunnel --native
+You rarely need this: pymobiledevice3 commands build their own tunnel. Start one by hand only for
+the cases in [When you still need a privileged `tunneld`](#when-you-still-need-a-privileged-tunneld),
+and if you need it for more than one command, prefer running `tunneld`. A manual tunnel prints an
+`--rsd HOST PORT` option to pass to later commands.
 
+```shell
 # Optional for remote-pairing devices.
 python3 -m pymobiledevice3 remote pair
 
-# iOS 17.4+ (faster lockdown tunnel)
+# iOS 17.4+ (lockdown tunnel)
 sudo python3 -m pymobiledevice3 lockdown start-tunnel
 
 # Optional: allow Wi-Fi connections over lockdown
@@ -206,6 +209,11 @@ python3 -m pymobiledevice3 lockdown wifi-connections on
 # iOS 17.0-17.3.1 fallback, and the default without --native.
 # Add `-t wifi` to force Wi-Fi transport.
 sudo python3 -m pymobiledevice3 remote start-tunnel
+
+# macOS, no sudo: publishes Apple's own remoted tunnel instead of creating one.
+# It competes with remoted for the device; see "Native remoted tunnel" in the
+# network stacks guide.
+python3 -m pymobiledevice3 remote start-tunnel --native
 ```
 
 Example output:

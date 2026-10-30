@@ -15,7 +15,8 @@ Highlights: device discovery, port forwarding, syslog/oslog streaming, app & pro
 file access, crash reports, PCAP sniffing, firmware update, recovery/DFU, backup/restore, WebInspector
 automation, a [CDP bridge](https://doronz88.github.io/pymobiledevice3/guides/webview-debugging/) that
 lets Chrome DevTools, VS Code and Playwright debug Safari and WebViews on the device, and DDI/DVT
-developer tooling (iOS 17+ over a tunnel).
+developer tooling (iOS 17+ over a tunnel that each command builds in-process: no root, nothing to
+start first).
 
 ## Install
 

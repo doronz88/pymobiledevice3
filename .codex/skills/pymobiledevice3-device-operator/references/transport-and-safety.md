@@ -57,20 +57,21 @@ the mounted image before assuming the code is broken.
 
 ## Tunnel Notes
 
-- The default no-root tunnel is the userspace tunnel on every host; prefer the default. The opt-in
-  native tunnel rides Apple's `remoted` at kernel-tunnel throughput (faster host->device, lower
-  latency) and needs no root, but competes with `remoted` for the device. Fall back to a privileged `tunneld` only when no no-root path is
-  viable: non-macOS iOS 17.0-17.3, `debugserver start-server` without `--local-port`, or a tunnel
-  that must be shared across processes.
-- On macOS, `remote start-tunnel --native` publishes Apple's own kernel-routable tunnel with no
-  sudo, for when another process just needs an `--rsd HOST PORT` address; without `--native` it
-  builds the classic root tunnel. `remote browse` lists the devices `remotepairingd` sees with no
-  root on macOS by default.
-- Privileged options: an already-running `tunneld`, or a one-off
-  `lockdown start-tunnel` (iOS 17.4+) / `remote start-tunnel` (iOS 17.0-17.3.1).
-- Privileged tunnel creation can require `sudo` because it creates a TUN/TAP interface.
+- You almost never need to set up a tunnel. Run the command with no transport flag and the
+  userspace tunnel is built in-process for it, with no root. Don't reach for `--native`,
+  `start-tunnel` or `tunneld` unless one of the exceptions below applies.
+- Exceptions that need a kernel-routable tunnel: a tool outside pymobiledevice3 must reach the
+  device (`debugserver lldb`, `debugserver start-server` without `--local-port`), one tunnel must
+  be shared across processes, non-macOS iOS 17.0-17.3, or the userspace stack is too slow for the
+  job (bulk transfers, latency-sensitive streams).
+- For performance, `--native` (macOS) is the fastest but the least stable; a privileged tunnel is
+  next. For everything else, prefer an already-running `tunneld` (`--tunnel`). A one-off privileged tunnel is
+  `lockdown start-tunnel` (iOS 17.4+) / `remote start-tunnel` (iOS 17.0-17.3.1); it needs `sudo`
+  because it creates a TUN/TAP interface. On macOS, `remote start-tunnel --native` publishes
+  Apple's own tunnel instead, with no sudo, but competes with `remoted` for the device.
 - For agent-driven `start-tunnel`, use `--script-mode`, read the RSD host and port from
   stdout, and reuse those exact values in later commands via `--rsd HOST PORT`.
+- `remote browse` lists the devices `remotepairingd` sees with no root on macOS by default.
 - `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` overrides which transport the automatic
   selection prefers (the required-RSD default and the CLI retry). Built-in default: `userspace`.
   Set `native` to prefer the macOS native tunnel, or `tunneld` to opt out of the no-root default
