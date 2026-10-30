@@ -63,14 +63,17 @@ the mounted image before assuming the code is broken.
   viable: non-macOS iOS 17.0-17.3, `debugserver start-server` without `--local-port`, or a tunnel
   that must be shared across processes.
 - On macOS, `remote start-tunnel --native` publishes Apple's own kernel-routable tunnel with no
-  sudo, for when another process just needs an `--rsd HOST PORT` address; without `--native` it
-  builds the classic root tunnel. `remote browse` lists the devices `remotepairingd` sees with no
+  sudo, for an external tool that needs the address; without `--native` it builds the classic root
+  tunnel. Never point pymobiledevice3 at a native tunnel with `--rsd HOST PORT`: on iOS 27.2+ that
+  second RSD handshake makes the device close every service listener. Run follow-up commands on the
+  default transport instead. `remote browse` lists the devices `remotepairingd` sees with no
   root on macOS by default.
 - Privileged options: an already-running `tunneld`, or a one-off
   `lockdown start-tunnel` (iOS 17.4+) / `remote start-tunnel` (iOS 17.0-17.3.1).
 - Privileged tunnel creation can require `sudo` because it creates a TUN/TAP interface.
-- For agent-driven `start-tunnel`, use `--script-mode`, read the RSD host and port from
-  stdout, and reuse those exact values in later commands via `--rsd HOST PORT`.
+- For an agent-driven privileged `start-tunnel` (not `--native`), use `--script-mode`, read the
+  RSD host and port from stdout, and reuse those exact values in later commands via
+  `--rsd HOST PORT`.
 - `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` overrides which transport the automatic
   selection prefers (the required-RSD default and the CLI retry). Built-in default: `userspace`.
   Set `native` to prefer the macOS native tunnel, or `tunneld` to opt out of the no-root default
