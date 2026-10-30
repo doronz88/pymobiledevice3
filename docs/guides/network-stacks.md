@@ -285,7 +285,9 @@ How it works (all via `ctypes` + libxpc, no pyobjc):
 - **Reachability:** the tunnel address is a real kernel route (Apple's tunnel), so unlike the
   userspace tunnel it *is* reachable by other tools; it lives only while the handle (its assertion)
   is held. `remote start-tunnel --native` publishes this address for other processes (no `sudo`;
-  without `--native` it builds the classic root tunnel). `remote browse` lists the devices
+  without `--native` it builds the classic root tunnel). Don't connect to it with `--rsd HOST PORT`:
+  that RSD handshake presents a different UUID than remoted's, and on iOS 27.2+ the device then
+  closes every service listener. Run follow-up commands with `--native` instead. `remote browse` lists the devices
   `remotepairingd` reports — that is the macOS default, since browsing opens no RSD connection
   (`--no-native` forces the bonjour browse).
 - **When it is used:** only when asked for (`--native`, `PYMOBILEDEVICE3_NATIVE=1`, or

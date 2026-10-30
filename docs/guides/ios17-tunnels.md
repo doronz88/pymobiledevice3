@@ -190,8 +190,9 @@ python3 -m pymobiledevice3 developer dvt ls /
 
 ```shell
 # macOS, no sudo: publishes Apple's own remoted tunnel (kernel-routable, so
-# other tools can use the printed --rsd too). It competes with remoted for the
-# device; see "Native remoted tunnel" in the network stacks guide.
+# other tools can reach it). It competes with remoted for the device; see
+# "Native remoted tunnel" in the network stacks guide. Don't reuse its address
+# with --rsd: on iOS 27.2+ that closes the device's service listeners.
 python3 -m pymobiledevice3 remote start-tunnel --native
 
 # Optional for remote-pairing devices.
