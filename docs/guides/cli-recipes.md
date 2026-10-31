@@ -257,11 +257,11 @@ pymobiledevice3 developer core-device watch appDataContainer --identifier com.ex
 pymobiledevice3 developer core-device launch-application com.example.app --console
 ```
 
-## App install records (iOS 17+, RSD tunnel)
+## App install records (iOS 17+)
 
 ```shell
 # LaunchServices install record (DB UUID/sequence, install path, persistent identifier)
-pymobiledevice3 apps install-record com.apple.Preferences --userspace
+pymobiledevice3 apps install-record com.apple.Preferences
 ```
 
 ## Darwin Notifications

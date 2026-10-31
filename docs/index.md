@@ -25,7 +25,7 @@ Windows, Linux, and macOS.
 - :material-view-grid-outline: **[SpringBoard](cli/springboard.md)** options, query and set
 - :material-web: **[WebInspector](guides/webview-debugging.md)** automation and a CDP bridge for DevTools,
   VS Code, Playwright and Puppeteer
-- :material-tools: **[DDI/DVT developer tooling](cli/developer.md)**, iOS 17+ over a [tunnel](guides/ios17-tunnels.md)
+- :material-tools: **[DDI/DVT developer tooling](cli/developer.md)**, iOS 17+ over a [tunnel](guides/ios17-tunnels.md) built in-process
 - :material-backup-restore: **[Backup and restore](cli/backup2.md)**
 
 </div>
@@ -44,7 +44,7 @@ Windows, Linux, and macOS.
 
 - :material-tunnel-outline: **[iOS 17+ tunnels](guides/ios17-tunnels.md)**
 
-    Reach developer services on modern iOS — including the no-root `--userspace` tunnel.
+    Reach developer services on modern iOS: the no-root tunnel is built for you, no flags needed.
 
 - :material-language-python: **[Python API](guides/python-api.md)**
 
