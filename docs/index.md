@@ -1,28 +1,34 @@
-# pymobiledevice3
+---
+title: Home
+template: home.html
+hide:
+  - navigation
+  - toc
+---
 
 `pymobiledevice3` is a pure Python 3 implementation for interacting with iOS devices
 (iPhone, iPad, ...). It ships both a **command-line tool** and a **Python API**, and runs on
 Windows, Linux, and macOS.
 
-[Get started :material-arrow-right:](installation.md){ .md-button .md-button--primary }
-[CLI recipes](guides/cli-recipes.md){ .md-button }
-[Python API](guides/python-api.md){ .md-button }
-
 ## What it can do
 
-- Device discovery over bonjour and USB (usbmux)
-- TCP port forwarding
-- Syslog and oslog streaming
-- Profile and application management
-- AFC file access
-- Crash report collection
-- Network sniffing (PCAP)
-- Firmware update, recovery/DFU workflows
-- Notification listen/post
-- Querying and setting SpringBoard options
-- WebInspector automation, and a Chrome DevTools Protocol bridge for DevTools, VS Code, Playwright and Puppeteer
-- DDI/DVT developer tooling (iOS 17+ over a tunnel)
-- Backup and restore
+<div class="grid pmd-features" markdown>
+
+- :material-usb: **[Discovery](cli/usbmux.md)** over USB (usbmux) and bonjour, plus TCP port forwarding
+- :material-text-box-search-outline: **[Syslog and oslog](cli/syslog.md)** streaming
+- :material-apps: **[Apps](cli/apps.md) and [profiles](cli/profile.md)**: install, list, manage
+- :material-folder-open-outline: **[AFC file access](cli/afc.md)**, shell and Finder mount
+- :material-bug-outline: **[Crash reports](cli/crash.md)** collection
+- :material-lan-connect: **[Packet capture](cli/pcap.md)** (PCAP) network sniffing
+- :material-cellphone-arrow-down: **[Firmware update](guides/restore.md)**, recovery and DFU workflows
+- :material-bell-ring-outline: **[Notifications](cli/notification.md)** listen and post
+- :material-view-grid-outline: **[SpringBoard](cli/springboard.md)** options, query and set
+- :material-web: **[WebInspector](guides/webview-debugging.md)** automation and a CDP bridge for DevTools,
+  VS Code, Playwright and Puppeteer
+- :material-tools: **[DDI/DVT developer tooling](cli/developer.md)**, iOS 17+ over a [tunnel](guides/ios17-tunnels.md)
+- :material-backup-restore: **[Backup and restore](cli/backup2.md)**
+
+</div>
 
 ## Where to go next
 

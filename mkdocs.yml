@@ -25,6 +25,9 @@ theme:
     - content.code.copy
     - content.action.edit
     - toc.follow
+  font:
+    text: Inter
+    code: JetBrains Mono
   palette:
     - media: "(prefers-color-scheme)"
       toggle:
@@ -32,18 +35,25 @@ theme:
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to system preference
+
+# Reload `mkdocs serve` on theme-template edits too (docs/ and mkdocs.yml are watched already).
+watch:
+  - overrides
+
+extra_css:
+  - stylesheets/brand.css
 
 plugins:
   - search
