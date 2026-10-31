@@ -59,6 +59,44 @@ async def test_stackshot_times_out_without_stackshot_data() -> None:
         await tap.get_stackshot(timeout=0.01)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("system_cache", [False, True])
+async def test_stackshot_names_images_with_each_tasks_shared_cache(monkeypatch, system_cache: bool) -> None:
+    # iOS 17.1 stackshots have no system-wide shared cache entry, only per-task ones (or none).
+    shot: dict[str, Any] = {
+        "task_snapshots": {
+            1: {
+                "shared_cache_dyld_load_info": {"imageUUID": "TASK-CACHE"},
+                "dyld_load_info": [{"imageUUID": "IN-TASK-CACHE"}],
+            },
+            2: {"dyld_load_info": [{"imageUUID": "IN-SYSTEM-CACHE"}]},
+        }
+    }
+    if system_cache:
+        shot["shared_cache_dyld_load_info"] = {"imageUUID": "SYSTEM-CACHE"}
+    maps = {
+        "TASK-CACHE": {"IN-TASK-CACHE": "/usr/lib/task.dylib"},
+        "SYSTEM-CACHE": {"IN-SYSTEM-CACHE": "/usr/lib/system.dylib"},
+    }
+    monkeypatch.setattr(core_profile_session_tap, "get_dsc_map", maps.get)
+    monkeypatch.setattr(CoreProfileSessionTap, "parse_stackshot", staticmethod(lambda data: shot))
+
+    tap = CoreProfileSessionTap(cast(DtxServiceProvider, None), {})
+
+    async def next_message() -> bytes:
+        return core_profile_session_tap.STACKSHOT_HEADER
+
+    monkeypatch.setattr(tap, "_next_message", next_message)
+    data = await tap.get_stackshot(timeout=1)
+
+    assert data["task_snapshots"][1]["dyld_load_info"][0]["imagePath"] == "/usr/lib/task.dylib"
+    system_image = data["task_snapshots"][2]["dyld_load_info"][0]
+    if system_cache:
+        assert system_image["imagePath"] == "/usr/lib/system.dylib"
+    else:
+        assert "imagePath" not in system_image
+
+
 def test_tap_samples_callstacks_only_when_asked() -> None:
     def trigger(**kwargs: Any) -> dict[str, Any]:
         tap = CoreProfileSessionTap(cast(DtxServiceProvider, None), {}, {0x040C0000}, **kwargs)

@@ -979,9 +979,18 @@ class CoreProfileSessionTap:
 
         stackshot = self.parse_stackshot(data)
 
-        dsc_map = get_dsc_map(str(stackshot["shared_cache_dyld_load_info"]["imageUUID"]))
+        # Some stackshots (e.g. iOS 17.1) carry no system-wide shared cache entry; tasks may carry their own.
+        system_shared_cache = stackshot.get("shared_cache_dyld_load_info")
+        dsc_maps: dict[str, typing.Any] = {}
 
         for _pid, snapshot in typing.cast(dict[typing.Any, typing.Any], stackshot["task_snapshots"]).items():
+            shared_cache = snapshot.get("shared_cache_dyld_load_info", system_shared_cache)
+            if shared_cache is None:
+                continue
+            dsc_uuid = str(shared_cache["imageUUID"])
+            if dsc_uuid not in dsc_maps:
+                dsc_maps[dsc_uuid] = get_dsc_map(dsc_uuid)
+            dsc_map = dsc_maps[dsc_uuid]
             for loaded_image in typing.cast(list[typing.Any], snapshot.get("dyld_load_info", [])):
                 image_uuid = str(loaded_image["imageUUID"])
                 if isinstance(dsc_map, dict) and image_uuid in dsc_map:
