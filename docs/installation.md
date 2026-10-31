@@ -66,6 +66,7 @@ Additional requirements:
 
 ## iOS 17+ developer services
 
-`iOS >= 17` developer services require tunnel-based transport. The tunnel normally needs
-root/admin; you can instead add `--userspace` to a developer command for a no-root, in-process
-tunnel. See [iOS 17+ tunnels](guides/ios17-tunnels.md) for the full picture and the support matrix.
+`iOS >= 17` developer services require tunnel-based transport. You don't have to set it up:
+every command that needs a tunnel establishes a no-root, in-process userspace tunnel on its own, with
+no flag and no `sudo`. See [iOS 17+ tunnels](guides/ios17-tunnels.md) for the full picture, the
+support matrix, and the cases that still call for a privileged `tunneld`.

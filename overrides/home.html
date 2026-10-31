@@ -1,0 +1,46 @@
+{% extends "main.html" %}
+
+{#- Landing page: a branded hero above the regular page content (index.md opts in via `template: home.html`). -#}
+{% block tabs %}
+  {{ super() }}
+  <section class="pmd-hero">
+    <div class="pmd-hero__inner md-grid">
+      <div class="pmd-hero__text">
+        <h1 class="pmd-hero__title">pymobiledevice<span class="pmd-accent">3</span></h1>
+        <p class="pmd-hero__tagline">Talk to iPhones and iPads from any computer.</p>
+        <p class="pmd-hero__lede">
+          A pure-Python CLI and API for iOS devices: logs, files, apps, crash reports, packet
+          capture, WebInspector and the full developer toolchain, including iOS 17+ tunnels built
+          in-process. Windows, Linux and macOS. No Xcode, no root.
+        </p>
+        <div class="pmd-hero__install">
+          <span class="pmd-prompt">$</span> <code>python3 -m pip install -U pymobiledevice3</code>
+        </div>
+        <div class="pmd-hero__actions md-typeset">
+          <a href="{{ 'installation/' | url }}" class="md-button md-button--primary">Get started</a>
+          <a href="{{ 'guides/cli-recipes/' | url }}" class="md-button">CLI recipes</a>
+          <a href="{{ 'guides/python-api/' | url }}" class="md-button">Python API</a>
+        </div>
+      </div>
+      <div class="pmd-hero__visual" aria-hidden="true">
+        <img class="pmd-hero__logo" src="{{ 'assets/logo-trim.png' | url }}" alt="">
+        <div class="pmd-term">
+          <div class="pmd-term__bar"><i></i><i></i><i></i></div>
+          <pre class="pmd-term__body"><span class="c"># every connected device, USB or Wi-Fi</span>
+<span class="p">$</span> pymobiledevice3 usbmux list
+<span class="c"># live device logs</span>
+<span class="p">$</span> pymobiledevice3 syslog live
+<span class="c"># iOS 17+ developer tools: tunnel built in</span>
+<span class="p">$</span> pymobiledevice3 developer dvt screenshot shot.png
+<span class="c"># debug Safari from Chrome DevTools</span>
+<span class="p">$</span> pymobiledevice3 webinspector cdp</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock %}
+
+{#- The hero carries the title, so render the page body without Material's auto-generated h1. -#}
+{% block content %}
+  {{ page.content }}
+{% endblock %}
