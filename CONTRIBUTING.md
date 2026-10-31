@@ -21,6 +21,20 @@ The pre-commit hooks include ruff and pyright (pinned to the same version CI use
 local run means a clean CI run. The pyright hook resolves imports from your `.venv`, so make sure
 the editable install above ran inside it.
 
+### Previewing the documentation site
+
+The site (<https://doronz88.github.io/pymobiledevice3/>) is built with MkDocs Material and needs Python
+3.10+. Serve it locally with live reload, then open <http://127.0.0.1:8000/pymobiledevice3/>:
+
+```shell
+python3 -m pip install -U -e ".[docs]"
+python3 -m mkdocs serve
+```
+
+Edits under `docs/`, `overrides/` (theme templates, including the landing-page hero in `home.html`) and
+`docs/stylesheets/brand.css` reload in the browser. Before opening a PR, run the same strict build CI
+runs: `python3 -m mkdocs build --strict`.
+
 ### Testing on Linux from a Mac
 
 `misc/linux-vm/run.sh` runs a command inside a Linux VM ([Lima](https://lima-vm.io)) against the
