@@ -201,6 +201,12 @@ class TunneldCore:
         # upstream that owns it - so one reachable tunneld fronts devices attached to hosts the
         # client has no route to.
         self.upstream_urls: set[str] = {normalize_upstream_url(url) for url in (upstreams or [])}
+        # Set whenever a tunnel task ends, so the usbmux monitor re-evaluates the devices it already
+        # knows of: one skipped while it had another tunnel or attempt (e.g. over Wi-Fi) produces no
+        # new attach event once that is gone (#2052). Created by the monitor, on its own loop.
+        self._usbmux_rescan: Optional[asyncio.Event] = None
+        # Tunnel tasks ended through cancel() or clear(), which must not bring the tunnel back.
+        self._cancel_requested: set[str] = set()
 
     def start(self) -> None:
         """Register all tasks"""
@@ -369,16 +375,41 @@ class TunneldCore:
 
     @asyncio_print_traceback
     async def monitor_usbmux_task(self) -> None:
+        rescan = self._usbmux_rescan = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        last_scan: Optional[float] = None
         while True:
             mux = None
+            # The read on the listen socket is not cancel-safe (a cancelled read can drop part of a
+            # packet), so a single task performs it and is waited on alongside the rescan signal;
+            # it is cancelled only when the connection is discarded.
+            receive: Optional[asyncio.Task[None]] = None
+            rescan_wait: Optional[asyncio.Task[bool]] = None
             try:
                 mux = await usbmux.create_mux(usbmux_address=self.usbmux_address)
                 await mux.listen()
 
                 while True:
-                    await mux.receive_device_state_update()
+                    if receive is None:
+                        receive = asyncio.create_task(mux.receive_device_state_update(), name="monitor-usbmux-receive")
+                    if rescan_wait is None:
+                        rescan_wait = asyncio.create_task(rescan.wait(), name="monitor-usbmux-rescan")
+                    await asyncio.wait({receive, rescan_wait}, return_when=asyncio.FIRST_COMPLETED)
+                    if rescan_wait.done():
+                        rescan_wait = None
+                        rescan.clear()
+                        # a rescan runs at least USBMUX_INTERVAL after the previous evaluation, so a
+                        # device whose tunnel attempts keep failing is retried at that pace
+                        if last_scan is not None:
+                            delay = last_scan + USBMUX_INTERVAL - loop.time()
+                            if delay > 0:
+                                await asyncio.sleep(delay)
+                    if receive.done():
+                        received, receive = receive, None
+                        # raises what the read raised (e.g. the connection was lost)
+                        received.result()
 
-                    mux_devices: list[usbmux.MuxDevice] = mux.devices
+                    mux_devices: list[usbmux.MuxDevice] = list(mux.devices)
                     for mux_device in mux_devices:
                         task_identifier = f"usbmux-{mux_device.serial}-{mux_device.connection_type}"
                         if self.tunnel_exists_for_udid(mux_device.serial):
@@ -414,6 +445,7 @@ class TunneldCore:
                                 name=f"start-tunnel-task-{task_identifier}",
                             ),
                         )
+                    last_scan = loop.time()
             except (ConnectionFailedToUsbmuxdError, OSError):
                 # This is exception is expected to occur repeatedly on linux running usbmuxd
                 # as long as there isn't any physical iDevice connected.
@@ -431,6 +463,15 @@ class TunneldCore:
             except asyncio.CancelledError:
                 break
             finally:
+                pending = {task for task in (receive, rescan_wait) if task is not None}
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    await asyncio.wait(pending)
+                    for task in pending:
+                        if not task.cancelled():
+                            # the connection is discarded either way; don't leave it unretrieved
+                            task.exception()
                 if mux is not None:
                     await mux.close()
 
@@ -536,6 +577,13 @@ class TunneldCore:
                 # in case the tunnel was removed just now
                 self.tunnel_tasks.pop(task_identifier)
 
+            if task_identifier in self._cancel_requested:
+                self._cancel_requested.discard(task_identifier)
+            elif self._usbmux_rescan is not None:
+                # only now that this entry is unregistered: another connection to the same device
+                # may take over (#2052)
+                self._usbmux_rescan.set()
+
     @asyncio_print_traceback
     async def handle_new_potential_usb_cdc_ncm_interface_task(self, ip: str) -> None:
         rsd = None
@@ -619,13 +667,15 @@ class TunneldCore:
     def cancel(self, udid: str) -> None:
         """Cancel active tunnels"""
         for tunnel_ip in self.get_tunnels_ips().get(udid, []):
+            self._cancel_requested.add(tunnel_ip)
             self.tunnel_tasks.pop(tunnel_ip).task.cancel()
             logger.info(f"Canceling tunnel {tunnel_ip}")
 
     def clear(self) -> None:
         """Clear active tunnels"""
-        for _udid, tunnel in self.tunnel_tasks.items():
+        for task_identifier, tunnel in self.tunnel_tasks.items():
             logger.info(f"Removing tunnel {tunnel}")
+            self._cancel_requested.add(task_identifier)
             tunnel.task.cancel()
         self.tunnel_tasks = {}
 
