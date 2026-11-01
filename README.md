@@ -92,7 +92,9 @@ Agent-specific contributor guidance is in [AGENTS](AGENTS.md).
 
 ## License and Credits
 
-This work is licensed under GPL 3.0 and credited to several major contributors:
+This work is licensed under GPL 3.0. Planning to ship it in a closed-source app? Read
+[this FAQ](https://doronz88.github.io/pymobiledevice3/#can-i-use-pymobiledevice3-in-a-closed-source-app)
+first. The project is credited to several major contributors:
 
 - Hector Martin "marcan" <hector@marcansoft.com>
 - Mathieu Renard
