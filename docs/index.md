@@ -64,3 +64,27 @@ Windows, Linux, and macOS.
 
 Licensed under GPL-3.0-or-later. See the
 [project page](https://github.com/doronz88/pymobiledevice3) for the full list of contributors.
+
+### Can I use pymobiledevice3 in a closed-source app?
+
+Not by asking for an exception. Requests for written permission or a commercial
+license come in regularly, and the answer is always no. The reason is that no single
+person can grant one:
+
+- pymobiledevice3 has well over a hundred contributors and no contributor license
+  agreement, so each contributor keeps the copyright on their own code.
+- The userspace tunnel's TCP/IP stack (`pmd-pytcp`, `pmd-net-addr`, `pmd-net-proto`)
+  is a fork of Sebastian Majewski's [PyTCP](https://github.com/ccie18643/PyTCP),
+  which is also GPL.
+
+What you can do:
+
+- **Release your app under the GPL.** You can still sell it. The GPL lets you charge
+  for the app as long as you also provide its source code.
+- **Run pymobiledevice3 as a separate program** that your app launches and talks to
+  (for example through its CLI), instead of linking it into your closed code. Whether
+  that keeps your app separate enough depends on how closely the two are tied
+  together. This page is not legal advice, so check your setup with a lawyer.
+
+Either way, also check the licenses of the other dependencies you bundle.
+Contributions back are always welcome.
