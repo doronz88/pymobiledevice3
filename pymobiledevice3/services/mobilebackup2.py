@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
 import plistlib
+import posixpath
 import re
 import shutil
 import sqlite3
@@ -64,6 +65,7 @@ NP_SYNC_RESUME_REQUEST = "com.apple.itunes-client.syncResumeRequest"
 NP_BACKUP_DOMAIN_CHANGED = "com.apple.mobile.backup.domain_changed"
 NP_LOCAL_AUTH_PRESENTED = "com.apple.LocalAuthentication.ui.presented"
 NP_LOCAL_AUTH_DISMISSED = "com.apple.LocalAuthentication.ui.dismissed"
+RESTORE_APPLICATIONS_PATH = "/iTunesRestore/RestoreApplications.plist"
 BACKUP_OBSERVED_NOTIFICATIONS = (
     NP_SYNC_CANCEL_REQUEST,
     NP_SYNC_SUSPEND_REQUEST,
@@ -402,18 +404,34 @@ class Mobilebackup2Service(LockdownService):
                 "Options": options,
             })
 
+            applications = None
             if not skip_apps:
-                # Write /iTunesRestore/RestoreApplications.plist so that the device will start
-                # restoring applications once the rest of the restore process is finished
                 info_plist_path = backup_directory / source / "Info.plist"
                 applications = plistlib.loads(info_plist_path.read_bytes()).get("Applications")
-                if applications is not None:
-                    await afc.makedirs("/iTunesRestore")
-                    await afc.set_file_contents(
-                        "/iTunesRestore/RestoreApplications.plist", plistlib.dumps(applications)
-                    )
+            await self._request_app_reinstall(afc, applications)
 
             await dl.dl_loop(progress_callback)
+
+    @staticmethod
+    async def _request_app_reinstall(afc: AfcService, applications: Optional[dict[str, Any]]) -> None:
+        """
+        Tell the device which apps to re-create from the App Store once the restore finishes.
+
+        The device turns every app listed in `RESTORE_APPLICATIONS_PATH` into an App Store restore,
+        even one that is already installed: until that download completes, SpringBoard refuses to
+        launch it ("being updated"). The device never deletes the file after a restore, so when
+        there is nothing to request, a copy left by an earlier restore is removed instead.
+
+        :param afc: AFC connection to the device's media partition.
+        :param applications: The backup's ``Info.plist`` ``Applications`` dictionary, or None to
+            request no app re-installation.
+        """
+        if applications is None:
+            if await afc.exists(RESTORE_APPLICATIONS_PATH):
+                await afc.rm_single(RESTORE_APPLICATIONS_PATH)
+            return
+        await afc.makedirs(posixpath.dirname(RESTORE_APPLICATIONS_PATH))
+        await afc.set_file_contents(RESTORE_APPLICATIONS_PATH, plistlib.dumps(applications))
 
     async def info(self, backup_directory: Union[str, Path] = ".", source: str = "") -> str:
         """
