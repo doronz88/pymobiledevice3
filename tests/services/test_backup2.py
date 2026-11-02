@@ -33,6 +33,7 @@ from pymobiledevice3.services.mobilebackup2 import (
     NP_LOCAL_AUTH_DISMISSED,
     NP_LOCAL_AUTH_PRESENTED,
     NP_SYNC_CANCEL_REQUEST,
+    RESTORE_APPLICATIONS_PATH,
     BackupFile,
     Mobilebackup2Service,
 )
@@ -229,6 +230,35 @@ async def test_set_cloud_backup_sends_enable_cloud_backup(tmp_path: Path, enable
         "DLMessageProcessMessage",
         {"MessageName": "EnableCloudBackup", "TargetIdentifier": "UDID", "CloudBackupState": enabled},
     ])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stale_request_exists", [True, False])
+async def test_request_app_reinstall_removes_stale_request_when_skipping_apps(stale_request_exists: bool) -> None:
+    """The device never deletes the request, so a skipped-apps restore must not inherit an earlier one."""
+    afc = AsyncMock()
+    afc.exists = AsyncMock(return_value=stale_request_exists)
+
+    await Mobilebackup2Service._request_app_reinstall(afc, None)
+
+    afc.exists.assert_awaited_once_with(RESTORE_APPLICATIONS_PATH)
+    if stale_request_exists:
+        afc.rm_single.assert_awaited_once_with(RESTORE_APPLICATIONS_PATH)
+    else:
+        afc.rm_single.assert_not_awaited()
+    afc.set_file_contents.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_request_app_reinstall_writes_backup_applications() -> None:
+    afc = AsyncMock()
+    applications = {"com.example.app": {"iTunesMetadata": b"metadata"}}
+
+    await Mobilebackup2Service._request_app_reinstall(afc, applications)
+
+    afc.makedirs.assert_awaited_once_with("/iTunesRestore")
+    afc.set_file_contents.assert_awaited_once_with(RESTORE_APPLICATIONS_PATH, plistlib.dumps(applications))
+    afc.rm_single.assert_not_awaited()
 
 
 def test_log_backup_notification_surfaces_passcode_prompt_to_operator() -> None:
