@@ -558,16 +558,70 @@ class _FailingPeer:
         raise self.error
 
 
-@pytest.mark.parametrize("error", [BlockingIOError(errno.EAGAIN, "full"), OSError(errno.ENOBUFS, "full")])
-def test_write_drops_silently_when_the_buffer_is_full(error: OSError, caplog: pytest.LogCaptureFixture) -> None:
+def _tun_with_a_tiny_buffer() -> UserspaceTun:
+    # Stands in for Linux without root, where net.core.wmem_max caps the 6 MiB buffers.
     tun = UserspaceTun()
-    real_peer, tun._peer = tun._peer, cast(Any, _FailingPeer(error))
+    for s in (tun._peer, tun._pend):
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    tun._pend.setblocking(False)
+    return tun
+
+
+async def _receive_from_the_stack_side(tun: UserspaceTun) -> list[bytes]:
+    # Drain the stack's end until nothing more arrives, yielding so queued packets get flushed.
+    received: list[bytes] = []
+    idle = 0
+    while idle < 20:
+        try:
+            received.append(tun._pend.recv(65535)[len(userspace_tunnel._ETH_HDR_TO_STACK) :])
+            idle = 0
+        except BlockingIOError:
+            idle += 1
+            await asyncio.sleep(0.005)
+    return received
+
+
+_FULL_BUFFER_FAILS_THE_SEND = pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows' loopback UDP pair drops what the receiver has no room for"
+)
+
+
+@_FULL_BUFFER_FAILS_THE_SEND
+async def test_write_queues_packets_until_the_stack_reads_them() -> None:
+    tun = _tun_with_a_tiny_buffer()
+    packets = [b"\x60" + bytes([i]) * 999 for i in range(64)]
     try:
-        tun.write(b"\x60" + b"\x00" * 39)
+        for packet in packets:
+            tun.write(packet)
+        assert await _receive_from_the_stack_side(tun) == packets
     finally:
-        real_peer.close()
-        tun._pend.close()
-    assert not caplog.records
+        await tun.close()
+
+
+@_FULL_BUFFER_FAILS_THE_SEND
+async def test_write_drops_the_newest_packets_past_the_queue_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(userspace_tunnel, "MAX_QUEUED_PACKETS", 2)
+    tun = _tun_with_a_tiny_buffer()
+    packets = [b"\x60" + bytes([i]) * 999 for i in range(64)]
+    try:
+        for packet in packets:
+            tun.write(packet)
+        received = await _receive_from_the_stack_side(tun)
+        assert 0 < len(received) < len(packets)
+        assert received == packets[: len(received)]
+    finally:
+        await tun.close()
+
+
+async def test_close_stops_flushing_the_queue() -> None:
+    tun = _tun_with_a_tiny_buffer()
+    peer_fd = tun._peer.fileno()
+    for i in range(64):
+        tun.write(b"\x60" + bytes([i]) * 999)
+    await tun.close()
+    # The socketpair is closed and its descriptor may be reused: no writer may remain on it.
+    assert not asyncio.get_running_loop().remove_writer(peer_fd)
 
 
 def test_write_warns_once_about_a_packet_the_stack_never_gets(caplog: pytest.LogCaptureFixture) -> None:

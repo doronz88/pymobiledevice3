@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import collections
 import errno
 import logging
 import socket
@@ -152,7 +153,13 @@ def throughput_sysctls() -> dict[str, int]:
 
 
 #: Datagram socketpair buffer, sized to hold a burst of a full receive window of packets.
+#: Without root, Linux caps it at net.core.wmem_max/rmem_max (~416 KiB by default, about 26
+#: 16 KB packets), so :meth:`UserspaceTun.write` queues what does not fit.
 SOCKET_BUFFER_SIZE = 6 * 1024 * 1024
+
+#: Inbound packets :meth:`UserspaceTun.write` queues while the socketpair is full; past it the
+#: newest packets are dropped and TCP recovers them. Bounds the memory a stalled stack can pin.
+MAX_QUEUED_PACKETS = 512
 
 #: Read/relay chunk size for the dial-plane bridge.
 _CHUNK = 65536
@@ -264,6 +271,7 @@ class UserspaceTun:
         self._ifidx: Optional[int] = None
         self._closed = False
         self._send_error_logged = False
+        self._backlog: collections.deque[bytes] = collections.deque()
         self._peer, self._pend = _packet_socketpair()
         for s in (self._peer, self._pend):
             s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, SOCKET_BUFFER_SIZE)
@@ -335,20 +343,45 @@ class UserspaceTun:
 
     def write(self, data: bytes) -> None:
         # inbound (device -> stack): strip pmd3 loopback header, add Ethernet, enqueue. The
-        # socket is non-blocking; a full buffer drops the packet (tunnel loss, TCP recovers).
+        # socket is non-blocking; a full buffer queues the packet until the socket is writable.
+        # Dropping it instead stalls the connection on retransmission timeouts.
         ipv6 = data[len(LOOPBACK_HEADER) :] if data[: len(LOOPBACK_HEADER)] == LOOPBACK_HEADER else data
+        frame = _ETH_HDR_TO_STACK + ipv6
+        if self._backlog:
+            if len(self._backlog) < MAX_QUEUED_PACKETS:
+                self._backlog.append(frame)
+            return
+        if self._send(frame) or self._closed:
+            return
+        self._backlog.append(frame)
+        asyncio.get_running_loop().add_writer(self._peer, self._flush_backlog)
+
+    def _send(self, frame: bytes) -> bool:
+        """Hand one frame to the stack. Returns False only when the socket buffer is full."""
         try:
-            self._peer.send(_ETH_HDR_TO_STACK + ipv6)
+            self._peer.send(frame)
         except BlockingIOError:
-            pass  # Linux: the buffer is full
+            return False  # Linux: the buffer is full
         except OSError as e:
             if e.errno == errno.ENOBUFS:
-                return  # macOS: the buffer is full
+                return False  # macOS: the buffer is full
             # Any other error (e.g. EMSGSIZE) fails again on every retransmission, so the
             # connection stalls for good: say why, once.
             if not self._send_error_logged:
                 self._send_error_logged = True
-                logger.warning("userspace tunnel dropped a %d-byte packet from the device: %s", len(ipv6), e)
+                logger.warning(
+                    "userspace tunnel dropped a %d-byte packet from the device: %s",
+                    len(frame) - len(_ETH_HDR_TO_STACK),
+                    e,
+                )
+        return True
+
+    def _flush_backlog(self) -> None:
+        while self._backlog:
+            if not self._send(self._backlog[0]):
+                return
+            self._backlog.popleft()
+        asyncio.get_running_loop().remove_writer(self._peer)
 
     async def async_read(self) -> bytes:
         # outbound (stack -> device): await an Ethernet frame off the stack's socketpair and
@@ -392,6 +425,9 @@ class UserspaceTun:
         if self._closed:
             return
         self._closed = True
+        if self._backlog:
+            self._backlog.clear()
+            asyncio.get_running_loop().remove_writer(self._peer)
         # Stop the stack first (clean teardown against live fds: loop readers/writers are
         # removed, worker tasks cancelled and awaited), then release the socketpair. No
         # thread-wakeup gymnastics remain — the pure-asyncio stack has nothing parked off-loop.
