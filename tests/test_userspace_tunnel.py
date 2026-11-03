@@ -13,7 +13,6 @@ threads at all — that relaying spawns none.
 """
 
 import asyncio
-import errno
 import socket
 import sys
 import threading
@@ -550,37 +549,31 @@ async def test_remotepairing_prefers_an_explicit_serial(mock_tunnel_provider, mo
     assert asked == ["EXPLICIT-UDID"]
 
 
-class _FailingPeer:
-    def __init__(self, error: OSError) -> None:
-        self.error = error
+async def test_a_burst_from_the_device_reaches_the_stack_whole():
+    # Without root, Linux caps the socketpair buffers at net.core.rmem_max (~416 KiB): a burst
+    # sent through them lost every packet past that. A 4 KiB buffer stands in for the cap here.
+    from pmd_pytcp import stack
 
-    def send(self, data: bytes) -> int:
-        raise self.error
-
-
-@pytest.mark.parametrize("error", [BlockingIOError(errno.EAGAIN, "full"), OSError(errno.ENOBUFS, "full")])
-def test_write_drops_silently_when_the_buffer_is_full(error: OSError, caplog: pytest.LogCaptureFixture) -> None:
     tun = UserspaceTun()
-    real_peer, tun._peer = tun._peer, cast(Any, _FailingPeer(error))
+    for s in (tun._peer, tun._pend):
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    tun.addr = "fd57:6e64:6572:7761::1"
     try:
-        tun.write(b"\x60" + b"\x00" * 39)
+        await tun.up()
+        assert tun._ifidx is not None
+        link = stack.link.interface(tun._ifidx)
+        before = link.stats.rx_packets
+        for i in range(64):
+            tun.write(userspace_tunnel.LOOPBACK_HEADER + b"\x60" + bytes([i]) * 999)
+        assert link.stats.rx_packets - before == 64
     finally:
-        real_peer.close()
-        tun._pend.close()
-    assert not caplog.records
+        await tun.close()
 
 
-def test_write_warns_once_about_a_packet_the_stack_never_gets(caplog: pytest.LogCaptureFixture) -> None:
-    # EMSGSIZE fails again on every retransmission, so the connection stalls for good (#2068).
-    error = OSError(errno.EMSGSIZE, "Message too long")
+async def test_write_after_close_is_ignored():
     tun = UserspaceTun()
-    real_peer, tun._peer = tun._peer, cast(Any, _FailingPeer(error))
-    try:
-        for _ in range(3):
-            tun.write(b"\x60" + b"\x00" * 1499)
-    finally:
-        real_peer.close()
-        tun._pend.close()
-    assert [r.getMessage() for r in caplog.records] == [
-        f"userspace tunnel dropped a 1500-byte packet from the device: {error}"
-    ]
+    tun.addr = "fd57:6e64:6572:7761::1"
+    await tun.up()
+    await tun.close()
+    tun.write(userspace_tunnel.LOOPBACK_HEADER + b"\x60" + b"\x00" * 39)

@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-import errno
 import logging
 import socket
 import struct
@@ -47,6 +46,7 @@ from pmd_pytcp.lib.interface_layer import InterfaceLayer
 from pmd_pytcp.lib.io_backend import register_interface_fd, unregister_interface_fd
 from pmd_pytcp.socket import AF_INET6, SHUT_RDWR, SOCK_DGRAM, SOCK_STREAM
 from pmd_pytcp.socket import socket as pytcp_socket
+from pmd_pytcp.stack.link import LinkApi
 
 import pymobiledevice3.remote.tunnel_service as tunnel_service
 from pymobiledevice3.exceptions import (
@@ -151,7 +151,9 @@ def throughput_sysctls() -> dict[str, int]:
     }
 
 
-#: Datagram socketpair buffer, sized to hold a burst of a full receive window of packets.
+#: Datagram socketpair buffer, sized to hold a burst of a full send window of packets. Only the
+#: outbound (stack -> device) direction rides the socketpair; inbound frames are handed to the
+#: stack directly (:meth:`UserspaceTun.write`).
 SOCKET_BUFFER_SIZE = 6 * 1024 * 1024
 
 #: Read/relay chunk size for the dial-plane bridge.
@@ -263,13 +265,12 @@ class UserspaceTun:
         self._addr: Optional[str] = None
         self._ifidx: Optional[int] = None
         self._closed = False
-        self._send_error_logged = False
+        self._link: Optional[LinkApi] = None
         self._peer, self._pend = _packet_socketpair()
         for s in (self._peer, self._pend):
             s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, SOCKET_BUFFER_SIZE)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SOCKET_BUFFER_SIZE)
-        # Both directions run on the event loop (async_read via loop.sock_recv, write via a
-        # direct non-blocking send), so neither end may block the loop.
+        # async_read runs on the event loop (loop.sock_recv), so this end may not block it.
         self._peer.setblocking(False)
 
     # --- TunTapDevice-compatible surface ---
@@ -310,6 +311,7 @@ class UserspaceTun:
             ip6_gua_autoconfig=False,
             ip4_support=False,
         )
+        self._link = stack.link.interface(self._ifidx)
         await stack.start()  # pyright: ignore[reportGeneralTypeIssues]  # pmd-pytcp types start() as sync; it is a coroutine at runtime
         # The interface address is installed by the stack's own tasks shortly AFTER start()
         # returns; until it lands, source-address selection finds no local host and a stack
@@ -334,21 +336,15 @@ class UserspaceTun:
         stack.neighbor.interface(self._ifidx).add(ip=Ip6Address(device_addr), mac=MacAddress(_PEER_MAC))
 
     def write(self, data: bytes) -> None:
-        # inbound (device -> stack): strip pmd3 loopback header, add Ethernet, enqueue. The
-        # socket is non-blocking; a full buffer drops the packet (tunnel loss, TCP recovers).
+        # inbound (device -> stack): strip pmd3 loopback header, add Ethernet, and hand the frame
+        # straight to the stack, which runs on this event loop. Sending it through the socketpair
+        # instead is bounded by its kernel buffer (net.core.rmem_max without root on Linux,
+        # ~416 KiB), which a burst from the device overflows: the dropped packets then stall the
+        # connection on retransmission timeouts.
+        if self._link is None:  # not up yet, or closed
+            return
         ipv6 = data[len(LOOPBACK_HEADER) :] if data[: len(LOOPBACK_HEADER)] == LOOPBACK_HEADER else data
-        try:
-            self._peer.send(_ETH_HDR_TO_STACK + ipv6)
-        except BlockingIOError:
-            pass  # Linux: the buffer is full
-        except OSError as e:
-            if e.errno == errno.ENOBUFS:
-                return  # macOS: the buffer is full
-            # Any other error (e.g. EMSGSIZE) fails again on every retransmission, so the
-            # connection stalls for good: say why, once.
-            if not self._send_error_logged:
-                self._send_error_logged = True
-                logger.warning("userspace tunnel dropped a %d-byte packet from the device: %s", len(ipv6), e)
+        self._link.receive_frame(_ETH_HDR_TO_STACK + ipv6)
 
     async def async_read(self) -> bytes:
         # outbound (stack -> device): await an Ethernet frame off the stack's socketpair and
@@ -392,6 +388,7 @@ class UserspaceTun:
         if self._closed:
             return
         self._closed = True
+        self._link = None
         # Stop the stack first (clean teardown against live fds: loop readers/writers are
         # removed, worker tasks cancelled and awaited), then release the socketpair. No
         # thread-wakeup gymnastics remain — the pure-asyncio stack has nothing parked off-loop.
