@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import ipaddress
 import logging
 import socket
 import struct
@@ -156,6 +157,14 @@ def throughput_sysctls() -> dict[str, int]:
 #: stack directly (:meth:`UserspaceTun.write`).
 SOCKET_BUFFER_SIZE = 6 * 1024 * 1024
 
+#: How long the device may stay silent after the host's last outbound packet before
+#: :class:`UserspaceTun` nudges it with one ICMPv6 echo. After a burst, the device's
+#: CoreDeviceProxy can hold packets it has already received until another host packet arrives.
+#: Without a nudge, that is the TCP loss probe, which fires after twice the smoothed RTT. Each
+#: wait is then measured as RTT, so the next probe comes later, until an upload stalls for good.
+#: A healthy device answers within a few ms; the timer fires 1-2 periods after the last packet.
+NUDGE_DELAY = 0.02
+
 #: Read/relay chunk size for the dial-plane bridge.
 _CHUNK = 65536
 
@@ -223,6 +232,21 @@ def _eth_header(dst_mac: str, src_mac: str) -> bytes:
 #: string parsing / struct packing.
 _ETH_HDR_TO_STACK = _eth_header(_STACK_MAC, _PEER_MAC)
 _ETH_IPV6_BYTES = struct.pack("!H", _ETH_IPV6)
+_ETH_HDR_TO_PEER = _eth_header(_PEER_MAC, _STACK_MAC)
+
+
+def _icmp6_echo_request(src: str, dst: str) -> bytes:
+    """A complete IPv6 ICMPv6 echo request (RFC 4443 §4.1) from ``src`` to ``dst``."""
+    src_bytes = ipaddress.IPv6Address(src).packed
+    dst_bytes = ipaddress.IPv6Address(dst).packed
+    body = struct.pack("!BBHHH", 128, 0, 0, 0x706D, 0) + b"pmd3"
+    pseudo_header = src_bytes + dst_bytes + struct.pack("!IxxxB", len(body), 58)
+    data = pseudo_header + body
+    total = sum(struct.unpack(f"!{len(data) // 2}H", data))
+    while total >> 16:
+        total = (total & 0xFFFF) + (total >> 16)
+    body = body[:2] + struct.pack("!H", ~total & 0xFFFF) + body[4:]
+    return struct.pack("!IHBB", 0x60000000, len(body), 58, 64) + src_bytes + dst_bytes + body
 
 
 def _grow_relay_buffers(sock: Any) -> None:
@@ -266,6 +290,12 @@ class UserspaceTun:
         self._ifidx: Optional[int] = None
         self._closed = False
         self._link: Optional[LinkApi] = None
+        # Device-silence watchdog (see NUDGE_DELAY): _last_tx is the loop time of the last
+        # outbound batch; _rx_since_tx is set by every inbound packet, cleared by every batch.
+        self._nudge_frame: Optional[bytes] = None
+        self._nudge_timer: Optional[asyncio.TimerHandle] = None
+        self._last_tx = 0.0
+        self._rx_since_tx = False
         self._peer, self._pend = _packet_socketpair()
         for s in (self._peer, self._pend):
             s.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, SOCKET_BUFFER_SIZE)
@@ -334,6 +364,8 @@ class UserspaceTun:
         """Install a static neighbor for the device (point-to-point; skips ND)."""
         assert self._ifidx is not None
         stack.neighbor.interface(self._ifidx).add(ip=Ip6Address(device_addr), mac=MacAddress(_PEER_MAC))
+        assert self._addr is not None
+        self._nudge_frame = _ETH_HDR_TO_PEER + _icmp6_echo_request(self._addr, device_addr)
 
     def write(self, data: bytes) -> None:
         # inbound (device -> stack): strip pmd3 loopback header, add Ethernet, and hand the frame
@@ -341,6 +373,7 @@ class UserspaceTun:
         # instead is bounded by its kernel buffer (net.core.rmem_max without root on Linux,
         # ~416 KiB), which a burst from the device overflows: the dropped packets then stall the
         # connection on retransmission timeouts.
+        self._rx_since_tx = True
         if self._link is None:  # not up yet, or closed
             return
         ipv6 = data[len(LOOPBACK_HEADER) :] if data[: len(LOOPBACK_HEADER)] == LOOPBACK_HEADER else data
@@ -370,13 +403,40 @@ class UserspaceTun:
         not wake it)."""
         frame = await asyncio.get_running_loop().sock_recv(self._peer, 65535)
         packets: list[bytes] = []
+        nudge_only = True
         while True:
             if len(frame) > 14 and frame[12:14] == _ETH_IPV6_BYTES:
                 packets.append(frame[14:])
+                if nudge_only and frame != self._nudge_frame:
+                    nudge_only = False
             try:
                 frame = self._peer.recv(65535)
             except (BlockingIOError, InterruptedError):
-                return packets
+                break
+        if not nudge_only:
+            loop = asyncio.get_running_loop()
+            self._last_tx = loop.time()
+            self._rx_since_tx = False
+            if self._nudge_timer is None and self._nudge_frame is not None and not self._closed:
+                self._nudge_timer = loop.call_at(self._last_tx + NUDGE_DELAY, self._on_nudge_timer)
+        return packets
+
+    def _on_nudge_timer(self) -> None:
+        # Nudge once if the device has said nothing for NUDGE_DELAY after the host's last
+        # outbound packet; while the host keeps sending, move the deadline along with it.
+        self._nudge_timer = None
+        if self._closed or self._nudge_frame is None or self._rx_since_tx:
+            return
+        deadline = self._last_tx + NUDGE_DELAY
+        loop = asyncio.get_running_loop()
+        if loop.time() < deadline:
+            self._nudge_timer = loop.call_at(deadline, self._on_nudge_timer)
+            return
+        # Queue it on the stack's end so it leaves through tun_read_task like any outbound
+        # packet. The nudge's own batch does not re-arm the timer, so an unanswered nudge
+        # is sent once.
+        with suppress(OSError):
+            self._pend.send(self._nudge_frame)
 
     async def connect_tcp(self, addr: str, port: int) -> _AsyncPytcpSocket:
         """Open a PyTCP TCP socket connected to (addr, port) over this stack."""
@@ -389,6 +449,9 @@ class UserspaceTun:
             return
         self._closed = True
         self._link = None
+        if self._nudge_timer is not None:
+            self._nudge_timer.cancel()
+            self._nudge_timer = None
         # Stop the stack first (clean teardown against live fds: loop readers/writers are
         # removed, worker tasks cancelled and awaited), then release the socketpair. No
         # thread-wakeup gymnastics remain — the pure-asyncio stack has nothing parked off-loop.
