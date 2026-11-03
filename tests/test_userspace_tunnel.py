@@ -14,6 +14,7 @@ threads at all — that relaying spawns none.
 
 import asyncio
 import socket
+import struct
 import sys
 import threading
 from contextlib import AsyncExitStack
@@ -577,3 +578,93 @@ async def test_write_after_close_is_ignored():
     await tun.up()
     await tun.close()
     tun.write(userspace_tunnel.LOOPBACK_HEADER + b"\x60" + b"\x00" * 39)
+
+
+# --- device-silence nudge -----------------------------------------------------------------
+
+_HOST_ADDR = "fd57:6e64:6572:7761::2"
+
+
+def _tun_with_nudge(monkeypatch: pytest.MonkeyPatch) -> UserspaceTun:
+    monkeypatch.setattr(userspace_tunnel, "NUDGE_DELAY", 0.02)
+    tun = UserspaceTun()
+    tun._pend.setblocking(False)
+    tun._nudge_frame = userspace_tunnel._ETH_HDR_TO_PEER + userspace_tunnel._icmp6_echo_request(_HOST_ADDR, DEVICE_ADDR)
+    return tun
+
+
+def _stack_sends(tun: UserspaceTun, ipv6: bytes) -> None:
+    tun._pend.send(userspace_tunnel._ETH_HDR_TO_PEER + ipv6)
+
+
+def _pending_egress(tun: UserspaceTun) -> list[bytes]:
+    frames: list[bytes] = []
+    while True:
+        try:
+            frames.append(tun._peer.recv(65535))
+        except BlockingIOError:
+            return frames
+
+
+def test_icmp6_echo_request_is_valid() -> None:
+    packet = userspace_tunnel._icmp6_echo_request(_HOST_ADDR, DEVICE_ADDR)
+    assert packet[0] >> 4 == 6
+    assert packet[6] == 58  # next header: ICMPv6
+    assert struct.unpack("!H", packet[4:6])[0] == len(packet) - 40
+    body = packet[40:]
+    assert body[0] == 128  # echo request
+    data = packet[8:40] + struct.pack("!IxxxB", len(body), 58) + body
+    total = sum(struct.unpack(f"!{len(data) // 2}H", data))
+    while total >> 16:
+        total = (total & 0xFFFF) + (total >> 16)
+    assert total == 0xFFFF
+
+
+async def test_a_silent_device_is_nudged_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    tun = _tun_with_nudge(monkeypatch)
+    try:
+        _stack_sends(tun, b"\x60" + b"\x01" * 59)
+        assert await tun.async_read_batch() == [b"\x60" + b"\x01" * 59]
+        await asyncio.sleep(0.1)
+        nudge = tun._nudge_frame
+        assert nudge is not None
+        assert await asyncio.wait_for(tun.async_read_batch(), 1) == [nudge[14:]]
+        # The nudge's own batch does not re-arm the watchdog: an unanswered nudge is sent once.
+        await asyncio.sleep(0.1)
+        assert _pending_egress(tun) == []
+    finally:
+        await tun.close()
+
+
+async def test_a_device_that_answers_is_not_nudged(monkeypatch: pytest.MonkeyPatch) -> None:
+    tun = _tun_with_nudge(monkeypatch)
+    try:
+        _stack_sends(tun, b"\x60" + b"\x01" * 59)
+        await tun.async_read_batch()
+        tun.write(b"\x60" + b"\x02" * 59)  # the device's reply
+        await asyncio.sleep(0.1)
+        assert _pending_egress(tun) == []
+    finally:
+        await tun.close()
+
+
+async def test_no_nudge_while_the_host_keeps_sending(monkeypatch: pytest.MonkeyPatch) -> None:
+    tun = _tun_with_nudge(monkeypatch)
+    try:
+        for i in range(10):
+            _stack_sends(tun, b"\x60" + bytes([i]) * 59)
+            assert await tun.async_read_batch() == [b"\x60" + bytes([i]) * 59]
+            tun.write(b"\x60" + b"\x02" * 59)
+            await asyncio.sleep(0.01)
+        assert _pending_egress(tun) == []
+    finally:
+        await tun.close()
+
+
+async def test_close_cancels_the_nudge(monkeypatch: pytest.MonkeyPatch) -> None:
+    tun = _tun_with_nudge(monkeypatch)
+    _stack_sends(tun, b"\x60" + b"\x01" * 59)
+    await tun.async_read_batch()
+    assert tun._nudge_timer is not None
+    await tun.close()
+    assert tun._nudge_timer is None
