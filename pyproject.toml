@@ -103,7 +103,7 @@ dependencies = [
     # and the runtime 'log.enabled' hot-path gate). userspace_tunnel.py sets these knobs
     # unconditionally — no capability probing — so the floor IS the compatibility contract.
     # (0.1.0 introduced the pure-asyncio stack the module is written against.)
-    "pmd-pytcp>=0.3.8; python_version >= '3.9'",
+    "pmd-pytcp>=0.3.9; python_version >= '3.9'",
     # pmd-pytcp's address types, which userspace_tunnel.py imports directly. pmd-pytcp pins the
     # version it was built against.
     "pmd-net-addr",
