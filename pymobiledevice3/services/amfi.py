@@ -8,11 +8,16 @@ from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
     DeveloperModeError,
     DeviceHasPasscodeSetError,
+    MuxException,
     PyMobileDevice3Exception,
 )
-from pymobiledevice3.lockdown import retry_create_using_usbmux
+from pymobiledevice3.lockdown import UsbmuxLockdownClient, retry_create_using_usbmux
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.heartbeat import HeartbeatService
+from pymobiledevice3.usbmux import select_device
+
+# How long the device may take to reboot and show up in usbmuxd again after Developer Mode is enabled.
+DEVELOPER_MODE_RECONNECT_TIMEOUT = 180.0
 
 
 class AmfiService:
@@ -50,20 +55,30 @@ class AmfiService:
         if not resp.get("success"):
             raise PyMobileDevice3Exception(f"The device did not reveal the Developer Mode setting: {resp}")
 
-    async def enable_developer_mode(self, enable_post_restart: bool = True):
+    async def enable_developer_mode(
+        self, enable_post_restart: bool = True, reconnect_timeout: float = DEVELOPER_MODE_RECONNECT_TIMEOUT
+    ):
         """
         Request that Developer Mode be enabled on the device.
 
         Sends the enable action. The device then reboots to apply the change. When
         ``enable_post_restart`` is True, this method keeps the connection alive via a heartbeat,
-        waits for the device to disconnect and reconnect over usbmux, and then answers the
-        post-restart confirmation prompt by calling `enable_developer_mode_post_restart`.
+        waits for the same device (by UDID) to disconnect and reconnect over usbmux, and then answers
+        the post-restart confirmation prompt by calling `enable_developer_mode_post_restart`.
+
+        The reconnect always goes through usbmux, since the RSD tunnel or TCP connection the request
+        was sent over does not survive the reboot. A device reached without usbmux (e.g. ``--rsd`` to a
+        device that usbmuxd does not list) cannot be reconnected to, so the prompt has to be confirmed
+        on the device itself.
 
         :param enable_post_restart: when True, wait for the device to restart and automatically
             confirm the final prompt; when False, return immediately after the enable request.
+        :param reconnect_timeout: maximum time in seconds to wait for the device to come back after it
+            restarts.
         :raises DeviceHasPasscodeSetError: if the device has a passcode set, which blocks the operation.
         :raises AmfiError: if AMFI returns any other error.
-        :raises DeveloperModeError: if the enable or post-restart confirmation request does not succeed.
+        :raises DeveloperModeError: if the enable or post-restart confirmation request does not succeed,
+            or if the device cannot be reconnected to over usbmux after it restarts.
         """
         async with await self._lockdown.start_lockdown_service(self.SERVICE_NAME) as service:
             resp = await service.send_recv_plist({"action": self.DEVELOPER_MODE_ENABLE})
@@ -80,14 +95,37 @@ class AmfiService:
         if not enable_post_restart:
             return
 
+        udid = self._lockdown.udid
+        confirm_on_device = "Once it has restarted, unlock it and confirm the Developer Mode prompt on the device."
+        over_usbmux = isinstance(self._lockdown, UsbmuxLockdownClient)
+        usbmux_address = self._lockdown.usbmux_address if isinstance(self._lockdown, UsbmuxLockdownClient) else None
+        if udid is None or not (over_usbmux or await self._listed_by_usbmux(udid)):
+            # Reached over RSD/TCP only: nothing to reconnect through once the reboot tears that down.
+            raise DeveloperModeError(
+                "Developer Mode was requested and the device is restarting, but it is not connected through "
+                f"usbmux, so the post-restart prompt cannot be confirmed from here. {confirm_on_device}"
+            )
+
         try:
             await HeartbeatService(self._lockdown).start()
         except (ConnectionTerminatedError, BrokenPipeError, IncompleteReadError):
             self._logger.debug("device disconnected, awaiting reconnect")
 
-        lockdown = await retry_create_using_usbmux(None, serial=self._lockdown.udid)
+        lockdown = await retry_create_using_usbmux(reconnect_timeout, serial=udid, usbmux_address=usbmux_address)
+        if lockdown is None:
+            raise DeveloperModeError(
+                f"Device {udid} did not reconnect over usbmux within {reconnect_timeout:.0f} seconds of "
+                f"restarting. {confirm_on_device}"
+            )
         self._lockdown = lockdown
         await self.enable_developer_mode_post_restart()
+
+    @staticmethod
+    async def _listed_by_usbmux(udid: str) -> bool:
+        try:
+            return await select_device(udid) is not None
+        except MuxException:
+            return False
 
     async def enable_developer_mode_post_restart(self):
         """
