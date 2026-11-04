@@ -10,7 +10,7 @@ from pymobiledevice3.services.dvt.instruments.location_simulation import Locatio
 
 cli = InjectingTyper(
     name="simulate-location",
-    help="Simulate device location through DVT on iOS 17 and newer.",
+    help="Simulate the device's GPS location through DVT (use this one on iOS 17 and newer).",
     no_args_is_help=True,
 )
 
@@ -25,9 +25,13 @@ async def dvt_simulate_location_clear(service_provider: ServiceProviderDep) -> N
 
 @cli.command("set")
 @async_command
-async def dvt_simulate_location_set(service_provider: ServiceProviderDep, latitude: float, longitude: float) -> None:
+async def dvt_simulate_location_set(
+    service_provider: ServiceProviderDep,
+    latitude: Annotated[float, typer.Argument(help="Latitude in decimal degrees.")],
+    longitude: Annotated[float, typer.Argument(help="Longitude in decimal degrees (put `--` before negative values).")],
+) -> None:
     """
-    Set a simulated location through DVT on iOS 17 and newer.
+    Simulate a fixed location, keeping the session open until interrupted (Ctrl+C).
 
     \b
     For example:
@@ -44,12 +48,16 @@ async def dvt_simulate_location_play(
     service_provider: ServiceProviderDep,
     filename: Annotated[
         Path,
-        typer.Argument(exists=True, file_okay=True, dir_okay=False),
+        typer.Argument(exists=True, file_okay=True, dir_okay=False, help="GPX file with the route to replay."),
     ],
-    timing_randomness_range: Annotated[int, typer.Argument()] = 0,
-    disable_sleep: Annotated[bool, typer.Option()] = False,
+    timing_randomness_range: Annotated[
+        int, typer.Argument(help="Random jitter, in milliseconds (+/-), added to each wait between points.")
+    ] = 0,
+    disable_sleep: Annotated[
+        bool, typer.Option(help="Jump through the points without waiting the time between their timestamps.")
+    ] = False,
 ) -> None:
-    """Replay a GPX route through DVT on iOS 17 and newer."""
+    """Replay a GPX route at its recorded pace, then wait until interrupted (Ctrl+C)."""
     async with DvtProvider(service_provider) as dvt, LocationSimulation(dvt) as location_simulation:
         await location_simulation.play_gpx_file(
             str(filename),

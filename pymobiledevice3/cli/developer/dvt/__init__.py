@@ -95,7 +95,11 @@ class MatchedProcessByPid(NamedTuple):
 
 cli = InjectingTyper(
     name="dvt",
-    help="Drive DVT instrumentation APIs (process control, metrics, traces).",
+    help=(
+        "Drive the Instruments (DVT) services: process control, metrics, traces and more.\n\n"
+        "On iOS < 17 these need the DeveloperDiskImage mounted (`pymobiledevice3 mounter auto-mount`); "
+        "on iOS 17+ the required tunnel is set up automatically."
+    ),
     no_args_is_help=True,
 )
 
@@ -105,7 +109,7 @@ cli.add_typer(simulate_location.cli)
 
 condition_cli = InjectingTyper(
     name="condition",
-    help="Force predefined device conditions (network, thermal, battery) via DVT.",
+    help="Simulate device conditions (e.g. slow network, thermal state) via DVT.",
     no_args_is_help=True,
 )
 cli.add_typer(condition_cli)
@@ -114,7 +118,7 @@ cli.add_typer(condition_cli)
 @condition_cli.command("list")
 @async_command
 async def condition_list(service_provider: ServiceProviderDep) -> None:
-    """List available condition profiles."""
+    """List the available condition groups and their profile identifiers as JSON."""
     async with DvtProvider(service_provider) as dvt, ConditionInducer(dvt) as condition_inducer:
         print_json(await condition_inducer.list())
 
@@ -122,15 +126,24 @@ async def condition_list(service_provider: ServiceProviderDep) -> None:
 @condition_cli.command("clear")
 @async_command
 async def condition_clear(service_provider: ServiceProviderDep) -> None:
-    """Clear any active induced condition."""
+    """Disable the currently active induced condition, returning the device to normal."""
     async with DvtProvider(service_provider) as dvt, ConditionInducer(dvt) as condition_inducer:
         await condition_inducer.clear()
 
 
 @condition_cli.command("set")
 @async_command
-async def condition_set(service_provider: ServiceProviderDep, profile_identifier: str) -> None:
-    """Apply a specific condition profile by identifier."""
+async def condition_set(
+    service_provider: ServiceProviderDep,
+    profile_identifier: Annotated[
+        str, typer.Argument(help="Profile identifier to activate (see `developer dvt condition list`).")
+    ],
+) -> None:
+    """
+    Activate a condition profile, then wait until interrupted (Ctrl+C).
+
+    Replaces any previously active condition. Use `developer dvt condition clear` to disable it.
+    """
     async with DvtProvider(service_provider) as dvt, ConditionInducer(dvt) as condition_inducer:
         await condition_inducer.set(profile_identifier)
         OSUTILS.wait_return()
@@ -139,7 +152,7 @@ async def condition_set(service_provider: ServiceProviderDep, profile_identifier
 @cli.command("proclist")
 @async_command
 async def proclist(service_provider: ServiceProviderDep) -> None:
-    """Show processes (with start times) via DVT."""
+    """List running processes (with PIDs, bundle ids and start times) as JSON."""
     async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
         processes = await device_info.proclist()
         for process in processes:
@@ -151,16 +164,22 @@ async def proclist(service_provider: ServiceProviderDep) -> None:
 
 @cli.command("is-running-pid")
 @async_command
-async def is_running_pid(service_provider: ServiceProviderDep, pid: int) -> None:
-    """Check if a PID is currently running."""
+async def is_running_pid(
+    service_provider: ServiceProviderDep,
+    pid: Annotated[int, typer.Argument(help="Process ID on the device (see `developer dvt proclist`).")],
+) -> None:
+    """Print whether a PID is currently running (true/false)."""
     async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
         print_json(await device_info.is_running_pid(pid))
 
 
 @cli.command("memlimitoff")
 @async_command
-async def memlimitoff(service_provider: ServiceProviderDep, pid: int) -> None:
-    """Disable jetsam memory limit for a PID."""
+async def memlimitoff(
+    service_provider: ServiceProviderDep,
+    pid: Annotated[int, typer.Argument(help="Process ID on the device (see `developer dvt proclist`).")],
+) -> None:
+    """Lift the memory (jetsam) limit of a running process; fails if the device declines."""
     async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
         await process_control.disable_memory_limit_for_pid(pid)
 
@@ -168,7 +187,7 @@ async def memlimitoff(service_provider: ServiceProviderDep, pid: int) -> None:
 @cli.command("applist")
 @async_command
 async def applist(service_provider: ServiceProviderDep) -> None:
-    """List installed applications via DVT."""
+    """List installed applications as JSON."""
     async with DvtProvider(service_provider) as dvt, ApplicationListing(dvt) as application_listing:
         apps = await application_listing.applist()
         print_json(apps)
@@ -215,17 +234,17 @@ class Signals(IntEnum):
 async def send_signal(
     ctx: typer.Context,
     service_provider: ServiceProviderDep,
-    pid: int,
+    pid: Annotated[int, typer.Argument(help="Process ID on the device (see `developer dvt proclist`).")],
     sig: Annotated[
         Optional[int],
-        typer.Argument(),
+        typer.Argument(help="Signal number to send (e.g. 15 for SIGTERM). Mutually exclusive with --signal-name."),
     ] = None,
     signal_name: Annotated[
         Optional[str],
-        typer.Option("--signal-name", "-s"),
+        typer.Option("--signal-name", "-s", help="Signal name to send instead of SIG (e.g. TERM or SIGTERM)."),
     ] = None,
 ) -> None:
-    """Send a signal to a PID (choose numeric SIG or --signal-name)."""
+    """Send a signal to a process (give either a numeric SIG or --signal-name)."""
     if sig is not None and signal_name is not None:
         ctx.fail("Cannot give SIG and SIGNAL-NAME together")
 
@@ -249,16 +268,24 @@ async def send_signal(
 
 @cli.command("kill")
 @async_command
-async def kill(service_provider: ServiceProviderDep, pid: int) -> None:
-    """Kill a process by PID."""
+async def kill(
+    service_provider: ServiceProviderDep,
+    pid: Annotated[int, typer.Argument(help="Process ID on the device (see `developer dvt proclist`).")],
+) -> None:
+    """Kill a process by PID (sends SIGKILL)."""
     async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
         await process_control.kill(pid)
 
 
 @cli.command()
 @async_command
-async def process_id_for_bundle_id(service_provider: ServiceProviderDep, app_bundle_identifier: str) -> None:
-    """Get PID of a bundle identifier (only returns a valid value if its running)."""
+async def process_id_for_bundle_id(
+    service_provider: ServiceProviderDep,
+    app_bundle_identifier: Annotated[
+        str, typer.Argument(help="Bundle identifier of the app (e.g. com.apple.Preferences).")
+    ],
+) -> None:
+    """Print the PID of a running app by bundle identifier (prints 0 if it is not running)."""
     async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
         print(await process_control.process_identifier_for_bundle_identifier(app_bundle_identifier))
 
@@ -293,7 +320,7 @@ async def pkill(
         typer.Option(help="Treat given expressions as bundle-identifiers instead of process names"),
     ] = False,
 ) -> None:
-    """Kill all processes containing each expression in their name."""
+    """Kill (SIGKILL) every process whose name (or bundle id, with --bundle) contains an expression."""
     async with (
         DvtProvider(service_provider) as dvt_provider,
         DeviceInfo(dvt_provider) as device_info,
@@ -315,14 +342,20 @@ async def pkill(
 @async_command
 async def launch(
     service_provider: ServiceProviderDep,
-    arguments: str,
+    arguments: Annotated[
+        str,
+        typer.Argument(
+            help="Bundle identifier followed by optional launch arguments, as one quoted string "
+            "(e.g. 'com.apple.mobilesafari -arg value')."
+        ),
+    ],
     kill_existing: Annotated[
         bool,
-        typer.Option(help="Whether to kill an existing instance of this process"),
+        typer.Option(help="Kill an already-running instance of the app before launching."),
     ] = True,
     suspended: Annotated[
         bool,
-        typer.Option(help="Same as WaitForDebugger"),
+        typer.Option(help="Start the process suspended, waiting for a debugger to attach."),
     ] = False,
     env: Annotated[
         Optional[list[str]],
@@ -330,9 +363,11 @@ async def launch(
             help="Environment variable to pass to process given as key=value (can be specified multiple times)"
         ),
     ] = None,
-    stream: bool = False,
+    stream: Annotated[
+        bool, typer.Option(help="Keep running and print the app's stdout/stderr until interrupted (Ctrl+C).")
+    ] = False,
 ) -> None:
-    """Launch a process."""
+    """Launch an installed app by bundle identifier and print its PID."""
     async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
         parsed_arguments = shlex.split(arguments)
         pid = await process_control.launch(
@@ -350,7 +385,7 @@ async def launch(
 
 @cli.command("shell")
 def dvt_shell(service_provider: ServiceProviderDep) -> None:
-    """Launch developer shell (used for pymobiledevice3 R&D)"""
+    """Open an IPython shell connected to the DVT service (for pymobiledevice3 R&D)."""
     dvt = DvtProvider(service_provider)
     run_in_loop(dvt.connect())
     try:
@@ -386,13 +421,13 @@ async def show_dirlist(device_info: DeviceInfo, dirname: str, recursive: bool = 
 @async_command
 async def ls(
     service_provider: ServiceProviderDep,
-    path: str,
+    path: Annotated[str, typer.Argument(help="Absolute path of the device directory to list.")],
     recursive: Annotated[
         bool,
-        typer.Option("--recursive", "-r"),
+        typer.Option("--recursive", "-r", help="Also list every subdirectory."),
     ] = False,
 ) -> None:
-    """List directory"""
+    """List a directory on the device's filesystem by absolute path."""
     async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
         if not await show_dirlist(device_info, path, recursive=recursive):
             raise typer.Exit(1)
@@ -401,7 +436,7 @@ async def ls(
 @cli.command("device-information")
 @async_command
 async def device_information(service_provider: ServiceProviderDep) -> None:
-    """Print system information"""
+    """Print hardware, network, kernel and system information as JSON."""
     async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
         info: dict[str, Any] = {
             "hardware": await device_info.hardware_information(),
@@ -421,7 +456,7 @@ def _address_json(address: SocketAddress) -> Optional[str]:
 @cli.command("netstat")
 @async_command
 async def netstat(service_provider: ServiceProviderDep, output_format: OutputFormatOption = OutputFormat.TEXT) -> None:
-    """Print information about current network activity."""
+    """Stream new network connections as they are detected, until interrupted (Ctrl+C)."""
     async with DvtProvider(service_provider) as dvt, NetworkMonitor(dvt) as monitor:
         async for event in monitor:
             if isinstance(event, ConnectionDetectionEvent):
@@ -446,16 +481,22 @@ async def netstat(service_provider: ServiceProviderDep, output_format: OutputFor
 
 @cli.command("screenshot")
 @async_command
-async def dvt_screenshot(service_provider: ServiceProviderDep, out: Path) -> None:
-    """Take device screenshot"""
+async def dvt_screenshot(
+    service_provider: ServiceProviderDep,
+    out: Annotated[Path, typer.Argument(help="Local file to write the PNG screenshot to.")],
+) -> None:
+    """Take a screenshot of the device screen and save it as PNG."""
     async with DvtProvider(service_provider) as dvt, Screenshot(dvt) as screenshot:
         out.write_bytes(await screenshot.get_screenshot())
 
 
 @cli.command("vm-regions")
 @async_command
-async def dvt_vm_regions(service_provider: ServiceProviderDep, pid: int) -> None:
-    """List the virtual memory regions of a debuggable (development-signed) app's process"""
+async def dvt_vm_regions(
+    service_provider: ServiceProviderDep,
+    pid: Annotated[int, typer.Argument(help="Process ID on the device (see `developer dvt proclist`).")],
+) -> None:
+    """List the virtual memory regions of a debuggable (development-signed) app's process."""
     async with DvtProvider(service_provider) as dvt, VMTracking(dvt) as vm_tracking:
         snapshot = await vm_tracking.snapshot(pid)
     print_json([dataclasses.asdict(region) for region in snapshot.regions])
@@ -465,14 +506,14 @@ async def dvt_vm_regions(service_provider: ServiceProviderDep, pid: int) -> None
 @async_command
 async def dvt_memgraph(
     service_provider: ServiceProviderDep,
-    pid: int,
-    out: Path,
+    pid: Annotated[int, typer.Argument(help="Process ID on the device (see `developer dvt proclist`).")],
+    out: Annotated[Path, typer.Argument(help="Local .memgraph file to write.")],
     leaked_only: Annotated[
         bool, typer.Option("--leaked-only", help="Keep only the leaked allocations in the graph.")
     ] = False,
 ) -> None:
     """
-    Save the memory graph of a running debuggable (development-signed) app's process
+    Save the memory graph of a running debuggable (development-signed) app's process.
 
     Prints the leak count and addresses as JSON. The .memgraph file can be inspected on macOS
     with leaks(1), heap(1) or vmmap(1). With --leaked-only, no file is written when nothing leaked.
@@ -490,12 +531,12 @@ async def dvt_memgraph(
 @async_command
 async def dvt_dyld_metrics(
     service_provider: ServiceProviderDep,
-    pid: int,
+    pid: Annotated[int, typer.Argument(help="Process ID on the device (see `developer dvt proclist`).")],
     at_main: Annotated[
         bool, typer.Option("--at-main", help="Wait for the process to reach main before capturing.")
     ] = False,
 ) -> None:
-    """Print the dynamic loader's launch metrics of a debuggable (development-signed) app's process"""
+    """Print the dynamic loader's launch metrics of a debuggable (development-signed) app's process."""
     async with DvtProvider(service_provider) as dvt, DyldMetrics(dvt) as dyld_metrics:
         print_json(await dyld_metrics.capture(pid, at_main=at_main))
 
@@ -547,7 +588,7 @@ class AllocationBacktraceFormatter:
 @async_command
 async def dvt_allocations(
     service_provider: ServiceProviderDep,
-    bundle_id: str,
+    bundle_id: Annotated[str, typer.Argument(help="Bundle identifier of the development-signed app to launch.")],
     duration: Annotated[
         Optional[float], typer.Option(help="Seconds to record for. Records until interrupted by default.")
     ] = None,
@@ -565,9 +606,9 @@ async def dvt_allocations(
     ] = False,
 ) -> None:
     """
-    Launch a debuggable (development-signed) app and record its memory allocations
+    Launch a debuggable (development-signed) app and record its memory allocations.
 
-    Prints a summary of the heap allocations by category when the recording ends.
+    Kills an already-running instance of the app first. Records until --duration elapses or you press Ctrl+C, then prints a summary of the allocations by category.
     """
     events_mask = 0
     for kind in kinds or [AllocationKind.HEAP]:
@@ -624,11 +665,11 @@ async def xcuitest(
     ] = None,
     output_log: Annotated[
         Optional[Path],
-        typer.Option(help="log debug output file location ( default to python logger )"),
+        typer.Option(help="File to write the test log to (default: the regular logger output)."),
     ] = None,
     timeout: Annotated[
         Optional[float],
-        typer.Option(help="maximum execution time, in seconds"),
+        typer.Option(help="Maximum execution time, in seconds (default: no limit)."),
     ] = None,
     env: Annotated[
         Optional[list[str]],
@@ -638,7 +679,7 @@ async def xcuitest(
     ] = None,
 ) -> None:
     """
-    Start XCUITest
+    Launch an installed XCTest runner app and run its UI tests (e.g. WebDriverAgent).
 
     \b
     Usage example:
@@ -717,23 +758,27 @@ async def xcuitest(
 @cli.command("trace-codes")
 @async_command
 async def dvt_trace_codes(service_provider: ServiceProviderDep) -> None:
-    """Print KDebug trace codes."""
+    """Print the device's KDebug trace code to name table as JSON."""
     async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
         print_json({hex(k): v for k, v in (await device_info.trace_codes()).items()})
 
 
 @cli.command("name-for-uid")
 @async_command
-async def dvt_name_for_uid(service_provider: ServiceProviderDep, uid: int) -> None:
-    """Print the assiciated username for the given uid."""
+async def dvt_name_for_uid(
+    service_provider: ServiceProviderDep, uid: Annotated[int, typer.Argument(help="Numeric user ID.")]
+) -> None:
+    """Print the user name of a numeric user ID on the device."""
     async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
         print(await device_info.name_for_uid(uid))
 
 
 @cli.command("name-for-gid")
 @async_command
-async def dvt_name_for_gid(service_provider: ServiceProviderDep, gid: int) -> None:
-    """Print the assiciated group name for the given gid."""
+async def dvt_name_for_gid(
+    service_provider: ServiceProviderDep, gid: Annotated[int, typer.Argument(help="Numeric group ID.")]
+) -> None:
+    """Print the group name of a numeric group ID on the device."""
     async with DvtProvider(service_provider) as dvt, DeviceInfo(dvt) as device_info:
         print(await device_info.name_for_gid(gid))
 
@@ -742,10 +787,14 @@ async def dvt_name_for_gid(service_provider: ServiceProviderDep, gid: int) -> No
 @async_command
 async def dvt_oslog(
     service_provider: ServiceProviderDep,
-    pid: Optional[int] = None,
+    pid: Annotated[Optional[int], typer.Option(help="Only show messages from this process ID.")] = None,
     output_format: OutputFormatOption = OutputFormat.TEXT,
 ) -> None:
-    """Sniff device oslog (not very stable, but includes more data and normal syslog)"""
+    """
+    Stream the device's unified log (os_log) until interrupted (Ctrl+C).
+
+    Includes more detail (subsystem, category, sender image) than `syslog live`, but is less stable.
+    """
     async with DvtProvider(service_provider) as dvt, ActivityTraceTap(dvt) as tap:
         async for message in cast(AsyncIterator[Any], tap):
             message_pid = message.process
@@ -802,8 +851,11 @@ async def dvt_oslog(
 
 @cli.command("energy")
 @async_command
-async def dvt_energy(service_provider: ServiceProviderDep, pid_list: list[str]) -> None:
-    """Monitor the energy consumption for given PIDs"""
+async def dvt_energy(
+    service_provider: ServiceProviderDep,
+    pid_list: Annotated[list[str], typer.Argument(help="One or more process IDs to monitor.")],
+) -> None:
+    """Stream energy-usage telemetry for the given PIDs as JSON lines, until interrupted (Ctrl+C)."""
 
     if len(pid_list) == 0:
         logger.error("pid_list must not be empty")
@@ -823,12 +875,12 @@ async def dvt_energy(service_provider: ServiceProviderDep, pid_list: list[str]) 
 @async_command
 async def dvt_network_statistics(
     service_provider: ServiceProviderDep,
-    pid_list: list[int],
+    pid_list: Annotated[list[int], typer.Argument(help="One or more process IDs to monitor.")],
     interval: Annotated[
         int, typer.Option("--interval", "-i", help="Interval in milliseconds between samples")
     ] = NetworkStatistics.DEFAULT_INTERVAL_MS,
 ) -> None:
-    """Monitor the network traffic for given PIDs, one record per PID per sample"""
+    """Stream network traffic for the given PIDs as JSON lines (one per PID per sample), until Ctrl+C."""
     async with (
         DvtProvider(service_provider) as dvt,
         NetworkStatistics(dvt, pid_list, interval_ms=interval) as network_statistics,
@@ -841,7 +893,7 @@ async def dvt_network_statistics(
 @cli.command("notifications")
 @async_command
 async def dvt_notifications(service_provider: ServiceProviderDep) -> None:
-    """Monitor memory and app notifications"""
+    """Stream memory and app-state notifications as JSON lines, until interrupted (Ctrl+C)."""
     async with DvtProvider(service_provider) as dvt, Notifications(dvt) as notifications:
         async for notification in notifications:
             print_json_line(notification)
@@ -850,7 +902,7 @@ async def dvt_notifications(service_provider: ServiceProviderDep) -> None:
 @cli.command("graphics")
 @async_command
 async def dvt_graphics(service_provider: ServiceProviderDep) -> None:
-    """Monitor graphics-related information"""
+    """Stream GPU graphics performance samples as JSON lines, until interrupted (Ctrl+C)."""
     async with DvtProvider(service_provider) as dvt, Graphics(dvt) as graphics:
         async for stats in graphics:
             print_json_line(stats)
@@ -859,7 +911,7 @@ async def dvt_graphics(service_provider: ServiceProviderDep) -> None:
 @cli.command("fps")
 @async_command
 async def dvt_fps(service_provider: ServiceProviderDep) -> None:
-    """Monitor the display frame rate (Core Animation FPS), one record per second"""
+    """Stream the display frame rate (Core Animation FPS), one JSON line per second, until Ctrl+C."""
     async with DvtProvider(service_provider) as dvt, Graphics(dvt) as graphics:
         async for fps in graphics.fps():
             print_json_line({"fps": fps, "timestamp": datetime.now(timezone.utc).isoformat()})
@@ -869,7 +921,7 @@ async def dvt_fps(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def dvt_har(service_provider: ServiceProviderDep) -> None:
     """
-    Enable har-logging
+    Enable HTTP archive (HAR) logging on the device until interrupted (Ctrl+C).
 
     \b
     For more information, please read:
