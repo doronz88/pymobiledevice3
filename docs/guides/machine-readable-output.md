@@ -1,14 +1,15 @@
 # Machine-readable output
 
-Most query-style `pymobiledevice3` commands print JSON on stdout, ready for `jq` or any JSON
-parser. This page documents the conventions that output follows so scripts can rely on them.
+Most query-style `pymobiledevice3` commands print JSON on stdout, ready for
+[`jq`](https://jqlang.org) or any JSON parser. This page documents the conventions that output follows so scripts can rely on them.
 
 ## Streams
 
 - **stdout carries data.** JSON documents, NDJSON records, and text-mode data lines all go to
   stdout.
 - **stderr carries diagnostics.** Logging, progress, and warnings never mix into the data
-  stream. Redirect stderr away (`2>/dev/null`) without losing any data.
+  stream. Redirect stderr away (`2>/dev/null`, or `2>$null` in PowerShell) without losing any
+  data.
 
 ## Binary values
 
@@ -60,7 +61,8 @@ Streams whose records are structured data emit NDJSON always:
 - `developer dvt energy`
 - `developer dvt network-statistics`
 - `developer dvt notifications`
-- `developer dvt sysmon process monitor` (JSONL, optionally to a file via `--output`)
+- `developer dvt sysmon process monitor threshold` / `developer dvt sysmon process monitor process`
+  (optionally to a file via `--output`)
 - `diagnostics battery monitor`
 - `notification observe` / `notification observe-all`
 

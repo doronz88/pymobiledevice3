@@ -175,7 +175,7 @@ class StartServiceError(PyMobileDevice3Exception):
                 "Full discussion is available in: https://github.com/doronz88/pymobiledevice3/issues/1515"
             )
         else:
-            description = f"Failed to start: {service_name} with. Received error: {message}."
+            description = f"Failed to start {service_name}. Received error: {message}."
         super().__init__(description)
         self.service_name = service_name
         self.message = message
@@ -215,7 +215,7 @@ class DeviceNotFoundError(PyMobileDevice3Exception):
 
 
 class TunneldConnectionError(PyMobileDevice3Exception):
-    """Unable to connect to tunneld. Start one with `sudo python3 -m pymobiledevice3 remote tunneld`."""
+    """Unable to connect to tunneld. Start one with `sudo pymobiledevice3 remote tunneld`."""
 
 
 class MuxException(PyMobileDevice3Exception):
@@ -409,7 +409,7 @@ class DeviceAlreadyInUseError(ArbitrationError):
 
 
 class DeveloperModeIsNotEnabledError(PyMobileDevice3Exception):
-    """Developer Mode is disabled. You can try to enable it using: python3 -m pymobiledevice3 amfi
+    """Developer Mode is disabled. You can try to enable it using: pymobiledevice3 amfi
     enable-developer-mode
     """
 

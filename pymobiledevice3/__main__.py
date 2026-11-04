@@ -75,15 +75,16 @@ INVALID_SERVICE_MESSAGE = """Failed to start service. Possible reasons are:
 - If you were trying to access a developer service (developer subcommand):
     - If your device iOS version >= 16.0:
         - Make sure you first enabled "Developer Mode" via:
-          > python3 -m pymobiledevice3 amfi enable-developer-mode
+          > pymobiledevice3 amfi enable-developer-mode
 
-    - Make sure the DeveloperDiskImage/PersonalizedImage is mounted via:
-      > python3 -m pymobiledevice3 mounter auto-mount
+    - Make sure the DeveloperDiskImage/PersonalizedImage is mounted (always needed on iOS < 17
+      and for `developer core-device`; `developer dvt` on iOS 17+ needs only Developer Mode) via:
+      > pymobiledevice3 mounter auto-mount
 
     - If your device iOS version >= 17.0:
         - An RSD tunnel is established automatically; no flag is needed.
         - On Linux/Windows with iOS 17.0-17.3, a privileged tunneld must be running:
-          > sudo python3 -m pymobiledevice3 remote tunneld
+          > sudo pymobiledevice3 remote tunneld
           https://doronz88.github.io/pymobiledevice3/guides/ios17-tunnels/
 
 - Apple removed this service, or your iOS version does not support it.

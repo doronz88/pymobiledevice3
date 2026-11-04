@@ -5,7 +5,15 @@ search:
 
 # CLI Recipes
 
-Common `pymobiledevice3` commands grouped by task.
+Common `pymobiledevice3` commands grouped by task. Every command has `--help`, which lists its
+arguments and options.
+
+Words in capitals (`DIRECTORY`, `PID`, `BUNDLE_ID`, ...) are placeholders for your own values. A
+bundle ID is an app's identifier, such as `com.apple.mobilesafari`; `pymobiledevice3 apps list`
+prints them. Commands under `developer` need Developer Mode turned on, and some also need the
+DeveloperDiskImage mounted (see [Developer Mode and DDI](#developer-mode-and-ddi)). On iOS 17+ many commands also
+need an RSD tunnel (the transport iOS 17+ uses for developer services); the CLI sets one up by
+itself, with no flag and no `sudo` ([iOS 17+ tunnels](ios17-tunnels.md) explains the options).
 
 ## Device Discovery and Connectivity
 
@@ -13,10 +21,10 @@ Common `pymobiledevice3` commands grouped by task.
 # List connected devices
 pymobiledevice3 usbmux list
 
-# Browse RemoteXPC devices over bonjour
+# Find iOS 17+ devices advertising RemoteXPC (Apple's developer-service protocol) on the local network
 pymobiledevice3 bonjour rsd
 
-# Forward a host port to device port
+# Forward a host TCP port to a port on the device, over USB
 pymobiledevice3 usbmux forward HOST_PORT DEVICE_PORT
 ```
 
@@ -47,7 +55,7 @@ pymobiledevice3 crash pull /path/to/crashes
 # Remove only matching crash reports, without copying them
 pymobiledevice3 crash clear --match '^MobileSafari'
 
-# Show the process list (diagnosticsd API; no developer tunnel required)
+# Show the process list (no Developer Mode, DDI or tunnel needed)
 pymobiledevice3 processes ps
 
 # Match process pids by name (like pgrep)
@@ -105,7 +113,7 @@ pymobiledevice3 backup2 backup --only whatsapp DIRECTORY
 pymobiledevice3 backup2 backup --only contacts DIRECTORY
 pymobiledevice3 backup2 backup --only call_history DIRECTORY
 pymobiledevice3 backup2 backup --only bookmarks DIRECTORY
-pymobiledevice3 backup2 backup --only-regex '\\.(plist|db|db-shm|db-wal|sqlite|sqlite-shm|sqlite-wal|sqlitedb|sqlitedb-shm|sqlitedb-wal|storedata|storedata-shm|storedata-wal)$' DIRECTORY
+pymobiledevice3 backup2 backup --only-regex '\.(plist|db|db-shm|db-wal|sqlite|sqlite-shm|sqlite-wal|sqlitedb|sqlitedb-shm|sqlitedb-wal|storedata|storedata-shm|storedata-wal)$' DIRECTORY
 
 # `messages` keeps sms.db plus the complete SMS/iMessage attachment, part,
 # sticker, and recent-item trees. Filtering saves host disk space, but the
@@ -183,10 +191,10 @@ pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI
 DeveloperDiskImage over `cryptexd` alone, without the image mounter: it has Apple sign a Cryptex1
 ticket for this device and installs the payloads, leaving the DDI's developer services (DVT,
 testmanagerd, …) usable. The end result is indistinguishable from a `mounter auto-mount` —
-`mounter list` reports it as a `Personalized` image at `/System/Developer`. In fact, from iOS 27
-`mounter auto-mount` itself installs this cryptex rather than mounting the older `PersonalizedDMG`,
-setting up the tunnel itself, since the cryptex is not tied to the boards listed in the DDI's build
-manifest and so also covers devices newer than the DDI.
+`mounter list` reports it as a `Personalized` image at `/System/Developer`. From iOS 27,
+`mounter auto-mount` itself installs this cryptex instead of mounting the older `PersonalizedDMG`:
+unlike the `PersonalizedDMG`, the cryptex is not tied to the boards listed in the DDI's build
+manifest, so it also covers devices newer than the DDI.
 
 !!! note "iOS 26.4 and later"
 
@@ -224,8 +232,8 @@ pymobiledevice3 cryptex auto-install --restore-dir /Library/Developer/DeveloperD
       `mounter query-nonce` silently falls back to the default nonce for an unrecognized
       `--image-type`.
 
-    `mounter` still wins when you have no tunnel: it works over plain USB, while every `cryptex`
-    command needs RSD.
+    `mounter` still wins when no tunnel can be set up: its queries work over plain USB, while every
+    `cryptex` command needs RSD.
 
 ## Streaming app install
 
@@ -266,6 +274,9 @@ pymobiledevice3 apps install-record com.apple.Preferences
 
 ## Darwin Notifications
 
+Darwin notifications are the system-wide named signals of `notify(3)`, which daemons post on state
+changes.
+
 ```shell
 # Post a notification
 pymobiledevice3 notification post com.example.notification
@@ -274,8 +285,9 @@ pymobiledevice3 notification post com.example.notification
 pymobiledevice3 notification observe com.example.notification
 ```
 
-On iOS 17+ with an RSD tunnel, `--remotexpc` talks to the notification proxy directly over
-RemoteXPC instead of tunnelling the lockdown service through its `.shim.remote` alias:
+On iOS 17+, `--remotexpc` talks to the notification proxy directly over RemoteXPC instead of
+tunnelling the lockdown service through its `.shim.remote` alias. This option does not set up the
+tunnel by itself, so request one explicitly with `--userspace` (or `--rsd`/`--tunnel`):
 
 ```shell
 pymobiledevice3 notification observe --remotexpc com.example.notification --userspace
@@ -283,8 +295,8 @@ pymobiledevice3 notification post --remotexpc com.example.notification --userspa
 ```
 
 Since iOS 27.2 a notification also carries a 64-bit state, which system daemons use to publish
-a current value (lock state, orientation, low power mode...). Reading and setting it needs an RSD
-tunnel:
+a current value (lock state, orientation, low power mode...). Reading and setting it goes over the
+RSD tunnel, which the CLI sets up by itself:
 
 ```shell
 # Read the current value
@@ -310,24 +322,41 @@ pymobiledevice3 springboard wallpaper-home-screen wallpaper.png
 ## Firmware Update
 
 ```shell
-# Update using local IPSW file
-pymobiledevice3 restore update -i /path/to/ipsw
+# Pick a signed build interactively, download it and update in place (keeps user data)
+pymobiledevice3 restore update
 
-# Update using IPSW URL
+# Update using a local IPSW file
+pymobiledevice3 restore update -i /path/to/firmware.ipsw
+
+# Update using an IPSW URL
 pymobiledevice3 restore update -i https://example.com/firmware.ipsw
 ```
 
+`--erase` restores instead, wiping the device. See the [restore guide](restore.md) for details.
+
 ## Developer Mode and DDI
 
+Developer services (everything under `developer`) need Developer Mode (iOS 16+). Some also need
+the DeveloperDiskImage (DDI), an Apple-signed image that adds developer services to the device:
+
+- **iOS < 17**: every developer service, including `developer dvt`, needs the DDI.
+- **iOS 17+**: `developer dvt` needs only Developer Mode. `developer core-device` always needs the
+  DDI.
+
+If a developer command fails with `InvalidServiceError`, mounting the DDI is the first thing to try.
+
 ```shell
-# Enable Developer Mode
+# Check, then enable Developer Mode. Enabling restarts the device and only works when no passcode
+# is set; otherwise reveal the switch in Settings -> Privacy & Security and turn it on there
+pymobiledevice3 amfi developer-mode-status
 pymobiledevice3 amfi enable-developer-mode
+pymobiledevice3 amfi reveal-developer-mode
+
+# Mount the DeveloperDiskImage (needed again after every reboot)
+pymobiledevice3 mounter auto-mount
 
 # Trust the developer app signer of an installed provisioning profile (UUID from `provision list`)
-pymobiledevice3 amfi trust-app-signer <profile-uuid>
-
-# Auto-mount DeveloperDiskImage
-pymobiledevice3 mounter auto-mount
+pymobiledevice3 amfi trust-app-signer PROFILE_UUID
 ```
 
 `mounter auto-mount` picks the right DeveloperDiskImage for the device's iOS version:
@@ -353,23 +382,24 @@ as long as the DDI's build manifest lists its board.
     Apple's signing server decides. This is also how Xcode supports these devices, which run iOS
     27 or later, where `auto-mount` installs the cryptex (as does `cryptex auto-install`).
 
-Installing the Cryptex1 DDI needs an RSD tunnel; you don't need to pass one: the CLI sets up a no-root tunnel and retries by itself
-(*"Trying again over ... since RSD is required for this command"*). All variants are downloaded
+Installing the Cryptex1 DDI needs an RSD tunnel; you don't need to pass one: the CLI sets up a
+no-root tunnel and retries by itself (*"Trying again over ... since RSD is required for this
+command"*). All variants are downloaded
 and cached under `~/.pymobiledevice3` (`$XDG_DATA_HOME/pymobiledevice3` on new Linux installs),
 and the iOS 17+ ones end up mounted at `/System/Developer`. See
 [Cryptexes](#cryptexes-ios-17-rsd-tunnel) for installing the cryptex directly.
 
-For iOS 17+ tunnel setup, see:
-[iOS 17+ tunnels](ios17-tunnels.md)
-
 ## DVT Examples
 
+DVT is the developer-tools service Xcode and Instruments use. These commands need Developer Mode,
+plus a mounted DDI on iOS < 17 ([above](#developer-mode-and-ddi)).
+
 ```shell
-# Simulate location (iOS < 17.0)
-pymobiledevice3 developer simulate-location set -- lat long
+# Simulate location (iOS < 17.0); `--` lets a negative coordinate through
+pymobiledevice3 developer simulate-location set -- LATITUDE LONGITUDE
 
 # Simulate location (iOS >= 17.0)
-pymobiledevice3 developer dvt simulate-location set -- lat long
+pymobiledevice3 developer dvt simulate-location set -- LATITUDE LONGITUDE
 
 # Play GPX route
 pymobiledevice3 developer dvt simulate-location play route.gpx
@@ -402,7 +432,7 @@ pymobiledevice3 developer dvt sysmon process monitor process --filter name=MyApp
 # Stream oslog
 pymobiledevice3 developer dvt oslog
 
-# Stream oslog as NDJSON. Each record also carries the message's format string and its arguments
+# Stream oslog as NDJSON (one JSON object per line). Each record also carries the message's format string and its arguments
 pymobiledevice3 developer dvt oslog --format json
 
 # Kill a process
@@ -415,7 +445,7 @@ pymobiledevice3 developer dvt vm-regions PID
 # Save the memory graph of a running app; prints the leak count and addresses as JSON
 pymobiledevice3 developer dvt memgraph PID app.memgraph
 
-# Inspect it on macOS with leaks(1), heap(1) or vmmap(1)
+# Inspect it with leaks(1), heap(1) or vmmap(1), which ship with macOS only
 leaks app.memgraph
 
 # To see where each allocation was made, launch the app with malloc stack logging first;
@@ -444,7 +474,7 @@ pymobiledevice3 developer dvt ls PATH
 # Launch an app
 pymobiledevice3 developer dvt launch com.apple.mobilesafari
 
-# Live KDebug parsing (strace-like). Unfiltered, the device emits events faster than they can
+# Live kdebug (kernel event trace) parsing, strace-like; "Tracing with kdebug" covers the details. Unfiltered, the device emits events faster than they can
 # be parsed, so output fails once it falls --max-lag (2s) behind, or skips ahead (with a warning on
 # stderr) with --skip-behind; --bsc / --class-filters / --subclass-filters filter on the device (by
 # subclass at most). On exit it prints how many events were read, dropped by the device and
@@ -474,20 +504,16 @@ pymobiledevice3 developer dvt core-profile-session parse-live --dyld
 pymobiledevice3 developer dvt core-profile-session parse-live --xpc --process SpringBoard
 pymobiledevice3 developer dvt core-profile-session parse-live --dispatch --runloop
 
-# One event by its trace code name; `events TEXT` finds the name
+# Events by their trace code name (the device filters each event's subclass, and the other events
+# in it are dropped right after decoding). `events TEXT` finds a name, `events` alone lists them all
 pymobiledevice3 developer dvt core-profile-session events dlsym
-pymobiledevice3 developer dvt core-profile-session parse-live -e DBG_DYLD_TIMING_DLSYM
+pymobiledevice3 developer dvt core-profile-session parse-live -e DBG_DYLD_TIMING_DLOPEN -e DBG_DYLD_TIMING_DLSYM
 
 # One JSON object per trace (time, thread, pid, process, event, parsed fields and text), e.g. for jq.
 # On a terminal, traces are otherwise colored by what they show; --color-mode fast colors only the columns
 pymobiledevice3 developer dvt core-profile-session parse-live --fs --json | jq -c 'select(.process == "MobileSafari")'
 
-# Any events by their trace code name; the device filters each event's subclass, and the other events
-# in it are dropped right after decoding. `events` lists the names
-pymobiledevice3 developer dvt core-profile-session parse-live -e DBG_DYLD_TIMING_DLOPEN -e DBG_DYLD_TIMING_DLSYM
-pymobiledevice3 developer dvt core-profile-session events
-
-# Save KDebug events to file
+# Save kdebug events to a file
 pymobiledevice3 developer dvt core-profile-session save FILENAME
 
 # Print the call stacks of every thread of every process (or of one: --process PID/NAME).
@@ -516,11 +542,11 @@ pymobiledevice3 developer dvt fps
 
 ## Core Device (iOS 17+)
 
-These commands talk to iOS 17+ `CoreDevice` services through the RSD tunnel.
-See [iOS 17+ tunnels](ios17-tunnels.md) for tunnel setup.
+These commands talk to iOS 17+ `CoreDevice` services (the ones Xcode's `devicectl` uses) through
+the RSD tunnel, which the CLI sets up by itself.
 
 !!! note "Prerequisites"
-    These require both an RSD tunnel **and** the Developer Disk Image (DDI) mounted. Mount it once
+    These always require Developer Mode and the Developer Disk Image (DDI) mounted. Mount it once
     per boot with:
 
     ```shell
@@ -558,10 +584,10 @@ pymobiledevice3 developer core-device universal-hid-service list-connected
 
 # Deliver a raw HID report to a connected surface. The layout is
 # surface-specific; capture devicectl traffic with misc/remotexpc_sniffer.py
-# to learn it for a new surface.
-pymobiledevice3 developer core-device universal-hid-service send-report 1281 <hex>
+# (in a source checkout) to learn it for a new surface.
+pymobiledevice3 developer core-device universal-hid-service send-report 1281 HEX_REPORT
 
-# --- touch gestures (auto-managed media stream — see hid_service.py) ---
+# --- touch gestures (the media stream they need is managed automatically) ---
 #
 # X/Y are UInt16 (0..65535) normalised across the device's screen, so
 # (0, 0) is top-left and (65535, 65535) is bottom-right regardless of the
@@ -644,6 +670,7 @@ pymobiledevice3 developer core-device display serve-vnc --bind 0.0.0.0 --passwor
 pymobiledevice3 developer core-device display start-video-stream /tmp/cap.rtp --duration 10
 
 # Convert that capture to an Annex-B .h265 bitstream playable by ffplay/VLC
+# (misc/rtp_dump.py is in a source checkout, not in the installed package)
 misc/rtp_dump.py /tmp/cap.rtp /tmp/cap.h265
 ffplay -framerate 60 /tmp/cap.h265
 ```
@@ -691,7 +718,8 @@ pymobiledevice3 developer core-device location available-scenarios
 ## WebInspector Automation
 
 ```shell
-# JavaScript shell on open tab (requires Web Inspector enabled)
+# JavaScript shell on open tab (requires Web Inspector enabled: Settings -> Apps -> Safari ->
+# Advanced, or Settings -> Safari -> Advanced before iOS 18)
 pymobiledevice3 webinspector js-shell
 
 # JavaScript shell filtered to one app's WebViews
@@ -706,7 +734,7 @@ pymobiledevice3 webinspector js-shell --no-replayed-log
 # List opened tabs
 pymobiledevice3 webinspector opened-tabs
 
-# JavaScript shell on automation tab (requires Remote Automation enabled)
+# JavaScript shell on automation tab (requires Remote Automation enabled, next to Web Inspector)
 pymobiledevice3 webinspector js-shell --automation
 
 # JavaScript automation shell for a specific app
@@ -719,6 +747,7 @@ pymobiledevice3 webinspector launch URL
 pymobiledevice3 webinspector shell
 
 # CDP bridge: debug pages with Chrome DevTools or VS Code
-# (see the WebView debugging guide)
 pymobiledevice3 webinspector cdp
 ```
+
+See [WebView debugging](webview-debugging.md) for the CDP bridge and the device setup in detail.

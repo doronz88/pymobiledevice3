@@ -8,6 +8,9 @@ JavaScript debugger and test automation frameworks like Playwright and Puppeteer
 
 ## Device prerequisites
 
+- Install the CLI ([Installation](../installation.md)) and connect the device over USB,
+  unlocked and trusted. The bridge uses the Web Inspector lockdown service, so no
+  tunnel, Developer Mode or disk image is needed.
 - Enable Web Inspector on the device:
   - iOS >= 18: Settings -> Apps -> Safari -> Advanced -> Web Inspector
   - iOS < 18: Settings -> Safari -> Advanced -> Web Inspector
@@ -31,12 +34,13 @@ the duration of the debugging session.
 ## Chrome DevTools
 
 Open <http://127.0.0.1:9222/> in Google Chrome and pick a page. Prefer this landing
-page over `chrome://inspect` — see the command's `--help` for why. The page cannot
-link to `chrome://inspect` (Chrome blocks such navigations from web pages, clicked
-or not); if you want it anyway, type `chrome://inspect/#devices` into the address
-bar. Chrome discovers a bridge on `localhost:9222` by itself; any other address goes
-under **Configure...** next to *Discover network targets*. The page's header shows
-the pymobiledevice3 version serving it.
+page over `chrome://inspect`: `chrome://inspect` routes DevTools through Chrome's
+browser-process relay, which can deadlock under sustained console traffic, while the
+landing page connects DevTools to the bridge directly. If you want `chrome://inspect`
+anyway, type `chrome://inspect/#devices` into the address bar (Chrome blocks web pages
+from linking to it). Chrome discovers a bridge on `localhost:9222` by itself; any other
+address goes under **Configure...** next to *Discover network targets*. The page's
+header shows the pymobiledevice3 version serving it.
 
 Debuggables are grouped by the process that owns them, with its icon, name, bundle
 identifier and pid as the device reports them; click a process header to fold its
@@ -163,13 +167,11 @@ Configuration notes:
 
 ### JSContexts in VS Code
 
-The landing page at `http://127.0.0.1:9222/` has an **Attach from VS Code** section
-under every target with the configuration that attaches to exactly it; copy it into
-`launch.json`. What those configurations look like, and why:
-
 The `chrome` attach above only takes web pages; js-debug ignores the JSContexts the
 bridge lists (they are advertised as `node` targets). Attach to a JSContext with a
-`node` configuration pointed straight at its websocket:
+`node` configuration pointed straight at its websocket. The landing page at
+`http://127.0.0.1:9222/` has an **Attach from VS Code** block under every target with
+exactly this configuration, ready to copy into `launch.json`:
 
 ```json
 {
@@ -184,11 +186,6 @@ The address is the `webSocketDebuggerUrl` of the target in
 `http://127.0.0.1:9222/json/list` (the landing page links carry the same
 `PID:<pid>:<page>` id). A plain `"port": 9222` does not work for this: js-debug then
 takes the browser socket from `/json/version`, which is not a JavaScript target.
-
-To browse rather than name one, open the landing page: every JSContext has an
-**Attach from VS Code** block with exactly this config (its own `websocketAddress`),
-ready to copy. js-debug's `chrome` target picker does not list JSContexts - it debugs
-them through the Node path above.
 
 A child session named "Remote Process" appears with the context's scripts; the Debug
 Console evaluates in it. With **Pause new JSContexts on launch** on, a context created
@@ -217,15 +214,17 @@ machine. This lets a web test suite drive a `WKWebView` in a real app, rather th
 simulator or a desktop browser pretending to be one.
 
 ```javascript
-const { chromium } = require('playwright');
+// device-test.mjs (run with `node device-test.mjs`)
+import { chromium } from 'playwright';
 
 const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
-const page = browser.contexts()[0].pages()[0];
+const page = browser.contexts()[0].pages()[0];  // the first inspectable page
 
 await page.goto('https://example.com/');
 await page.locator('#search').fill('hello');
 await page.locator('button[type=submit]').click();
 await page.screenshot({ path: 'device.png' });
+await browser.close();
 ```
 
 Puppeteer attaches the same way with
@@ -312,21 +311,6 @@ for it; the bridge switches this off again when the client detaches. Candidates
 nobody can take — for example a page that never made it into the listing — are
 declined immediately so no app waits.
 
-### Recording a protocol trace
-
-When something in an editor misbehaves - a step that does not land, an evaluate that never
-answers - a trace of the protocol is the report that lets it be diagnosed rather than
-guessed at:
-
-```shell
-pymobiledevice3 webinspector cdp --trace cdp-trace.jsonl
-```
-
-Attach the editor, reproduce the problem, stop the bridge, and attach the file. It records
-every message in both directions, on both sides of the bridge (editor to bridge, and bridge
-to device), one JSON line each with a timestamp. It contains page content, evaluation results
-and script sources, so treat it as sensitive.
-
 ### Pause new JSContexts on launch
 
 Safari's "Automatically Pause Connecting to JSContexts" has a bridge equivalent that
@@ -349,6 +333,21 @@ before they run; with the switch on, a page a client auto-attaches is paused on 
 next statement after the client's debugger comes up, and a cross-site navigation of
 an attached page pauses on the new document's first statement. Debuggables that
 already existed when a client attached keep running, as in Safari.
+
+## Recording a protocol trace
+
+When something in an editor misbehaves - a step that does not land, an evaluate that never
+answers - a trace of the protocol is the report that lets it be diagnosed rather than
+guessed at:
+
+```shell
+pymobiledevice3 webinspector cdp --trace cdp-trace.jsonl
+```
+
+Attach the editor, reproduce the problem, stop the bridge, and attach the file. It records
+every message in both directions, on both sides of the bridge (editor to bridge, and bridge
+to device), one JSON line each with a timestamp. It contains page content, evaluation results
+and script sources, so treat it as sensitive.
 
 ## Caveats
 

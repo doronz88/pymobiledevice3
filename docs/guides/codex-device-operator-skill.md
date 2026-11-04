@@ -1,6 +1,17 @@
 # Device Operator Skill
 
-This repository includes a repo-local agent skill for device-facing work:
+The device-operator skill teaches an AI coding agent (Claude Code or Codex) to operate a
+connected iPhone or iPad with `pymobiledevice3`. Use it when an agent needs to handle:
+
+- connectivity and transport selection
+- crash/log/file collection
+- app/container operations
+- DVT and other developer services
+- WebInspector and WDA automation
+- Python scripting against the library
+- thin CLI additions on top of existing services
+
+The skill lives in this repository:
 
 - Skill file: `.codex/skills/pymobiledevice3-device-operator/SKILL.md`
 - Reference file: `.codex/skills/pymobiledevice3-device-operator/references/quick-recipes.md`
@@ -9,18 +20,17 @@ This repository includes a repo-local agent skill for device-facing work:
 - Reference file:
   `.codex/skills/pymobiledevice3-device-operator/references/transport-and-safety.md`
 
-The skill is discovered automatically by both Codex (via `.codex/skills/`) and
+Inside a checkout, the skill is discovered automatically by both Codex (via `.codex/skills/`) and
 Claude Code (via a symlink in `.claude/skills/`). The two skill trees mirror each
-other with relative symlinks; see the Skills section of the repo's `AGENTS.md` for
-the full inventory and the edit-the-canonical-copy convention.
+other with relative symlinks; see [Skills](../project/agents.md#skills) in the agent
+guidance for the full inventory and the edit-the-canonical-copy convention.
 
 ## Install Into Your Own Claude Code
 
 You do not need to work inside this repository to use the skill. The commands it
 teaches run against the PyPI release via `uvx pymobiledevice3 ...`, so a fresh
 workstation only needs [uv](https://docs.astral.sh/uv/) and a USB-connected device.
-No uv? The skill also knows the plain-pip path
-(`python3 -m pip install -U pymobiledevice3`) and how to bootstrap uv without root.
+Without uv, the skill falls back to a plain `pip install` and can also install uv without root.
 
 **As a plugin (recommended).** This repository doubles as a Claude Code plugin
 marketplace. Inside Claude Code run:
@@ -44,7 +54,8 @@ ln -s "$(pwd)/pymobiledevice3/.codex/skills/pymobiledevice3-device-operator" ~/.
 
 ## Use From GitHub
 
-If someone is using Codex against the GitHub repository and wants a copy-pasteable reference, point them at these URLs:
+To use the skill from an agent that cannot install it (for example Codex working against the
+GitHub repository), point the agent at these URLs:
 
 - Skill URL:
   `https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/SKILL.md`
@@ -69,20 +80,11 @@ https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobilede
 https://github.com/doronz88/pymobiledevice3/blob/master/.codex/skills/pymobiledevice3-device-operator/references/transport-and-safety.md
 ```
 
-Use this skill when an agent needs to operate a connected iPhone or iPad through the local `pymobiledevice3` checkout, including:
-
-- connectivity and transport selection
-- crash/log/file collection
-- app/container operations
-- DVT and other developer services
-- WebInspector and WDA automation
-- Python scripting against the library
-- thin CLI additions on top of existing services
-
 ## What The Skill Enforces
 
 - Prefer existing CLI commands and service modules over new abstractions.
-- Prefer `uvx --from . pymobiledevice3 ...` for local-checkout CLI execution.
+- Prefer `uvx --from . pymobiledevice3 ...` inside a local checkout, and `uvx pymobiledevice3 ...`
+  without one.
 - Prefer reading local docs and CLI source before invoking `--help`.
 - Treat `--help` as a fallback or final verification step.
 - Require explicit user intent before state-changing or destructive device actions.
@@ -97,10 +99,11 @@ For iOS 17+ developer services, the skill routes users through the project tunne
 
 On iOS 17.4+ no tunnel setup is needed at all: commands that require an RSD
 tunnel establish a no-root in-process userspace tunnel automatically, so the
-skill routes agents straight to the target command. Privileged tunnels
-(`tunneld`, `start-tunnel`) remain the fallback for iOS 17.0-17.3 devices on
-Linux/Windows or when the userspace path is not viable (e.g. sustained host-to-device
-throughput).
+skill routes agents straight to the target command. On macOS, iOS 17.0-17.3 devices
+fall back to the no-root `--native` tunnel. Privileged tunnels (`tunneld`,
+`start-tunnel`) remain the fallback for iOS 17.0-17.3 devices on Linux/Windows, or
+when the no-root paths are not viable (e.g. a tunnel shared across processes or
+reachable by external tools).
 
 For agent-driven `start-tunnel` startup on those fallback paths, the skill
 prefers `lockdown start-tunnel --script-mode` or

@@ -133,7 +133,7 @@ nav:
   - Guides:
       - CLI recipes: guides/cli-recipes.md
       - Tracing with kdebug: guides/kdebug.md
-      - Mounting AFC in Finder (WebDAV): guides/webdav-mounting.md
+      - Mounting device files (WebDAV): guides/webdav-mounting.md
       - iOS 17+ tunnels: guides/ios17-tunnels.md
       - Understanding the network stacks: guides/network-stacks.md
       - Environment variables: guides/environment-variables.md

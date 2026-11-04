@@ -29,7 +29,8 @@ Use `uvx --from . pymobiledevice3 usbmux list` first for direct USB discovery.
 
 ## iOS 17+ Developer Service Checklist
 
-Many `developer dvt` and related developer commands need all of the following:
+Developer commands need the following. On iOS 17+ `developer dvt` needs only step 1 (the DDI
+is required for DVT only below iOS 17), while `developer core-device` always needs step 2 as well:
 
 1. Developer Mode enabled:
    `uvx --from . pymobiledevice3 amfi enable-developer-mode`

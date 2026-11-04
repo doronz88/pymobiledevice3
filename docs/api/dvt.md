@@ -5,11 +5,17 @@ search:
 
 # Developer / DVT
 
-DVT (DTX Instruments) services power the `developer dvt` CLI commands. On iOS 17+ they require a
-tunnel-backed service provider — see [iOS 17+ tunnels](../guides/ios17-tunnels.md).
+DVT (DTX Instruments) services power the `developer dvt` CLI commands. They need Developer Mode;
+on iOS < 17 also a mounted Developer Disk Image, and on iOS 17+ a tunnel-backed service provider; see
+[iOS 17+ tunnels](../guides/ios17-tunnels.md).
 
-Each instrument is constructed with a `DvtProvider` (e.g. `DvtProvider(service_provider)`), used as
-an async context manager; several instruments are async-iterable and yield telemetry/events.
+Open a `DvtProvider` on a service provider, then construct each instrument with it. Both are async
+context managers, and several instruments are async-iterable and yield telemetry/events:
+
+```python
+async with DvtProvider(service_provider) as dvt, ProcessControl(dvt) as process_control:
+    await process_control.launch("com.apple.mobilesafari")
+```
 
 ## Provider
 

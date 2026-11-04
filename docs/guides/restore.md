@@ -1,15 +1,47 @@
 # Restoring and updating devices
 
-`pymobiledevice3 restore update` reimplements the host side of an IPSW restore:
-what Finder, Xcode and idevicerestore do when they flash a device. This guide
-explains the choices the command offers, what happens on the device, and which
-requests go to Apple's signing server (TSS) along the way. The measured numbers
-come from an iPhone18,4 on iOS 27.0 (build 24A435); they differ per device.
+`pymobiledevice3 restore update` reimplements the host side of an IPSW restore
+(an IPSW is Apple's firmware package for a device): what Finder, iTunes, Xcode
+and idevicerestore do when they flash a device. This guide explains the choices
+the command offers, what happens on the device, and which requests go to Apple's
+signing server (TSS) along the way. The measured numbers come from an iPhone18,4
+on iOS 27.0 (build 24A435); they differ per device.
+
+!!! danger "Restoring can erase your device"
+    `restore update --erase` is a factory reset: **everything on the device is
+    deleted**. Even a plain update in place reflashes the whole firmware, and an
+    interrupted or failed restore can leave the device in recovery mode, where
+    getting it back may take an erase. Make a backup first
+    (`pymobiledevice3 backup2 backup <directory>`) and keep the cable
+    connected until the device has rebooted. After an erase the device goes
+    through setup again, including Activation Lock if Find My was on.
+
+Before you start you need:
+
+- The device connected **over USB** (restore does not work over Wi-Fi).
+- Network access to Apple's signing server (`gs.apple.com`), and to ipsw.me
+  or AppleDB when you let the tool pick the firmware.
+- A build Apple still signs for the device (see
+  [Choosing the firmware](#choosing-the-firmware)).
+- Several GB of free disk space for the IPSW.
+- On Linux and Windows, `libusb` for recovery and DFU mode (see
+  [Installation](../installation.md)).
+
+Two device modes come up throughout: **recovery mode** is the iBoot bootloader
+waiting for firmware from a computer; **DFU mode** (Device Firmware Update) is a
+lower-level mode run by the chip's boot ROM, used when even iBoot cannot start.
+
+The simplest run updates the connected device in place to a signed build you
+pick from a list:
+
+```shell
+pymobiledevice3 restore update
+```
 
 ## What a restore does
 
-1. **Normal mode.** The device is found through usbmuxd. Its build, ECID, AP
-   and SEP nonces and the peripheral state (`PreflightInfo`) are read over
+1. **Normal mode.** The device is found through usbmuxd. Its build, ECID (the
+   chip's unique ID), AP and SEP nonces and the peripheral state (`PreflightInfo`) are read over
    lockdown, and the AP ticket is requested from TSS. Only then is the device
    sent into recovery mode.
 2. **Recovery.** iBSS/iBEC are uploaded and the device is booted into the
@@ -17,7 +49,8 @@ come from an iPhone18,4 on iOS 27.0 (build 24A435); they differ per device.
 3. **Restore mode.** The ramdisk's `restored` asks the host for everything it
    needs, item by item: the root filesystem, firmware components, per-peripheral
    tickets, the baseband, cryptexes. The host answers each request, proxying
-   FDR traffic in between. This phase is where all the time goes.
+   FDR (Factory Data Recovery, the device's factory calibration data) traffic in
+   between. This phase is where all the time goes.
 4. **Reboot** into the new build.
 
 If the device is already in recovery or DFU mode, step 1 is skipped: the tool
@@ -61,7 +94,8 @@ ticket instead of asking TSS; the peripheral tickets are still requested live.
 By default the restore is an **update in place**: the `Upgrade Install (IPSW)`
 build identity is used, the data volume is kept, and the device comes back with
 its apps and settings. `--erase` selects the `Erase Install (IPSW)` identity
-instead: a factory reset that recreates the filesystem. Both go through the
+instead: a factory reset that recreates the filesystem and **deletes all
+data on the device**. Both go through the
 same steps above; erase is what you want for a device stuck in recovery with no
 usable data volume, or to wipe it.
 
@@ -100,10 +134,10 @@ daemon; elsewhere it talks KIS to the device over libusb.
 ## Keeping deviceinterfaced off the device
 
 macOS's `deviceinterfaced` can claim the USB device while it re-enumerates
-during a restore, so the device in DFU mode is never seen. `--exclusive-usb` (experimental, macOS only) keeps
-the daemon off for the restore: it boots it out, or keeps killing it where
-System Integrity Protection refuses that, and loads and starts it again when the
-restore ends. The `launchctl` calls run through `sudo` and may prompt for your
+during a restore, so the device in DFU mode is never seen. `--exclusive-usb`
+(experimental, macOS only) keeps the daemon off for the restore: it boots it
+out, or keeps killing it where System Integrity Protection refuses that, and
+loads and starts it again when the restore ends. The `launchctl` calls run through `sudo` and may prompt for your
 password. It cannot be used with an A16-or-later device in DFU mode on macOS,
 which is reached through that daemon.
 
@@ -136,8 +170,8 @@ option takes either form.
 
 ## The helper commands
 
-- `restore enter` puts a normal-mode device into recovery; `restore exit`
-  re-enables auto-boot and reboots a recovery-mode device back to iOS;
+- `restore enter` puts a normal-mode device into recovery, where it stays
+  until `restore exit` re-enables auto-boot and reboots it back to iOS;
   `restore restart` reboots either (see below for `--vdm`).
 - `restore tss` requests (and with `--out` saves) the AP ticket for a build
   without restoring, `--behavior Update|Erase` selecting the identity.

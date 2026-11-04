@@ -6,8 +6,10 @@ no entitlement, no jailbreak and no change to the traced processes, so it is the
 what platform binaries (daemons, SpringBoard, Apple's apps) do on a stock device.
 
 `pymobiledevice3 developer dvt core-profile-session` drives the same trace sessions as Instruments.
-See [CLI recipes](cli-recipes.md) for the commands; this guide covers what is in a trace and how to
-get at it.
+Like every DVT command it needs Developer Mode, plus a mounted DeveloperDiskImage on iOS < 17 (see
+[Developer Mode and DDI](cli-recipes.md#developer-mode-and-ddi)); on iOS 17+ the CLI sets up the
+tunnel by itself. [CLI recipes](cli-recipes.md#dvt-examples) lists more examples; this guide covers
+what is in a trace and how to get at it.
 
 ## Commands
 
@@ -58,7 +60,7 @@ They all add up, and `--process` narrows the result to one process. The device f
 at best, so the host drops the rest right after decoding. `events` takes the same options and lists
 exactly the events `parse-live` prints with them (`events --fs`, `events -s open`), and
 `events dlsym` finds a name by text. A class or subclass filter (`--bsc`, `-cf`, `-sf`, `--dyld`)
-prints only the events pykdebugparser decodes: `events -cf 0x29` lists nothing, while `--xpc`
+prints only the events pykdebugparser (the library that decodes the trace) knows: `events -cf 0x29` lists nothing, while `--xpc`
 selects the same XPC events by id.
 
 ```shell

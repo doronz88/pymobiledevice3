@@ -8,7 +8,7 @@ hide:
 
 `pymobiledevice3` is a pure Python 3 implementation for interacting with iOS devices
 (iPhone, iPad, ...). It ships both a **command-line tool** and a **Python API**, and runs on
-Windows, Linux, and macOS.
+Windows, Linux, and macOS. Coming from Android? Think of it as `adb` for iOS.
 
 ## What it can do
 
@@ -25,7 +25,8 @@ Windows, Linux, and macOS.
 - :material-view-grid-outline: **[SpringBoard](cli/springboard.md)** options, query and set
 - :material-web: **[WebInspector](guides/webview-debugging.md)** automation and a CDP bridge for DevTools,
   VS Code, Playwright and Puppeteer
-- :material-tools: **[DDI/DVT developer tooling](cli/developer.md)**, iOS 17+ over a [tunnel](guides/ios17-tunnels.md) built in-process
+- :material-tools: **[Developer tooling](cli/developer.md)**: Developer Disk Image (DDI) mounting and
+  Instruments-style DVT services, iOS 17+ over a [tunnel](guides/ios17-tunnels.md) built in-process
 - :material-backup-restore: **[Backup and restore](cli/backup2.md)**
 
 </div>
@@ -36,11 +37,15 @@ Windows, Linux, and macOS.
 
 - :material-download: **[Installation](installation.md)**
 
-    Install from PyPI or source and run your first command.
+    Install with uv (no Python knowledge needed) and run your first command.
 
 - :material-console: **[CLI recipes](guides/cli-recipes.md)**
 
     Task-oriented examples for everyday commands.
+
+- :material-lifebuoy: **[Troubleshooting](guides/troubleshooting.md)**
+
+    Error messages mapped to their causes and fixes.
 
 - :material-tunnel-outline: **[iOS 17+ tunnels](guides/ios17-tunnels.md)**
 

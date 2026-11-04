@@ -642,7 +642,7 @@ async def xcuitest(
 
     \b
     Usage example:
-    \b    python3 -m pymobiledevice3 developer dvt xcuitest com.facebook.WebDriverAgentRunner.xctrunner
+    \b    pymobiledevice3 developer dvt xcuitest com.facebook.WebDriverAgentRunner.xctrunner
     """
     env_dict = dict(var.split("=", 1) for var in env or ())
     listener: Optional[XCUITestListener] = None
