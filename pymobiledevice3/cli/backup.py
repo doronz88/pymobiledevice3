@@ -50,6 +50,7 @@ BackupDirectoryArg = Annotated[
     Path,
     typer.Argument(
         file_okay=False,
+        help="Local directory holding the backups (each device's backup is in a subdirectory named by its UDID).",
     ),
 ]
 BackupDirectoryOption = Annotated[
@@ -59,6 +60,7 @@ BackupDirectoryOption = Annotated[
         "-b",
         exists=True,
         file_okay=False,
+        help="Local backup directory used for the exchange with the device.",
     ),
 ]
 BackupSelectionOption = Annotated[
@@ -131,9 +133,10 @@ async def backup(
     ] = False,
 ) -> None:
     """
-    Backup device.
+    Back up the device to this computer (like a Finder/iTunes backup).
 
-    All backup data will be written to BACKUP_DIRECTORY, under a directory named with the device's udid.
+    All backup data will be written to BACKUP_DIRECTORY, under a directory
+    named with the device's udid. Keep the device connected until it finishes.
     """
     backup_directory.mkdir(parents=True, exist_ok=True)
     preserve_rules = tuple(rule for selection in (only or ()) for rule in selection.rules())
@@ -189,7 +192,7 @@ async def restore(
     ] = True,
     remove: Annotated[
         bool,
-        typer.Option(help="Remove items which aren't being restored."),
+        typer.Option(help="Delete items on the device that aren't part of the backup."),
     ] = False,
     skip_apps: Annotated[
         bool,
@@ -199,9 +202,11 @@ async def restore(
     source: SourceOption = "",
 ) -> None:
     """
-    Restore a backup to a device.
+    Restore a backup onto the device, replacing its data with the backup's.
 
-    The backup will be restored from a directory with the device udid under BACKUP_DIRECTORY.
+    The backup will be restored from a directory with the device udid (or
+    --source) under BACKUP_DIRECTORY. The device reboots when done unless
+    --no-reboot is given.
     """
     async with Mobilebackup2Service(service_provider) as backup_client:
         with ProgressBar(total=100, desc="restore") as pbar:
@@ -241,7 +246,7 @@ async def list_(
     service_provider: ServiceProviderDep, backup_directory: BackupDirectoryArg, source: SourceOption = ""
 ) -> None:
     """
-    List all file in the backup in a CSV format.
+    List all files in the backup, in CSV format.
     """
     async with Mobilebackup2Service(service_provider) as backup_client:
         print(await backup_client.list(backup_directory=str(backup_directory), source=source))
@@ -256,7 +261,7 @@ async def unback(
     source: SourceOption = "",
 ) -> None:
     """
-    Convert all files in the backup to the correct directory hierarchy.
+    Unpack the backup into a regular, browsable directory tree of its files.
     """
     async with Mobilebackup2Service(service_provider) as backup_client:
         await backup_client.unback(backup_directory=str(backup_directory), password=password, source=source)
@@ -266,8 +271,8 @@ async def unback(
 @async_command
 async def extract(
     service_provider: ServiceProviderDep,
-    domain_name: str,
-    relative_path: str,
+    domain_name: Annotated[str, typer.Argument(help="Backup domain of the file (e.g. HomeDomain).")],
+    relative_path: Annotated[str, typer.Argument(help="Path of the file within the domain.")],
     backup_directory: BackupDirectoryArg,
     password: PasswordOption = "",
     source: SourceOption = "",
@@ -298,9 +303,15 @@ async def encryption(
     backup_directory: BackupDirectoryOption = Path("."),
     mode: Annotated[
         Optional[Literal["on", "off"]],
-        typer.Argument(case_sensitive=False),
+        typer.Argument(case_sensitive=False, help="Turn encryption on or off; omit to print the current state."),
     ] = None,
-    password: Annotated[str, typer.Argument(callback=_validate_encryption_password)] = "",
+    password: Annotated[
+        str,
+        typer.Argument(
+            callback=_validate_encryption_password,
+            help="New password when turning on; current password when turning off.",
+        ),
+    ] = "",
 ) -> None:
     """
     Set backup encryption on / off, or report the current encryption state when run without arguments.
@@ -327,7 +338,7 @@ async def encryption(
 @async_command
 async def cloud(
     service_provider: ServiceProviderDep,
-    mode: Annotated[Literal["on", "off"], typer.Argument(case_sensitive=False)],
+    mode: Annotated[Literal["on", "off"], typer.Argument(case_sensitive=False, help="Turn iCloud Backup on or off.")],
 ) -> None:
     """
     Turn iCloud Backup on / off.
@@ -340,8 +351,8 @@ async def cloud(
 @async_command
 async def change_password(
     service_provider: ServiceProviderDep,
-    old_password: str,
-    new_password: str,
+    old_password: Annotated[str, typer.Argument(help="Current backup password.")],
+    new_password: Annotated[str, typer.Argument(help="New backup password.")],
     backup_directory: BackupDirectoryOption = Path("."),
 ) -> None:
     """
@@ -356,9 +367,17 @@ async def change_password(
 
 @cli.command()
 @async_command
-async def erase_device(service_provider: ServiceProviderDep, backup_directory: BackupDirectoryArg) -> None:
+async def erase_device(
+    service_provider: ServiceProviderDep,
+    backup_directory: Annotated[
+        Path,
+        typer.Argument(file_okay=False, help="Local backup directory used for the exchange with the device."),
+    ],
+) -> None:
     """
-    Erase all data on the device.
+    Erase all content and settings on the device (factory reset). DESTRUCTIVE.
+
+    There is no confirmation.
     """
     async with Mobilebackup2Service(service_provider) as backup_client:
         await backup_client.erase_device(str(backup_directory))
