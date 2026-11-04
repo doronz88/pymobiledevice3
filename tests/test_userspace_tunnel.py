@@ -17,7 +17,7 @@ import socket
 import struct
 import sys
 import threading
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
@@ -330,6 +330,71 @@ async def test_transport_watcher_tears_down_on_transport_death():
 
     await asyncio.wait_for(tunnel._watch_transport_closed(cast(Any, FakeTunnelClient())), timeout=5)
     assert tunnel._exit_stack is None  # aclose() ran
+
+
+class _ParkedTransportClient:
+    """Mirrors RemotePairingTcpTunnel.wait_closed(): it awaits the transport read task and
+    suppresses that task's CancelledError — which also swallows a cancellation aimed at the
+    awaiting task itself."""
+
+    def __init__(self) -> None:
+        self.read_task = asyncio.create_task(asyncio.Event().wait())
+
+    async def wait_closed(self) -> None:
+        with suppress(asyncio.CancelledError):
+            await self.read_task
+
+
+def test_transport_watcher_quiet_when_asyncio_run_shuts_down(caplog: pytest.LogCaptureFixture) -> None:
+    # An embedder returns normally from asyncio.run(main()) with the tunnel still open: the
+    # loop teardown cancels every leftover task, including the watcher and the transport read
+    # task. That is an orderly shutdown, not a device disconnect — the watcher must neither
+    # log the disconnection warning nor skip releasing the tunnel's resources.
+    released = []
+    tunnel = userspace_tunnel.UserspaceRsdTunnel()
+
+    async def main() -> None:
+        async def release() -> None:
+            released.append(True)
+
+        tunnel._exit_stack = AsyncExitStack()
+        tunnel._exit_stack.push_async_callback(release)
+        tunnel._transport_watcher = asyncio.create_task(
+            tunnel._watch_transport_closed(cast(Any, _ParkedTransportClient()))
+        )
+        await asyncio.sleep(0.01)  # watcher parked in wait_closed()
+
+    with caplog.at_level("WARNING", logger=userspace_tunnel.logger.name):
+        asyncio.run(main())
+    assert "transport closed" not in caplog.text
+    assert released
+    assert tunnel._exit_stack is None
+
+
+async def test_transport_watcher_quiet_on_explicit_aclose(caplog: pytest.LogCaptureFixture) -> None:
+    tunnel = userspace_tunnel.UserspaceRsdTunnel()
+    tunnel._exit_stack = AsyncExitStack()
+    client = _ParkedTransportClient()
+    tunnel._transport_watcher = asyncio.create_task(tunnel._watch_transport_closed(cast(Any, client)))
+    await asyncio.sleep(0.01)
+    with caplog.at_level("WARNING", logger=userspace_tunnel.logger.name):
+        await asyncio.wait_for(tunnel.aclose(), timeout=5)
+        await asyncio.sleep(0.01)
+    assert "transport closed" not in caplog.text
+    client.read_task.cancel()
+
+
+async def test_transport_watcher_warns_on_unexpected_transport_loss(caplog: pytest.LogCaptureFixture) -> None:
+    tunnel = userspace_tunnel.UserspaceRsdTunnel()
+    tunnel._exit_stack = AsyncExitStack()
+    client = _ParkedTransportClient()
+    watcher = asyncio.create_task(tunnel._watch_transport_closed(cast(Any, client)))
+    await asyncio.sleep(0.01)
+    with caplog.at_level("WARNING", logger=userspace_tunnel.logger.name):
+        client.read_task.cancel()  # the transport read task ends on its own (cable pulled)
+        await asyncio.wait_for(watcher, timeout=5)
+    assert "transport closed" in caplog.text
+    assert tunnel._exit_stack is None
 
 
 async def test_teardown_waits_for_closed_connections_to_emit_their_fin():

@@ -874,9 +874,25 @@ class UserspaceRsdTunnel:
         service read parks forever. Keep-alive cannot cover it: a relay's peer is this very
         process, so loopback probes are always answered no matter what happened to the device.
         Closing the dial plane cancels the relay handlers, which surfaces EOF/connection errors
-        to all blocked callers."""
-        with suppress(Exception):
-            await client.wait_closed()
+        to all blocked callers.
+
+        Cancellation of this task is an orderly shutdown, never a disconnect: aclose() cancels
+        it, and so does asyncio.run() tearing down the loop when an embedder returns with the
+        tunnel still open. wait_closed() suppresses the read task's CancelledError, which would
+        also swallow ours, so it runs in its own task and a cancellation of this one is caught
+        here instead of being mistaken for a dead transport."""
+        closed = asyncio.create_task(client.wait_closed())
+        try:
+            await asyncio.wait({closed})
+        except asyncio.CancelledError:
+            closed.cancel()
+            if self._exit_stack is not None:
+                # Loop shutdown with the tunnel still open: release it quietly, as aclose() would.
+                with suppress(Exception):
+                    await self.aclose()
+            raise
+        if not closed.cancelled() and closed.exception() is not None:
+            logger.debug("transport wait_closed() failed", exc_info=closed.exception())
         if self._exit_stack is None:
             return  # normal aclose() already ran
         logger.warning("userspace tunnel transport closed (device disconnected?); tearing down")
