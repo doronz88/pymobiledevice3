@@ -127,8 +127,8 @@ pymobiledevice3 lockdown pair
 ```
 
 If pairing keeps failing with *"The device does not recognize this computer's pairing record"*
-(`InvalidHostIDError`), the device holds a stale record for this host — unpair first (`pymobiledevice3 lockdown unpair`) or reset trust as described above, then
-pair again.
+(`InvalidHostIDError`), the device holds a stale record for this host — unpair first
+(`pymobiledevice3 lockdown unpair`) or reset trust as described above, then pair again.
 
 ## Developer services
 
@@ -157,8 +157,9 @@ it yet. In order:
 
     This downloads the correct image for your iOS version and caches it under
     `~/.pymobiledevice3` (`$XDG_DATA_HOME/pymobiledevice3` on new Linux installs,
-    `%USERPROFILE%\.pymobiledevice3` on Windows) — no Xcode required. From iOS 27 the image is the Cryptex1 DDI, installed over `cryptexd` just like
-    `pymobiledevice3 cryptex auto-install`; it also covers devices newer than the DDI itself.
+    `%USERPROFILE%\.pymobiledevice3` on Windows) — no Xcode required. From iOS 27 the image is the
+    Cryptex1 DDI, installed over `cryptexd` just like `pymobiledevice3 cryptex auto-install`; it also
+    covers devices newer than the DDI itself.
     That needs an RSD (RemoteServiceDiscovery) tunnel, which `auto-mount` sets up by itself (see the
     [CLI recipes](cli-recipes.md#cryptexes-ios-17-rsd-tunnel)).
 
