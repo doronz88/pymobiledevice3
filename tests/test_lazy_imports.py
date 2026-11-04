@@ -21,6 +21,13 @@ def test_lazy_filter_leaves_foreign_imports_eager() -> None:
     assert not _lazy_filter("pymobiledevice3_fork.module", "os")
 
 
+def test_lazy_filter_leaves_imports_without_importer_eager() -> None:
+    # Code exec'd with globals lacking __name__ (e.g. Jinja's compiled templates during
+    # `mkdocs build`) reaches the filter with importing=None; it is not one of our imports.
+    assert not _lazy_filter(None, "jinja2.runtime")
+    assert not _lazy_filter(None, "pymobiledevice3.lockdown", ("LockdownClient",))
+
+
 def test_cli_entry_enables_scoped_lazy_imports() -> None:
     """Importing the CLI entry module must flip the process to filtered lazy mode on 3.15+."""
     # Subprocess because sys.set_lazy_imports() is process-global state
