@@ -238,6 +238,6 @@ class LockdownServiceProvider:
         except StartServiceError:
             logging.getLogger(self.__module__).exception(
                 "Failed to connect to required service. Make sure DeveloperDiskImage.dmg has been mounted. "
-                "You can do so using: pymobiledevice3 mounter mount"
+                "You can do so using: pymobiledevice3 mounter auto-mount"
             )
             raise

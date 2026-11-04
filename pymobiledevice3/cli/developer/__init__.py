@@ -63,7 +63,7 @@ cli = InjectingTyper(
         These commands require the DeveloperDiskImage.dmg to be mounted on the device prior
         to execution. You can achieve this using:
 
-        pymobiledevice3 mounter mount
+        pymobiledevice3 mounter auto-mount
 
         Also, starting at iOS 17.0, a tunnel must be created to the device for the services
         to be accessible. Therefore, every CLI command is retried with a `--tunnel` option
