@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="syslog",
-    help="Watch syslog messages",
+    help="Stream the device's live system log, or collect it into a .logarchive.",
     no_args_is_help=True,
 )
 
@@ -70,7 +70,7 @@ def format_json_line(syslog_entry: SyslogEntry) -> str:
 @cli.command("live-old")
 @async_command
 async def syslog_live_old(service_provider: ServiceProviderDep) -> None:
-    """view live syslog lines in raw bytes form from old relay"""
+    """Stream raw syslog lines from the legacy syslog_relay service; runs until Ctrl+C."""
     async with SyslogService(service_provider=service_provider) as service:
         async for line in service.watch():
             print(line)
@@ -320,14 +320,14 @@ async def cli_syslog_live(
     ] = None,
     pid: Annotated[
         int,
-        typer.Option(help="pid to filter. -1 for all"),
+        typer.Option(help="Only entries from this PID. -1 for all."),
     ] = -1,
     process_name: Annotated[
         Optional[str],
         typer.Option(
             "--process-name",
             "-pn",
-            help="process name to filter",
+            help="Only entries from the process with this name.",
         ),
     ] = None,
     match: Annotated[
@@ -335,7 +335,7 @@ async def cli_syslog_live(
         typer.Option(
             "--match",
             "-m",
-            help="filter only logs matching this expression (repeatable; all must match - conjunction).",
+            help="Keep only lines containing this text (repeatable; all must match).",
         ),
     ] = None,
     invert_match: Annotated[
@@ -343,7 +343,7 @@ async def cli_syslog_live(
         typer.Option(
             "--invert-match",
             "-v",
-            help="filter only logs not matching this expression (repeatable; any match excludes - disjunction).",
+            help="Drop lines containing this text (repeatable; any match drops the line).",
         ),
     ] = None,
     match_insensitive: Annotated[
@@ -351,8 +351,7 @@ async def cli_syslog_live(
         typer.Option(
             "--match-insensitive",
             "-mi",
-            help="filter only logs matching this expression, case-insensitively "
-            "(repeatable; all must match - conjunction).",
+            help="Keep only lines containing this text, ignoring case (repeatable; all must match).",
         ),
     ] = None,
     invert_match_insensitive: Annotated[
@@ -360,8 +359,7 @@ async def cli_syslog_live(
         typer.Option(
             "--invert-match-insensitive",
             "-vi",
-            help="filter only logs not matching this expression, case-insensitively "
-            "(repeatable; any match excludes - disjunction).",
+            help="Drop lines containing this text, ignoring case (repeatable; any match drops the line).",
         ),
     ] = None,
     include_label: Annotated[
@@ -377,7 +375,7 @@ async def cli_syslog_live(
         typer.Option(
             "--regex",
             "-e",
-            help="filter only lines matching given regex (repeatable; any match includes - disjunction).",
+            help="Keep only lines matching this regex (repeatable; any one may match).",
         ),
     ] = None,
     insensitive_regex: Annotated[
@@ -385,8 +383,7 @@ async def cli_syslog_live(
         typer.Option(
             "--insensitive-regex",
             "-ei",
-            help="filter only lines matching given regex, case-insensitively "
-            "(repeatable; any match includes - disjunction).",
+            help="Keep only lines matching this regex, ignoring case (repeatable; any one may match).",
         ),
     ] = None,
     subsystem: Annotated[
@@ -394,7 +391,7 @@ async def cli_syslog_live(
         typer.Option(
             "--subsystem",
             "-s",
-            help="keep only entries whose os_log subsystem matches this case-insensitive glob "
+            help="Keep only entries whose os_log subsystem matches this case-insensitive glob "
             "(e.g. 'com.apple.WebKit*'). Repeatable; an entry is kept if it matches any "
             "(disjunction). Entries with no subsystem/category label are dropped when set.",
         ),
@@ -404,7 +401,7 @@ async def cli_syslog_live(
         typer.Option(
             "--category",
             "-c",
-            help="keep only entries whose os_log category matches this case-insensitive glob "
+            help="Keep only entries whose os_log category matches this case-insensitive glob "
             "(e.g. 'Network'). Repeatable; an entry is kept if it matches any (disjunction). "
             "Combined with --subsystem as a conjunction (both must match).",
         ),
@@ -448,7 +445,7 @@ async def cli_syslog_live(
         ),
     ] = SyslogFormat.TEXT,
 ) -> None:
-    """view live syslog lines"""
+    """Stream the device's live system log with filtering and coloring; runs until Ctrl+C."""
 
     with out.open("wt", encoding="utf-8") if out else nullcontext() as out_file:
         await syslog_live(
@@ -483,33 +480,35 @@ async def syslog_collect(
             exists=False,
             dir_okay=True,
             file_okay=False,
+            help="Directory to extract the archive into (created if missing), e.g. system_logs.logarchive.",
         ),
     ],
     size_limit: Annotated[
         Optional[int],
         typer.Option(
             "--size-limit",
-            help="Maximum size in bytes of logarchive",
+            help="Maximum size of the archive, in bytes.",
         ),
     ] = None,
     age_limit: Annotated[
         Optional[int],
         typer.Option(
             "--age-limit",
-            help="Maximum age in days",
+            help="Only include entries up to this many days old.",
         ),
     ] = None,
     start_time: Annotated[
         Optional[int],
         typer.Option(
             "--start-time",
-            help="Start time of logarchive as a unix timestamp",
+            help="Only include entries from this time on, as a unix timestamp.",
         ),
     ] = None,
 ) -> None:
-    """
-    Collect the system logs into a .logarchive that can be viewed later with tools such as log or Console.
-    If the filename doesn't exist, system_logs.logarchive will be created in the given directory.
+    """Collect the system logs into a .logarchive for later viewing with `log show` or Console.
+
+    OUT is the .logarchive directory itself; give it a .logarchive suffix so
+    those tools recognize it.
     """
     if not os.path.exists(out):
         os.makedirs(out)
