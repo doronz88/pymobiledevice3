@@ -175,7 +175,7 @@ class StartServiceError(PyMobileDevice3Exception):
                 "Full discussion is available in: https://github.com/doronz88/pymobiledevice3/issues/1515"
             )
         else:
-            description = f"Failed to start: {service_name} with. Received error: {message}."
+            description = f"Failed to start {service_name}. Received error: {message}."
         super().__init__(description)
         self.service_name = service_name
         self.message = message

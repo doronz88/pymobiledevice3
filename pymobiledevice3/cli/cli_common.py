@@ -519,8 +519,8 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
                     Establish the iOS 17+ tunnel in-process with a pure-Python userspace network stack, so NO
                     root/admin is required. Downloads (device->host, e.g. fetch-symbols) run at roughly the
                     kernel tunnel's throughput; host->device transfers (DDI mounts, file pushes) are slower, as
-                    their send segments are kept small for reliable delivery through the pure-Python path. Use
-                    when you cannot run a privileged tunnel.
+                    their send segments are kept small for reliable delivery through the pure-Python path. This
+                    is already the default transport; pass it to force it over an environment override.
                 """),
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),
