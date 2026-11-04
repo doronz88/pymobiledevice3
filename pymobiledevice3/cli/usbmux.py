@@ -26,11 +26,11 @@ cli = InjectingTyper(
 async def usbmux_forward(
     src_port: Annotated[
         int,
-        typer.Argument(min=1, max=0xFFFF),
+        typer.Argument(min=1, max=0xFFFF, help="Local TCP port to listen on."),
     ],
     dst_port: Annotated[
         int,
-        typer.Argument(min=1, max=0xFFFF),
+        typer.Argument(min=1, max=0xFFFF, help="TCP port on the device to connect each connection to."),
     ],
     *,
     usbmux_address: Annotated[
@@ -54,7 +54,7 @@ async def usbmux_forward(
         typer.Option("--daemonize", "-d", help="Run the forwarder in the background."),
     ] = False,
 ) -> None:
-    """Forward a local TCP port to the device via usbmuxd."""
+    """Forward a local TCP port to a port on the device via usbmuxd (like `iproxy`); runs until Ctrl+C."""
     # UsbmuxTcpForwarder's serial is annotated str, but None is supported (selects the only device)
     forwarder = UsbmuxTcpForwarder(serial, dst_port, src_port, usbmux_address=usbmux_address)
 
@@ -91,7 +91,7 @@ async def usbmux_list(
         typer.Option(
             "--usb",
             "-u",
-            help="show only USB devices",
+            help="Show only USB devices.",
         ),
     ] = False,
     network: Annotated[
@@ -99,7 +99,7 @@ async def usbmux_list(
         typer.Option(
             "--network",
             "-n",
-            help="show only network devices",
+            help="Show only network (Wi-Fi) devices.",
         ),
     ] = False,
     simple: Annotated[
