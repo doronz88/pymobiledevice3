@@ -1,6 +1,7 @@
 from enum import IntEnum
 from typing import Any, Optional, Union, cast
 
+from pymobiledevice3.exceptions import ConnectionTerminatedError, WallpaperImageUnavailableError
 from pymobiledevice3.service_connection import build_plist
 from pymobiledevice3.services.lockdown_service import LockdownService
 
@@ -73,11 +74,23 @@ class SpringBoardServicesService(LockdownService):
         """
         Retrieve the current home screen wallpaper image.
 
-        :returns: PNG-encoded wallpaper image bytes, or ``None`` if no ``pngData`` is returned.
+        The device answers from the wallpaper's stored image. Poster-based wallpapers (the kind iOS creates
+        since the customizable Lock Screen) have none, and the device then drops the connection instead of
+        replying. `get_wallpaper_preview_image` renders the current home screen wallpaper either way.
+
+        :returns: PNG-encoded wallpaper image bytes.
+        :raises WallpaperImageUnavailableError: if the current wallpaper has no stored image.
         """
-        return cast(
-            bytes, (await self.service.send_recv_plist({"command": "getHomeScreenWallpaperPNGData"})).get("pngData")
-        )
+        try:
+            response = await self.service.send_recv_plist({"command": "getHomeScreenWallpaperPNGData"})
+        except ConnectionTerminatedError:
+            # The connection is unusable now; drop it so the next request starts a fresh one.
+            await self.close()
+            raise WallpaperImageUnavailableError(
+                "The home screen wallpaper has no stored image (a poster-based wallpaper); "
+                "use get_wallpaper_preview_image('homescreen') instead"
+            ) from None
+        return cast(bytes, response["pngData"])
 
     async def get_homescreen_icon_metrics(self) -> dict[str, float]:
         """

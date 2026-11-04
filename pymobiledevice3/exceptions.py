@@ -80,6 +80,7 @@ __all__ = [
     "UnsupportedCommandError",
     "UserDeniedPairingError",
     "UserspaceTunnelUnavailableError",
+    "WallpaperImageUnavailableError",
     "WdaError",
     "WebInspectorNotEnabledError",
     "WirError",
@@ -352,6 +353,10 @@ class ChannelClosedError(PyMobileDevice3Exception):
 
 class ConnectionTerminatedError(PyMobileDevice3Exception):
     """Connection was terminated abruptly."""
+
+
+class WallpaperImageUnavailableError(PyMobileDevice3Exception):
+    """SpringBoard has no image of the home screen wallpaper to export (e.g. a poster-based wallpaper)."""
 
 
 class StreamClosedError(ConnectionTerminatedError):

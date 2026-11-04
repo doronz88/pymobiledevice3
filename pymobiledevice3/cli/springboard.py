@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -5,8 +6,11 @@ import typer
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, print_json
+from pymobiledevice3.exceptions import WallpaperImageUnavailableError
 from pymobiledevice3.services.springboard import SpringBoardServicesService
 from pymobiledevice3.utils import start_ipython_shell
+
+logger = logging.getLogger(__name__)
 
 SHELL_USAGE = """
 Use `service` to access the service features
@@ -63,7 +67,13 @@ async def springboard_orientation(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def springboard_wallpaper_home_screen(service_provider: ServiceProviderDep, out: Path) -> None:
     """Save the homescreen wallpaper PNG to the given path."""
-    out.write_bytes(await SpringBoardServicesService(lockdown=service_provider).get_wallpaper_pngdata())
+    async with SpringBoardServicesService(lockdown=service_provider) as springboard_service:
+        try:
+            png = await springboard_service.get_wallpaper_pngdata()
+        except WallpaperImageUnavailableError:
+            logger.info("The wallpaper has no stored image (a poster wallpaper); saving its rendered preview instead")
+            png = await springboard_service.get_wallpaper_preview_image("homescreen")
+    out.write_bytes(png)
 
 
 @cli.command("wallpaper-preview-image")
