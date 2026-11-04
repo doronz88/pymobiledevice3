@@ -9,14 +9,15 @@
 <!-- markdownlint-enable MD013 -->
 
 `pymobiledevice3` is a pure Python 3 implementation for interacting with iOS devices (iPhone, iPad, ...).
-It ships both a **command-line tool** and a **Python API**, and runs on Windows, Linux, and macOS.
+It ships both a **command-line tool** and a **Python API**, and runs on Windows, Linux, and macOS. Coming
+from Android? Think of it as `adb` for iOS.
 
 Highlights: device discovery, port forwarding, syslog/oslog streaming, app & profile management, AFC
 file access, crash reports, PCAP sniffing, firmware update, recovery/DFU, backup/restore, WebInspector
 automation, a [CDP bridge](https://doronz88.github.io/pymobiledevice3/guides/webview-debugging/) that
-lets Chrome DevTools, VS Code and Playwright debug Safari and WebViews on the device, and DDI/DVT
-developer tooling (iOS 17+ over a tunnel that each command builds in-process: no root, nothing to
-start first).
+lets Chrome DevTools, VS Code and Playwright debug Safari and WebViews on the device, and developer
+tooling such as Developer Disk Image (DDI) mounting and Instruments-style DVT services (on iOS 17+
+over a tunnel that each command builds in-process: no root, nothing to start first).
 
 ## Install
 
@@ -30,23 +31,25 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 # then, in a new terminal
-uv tool install pymobiledevice3
+uv tool install --managed-python pymobiledevice3
 ```
 
 Upgrade later with `uv tool upgrade pymobiledevice3`, or try it without installing via
-`uvx pymobiledevice3 usbmux list`. Already manage Python yourself? `pipx install pymobiledevice3`
+`uvx --managed-python pymobiledevice3 usbmux list`. Already manage Python yourself? `pipx install pymobiledevice3`
 works too, and for scripting against the [Python API](https://doronz88.github.io/pymobiledevice3/guides/python-api/)
 `pip install pymobiledevice3` inside your project's virtualenv.
 
 PyPI is the only official distribution channel. Third-party packages (for example the AUR's
 `python-pymobiledevice3`) are not maintained by this project and may be outdated.
 
-Then verify connectivity:
+On Windows and Linux, first install the
+[platform prerequisites](https://doronz88.github.io/pymobiledevice3/installation/#platform-notes)
+(iTunes or `usbmuxd`). Then connect the device by USB, unlock it, and verify connectivity:
 
 ```shell
-pymobiledevice3 usbmux list
-pymobiledevice3 syslog live
-pymobiledevice3 apps list
+pymobiledevice3 usbmux list   # lists connected devices
+pymobiledevice3 apps list     # first device command: tap "Trust" on the device if asked
+pymobiledevice3 syslog live   # streams the device log; Ctrl+C to stop
 ```
 
 ## Documentation
