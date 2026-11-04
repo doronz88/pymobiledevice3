@@ -22,7 +22,7 @@ from pymobiledevice3.services.crash_reports import CrashReportsManager, CrashRep
 
 cli = InjectingTyper(
     name="crash",
-    help="Manage crash reports",
+    help="List, pull, parse, watch and delete crash reports (and sysdiagnose archives).",
     no_args_is_help=True,
 )
 
@@ -31,13 +31,13 @@ cli = InjectingTyper(
 @async_command
 async def crash_clear(
     service_provider: ServiceProviderDep,
-    remote_file: Annotated[str, typer.Argument(help="Path to clear")] = "/",
+    remote_file: Annotated[str, typer.Argument(help="Path under the crash reports directory to clear.")] = "/",
     flush: Annotated[
         bool,
         typer.Option(
             "--flush",
             "-f",
-            help="flush before clear",
+            help="Run `flush` first, so pending reports are deleted too.",
         ),
     ] = False,
     match: Annotated[
@@ -45,11 +45,11 @@ async def crash_clear(
         typer.Option(
             "--match",
             "-m",
-            help="Only remove what `pull --match` would pull for the given basename regex (without copying)",
+            help="Only remove what `pull --match` would pull for the given basename regex (without copying).",
         ),
     ] = None,
 ) -> None:
-    """clear(/remove) all crash reports inside the remote_file argument"""
+    """Delete all crash reports under a path (default: everything; no confirmation)."""
     async with CrashReportsManager(service_provider) as crash_manager:
         if flush:
             await crash_manager.flush()
@@ -60,9 +60,9 @@ async def crash_clear(
 @async_command
 async def crash_parse(
     service_provider: ServiceProviderDep,
-    remote_file: str,
+    remote_file: Annotated[str, typer.Argument(help="Crash report path, relative to the crash reports directory.")],
 ) -> None:
-    """Parse a crash report file"""
+    """Print a crash report from the device in a readable, parsed form."""
     async with CrashReportsManager(service_provider) as crash_manager:
         print(await crash_manager.parse(remote_file))
 
@@ -71,13 +71,13 @@ async def crash_parse(
 @async_command
 async def crash_parse_latest(
     service_provider: ServiceProviderDep,
-    remote_file: Annotated[str, typer.Argument(help="Path whose top-level reports should be searched")] = "/",
+    remote_file: Annotated[str, typer.Argument(help="Path whose top-level reports should be searched.")] = "/",
     match: Annotated[
         Optional[list[str]],
         typer.Option(
             "--match",
             "-m",
-            help="Case-sensitive basename regex filter (repeatable; all must match - conjunction)",
+            help="Case-sensitive basename regex filter (repeatable; all must match).",
         ),
     ] = None,
     match_insensitive: Annotated[
@@ -85,7 +85,7 @@ async def crash_parse_latest(
         typer.Option(
             "--match-insensitive",
             "-mi",
-            help="Case-insensitive basename regex filter (repeatable; all must match - conjunction)",
+            help="Case-insensitive basename regex filter (repeatable; all must match).",
         ),
     ] = None,
     count: Annotated[
@@ -94,11 +94,11 @@ async def crash_parse_latest(
             "--count",
             "-n",
             min=1,
-            help="Maximum number of latest reports to parse",
+            help="Maximum number of latest reports to parse.",
         ),
     ] = 1,
 ) -> None:
-    """Parse latest top-level crash report(s) under a path, ordered by newest first"""
+    """Parse the latest top-level crash report(s) under a path, newest first."""
     async with CrashReportsManager(service_provider) as crash_manager:
         latest_reports = await crash_manager.parse_latest(
             path=remote_file,
@@ -116,23 +116,25 @@ async def crash_pull(
     service_provider: ServiceProviderDep,
     out: Annotated[
         Path,
-        typer.Argument(file_okay=False),
+        typer.Argument(file_okay=False, help="Local directory to save the reports into."),
     ],
-    remote_file: Annotated[str, typer.Argument()] = "/",
+    remote_file: Annotated[
+        str, typer.Argument(help="File or directory to pull, relative to the crash reports directory.")
+    ] = "/",
     erase: Annotated[
         bool,
-        typer.Option("--erase", "-e"),
+        typer.Option("--erase", "-e", help="Delete each report from the device after pulling it."),
     ] = False,
     match: Annotated[
         Optional[str],
         typer.Option(
             "--match",
             "-m",
-            help="Match given regex over enumerated basenames",
+            help="Only pull entries whose basename matches this regex.",
         ),
     ] = None,
 ) -> None:
-    """pull all crash reports"""
+    """Download crash reports from the device (all of them by default)."""
     async with CrashReportsManager(service_provider) as crash_manager:
         await crash_manager.pull(str(out), remote_file, erase, match)
 
@@ -140,7 +142,7 @@ async def crash_pull(
 @cli.command("shell")
 @async_command
 async def crash_shell(service_provider: ServiceProviderDep, tool: ShellHostToolsOption = None) -> None:
-    """start an afc shell"""
+    """Open an interactive file shell rooted at the crash reports directory."""
     async with CrashReportsManager(service_provider) as crash_manager:
         await CrashReportsShell(crash_manager, host_tools=tool or []).interact()
 
@@ -155,7 +157,7 @@ async def crash_webdav(
     bind_port: WebDavBindPortOption = 0,
     readonly: WebDavReadonlyOption = False,
 ) -> None:
-    """Serve the crash reports directory over WebDAV for local mounting."""
+    """Serve the crash reports directory over WebDAV for local mounting; runs until Ctrl+C."""
     async with CrashReportsManager(service_provider) as crash_manager:
         label = f"pmd-{service_provider.udid or 'device'}-crash"
         await run_afc_webdav_cli(
@@ -167,13 +169,15 @@ async def crash_webdav(
 @async_command
 async def crash_ls(
     service_provider: ServiceProviderDep,
-    remote_file: Annotated[str, typer.Argument()] = "/",
+    remote_file: Annotated[
+        str, typer.Argument(help="Directory to list, relative to the crash reports directory.")
+    ] = "/",
     depth: Annotated[
         int,
-        typer.Option("--depth", "-d"),
+        typer.Option("--depth", "-d", help="How many levels deep to list (-1 for unlimited)."),
     ] = 1,
 ) -> None:
-    """List"""
+    """List crash reports and folders in the crash reports directory."""
     async with CrashReportsManager(service_provider) as crash_manager:
         for path in await crash_manager.ls(remote_file, depth):
             print(path)
@@ -182,7 +186,7 @@ async def crash_ls(
 @cli.command("flush")
 @async_command
 async def crash_mover_flush(service_provider: ServiceProviderDep) -> None:
-    """trigger com.apple.crashreportmover to flush all products into CrashReports directory"""
+    """Move pending crash reports into the crash reports directory (via crashreportmover)."""
     async with CrashReportsManager(service_provider) as crash_manager:
         await crash_manager.flush()
 
@@ -191,14 +195,14 @@ async def crash_mover_flush(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def crash_watch(
     service_provider: ServiceProviderDep,
-    name: Annotated[Optional[str], typer.Argument()] = None,
+    name: Annotated[Optional[str], typer.Argument(help="Only show reports of the process with this name.")] = None,
     raw: Annotated[
         bool,
-        typer.Option("--raw", "-r"),
+        typer.Option("--raw", "-r", help="Print each report's raw text instead of the parsed report."),
     ] = False,
     output_format: OutputFormatOption = OutputFormat.TEXT,
 ) -> None:
-    """watch for crash report generation"""
+    """Print each new crash report as the device creates it; runs until Ctrl+C."""
     async with CrashReportsManager(service_provider) as crash_manager:
         async for crash_report in crash_manager.watch(name=name, raw=raw):
             if output_format is OutputFormat.JSON:
@@ -226,14 +230,14 @@ async def crash_sysdiagnose(
     service_provider: ServiceProviderDep,
     out: Annotated[
         Path,
-        typer.Argument(exists=False, dir_okay=True, file_okay=True),
+        typer.Argument(exists=False, dir_okay=True, file_okay=True, help="Local path to save the archive to."),
     ],
     erase: Annotated[
         bool,
         typer.Option(
             "--erase",
             "-e",
-            help="erase file after pulling",
+            help="Delete the archive from the device after pulling it.",
         ),
     ] = False,
     timeout: Annotated[
@@ -241,11 +245,15 @@ async def crash_sysdiagnose(
         typer.Option(
             "--timeout",
             "-t",
-            help="Maximum time in seconds to wait for the completion of sysdiagnose archive",
+            help="Maximum time in seconds to wait for the sysdiagnose archive to complete (default: no limit).",
         ),
     ] = None,
 ) -> None:
-    """get a sysdiagnose archive from device (requires user interaction)"""
+    """Wait for a sysdiagnose you trigger on the device, then download it.
+
+    This command does not start the sysdiagnose: press Power+VolUp+VolDown
+    together briefly on the device (as prompted), then wait for the archive.
+    """
     print("Press Power+VolUp+VolDown for 0.215 seconds")
     async with CrashReportsManager(service_provider) as crash_manager:
         await crash_manager.get_new_sysdiagnose(str(out), erase=erase, timeout=timeout)
