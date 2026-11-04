@@ -31,7 +31,7 @@ class FocusDirection(str, Enum):
 
 cli = InjectingTyper(
     name="accessibility",
-    help="Interact with accessibility-related features",
+    help="Run accessibility audits, inspect on-screen elements and change accessibility settings.",
     no_args_is_help=True,
 )
 cli.add_typer(settings.cli)
@@ -39,8 +39,13 @@ cli.add_typer(settings.cli)
 
 @cli.command("run-audit")
 @async_command
-async def accessibility_run_audit(service_provider: ServiceProviderDep, test_types: list[str]) -> None:
-    """runs accessibility audit tests"""
+async def accessibility_run_audit(
+    service_provider: ServiceProviderDep,
+    test_types: Annotated[
+        list[str], typer.Argument(help="One or more audit types to run (see `supported-audit-types`).")
+    ],
+) -> None:
+    """Run accessibility audits on the foreground app and print the issues found as JSON."""
     audit_issues = await AccessibilityAudit(service_provider).run_audit(test_types)
     print_json([audit_issue.json() for audit_issue in audit_issues], False)
 
@@ -48,20 +53,20 @@ async def accessibility_run_audit(service_provider: ServiceProviderDep, test_typ
 @cli.command("supported-audit-types")
 @async_command
 async def accessibility_supported_audit_types(service_provider: ServiceProviderDep) -> None:
-    """lists supported accessibility audit test types"""
+    """List the accessibility audit types this device supports."""
     print_json(await AccessibilityAudit(service_provider).supported_audits_types())
 
 
 @cli.command("capabilities")
 @async_command
 async def accessibility_capabilities(service_provider: ServiceProviderDep) -> None:
-    """display accessibility capabilities"""
+    """Print the device's accessibility inspector capabilities as JSON."""
     print_json(await AccessibilityAudit(service_provider).capabilities())
 
 
 @cli.command("shell")
 def accessibility_shell(service_provider: ServiceProviderDep) -> None:
-    """start and ipython accessibility shell"""
+    """Open an IPython shell connected to the accessibility audit service (for R&D)."""
     AccessibilityAudit(service_provider).shell()
 
 
@@ -70,7 +75,7 @@ def accessibility_shell(service_provider: ServiceProviderDep) -> None:
 async def accessibility_notifications(
     service_provider: ServiceProviderDep, output_format: OutputFormatOption = OutputFormat.TEXT
 ) -> None:
-    """show notifications"""
+    """Stream accessibility focus and app-state changes as they happen, until interrupted (Ctrl+C)."""
     service = AccessibilityAudit(service_provider)
     async for event in service.iter_events():
         if event.name in (
@@ -87,7 +92,7 @@ async def accessibility_notifications(
 @cli.command("list-items")
 @async_command
 async def accessibility_list_items(service_provider: ServiceProviderDep) -> None:
-    """List elements available in the currently shown menu."""
+    """List the accessibility elements of the foreground app by moving the inspector focus through them."""
     elements: list[dict[str, Any]] = []
     async with AccessibilityAudit(service_provider) as service:
         async for element in service.iter_elements():

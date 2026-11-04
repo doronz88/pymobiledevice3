@@ -30,13 +30,17 @@ async def version(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def check_in(
     service_provider: ServiceProviderDep,
-    hostname: str,
+    hostname: Annotated[str, typer.Argument(help="Name to claim the device under (shown to other tools).")],
     force: Annotated[
         bool,
-        typer.Option("--force", "-f"),
+        typer.Option("--force", "-f", help="Take the device even if another host has it checked in."),
     ] = False,
 ) -> None:
-    """Check-in as owner (marks device as in-use; use --force to override)."""
+    """
+    Check in as the device's owner (marks it as in-use), then wait until interrupted (Ctrl+C).
+
+    Fails if another host has it checked in, unless --force is given. Use `check-out` to release it.
+    """
     async with DtDeviceArbitration(service_provider) as device_arbitration:
         try:
             await device_arbitration.check_in(hostname, force=force)

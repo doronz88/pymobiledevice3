@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="fetch-symbols",
-    help="Download the DSC (and dyld) from the device",
+    help="Download the device's dyld shared cache (DSC) and dyld, for symbolicating crashes and traces.",
     no_args_is_help=True,
 )
 
@@ -30,7 +30,7 @@ cli = InjectingTyper(
 @cli.command("list")
 @async_command
 async def fetch_symbols_list(service_provider: ServiceProviderDep) -> None:
-    """list of files to be downloaded"""
+    """List the symbol files the device offers for download."""
     if Version(service_provider.product_version) < Version("17.0"):
         print_json(await DtFetchSymbols(service_provider).list_files())
     else:
@@ -124,7 +124,11 @@ async def fetch_symbols_download(
     service_provider: ServiceProviderDep,
     out: Annotated[
         Optional[Path],
-        typer.Argument(dir_okay=True, file_okay=False),
+        typer.Argument(
+            dir_okay=True,
+            file_okay=False,
+            help="Directory to download into (default: this device's Xcode DeviceSupport directory).",
+        ),
     ] = None,
     force: Annotated[
         bool,
@@ -132,7 +136,7 @@ async def fetch_symbols_download(
     ] = False,
 ) -> None:
     """
-    Fetches symbols from the given device and saves them into Xcode DeviceSupport directory.
+    Download the device's symbols, by default into its Xcode DeviceSupport directory.
 
     This command downloads symbol data. Optionally, the user can specify an output directory where the data will
     be stored. If no output directory is provided, the symbols will be downloaded into the Xcode directory directly
