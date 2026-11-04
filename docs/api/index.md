@@ -9,9 +9,9 @@ This reference is generated from the source docstrings. It focuses on the **publ
 use to connect to a device and drive services.
 
 New to the library? Read the [Python API guide](../guides/python-api.md) first — it shows the
-connect → service pattern with runnable examples. This section is the detailed lookup.
+connect-then-use-a-service pattern with runnable examples. This section is the detailed lookup.
 
-- **[Connecting to a device](connection.md)** — lockdown clients, RemoteServiceDiscovery, tunneld.
+- **[Connecting to a device](connection.md)** — lockdown clients, RemoteServiceDiscovery, no-root tunnels, tunneld.
 - **[Lockdown services](services.md)** — the `LockdownService` base class and the most-used services.
 - **[System &amp; device](system.md)** — activation, notifications, power, recovery, companion.
 - **[Apps, files &amp; profiles](apps-files.md)** — house arrest, configuration and provisioning profiles.

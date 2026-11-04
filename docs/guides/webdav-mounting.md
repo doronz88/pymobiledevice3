@@ -3,10 +3,12 @@ search:
   boost: 2
 ---
 
-# Mounting AFC in Finder (WebDAV)
+# Mounting device files (WebDAV)
 
-Any AFC-backed service can be exposed as a local **WebDAV** volume, so macOS Finder (or any
-WebDAV client) can browse and edit the device's filesystem read-write as if it were mounted.
+AFC (Apple File Conduit) is the service behind the device's file access: the media directory, app
+containers and crash reports. Any AFC-backed service can be exposed as a local **WebDAV** volume, so
+macOS Finder, Windows Explorer, a Linux file manager (or any WebDAV client) can browse and edit the
+device's files read-write as if they were a mounted drive.
 
 A small async WebDAV server runs inside the `pymobiledevice3` process; every WebDAV request is
 translated into `AfcService` calls. There is a `webdav` subcommand under each AFC-backed group:
@@ -22,14 +24,16 @@ pymobiledevice3 apps webdav BUNDLE_ID [PATH] [--documents] [--mount]
 pymobiledevice3 crash webdav [PATH] [--mount]
 ```
 
-`PATH` defaults to the service root. Press `Ctrl-C` to unmount and stop the server.
+`PATH` defaults to the service root. `--readonly` exposes it read-only. Press `Ctrl-C` to unmount
+and stop the server.
 
 ## Mounting
 
-With `--mount`, the volume is mounted and revealed using the host's native mechanism —
-`mount_webdav` on macOS, `net use` on Windows, `gio mount` on Linux. If no such tool is
-available, the server instead prints its `http://127.0.0.1:PORT` URL for you to open manually
-(Finder's **Go → Connect to Server**, or your file manager's equivalent).
+With `--mount`, the volume is mounted and opened in the file manager using the host's native
+mechanism: `mount_webdav` on macOS, `net use` (a new drive letter) on Windows, `gio mount` on Linux
+(part of GNOME's GVfs). `--mount` refuses to start when that tool is missing. If the mount itself
+fails, or without `--mount`, open the printed `http://127.0.0.1:PORT` URL yourself (Finder's
+**Go → Connect to Server**, or your file manager's equivalent).
 
 WebDAV is used rather than FTP because macOS Finder mounts FTP read-only; WebDAV mounts
 read-write.
@@ -42,9 +46,10 @@ read-write.
   no live-reload mechanism, and macOS's WebDAV client caches directory listings and attributes at
   the kernel level regardless of server hints. To force a refresh, navigate out of the folder and
   back (or reopen the window).
-- **Read-write** browse, read, create, edit, `mkdir`, rename/move, and delete all propagate to the
+- **Read-write** (unless `--readonly`): browse, read, create, edit, `mkdir`, rename/move, and delete all propagate to the
   device.
 - **Finder metadata** (`.DS_Store`, AppleDouble `._*`) writes are swallowed — reported as success
   but never written to the device.
 - **Permissions/ownership** cannot be changed over WebDAV (no `chmod`/`chown`); AFC exposes none.
-- **Python 3.10+** is required for the WebDAV feature (the `asgiwebdav` dependency).
+- **Python 3.10+** is required for the WebDAV feature (its `asgiwebdav` dependency); on Python 3.9
+  the `webdav` commands exit with an error.

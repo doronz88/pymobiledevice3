@@ -2,14 +2,23 @@
 
 Every pymobiledevice3 command reaches the device through one of five transport paths. This
 guide shows what each path actually looks like — which sockets exist, what needs root, and
-how a device disconnect is detected. For choosing between them day-to-day, see
-[iOS 17+ tunnels](ios17-tunnels.md).
+how a device disconnect is detected.
+
+!!! note "Background reading"
+    You don't need this page to use pymobiledevice3: commands pick the right path on their own. For
+    choosing between paths day-to-day, see [iOS 17+ tunnels](ios17-tunnels.md).
+
+A few terms used throughout: **usbmuxd** is the host daemon (part of iTunes/Apple Devices on
+Windows, built into macOS, a separate package on Linux) that multiplexes connections to USB
+devices; **lockdownd** is the device daemon that pairs with hosts and starts services; **RSD**
+(RemoteServiceDiscovery) is the service index that iOS 17+ exposes inside an encrypted tunnel.
 
 ## USB lockdown via usbmuxd
 
 The classic path, used by everything that does not need an RSD tunnel (`afc`, `backup2`,
-`syslog`, `apps`, ...). No TCP on the host at all: the client speaks the usbmux protocol
-over usbmuxd's unix socket, and usbmuxd multiplexes device-port streams over the USB link.
+`syslog`, `apps`, ...) and the one most commands take. No TCP on the host at all: the client
+speaks the usbmux protocol over usbmuxd's unix socket, and usbmuxd multiplexes device-port
+streams over the USB link.
 
 ```mermaid
 flowchart LR
@@ -39,9 +48,9 @@ flowchart LR
 ## Kernel tunnel (`start-tunnel` / `tunneld`)
 
 iOS 17+ developer services live behind an encrypted tunnel to an RSD endpoint. The kernel
-tunnel terminates that tunnel in a `utun` interface, making the device's tunnel address
-(`fdxx::1`) kernel-routable — reachable by **any process**, including external tools like
-`lldb`.
+tunnel terminates that tunnel in a kernel TUN interface (`utunN` on macOS; this section uses the
+macOS name), making the device's tunnel address (`fdxx::1`) kernel-routable — reachable by
+**any process**, including external tools like `lldb`.
 
 ```mermaid
 flowchart LR
@@ -59,9 +68,10 @@ flowchart LR
   tunnels across processes, queryable over HTTP (`--tunnel`).
 - **Disconnect:** the `utun` interface disappears with the tunnel, erroring connections
   out; service connections also run TCP keep-alive.
-- Highest host→device throughput; the only path external tools can use.
+- Highest host→device throughput; together with the native tunnel (macOS), the only path
+  external tools can use.
 
-### Why this path suspends `remoted` (and why that needs root)
+### Why this path suspends `remoted` on macOS (and why that needs root)
 
 Root is needed here for **two** independent reasons. The obvious one is creating the `utun`.
 The second is `remoted` contention, and it is worth spelling out because it is easy to
@@ -103,7 +113,7 @@ flowchart TB
     subgraph proc["pymobiledevice3 process"]
         svc["Developer services<br/>(DVT, os_trace, AFC, ...)"]
         rsd["RemoteServiceDiscoveryService<br/><i>open_connection = dial plane</i>"]
-        dp["UserspaceDialPlane<br/>one relay listener (unix socket —<br/>loopback TCP on Windows)"]
+        dp["UserspaceDialPlane<br/>one socketpair relay per connection<br/>(no listener)"]
         stack["pmd-pytcp<br/>pure-asyncio TCP/IP stack"]
         tun["UserspaceTun<br/>L2 bridge: datagram socketpair<br/>+ 14-byte Ethernet shim"]
         cdp["CoreDeviceProxy transport<br/>(lockdown service connection)"]
@@ -183,24 +193,21 @@ sequenceDiagram
     T->>W: wait_closed() returns
     W->>A: tear down (serialized on the lifecycle lock)
     A->>DP: __aexit__
-    DP->>DP: close listener, cancel relay handlers
+    DP->>DP: cancel relay tasks, let pending FINs leave
     DP->>S: EOF / connection error
     Note over S: e.g. `dvt oslog` exits ~1 s after the cable is pulled
 ```
 
 Teardown details worth knowing when reading the code:
 
-- The dial plane sets a `_closing` gate, gives already-queued accepts one loop tick to
-  attach (so their transports can be closed properly), cancels every in-flight relay
-  handler, and awaits the listener's `wait_closed()` — this is what keeps
-  `Server.wait_closed()` from hanging on a relay parked on device traffic (issue #1756).
+- The dial plane sets a `_closing` gate so no new relay starts, then cancels every in-flight
+  relay task (a relay parked on device traffic never finishes on its own, issue #1756),
+  repeating the cancel because Python <= 3.11 can swallow a cancellation that races an inner
+  future. It then waits briefly for the FINs of just-closed connections to leave before the
+  stack stops, so the device does not keep stale connections.
 - `aclose()` returning means the process-global stack is really stopped: an explicit close
   that races the watcher's teardown waits for it instead of returning early, so
   close-then-reopen is safe.
-- The one listener bind that exists is shielded against cancellation:
-  `create_server`-style coroutines suspend once *after* the socket is serving, and a
-  cancellation landing there would otherwise orphan a listener the event loop keeps alive
-  forever.
 - The CLI keeps its tunnel for the process lifetime and closes it at interpreter exit
   (~3 ms), so the device always sees clean FINs.
 

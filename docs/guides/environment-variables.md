@@ -6,7 +6,23 @@ search:
 # Environment variables
 
 Every `pymobiledevice3` environment variable, what it sets, and where it is explained in depth.
-Each one is a default: the matching command-line option always wins.
+Each one is a default: where a matching command-line option exists, the option always wins.
+
+Set a variable for the current shell session like this:
+
+=== "macOS / Linux"
+
+    ```shell
+    export PYMOBILEDEVICE3_UDID=00008110-001234567890801E
+    ```
+
+=== "Windows (PowerShell)"
+
+    ```powershell
+    $env:PYMOBILEDEVICE3_UDID = "00008110-001234567890801E"
+    ```
+
+`pymobiledevice3 usbmux list` shows each connected device's UDID (its unique device identifier).
 
 ## Device selection
 
@@ -34,6 +50,19 @@ their variables. See [iOS 17+ tunnels](ios17-tunnels.md) for when each transport
 # prefer the macOS native tunnel for this shell
 export PYMOBILEDEVICE3_DEFAULT_FALLBACK=native
 ```
+
+## Restore and Recovery/DFU
+
+| Variable | Value | Effect |
+| --- | --- | --- |
+| `PYMOBILEDEVICE3_IPSW_DIR` | directory | Default for `--ipsw-dir` on the `restore` commands that take an IPSW: reuse a firmware build already downloaded there, and download new ones into it instead of a temporary directory. |
+| `PYMOBILEDEVICE3_USB_BACKEND` | `iokit` or `libusb` | Same as `restore --libusb` when set to `libusb`: reach Recovery/DFU devices through libusb instead of IOKit on macOS. `iokit` is only valid on macOS; other platforms always use libusb. |
+
+## Output
+
+| Variable | Value | Effect |
+| --- | --- | --- |
+| `NO_COLOR` | any non-empty value | Disables colored output and logs, like `--no-color` (see [no-color.org](https://no-color.org)). |
 
 ## Advanced
 
