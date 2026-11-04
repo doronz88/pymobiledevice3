@@ -17,6 +17,7 @@ from pymobiledevice3.cli.cli_common import (
     async_command,
     default_json_encoder,
     print_json,
+    print_json_line,
     prompt_selection,
 )
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
@@ -230,8 +231,9 @@ def _serialize_process(
 
 
 def _write_process(out: Optional[TextIO], process: dict[str, Any]) -> None:
+    # A streamed record: one compact JSON object per line (NDJSON), on stdout or into the output file.
     if out is None:
-        print_json(process)
+        print_json_line(process)
         return
 
     json_output = json.dumps(process, default=default_json_encoder)
@@ -249,7 +251,8 @@ def _write_json(out: Optional[TextIO], value: Any) -> None:
 
 
 def _write_status(line: str) -> None:
-    print(line, flush=True)
+    # stdout carries only the NDJSON records; status lines are diagnostics.
+    print(line, file=sys.stderr, flush=True)
 
 
 def _describe_process(process: dict[str, Any]) -> str:
