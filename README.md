@@ -20,9 +20,23 @@ start first).
 
 ## Install
 
+Install with [uv](https://docs.astral.sh/uv/), which fetches a suitable Python for you and puts
+`pymobiledevice3` on your PATH:
+
 ```shell
-python3 -m pip install -U pymobiledevice3
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# then, in a new terminal
+uv tool install pymobiledevice3
 ```
+
+Upgrade later with `uv tool upgrade pymobiledevice3`, or try it without installing via
+`uvx pymobiledevice3 usbmux list`. Already manage Python yourself? `pipx install pymobiledevice3`
+works too, and for scripting against the [Python API](https://doronz88.github.io/pymobiledevice3/guides/python-api/)
+`pip install pymobiledevice3` inside your project's virtualenv.
 
 PyPI is the only official distribution channel. Third-party packages (for example the AUR's
 `python-pymobiledevice3`) are not maintained by this project and may be outdated.

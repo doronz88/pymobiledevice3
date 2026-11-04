@@ -7,7 +7,7 @@ Starting with iOS 17.0, Apple moved developer service access to CoreDevice/Remot
 Just run the command; there is nothing to start beforehand:
 
 ```shell
-python3 -m pymobiledevice3 developer dvt ls /
+pymobiledevice3 developer dvt ls /
 ```
 
 A privileged `tunneld` is only needed for specific cases (external tools such as `lldb`, a
@@ -56,7 +56,7 @@ variable the CLI honors).
     reaches these devices) and to **`tunneld` on Linux/Windows**, so keep one running there:
 
     ```shell
-    sudo python3 -m pymobiledevice3 remote tunneld
+    sudo pymobiledevice3 remote tunneld
     ```
 
     You can still force the userspace path with `--userspace` where it applies (a device on Wi-Fi;
@@ -91,17 +91,17 @@ below) when:
 ```shell
 # If the device supports remote pairing (for example, Corellium/Apple TV/Apple Vision Pro), pair first.
 # Apple TV and Apple Vision Pro display a PIN to type in. Standard iOS devices usually do not need this step.
-python3 -m pymobiledevice3 remote pair
+pymobiledevice3 remote pair
 
 # On Windows, run from a privileged shell.
-sudo python3 -m pymobiledevice3 remote tunneld
+sudo pymobiledevice3 remote tunneld
 ```
 
 With `tunneld` running, point a command at it with `--tunnel` (empty value = pick automatically, or
 pass a UDID):
 
 ```shell
-python3 -m pymobiledevice3 developer dvt ls / --tunnel ''
+pymobiledevice3 developer dvt ls / --tunnel ''
 ```
 
 `tunneld` binds `127.0.0.1:49151` by default. To relocate it, pass `--host`/`--port`; the
@@ -127,10 +127,10 @@ in brackets), so every command works against a remote `tunneld` without any extr
 
 ```shell
 # on the machine with the device attached
-sudo python3 -m pymobiledevice3 remote tunneld --host 0.0.0.0
+sudo pymobiledevice3 remote tunneld --host 0.0.0.0
 
 # anywhere that can reach it
-python3 -m pymobiledevice3 developer dvt ls / --tunnel 'UDID@lab-mac:49151'
+pymobiledevice3 developer dvt ls / --tunnel 'UDID@lab-mac:49151'
 ```
 
 Library consumers get the same via `get_tunneld_devices(('lab-mac', 49151))` /
@@ -153,17 +153,17 @@ with no VPN and no route to each host's tunnel interface:
 
 ```shell
 # on every host with devices attached
-sudo python3 -m pymobiledevice3 remote tunneld --host 0.0.0.0
+sudo pymobiledevice3 remote tunneld --host 0.0.0.0
 
 # on the one host clients can reach. Disable the monitors if devices are attached here too,
 # unless you want this instance to serve them itself: otherwise it builds its own tunnels
 # alongside the ones it federates, and each such device is then listed twice
-sudo python3 -m pymobiledevice3 remote tunneld --host 0.0.0.0 \
+sudo pymobiledevice3 remote tunneld --host 0.0.0.0 \
     --no-usb --no-wifi --no-usbmux --no-mobdev2 \
     --upstream http://lab-1:49151 --upstream http://lab-2:49151
 
 # from anywhere: any device in the lab, addressed through the front tunneld
-python3 -m pymobiledevice3 developer dvt ls / --tunnel 'UDID@front:49151'
+pymobiledevice3 developer dvt ls / --tunnel 'UDID@front:49151'
 ```
 
 Upstreams are addressed as `HOST`, `HOST:PORT` or `http://HOST[:PORT]` (IPv6 in brackets), all
@@ -186,7 +186,7 @@ To make `tunneld` the **default** fallback — so commands route to it automatic
 
 ```shell
 export PYMOBILEDEVICE3_DEFAULT_FALLBACK=tunneld
-python3 -m pymobiledevice3 developer dvt ls /
+pymobiledevice3 developer dvt ls /
 ```
 
 ## Starting a tunnel manually
@@ -198,22 +198,22 @@ and if you need it for more than one command, prefer running `tunneld`. A manual
 
 ```shell
 # Optional for remote-pairing devices.
-python3 -m pymobiledevice3 remote pair
+pymobiledevice3 remote pair
 
 # iOS 17.4+ (lockdown tunnel)
-sudo python3 -m pymobiledevice3 lockdown start-tunnel
+sudo pymobiledevice3 lockdown start-tunnel
 
 # Optional: allow Wi-Fi connections over lockdown
-python3 -m pymobiledevice3 lockdown wifi-connections on
+pymobiledevice3 lockdown wifi-connections on
 
 # iOS 17.0-17.3.1 fallback, and the default without --native.
 # Add `-t wifi` to force Wi-Fi transport.
-sudo python3 -m pymobiledevice3 remote start-tunnel
+sudo pymobiledevice3 remote start-tunnel
 
 # macOS, no sudo: publishes Apple's own remoted tunnel instead of creating one.
 # It competes with remoted for the device; see "Native remoted tunnel" in the
 # network stacks guide.
-python3 -m pymobiledevice3 remote start-tunnel --native
+pymobiledevice3 remote start-tunnel --native
 ```
 
 Example output:
@@ -242,7 +242,7 @@ needs root to suspend `remoted`).
     over USB, promptlessly, via the `com.apple.dt.remotepairingdeviced.lockdown` control channel:
 
     ```shell
-    python3 -m pymobiledevice3 lockdown remotepairing --pair
+    pymobiledevice3 lockdown remotepairing --pair
     ```
 
     Because this runs over the already-trusted lockdownd (USB) transport, pairing is promptless (no
@@ -268,7 +268,7 @@ fallback (iOS 17.0-17.3.1) — any establishment failure is then surfaced as an 
 masked:
 
 ```shell
-python3 -m pymobiledevice3 developer dvt ls / --userspace
+pymobiledevice3 developer dvt ls / --userspace
 ```
 
 Requirements:
@@ -306,19 +306,19 @@ limitation above applies equally to the Python API.
 
 ```shell
 # Default: no flag, no root — an in-process userspace tunnel is established automatically
-python3 -m pymobiledevice3 developer dvt ls /
+pymobiledevice3 developer dvt ls /
 
 # Force the no-root tunnel (skip the automatic tunneld fallback)
-python3 -m pymobiledevice3 developer dvt ls / --userspace
+pymobiledevice3 developer dvt ls / --userspace
 
 # Use a running tunneld ('' = pick automatically, or pass a UDID)
-python3 -m pymobiledevice3 developer dvt ls / --tunnel ''
+pymobiledevice3 developer dvt ls / --tunnel ''
 
 # Use manual RSD connection details (from `start-tunnel`)
-python3 -m pymobiledevice3 developer dvt ls / --rsd fd7b:e5b:6f53::1 64337
+pymobiledevice3 developer dvt ls / --rsd fd7b:e5b:6f53::1 64337
 
 # Non-developer command over a running tunneld
-python3 -m pymobiledevice3 syslog live --tunnel ''
+pymobiledevice3 syslog live --tunnel ''
 ```
 
 ## Troubleshooting
