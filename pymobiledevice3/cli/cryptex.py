@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="cryptex",
-    help="Manage cryptexes via cryptexd (iOS 17+, requires an RSD tunnel).",
+    help="Manage cryptexes via cryptexd (iOS 17+; the RSD tunnel is set up automatically).",
     no_args_is_help=True,
 )
 
@@ -59,7 +59,10 @@ async def cryptex_auto_install(
         ),
     ] = None,
 ) -> None:
-    """Personalize and install the DeveloperDiskImage cryptex, using only cryptexd."""
+    """Personalize and install the DeveloperDiskImage cryptex, using only cryptexd.
+
+    Needs Internet: Apple's signing server personalizes the image for this device.
+    """
     cryptexd = CryptexdService(service_provider)
     try:
         installed = await cryptexd.auto_install_ddi(restore_dir)
@@ -122,8 +125,12 @@ async def cryptex_roll_nonce(
 @async_command
 async def cryptex_uninstall(
     service_provider: RSDServiceProviderDep,
-    identifier: str,
-    version: Annotated[Optional[str], typer.Option("--version")] = None,
+    identifier: Annotated[
+        str, typer.Argument(help="Cryptex identifier from `cryptex list` (e.g. com.apple.MobileAsset.DDI).")
+    ],
+    version: Annotated[
+        Optional[str], typer.Option("--version", help="Only uninstall this version of the cryptex.")
+    ] = None,
 ) -> None:
     """Uninstall an installed cryptex by its identifier."""
     cryptexd = CryptexdService(service_provider)
