@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import queue
 import struct
 import time
@@ -49,6 +50,8 @@ from pymobiledevice3.exceptions import (
 from pymobiledevice3.resources.dsc_uuid_map import get_dsc_map
 from pymobiledevice3.services.dvt.instruments.device_info import DeviceInfo
 from pymobiledevice3.services.dvt.instruments.tap import TapMessageChannel
+
+logger = logging.getLogger(__name__)
 
 kcdata_types = {
     "KCDATA_TYPE_INVALID": 0x0,
@@ -1015,7 +1018,7 @@ class CoreProfileSessionTap:
             if data.startswith(STACKSHOT_HEADER) or data.startswith(b"bplist"):
                 # Skip not kernel trace data.
                 continue
-            print(f"Receiving trace data ({len(data)}B)")
+            logger.info(f"Receiving trace data ({len(data)}B)")
             out.write(data)
             out.flush()
 

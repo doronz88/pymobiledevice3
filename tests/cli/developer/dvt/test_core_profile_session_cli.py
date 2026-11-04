@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import io
 import json
+import logging
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -324,6 +325,17 @@ def test_parse_live_json(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Capture
     assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
         {"event": "BSC_open", "fields": {"fd": 3}, "text": "open(), fd: 3"}
     ]
+
+
+def test_parse_live_text_status_goes_to_the_log(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.INFO, logger=core_profile_session.__name__):
+        _run_parse_live(monkeypatch, show_tid=False)
+
+    # Text mode is human output: stdout holds the column header and the traces, never status lines.
+    assert capsys.readouterr().out.splitlines() == ["{:^32}|{:^33}|   Event".format("Time", "Process")]
+    assert "Receiving time information" in caplog.messages
 
 
 def test_parse_live_max_lag_and_summary(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
