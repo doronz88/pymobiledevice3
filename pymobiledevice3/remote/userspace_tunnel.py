@@ -1029,5 +1029,9 @@ def _close_cli_tunnel_at_exit() -> None:
         if loop.is_running():
             return  # exiting from inside the loop; nothing safe to run here
         loop.run_until_complete(asyncio.wait_for(_cli_tunnel.aclose(), timeout=3))
+    except KeyboardInterrupt:
+        # Ctrl-C again while the process is already exiting (the first one ended the command):
+        # the user wants out now, so abandon the teardown instead of a traceback.
+        logger.debug("closing the CLI tunnel at exit was interrupted")
     except Exception:
         logger.debug("closing the CLI tunnel at exit failed", exc_info=True)
