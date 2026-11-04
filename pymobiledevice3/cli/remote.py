@@ -116,19 +116,29 @@ def cli_tunneld(
             "--protocol",
             "-p",
             case_sensitive=False,
-            help="Transport protocol for tunneld (default: TCP on Python >=3.13, otherwise QUIC).",
+            show_default="tcp on Python >= 3.13, otherwise quic",
+            help="Transport protocol for the tunnels tunneld creates.",
         ),
     ] = TunnelProtocol.DEFAULT,
-    usb: Annotated[bool, typer.Option(help="Enable USB monitoring")] = True,
-    wifi: Annotated[bool, typer.Option(help="Enable WiFi monitoring")] = True,
-    usbmux: Annotated[bool, typer.Option(help="Enable usbmux monitoring")] = True,
+    usb: Annotated[bool, typer.Option(help="Tunnel USB devices through their USB network (RSD) interface.")] = True,
+    wifi: Annotated[
+        bool, typer.Option(help="Tunnel paired devices advertising RemotePairing on the network (bonjour).")
+    ] = True,
+    usbmux: Annotated[bool, typer.Option(help="Tunnel devices listed by usbmuxd through lockdown (iOS 17.4+).")] = True,
     usbmux_address: Annotated[
         Optional[str],
         typer.Option("--usbmux-address", envvar=USBMUX_ENV_VARS, help=USBMUX_OPTION_HELP),
     ] = None,
-    mobdev2: Annotated[bool, typer.Option(help="Enable mobdev2 monitoring")] = True,
+    mobdev2: Annotated[
+        bool, typer.Option(help="Tunnel paired devices found over Wi-Fi via bonjour/mobdev2 through lockdown.")
+    ] = True,
 ) -> None:
-    """Start Tunneld service for remote tunneling"""
+    """Run tunneld: keep an iOS 17+ tunnel up for every device (needs root).
+
+    Rarely needed: commands build their own no-root tunnel. Use it to share
+    tunnels across processes or with other tools, then pass `--tunnel` to
+    commands. Runs until Ctrl+C (or in the background with --daemonize).
+    """
     if not verify_tunnel_imports():
         return
     for url in upstream or []:
@@ -176,7 +186,10 @@ async def browse(
         ),
     ] = None,
 ) -> None:
-    """browse RemoteXPC devices (remotepairingd on macOS by default, bonjour elsewhere)"""
+    """List iOS 17+ devices reachable for tunneling.
+
+    Asks Apple's remotepairingd on macOS by default, browses bonjour elsewhere.
+    """
     if native is None:
         # Browsing only asks remotepairingd; unlike the native tunnel it opens no RSD connection on
         # remoted's tunnel, so it stays the macOS default whichever tunnel transport is preferred.
@@ -191,16 +204,17 @@ async def browse(
 
 @cli.command("rsd-info")
 def rsd_info(service_provider: RSDServiceProviderDep) -> None:
-    """show info extracted from RSD peer"""
+    """Print the device's RemoteServiceDiscovery (RSD) info: properties and available services."""
     print_json(service_provider.peer_info)
 
 
 @cli.command("auxiliary-metadata")
 def auxiliary_metadata(service_provider: RSDServiceProviderDep) -> None:
-    """show device auxiliary metadata (decoded deviceKVSData), keyed by preference domain
+    """Print the device's auxiliary metadata (decoded deviceKVSData), keyed by preference domain.
 
-    e.g. ``com.apple.WebInspector.EnableRemoteInspection`` (Web Inspector on/off). Reliably populated
-    on the macOS ``--native`` transport; empty or partial on others (see the network-stacks guide).
+    e.g. ``com.apple.WebInspector.EnableRemoteInspection`` (Web Inspector
+    on/off). Reliably populated on the macOS ``--native`` transport; empty or
+    partial on others (see the network-stacks guide).
     """
     print_json(service_provider.auxiliary_metadata)
 
@@ -380,9 +394,12 @@ async def cli_start_tunnel(
         ),
     ] = None,
 ) -> None:
-    """start tunnel (classic root tunnel by default; --native piggybacks Apple's tunnel on macOS, no root)
+    """Start an iOS 17+ tunnel and print the `--rsd HOST PORT` to reach it.
 
-    Rarely needed: commands build their own no-root tunnel. Use it when another process needs --rsd.
+    Rarely needed: commands build their own no-root tunnel. Use it when another
+    process needs --rsd. By default this creates a classic tunnel, which needs
+    root; --native piggybacks Apple's tunnel on macOS without root. Runs until
+    Ctrl+C.
     """
     # Detect explicitly-passed classic-tunnel options via sentinel Nones rather than value-vs-default
     # (TunnelProtocol.DEFAULT is version-dependent -- QUIC on Python <3.13, TCP otherwise -- so a
@@ -450,10 +467,15 @@ class RemotePairingManualPairingDevice:
 async def cli_pair(
     name: Annotated[
         Optional[str],
-        typer.Option(help="Device name for a specific device to look for"),
+        typer.Option(help="Only pair with the device advertising this name."),
     ] = None,
 ) -> None:
-    """start remote pairing for devices which allow"""
+    """Pair over the network with a device offering manual pairing (e.g. Apple TV).
+
+    Browses bonjour for devices advertising manual pairing, such as Apple TV or
+    Apple Vision Pro; the device shows a PIN to type in. Standard iOS devices
+    usually do not need this.
+    """
     if start_tunnel is None:
         raise NotImplementedError("failed to start the tunnel on your platform")
 
@@ -511,10 +533,11 @@ async def cli_pair_host(
     """
     Advertise as a pairable host and accept a device-initiated pairing (iOS 27+).
 
-    The device does not browse for pairable hosts automatically. On the device, enable
-    Developer Mode and open Settings > Developer > Paired Macs; this host then appears
-    under "Other Devices". Tap it and enter the 6-digit code printed here. The resulting
-    pairing record is reused by `remote start-tunnel` afterwards.
+    The device does not browse for pairable hosts automatically. On the device,
+    enable Developer Mode and open Settings > Developer > Paired Macs; this host
+    then appears under "Other Devices". Tap it and enter the 6-digit code
+    printed here. The resulting pairing record is reused by
+    `remote start-tunnel` afterwards. Waits until paired, --timeout, or Ctrl+C.
     """
     host_info = PairableHostInfo(name=name or platform.node(), model=model)
 
@@ -564,8 +587,10 @@ async def cli_pair_host(
 
 
 @cli.command("delete-pair")
-def cli_delete_pair(udid: str) -> None:
-    """Delete a pairing record"""
+def cli_delete_pair(
+    udid: Annotated[str, typer.Argument(help="Identifier (UDID) of the device whose pairing record to delete.")],
+) -> None:
+    """Delete this host's RemotePairing record for a device (forces pairing again)."""
     pair_record_path = get_home_folder() / f"{get_remote_pairing_record_filename(udid)}.{PAIRING_RECORD_EXT}"
     try:
         pair_record_path.unlink()
@@ -574,8 +599,11 @@ def cli_delete_pair(udid: str) -> None:
 
 
 @cli.command("service")
-def cli_service(service_provider: RSDServiceProviderDep, service_name: str) -> None:
-    """Start an ipython shell for interacting with given service"""
+def cli_service(
+    service_provider: RSDServiceProviderDep,
+    service_name: Annotated[str, typer.Argument(help="RSD service name (see `remote rsd-info`).")],
+) -> None:
+    """Connect to a RemoteXPC service and open an IPython shell on it (for exploration)."""
     service = service_provider.start_remote_service(service_name)
     run_in_loop(service.connect())
     service.shell()
