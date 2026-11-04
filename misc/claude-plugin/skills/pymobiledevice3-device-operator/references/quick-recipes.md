@@ -14,8 +14,8 @@ as-is — no `sudo`, no tunnel setup.
 uvx --from . pymobiledevice3 developer dvt screenshot ./screen.png
 ```
 
-Requires Developer Mode and a mounted DDI (`amfi enable-developer-mode`,
-`mounter auto-mount`). WDA-based UI automation has its own screenshot:
+Requires Developer Mode (`amfi enable-developer-mode`), plus a mounted DDI on iOS < 17
+(`mounter auto-mount`). WDA-based UI automation has its own screenshot:
 `developer wda screenshot`.
 
 ## Search The Device Syslog
