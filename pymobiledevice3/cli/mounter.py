@@ -49,7 +49,7 @@ def catch_errors(func: Callable[..., Any]) -> Callable[..., Any]:
 
 cli = InjectingTyper(
     name="mounter",
-    help="Mount/Umount DeveloperDiskImage or query related info",
+    help="Mount, unmount and inspect the DeveloperDiskImage (DDI) needed by developer commands.",
     no_args_is_help=True,
 )
 
@@ -57,7 +57,7 @@ cli = InjectingTyper(
 @cli.command("list")
 @async_command
 async def mounter_list(service_provider: ServiceProviderDep) -> None:
-    """list all mounted images"""
+    """List the disk images currently mounted on the device."""
     output: list[dict[str, Any]] = []
 
     async with MobileImageMounterService(lockdown=service_provider) as mounter:
@@ -73,8 +73,13 @@ async def mounter_list(service_provider: ServiceProviderDep) -> None:
 
 @cli.command("lookup")
 @async_command
-async def mounter_lookup(service_provider: ServiceProviderDep, image_type: str) -> None:
-    """lookup mounter image type"""
+async def mounter_lookup(
+    service_provider: ServiceProviderDep,
+    image_type: Annotated[
+        str, typer.Argument(help="Image type to look up: `Developer` (iOS < 17) or `Personalized` (iOS 17+).")
+    ],
+) -> None:
+    """Print the signature of the mounted image of the given type, if one is mounted."""
     try:
         async with MobileImageMounterService(lockdown=service_provider) as mounter:
             signature = await mounter.lookup_image(image_type)
@@ -87,7 +92,7 @@ async def mounter_lookup(service_provider: ServiceProviderDep, image_type: str) 
 @catch_errors
 @async_command
 async def mounter_umount_developer(service_provider: ServiceProviderDep) -> None:
-    """unmount Developer image"""
+    """Unmount the classic DeveloperDiskImage (iOS < 17)."""
     try:
         async with DeveloperDiskImageMounter(lockdown=service_provider) as mounter:
             await mounter.umount()
@@ -100,7 +105,11 @@ async def mounter_umount_developer(service_provider: ServiceProviderDep) -> None
 @catch_errors
 @async_command
 async def mounter_umount_personalized(service_provider: ServiceProviderDep) -> None:
-    """unmount Personalized image"""
+    """Unmount the personalized DeveloperDiskImage (iOS 17+).
+
+    A DDI installed as a cryptex (see `cryptex list`) is removed with
+    `cryptex uninstall com.apple.MobileAsset.DDI` instead.
+    """
     try:
         async with PersonalizedImageMounter(lockdown=service_provider) as mounter:
             await mounter.umount()
@@ -120,6 +129,7 @@ async def mounter_mount_developer(
             exists=True,
             file_okay=True,
             dir_okay=False,
+            help="DeveloperDiskImage.dmg file.",
         ),
     ],
     signature: Annotated[
@@ -128,10 +138,14 @@ async def mounter_mount_developer(
             exists=True,
             file_okay=True,
             dir_okay=False,
+            help="Matching DeveloperDiskImage.dmg.signature file.",
         ),
     ],
 ) -> None:
-    """mount developer image"""
+    """Mount a classic DeveloperDiskImage from local files (iOS < 17).
+
+    Requires Developer Mode on iOS 16. Most users want `auto-mount` instead.
+    """
     async with DeveloperDiskImageMounter(lockdown=service_provider) as mounter:
         await mounter.mount(image, signature)
     logger.info("Developer image mounted successfully")
@@ -148,6 +162,7 @@ async def mounter_mount_personalized(
             exists=True,
             file_okay=True,
             dir_okay=False,
+            help="Personalized image file (Image.dmg).",
         ),
     ],
     trust_cache: Annotated[
@@ -156,6 +171,7 @@ async def mounter_mount_personalized(
             exists=True,
             file_okay=True,
             dir_okay=False,
+            help="Trust cache shipped with the image (e.g. Image.trustcache).",
         ),
     ],
     build_manifest: Annotated[
@@ -164,10 +180,16 @@ async def mounter_mount_personalized(
             exists=True,
             file_okay=True,
             dir_okay=False,
+            help="BuildManifest.plist shipped with the image.",
         ),
     ],
 ) -> None:
-    """mount personalized image"""
+    """Mount a personalized DeveloperDiskImage from local files (iOS 17+).
+
+    Reuses a personalization ticket already stored on the device, otherwise requests
+    one from Apple's signing server (needs Internet). Requires Developer Mode.
+    Most users want `auto-mount` instead.
+    """
     async with PersonalizedImageMounter(lockdown=service_provider) as mounter:
         await mounter.mount(Path(image), Path(build_manifest), Path(trust_cache))
     logger.info("Personalized image mounted successfully")
@@ -185,12 +207,15 @@ async def mounter_auto_mount(
             exists=True,
             file_okay=False,
             dir_okay=True,
-            help="Xcode application path used to figure out automatically the DeveloperDiskImage path",
+            help="iOS < 17 only: Xcode.app to take the DeveloperDiskImage from (default: /Applications/Xcode.app, "
+            "falling back to a download cache in the home folder).",
         ),
     ] = None,
     version: Annotated[
         Optional[str],
-        typer.Option(help="Use a different DeveloperDiskImage version from the one retrieved by lockdownconnection"),
+        typer.Option(
+            help="iOS < 17 only: DeveloperDiskImage version (major.minor) to use instead of the device's iOS version."
+        ),
     ] = None,
     image: Annotated[
         Optional[PersonalizedDdi],
@@ -201,7 +226,11 @@ async def mounter_auto_mount(
         ),
     ] = None,
 ) -> None:
-    """auto-detect correct DeveloperDiskImage and mount it
+    """Download (if needed) and mount the right DeveloperDiskImage for the device.
+
+    Picks the image by iOS version and downloads it when it is not available locally;
+    iOS 17+ images are personalized for the device through Apple's signing server
+    (needs Internet). Requires Developer Mode.
 
     Exits non-zero when no image could be mounted. An image that is already mounted is what was
     asked for, so that succeeds -- scripts can run this unconditionally before developer commands.
@@ -236,7 +265,7 @@ async def mounter_auto_mount(
 @cli.command("query-developer-mode-status")
 @async_command
 async def mounter_query_developer_mode_status(service_provider: ServiceProviderDep) -> None:
-    """Query developer mode status"""
+    """Print whether Developer Mode is enabled, as reported by the image mounter."""
     async with MobileImageMounterService(lockdown=service_provider) as mounter:
         print_json(await mounter.query_developer_mode_status())
 
@@ -244,9 +273,16 @@ async def mounter_query_developer_mode_status(service_provider: ServiceProviderD
 @cli.command("query-nonce")
 @async_command
 async def mounter_query_nonce(
-    service_provider: ServiceProviderDep, image_type: Annotated[Optional[str], typer.Option()] = None
+    service_provider: ServiceProviderDep,
+    image_type: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Personalized image type to query the nonce for (e.g. `DeveloperDiskImage`); "
+            "omitted or unrecognized, the device returns its default nonce."
+        ),
+    ] = None,
 ) -> None:
-    """Query nonce"""
+    """Print the personalization nonce used to sign images for this device."""
     async with MobileImageMounterService(lockdown=service_provider) as mounter:
         print_json(await mounter.query_nonce(image_type))
 
@@ -254,7 +290,7 @@ async def mounter_query_nonce(
 @cli.command("query-personalization-identifiers")
 @async_command
 async def mounter_query_personalization_identifiers(service_provider: ServiceProviderDep) -> None:
-    """Query personalization identifiers"""
+    """Print the identifiers used to personalize images for this device (board ID, chip ID, ...)."""
     async with MobileImageMounterService(lockdown=service_provider) as mounter:
         print_json(await mounter.query_personalization_identifiers())
 
@@ -262,7 +298,7 @@ async def mounter_query_personalization_identifiers(service_provider: ServicePro
 @cli.command("query-personalization-manifest")
 @async_command
 async def mounter_query_personalization_manifest(service_provider: ServiceProviderDep) -> None:
-    """Query personalization manifest"""
+    """Print the personalization manifest (IM4M) of each mounted personalized image."""
     result: list[bytes] = []
     async with MobileImageMounterService(lockdown=service_provider) as mounter:
         for device in await mounter.copy_devices():
@@ -275,6 +311,7 @@ async def mounter_query_personalization_manifest(service_provider: ServiceProvid
 @cli.command("roll-personalization-nonce")
 @async_command
 async def mounter_roll_personalization_nonce(service_provider: ServiceProviderDep) -> None:
+    """Ask the device to generate a new personalization nonce."""
     async with MobileImageMounterService(lockdown=service_provider) as mounter:
         await mounter.roll_personalization_nonce()
 
@@ -282,6 +319,6 @@ async def mounter_roll_personalization_nonce(service_provider: ServiceProviderDe
 @cli.command("roll-cryptex-nonce")
 @async_command
 async def mounter_roll_cryptex_nonce(service_provider: ServiceProviderDep) -> None:
-    """Roll cryptex nonce (will reboot)"""
+    """Ask the device to generate a new cryptex nonce (the device reboots)."""
     async with MobileImageMounterService(lockdown=service_provider) as mounter:
         await mounter.roll_cryptex_nonce()
