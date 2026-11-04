@@ -59,7 +59,7 @@ cli = InjectingTyper(
 @async_command
 async def post(
     service_provider: ServiceProviderDep,
-    names: list[str],
+    names: Annotated[list[str], typer.Argument(help="Notification names (e.g. com.apple.springboard.lockstate).")],
     insecure: InsecureOption = False,
     remotexpc: RemoteXpcOption = False,
 ) -> None:
@@ -74,11 +74,11 @@ async def post(
 @async_command
 async def observe(
     service_provider: ServiceProviderDep,
-    names: list[str],
+    names: Annotated[list[str], typer.Argument(help="Notification names (e.g. com.apple.springboard.lockstate).")],
     insecure: InsecureOption = False,
     remotexpc: RemoteXpcOption = False,
 ) -> None:
-    """Subscribe and stream notifications (notify_register_dispatch)."""
+    """Print the given notifications as they are posted (notify_register_dispatch); runs until Ctrl+C."""
     async with AsyncExitStack() as stack:
         service = await _open_service(stack, service_provider, insecure, remotexpc)
         for name in names:
@@ -95,7 +95,7 @@ async def observe_all(
     insecure: InsecureOption = False,
     remotexpc: RemoteXpcOption = False,
 ) -> None:
-    """Subscribe to all known firmware notifications and stream events."""
+    """Print every known firmware notification as it is posted; runs until Ctrl+C."""
     async with AsyncExitStack() as stack:
         service = await _open_service(stack, service_provider, insecure, remotexpc)
         for notification in get_notifications():
@@ -107,7 +107,10 @@ async def observe_all(
 
 @cli.command("get-state")
 @async_command
-async def get_state(service_provider: RSDServiceProviderDep, names: list[str]) -> None:
+async def get_state(
+    service_provider: RSDServiceProviderDep,
+    names: Annotated[list[str], typer.Argument(help="Notification names (e.g. com.apple.springboard.lockstate).")],
+) -> None:
     """Read the 64-bit state of one or more Darwin notifications (notify_get_state). iOS 27.2+."""
     async with RemoteNotificationProxyService(service_provider) as service:
         print_json({name: await service.notify_get_state(name) for name in names})
@@ -117,13 +120,14 @@ async def get_state(service_provider: RSDServiceProviderDep, names: list[str]) -
 @async_command
 async def set_state(
     service_provider: RSDServiceProviderDep,
-    name: str,
-    state: int,
+    name: Annotated[str, typer.Argument(help="Notification name.")],
+    state: Annotated[int, typer.Argument(help="64-bit state value to set.")],
     post: Annotated[bool, typer.Option(help="Also post the notification, so observers pick the new state up.")] = True,
 ) -> None:
     """Set the 64-bit state of a Darwin notification (notify_set_state) and hold it. iOS 27.2+.
 
-    The device keeps the state only while this command runs, and resets it to 0 afterwards.
+    The device keeps the state only while this command runs (until Ctrl+C),
+    and resets it to 0 afterwards.
     """
     async with RemoteNotificationProxyService(service_provider) as service:
         await service.notify_set_state(name, state)
