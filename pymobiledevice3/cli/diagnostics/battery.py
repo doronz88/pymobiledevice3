@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="battery",
-    help="Battery options",
+    help="Query battery state and Wi-Fi interface info from IORegistry.",
     no_args_is_help=True,
 )
 
@@ -19,7 +19,7 @@ cli = InjectingTyper(
 @cli.command("single")
 @async_command
 async def diagnostics_battery_single(service_provider: ServiceProviderDep) -> None:
-    """get single snapshot of battery data"""
+    """Print a single snapshot of the battery's IORegistry data."""
     raw_info = await DiagnosticsService(lockdown=service_provider).get_battery()
     print_json(raw_info)
 
@@ -27,7 +27,7 @@ async def diagnostics_battery_single(service_provider: ServiceProviderDep) -> No
 @cli.command("monitor")
 @async_command
 async def diagnostics_battery_monitor(service_provider: ServiceProviderDep) -> None:
-    """monitor battery usage"""
+    """Print battery amperage, temperature, voltage and charge every second; runs until Ctrl+C."""
     diagnostics = DiagnosticsService(lockdown=service_provider)
     while True:
         raw_info = await diagnostics.get_battery()
@@ -51,6 +51,6 @@ async def diagnostics_battery_monitor(service_provider: ServiceProviderDep) -> N
 @cli.command("wifi")
 @async_command
 async def diagnostics_wifi(service_provider: ServiceProviderDep) -> None:
-    """Query WiFi info from IORegistry"""
+    """Print the Wi-Fi interface's IORegistry data."""
     raw_info = await DiagnosticsService(lockdown=service_provider).get_wifi()
     print_json(raw_info)
