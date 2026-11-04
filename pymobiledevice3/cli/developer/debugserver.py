@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="debugserver",
-    help="Start and drive debugserver sessions (RSD for iOS 17+, usbmux for older).",
+    help="Debug apps with LLDB through the device's debugserver.",
     no_args_is_help=True,
 )
 
@@ -54,7 +54,7 @@ cli = InjectingTyper(
 @cli.command("applist")
 @async_command
 async def debugserver_applist(service_provider: ServiceProviderDep) -> None:
-    """Print the debugserver applist XML for the device."""
+    """Print the apps debugserver can launch or attach to, as JSON."""
     print_json(await DebugServerAppList(service_provider).get())
 
 
@@ -62,7 +62,10 @@ async def debugserver_applist(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def debugserver_start_server(
     service_provider: ServiceProviderDep,
-    local_port: Optional[int] = None,
+    local_port: Annotated[
+        Optional[int],
+        typer.Option(help="Forward debugserver to this local port and keep running until interrupted (Ctrl+C)."),
+    ] = None,
     host: Annotated[
         str,
         typer.Option(help="Address to bind the local port to."),
@@ -71,8 +74,9 @@ async def debugserver_start_server(
     """
     Start debugserver and print the LLDB connect string.
 
+    \b
     - For iOS < 17, you must forward to a local port (--local-port).
-    - For iOS >= 17, if connected over RSD, the remote host:port is printed for LLDB.
+    - For iOS >= 17 without --local-port, the device's tunnel address is printed; that needs a kernel-routable tunnel (e.g. --tunnel), so with the default userspace tunnel use --local-port.
     Connect quickly with your own LLDB client using the printed steps.
     """
 
@@ -134,7 +138,7 @@ async def debugserver_lldb(
     ] = None,
 ) -> None:
     """
-    Automate lldb launch for a given xcodeproj, IPA, or installed bundle identifier.
+    Automate lldb launch for a given xcodeproj, IPA, or installed bundle identifier (iOS 17+).
 
     \b
     This will:
