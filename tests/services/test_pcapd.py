@@ -12,9 +12,13 @@ from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services.pcapd import PcapdService, parse_device_packet
 
 
-def _device_packet(header_length: int = 95, data: bytes = b"\x45\x00payload") -> bytes:
-    header = struct.pack(">IBIBHBIII", header_length, 2, len(data), 6, 1, 0, 2, 14, 0)
-    header += b"en0\0".ljust(16, b"\xaa") + struct.pack("<I", 1234) + b"mDNSResponder\0".ljust(17, b"\xbb")
+def _device_packet(
+    header_length: int = 95, data: bytes = b"\x45\x00payload", name: bytes = b"en0", unit: int = 1
+) -> bytes:
+    header = struct.pack(">IBIBHBIII", header_length, 2, len(data), 6, unit, 0, 2, 14, 0)
+    header += (
+        name + b"\0".ljust(16 - len(name), b"\xaa") + struct.pack("<I", 1234) + b"mDNSResponder\0".ljust(17, b"\xbb")
+    )
     header += struct.pack(">I", 7) + struct.pack("<I", 5678) + b"launchd\0".ljust(17, b"\xcc")
     header += struct.pack(">II", 1700000000, 123456)
     return header.ljust(header_length, b"\xdd") + data
@@ -72,6 +76,28 @@ async def test_write_to_pcap_uses_device_timestamps() -> None:
     out.seek(0)
     (block,) = [block for block in FileScanner(out) if isinstance(block, EnhancedPacket)]
     assert (block.timestamp_high << 32) | block.timestamp_low == 1700000000 * 1_000_000 + 123456
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("interface", "expected_units"), [("en0", [0, 0]), ("en2", [2]), ("en", [0, 2, 0]), ("pdp_ip0", [])]
+)
+async def test_watch_interface_filter(interface: str, expected_units: list[int]) -> None:
+    # pcapd reports the interface name ("en") and its unit (0) as separate fields
+    raw = [_device_packet(name=b"en", unit=unit) for unit in (0, 2, 0)]
+
+    async def recv_plist() -> bytes:
+        if not raw:
+            raise EOFError
+        return raw.pop(0)
+
+    service = PcapdService.__new__(PcapdService)
+    service._service = cast(Any, SimpleNamespace(recv_plist=recv_plist))
+    units = []
+    with pytest.raises(EOFError):
+        async for packet in service.watch(interface_name=interface):
+            units.append(packet.unit)
+    assert units == expected_units
 
 
 @pytest.mark.asyncio

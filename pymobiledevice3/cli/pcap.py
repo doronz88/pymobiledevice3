@@ -21,7 +21,7 @@ def print_packet_header(packet: DevicePacket, color: bool) -> None:
     data = (
         f"{date}: "
         f"Process {packet.comm} ({packet.pid}), "
-        f"Interface: {packet.interface_name} ({INTERFACE_NAMES(packet.interface_type).name}), "
+        f"Interface: {packet.interface_name}{packet.unit} ({INTERFACE_NAMES(packet.interface_type).name}), "
         f"Family: {CrossPlatformAddressFamily(packet.protocol_family).name}"
     )
     if not color:
@@ -64,7 +64,7 @@ async def pcap(
         typer.Option(
             "--interface",
             "-i",
-            help="Interface name to filter. Omit for all.",
+            help="Only this interface: a full name such as en0, or a name without its unit (en) for all units.",
         ),
     ] = None,
 ) -> None:
