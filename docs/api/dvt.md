@@ -5,8 +5,8 @@ search:
 
 # Developer / DVT
 
-DVT (DTX Instruments) services power the `developer dvt` CLI commands. They need Developer Mode
-and a mounted Developer Disk Image, and on iOS 17+ a tunnel-backed service provider; see
+DVT (DTX Instruments) services power the `developer dvt` CLI commands. They need Developer Mode;
+on iOS < 17 also a mounted Developer Disk Image, and on iOS 17+ a tunnel-backed service provider; see
 [iOS 17+ tunnels](../guides/ios17-tunnels.md).
 
 Open a `DvtProvider` on a service provider, then construct each instrument with it. Both are async

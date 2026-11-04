@@ -6,7 +6,7 @@ no entitlement, no jailbreak and no change to the traced processes, so it is the
 what platform binaries (daemons, SpringBoard, Apple's apps) do on a stock device.
 
 `pymobiledevice3 developer dvt core-profile-session` drives the same trace sessions as Instruments.
-Like every DVT command it needs Developer Mode and a mounted DeveloperDiskImage (see
+Like every DVT command it needs Developer Mode, plus a mounted DeveloperDiskImage on iOS < 17 (see
 [Developer Mode and DDI](cli-recipes.md#developer-mode-and-ddi)); on iOS 17+ the CLI sets up the
 tunnel by itself. [CLI recipes](cli-recipes.md#dvt-examples) lists more examples; this guide covers
 what is in a trace and how to get at it.

@@ -77,7 +77,8 @@ INVALID_SERVICE_MESSAGE = """Failed to start service. Possible reasons are:
         - Make sure you first enabled "Developer Mode" via:
           > pymobiledevice3 amfi enable-developer-mode
 
-    - Make sure the DeveloperDiskImage/PersonalizedImage is mounted via:
+    - Make sure the DeveloperDiskImage/PersonalizedImage is mounted (always needed on iOS < 17
+      and for `developer core-device`; `developer dvt` on iOS 17+ needs only Developer Mode) via:
       > pymobiledevice3 mounter auto-mount
 
     - If your device iOS version >= 17.0:

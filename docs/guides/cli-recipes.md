@@ -10,8 +10,8 @@ arguments and options.
 
 Words in capitals (`DIRECTORY`, `PID`, `BUNDLE_ID`, ...) are placeholders for your own values. A
 bundle ID is an app's identifier, such as `com.apple.mobilesafari`; `pymobiledevice3 apps list`
-prints them. Commands under `developer` need Developer Mode turned on and the DeveloperDiskImage
-mounted first (see [Developer Mode and DDI](#developer-mode-and-ddi)). On iOS 17+ many commands also
+prints them. Commands under `developer` need Developer Mode turned on, and some also need the
+DeveloperDiskImage mounted (see [Developer Mode and DDI](#developer-mode-and-ddi)). On iOS 17+ many commands also
 need an RSD tunnel (the transport iOS 17+ uses for developer services); the CLI sets one up by
 itself, with no flag and no `sudo` ([iOS 17+ tunnels](ios17-tunnels.md) explains the options).
 
@@ -336,9 +336,14 @@ pymobiledevice3 restore update -i https://example.com/firmware.ipsw
 
 ## Developer Mode and DDI
 
-Developer services (everything under `developer`) need two things, in this order: Developer
-Mode (iOS 16+) and the DeveloperDiskImage (DDI), an Apple-signed image that adds those services to
-the device.
+Developer services (everything under `developer`) need Developer Mode (iOS 16+). Some also need
+the DeveloperDiskImage (DDI), an Apple-signed image that adds developer services to the device:
+
+- **iOS < 17**: every developer service, including `developer dvt`, needs the DDI.
+- **iOS 17+**: `developer dvt` needs only Developer Mode. `developer core-device` always needs the
+  DDI.
+
+If a developer command fails with `InvalidServiceError`, mounting the DDI is the first thing to try.
 
 ```shell
 # Check, then enable Developer Mode. Enabling restarts the device and only works when no passcode
@@ -386,8 +391,8 @@ and the iOS 17+ ones end up mounted at `/System/Developer`. See
 
 ## DVT Examples
 
-DVT is the developer-tools service Xcode and Instruments use. These commands need Developer Mode and
-a mounted DDI ([above](#developer-mode-and-ddi)).
+DVT is the developer-tools service Xcode and Instruments use. These commands need Developer Mode,
+plus a mounted DDI on iOS < 17 ([above](#developer-mode-and-ddi)).
 
 ```shell
 # Simulate location (iOS < 17.0); `--` lets a negative coordinate through
@@ -541,8 +546,8 @@ These commands talk to iOS 17+ `CoreDevice` services (the ones Xcode's `devicect
 the RSD tunnel, which the CLI sets up by itself.
 
 !!! note "Prerequisites"
-    These require Developer Mode and the Developer Disk Image (DDI) mounted. Mount it once per boot
-    with:
+    These always require Developer Mode and the Developer Disk Image (DDI) mounted. Mount it once
+    per boot with:
 
     ```shell
     pymobiledevice3 mounter auto-mount

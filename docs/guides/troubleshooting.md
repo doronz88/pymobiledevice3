@@ -149,7 +149,8 @@ it yet. In order:
     under *Settings → Privacy & Security → Developer Mode*).
 
 2. **Mount the Developer Disk Image** (DDI), the Apple-signed image that adds developer services
-   to the device (once per boot):
+   to the device (once per boot). Every developer service needs it on iOS < 17; on iOS 17+,
+   `developer core-device` needs it but `developer dvt` doesn't:
 
     ```shell
     pymobiledevice3 mounter auto-mount

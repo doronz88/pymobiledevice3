@@ -194,7 +194,7 @@ async with AfcService(lockdown) as afc:
 ### Run a DVT (developer) service
 
 DVT services go through a `DvtProvider`. On iOS 17+ it needs an RSD from a tunnel. It also
-needs Developer Mode enabled (iOS 16+) and the Developer Disk Image mounted
+needs Developer Mode enabled (iOS 16+), and on iOS < 17 the Developer Disk Image mounted
 (`pymobiledevice3 mounter auto-mount`). Each instrument is itself an async context manager:
 
 ```python
