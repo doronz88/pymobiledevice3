@@ -30,6 +30,11 @@ cli = InjectingTyper(
     no_args_is_help=True,
 )
 
+BundleIdArgument = Annotated[str, typer.Argument(help="Bundle identifier of the app (e.g. com.apple.mobilesafari).")]
+DocumentsOption = Annotated[
+    bool, typer.Option(help="Expose only the app's Documents folder instead of its whole container.")
+]
+
 
 @cli.command("list")
 @async_command
@@ -66,13 +71,13 @@ async def apps_list(
 @async_command
 async def apps_query(
     service_provider: ServiceProviderDep,
-    bundle_identifiers: list[str],
+    bundle_identifiers: Annotated[list[str], typer.Argument(help="One or more bundle identifiers.")],
     calculate_sizes: Annotated[
         bool,
         typer.Option(help="Include app size information (slower)."),
     ] = False,
 ) -> None:
-    """Return metadata for specific bundle identifiers."""
+    """Print the installation metadata of the given apps."""
     print_json(
         await InstallationProxyService(lockdown=service_provider).get_apps(
             calculate_sizes=calculate_sizes, bundle_identifiers=bundle_identifiers
@@ -82,8 +87,8 @@ async def apps_query(
 
 @cli.command("uninstall")
 @async_command
-async def uninstall(service_provider: ServiceProviderDep, bundle_id: str) -> None:
-    """Uninstall an app by bundle identifier."""
+async def uninstall(service_provider: ServiceProviderDep, bundle_id: BundleIdArgument) -> None:
+    """Uninstall an app and delete its data."""
     await InstallationProxyService(lockdown=service_provider).uninstall(bundle_id)
 
 
@@ -93,11 +98,13 @@ async def install(
     service_provider: ServiceProviderDep,
     package: Annotated[
         Path,
-        typer.Argument(exists=True),
+        typer.Argument(
+            exists=True, help="App to install: an .ipa file, an .app directory, or an .ipcc carrier bundle."
+        ),
     ],
     developer: Annotated[
         bool,
-        typer.Option(help="Install developer package"),
+        typer.Option(help="Install as a developer package (PackageType=Developer)."),
     ] = False,
     streaming: Annotated[
         bool,
@@ -107,7 +114,7 @@ async def install(
         ),
     ] = False,
 ) -> None:
-    """Install a local .ipa/.app/.ipcc package."""
+    """Install an app (.ipa/.app) or carrier bundle (.ipcc) from this computer."""
     if not streaming:
         await InstallationProxyService(lockdown=service_provider).install_from_local(package, developer=developer)
         return
@@ -120,11 +127,11 @@ async def install(
 @cli.command("afc")
 def afc(
     service_provider: ServiceProviderDep,
-    bundle_id: str,
-    documents: Annotated[bool, typer.Option()] = False,
+    bundle_id: BundleIdArgument,
+    documents: DocumentsOption = False,
     tool: ShellHostToolsOption = None,
 ) -> None:
-    """Open an AFC shell into the app container; pass --documents for Documents-only."""
+    """Open an interactive file shell inside an app's container."""
     service = cli_loop.run_until_complete(
         HouseArrestService.create(lockdown=service_provider, bundle_id=bundle_id, documents_only=documents)
     )
@@ -138,15 +145,15 @@ def afc(
 @async_command
 async def apps_webdav(
     service_provider: ServiceProviderDep,
-    bundle_id: str,
+    bundle_id: BundleIdArgument,
     path: WebDavPathArgument = "/",
-    documents: Annotated[bool, typer.Option()] = False,
+    documents: DocumentsOption = False,
     mount: WebDavMountOption = False,
     host: WebDavHostOption = "127.0.0.1",
     bind_port: WebDavBindPortOption = 0,
     readonly: WebDavReadonlyOption = False,
 ) -> None:
-    """Serve an app container over WebDAV for local mounting; pass --documents for Documents-only."""
+    """Serve an app's container over WebDAV for local mounting (e.g. in Finder); runs until Ctrl+C."""
     async with await HouseArrestService.create(
         lockdown=service_provider, bundle_id=bundle_id, documents_only=documents
     ) as service:
@@ -160,12 +167,12 @@ async def apps_webdav(
 @async_command
 async def pull(
     service_provider: ServiceProviderDep,
-    bundle_id: str,
-    remote_file: str,
-    local_file: Path,
-    documents: Annotated[bool, typer.Option()] = False,
+    bundle_id: BundleIdArgument,
+    remote_file: Annotated[str, typer.Argument(help="File or directory inside the app container.")],
+    local_file: Annotated[Path, typer.Argument(help="Local destination path.")],
+    documents: DocumentsOption = False,
 ) -> None:
-    """Pull a file from an app container to a local path."""
+    """Download a file or directory (recursively) from an app's container."""
     async with await HouseArrestService.create(
         lockdown=service_provider, bundle_id=bundle_id, documents_only=documents
     ) as service:
@@ -176,12 +183,12 @@ async def pull(
 @async_command
 async def push(
     service_provider: ServiceProviderDep,
-    bundle_id: str,
-    local_file: Path,
-    remote_file: str,
-    documents: Annotated[bool, typer.Option()] = False,
+    bundle_id: BundleIdArgument,
+    local_file: Annotated[Path, typer.Argument(help="Local file or directory to upload.")],
+    remote_file: Annotated[str, typer.Argument(help="Destination inside the app container (may be a directory).")],
+    documents: DocumentsOption = False,
 ) -> None:
-    """Push a local file into an app container."""
+    """Upload a local file or directory (recursively) into an app's container, overwriting files."""
     async with await HouseArrestService.create(
         lockdown=service_provider, bundle_id=bundle_id, documents_only=documents
     ) as service:
@@ -192,11 +199,11 @@ async def push(
 @async_command
 async def rm(
     service_provider: ServiceProviderDep,
-    bundle_id: str,
-    remote_file: str,
-    documents: Annotated[bool, typer.Option()] = False,
+    bundle_id: BundleIdArgument,
+    remote_file: Annotated[str, typer.Argument(help="File or directory inside the app container.")],
+    documents: DocumentsOption = False,
 ) -> None:
-    """Delete a file from an app container."""
+    """Delete a file or a whole directory tree from an app's container (no confirmation)."""
     async with await HouseArrestService.create(
         lockdown=service_provider, bundle_id=bundle_id, documents_only=documents
     ) as service:
@@ -205,7 +212,7 @@ async def rm(
 
 @cli.command("install-record")
 @async_command
-async def install_record(service_provider: RSDServiceProviderDep, bundle_id: str) -> None:
-    """Query an app's LaunchServices install record via installcoordination_proxy."""
+async def install_record(service_provider: RSDServiceProviderDep, bundle_id: BundleIdArgument) -> None:
+    """Print an app's LaunchServices install record (iOS 17+, via installcoordination_proxy)."""
     async with InstallCoordinationProxyService(service_provider) as service:
         print_json(dataclasses.asdict(await service.query(bundle_id)))
