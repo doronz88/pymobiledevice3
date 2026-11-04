@@ -54,8 +54,8 @@ async def afc_webdav(
 @async_command
 async def afc_pull(
     service_provider: ServiceProviderDep,
-    remote_file: str,
-    local_file: Path,
+    remote_file: Annotated[str, typer.Argument(help="File or directory on the device, relative to /var/mobile/Media.")],
+    local_file: Annotated[Path, typer.Argument(help="Local destination path.")],
     ignore_errors: Annotated[
         bool,
         typer.Option(
@@ -65,15 +65,24 @@ async def afc_pull(
         ),
     ] = False,
 ) -> None:
-    """Download a remote path under /var/mobile/Media to the local filesystem."""
+    """Download a file or directory (recursively) from /var/mobile/Media."""
     async with AfcService(lockdown=service_provider) as afc:
         await afc.pull(remote_file, str(local_file), ignore_errors=ignore_errors)
 
 
 @cli.command("push")
 @async_command
-async def afc_push(service_provider: ServiceProviderDep, local_file: Path, remote_file: str) -> None:
-    """Upload a local file into /var/mobile/Media."""
+async def afc_push(
+    service_provider: ServiceProviderDep,
+    local_file: Annotated[Path, typer.Argument(help="Local file or directory to upload.")],
+    remote_file: Annotated[
+        str, typer.Argument(help="Destination on the device, relative to /var/mobile/Media (may be a directory).")
+    ],
+) -> None:
+    """Upload a local file or directory (recursively) into /var/mobile/Media.
+
+    An existing file at the destination is overwritten.
+    """
     async with AfcService(lockdown=service_provider) as afc:
         await afc.push(str(local_file), remote_file)
 
@@ -82,7 +91,7 @@ async def afc_push(service_provider: ServiceProviderDep, local_file: Path, remot
 @async_command
 async def afc_ls(
     service_provider: ServiceProviderDep,
-    remote_file: str,
+    remote_file: Annotated[str, typer.Argument(help="Directory on the device, relative to /var/mobile/Media.")],
     recursive: Annotated[
         bool,
         typer.Option("--recursive", "-r", help="Recurse into subdirectories when listing."),
@@ -96,7 +105,10 @@ async def afc_ls(
 
 @cli.command("rm")
 @async_command
-async def afc_rm(service_provider: ServiceProviderDep, remote_file: str) -> None:
-    """Delete a file under /var/mobile/Media."""
+async def afc_rm(
+    service_provider: ServiceProviderDep,
+    remote_file: Annotated[str, typer.Argument(help="File or directory on the device, relative to /var/mobile/Media.")],
+) -> None:
+    """Delete a file or a whole directory tree under /var/mobile/Media (no confirmation)."""
     async with AfcService(lockdown=service_provider) as afc:
         await afc.rm(remote_file)
