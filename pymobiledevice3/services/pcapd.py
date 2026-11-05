@@ -368,7 +368,9 @@ class PcapdService(LockdownService):
 
         :param packets_count: Number of packets to yield before stopping; -1 streams indefinitely.
         :param process: If set, only yield packets whose pid (as a string) or process name matches.
-        :param interface_name: If set, only yield packets captured on this interface.
+        :param interface_name: If set, only yield packets captured on this interface: either its full name
+            (``en0``) or its name without the unit number (``en``, matching every unit). pcapd reports the
+            two separately, as ``interface_name`` and ``unit``.
         :yields: A parsed `DevicePacket`; ``interface_type`` is an `INTERFACE_NAMES` value and
             ``protocol_family`` a `CrossPlatformAddressFamily` value.
         """
@@ -383,7 +385,10 @@ class PcapdService(LockdownService):
             if process is not None and process != str(packet.pid) and process != packet.comm:
                 continue
 
-            if interface_name is not None and interface_name != packet.interface_name:
+            if interface_name is not None and interface_name not in (
+                packet.interface_name,
+                f"{packet.interface_name}{packet.unit}",
+            ):
                 continue
 
             packet.interface_type = INTERFACE_NAMES(packet.interface_type)
