@@ -52,11 +52,22 @@ theme:
 watch:
   - overrides
 
+extra:
+  version:
+    provider: mike
+    default: latest
+    alias: true
+
 extra_css:
   - stylesheets/brand.css
 
 plugins:
   - search
+  # One site per release series, published by .github/workflows/docs.yml: X.Y for each release,
+  # `latest` for the newest release (the default), `master` for the master branch.
+  - mike:
+      alias_type: copy
+      canonical_version: latest
   - mkdocstrings:
       handlers:
         python:

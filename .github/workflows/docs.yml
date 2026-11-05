@@ -1,18 +1,32 @@
 name: docs
 
+# The site is versioned with mike, which keeps every published version in the gh-pages branch:
+#   - a push to master publishes `master`;
+#   - a release publishes its X.Y series and moves the `latest` alias (the default) to it.
+# The whole gh-pages tree is then deployed to GitHub Pages, plus root redirects that keep the
+# pre-versioning URLs working (misc/docs_root_redirects.py). The github-pages environment only
+# accepts deployments from master, so a release run publishes to gh-pages and then starts this
+# workflow on master, which deploys.
+
 on:
   push:
     branches: [master]
     paths:
       - "docs/**"
       - "mkdocs.yml"
+      - "overrides/**"
       - "pymobiledevice3/**"
+      - "misc/docs_root_redirects.py"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
       - "docs/**"
       - "mkdocs.yml"
+      - "overrides/**"
+      - "misc/docs_root_redirects.py"
       - ".github/workflows/docs.yml"
+  release:
+    types: [created]
   workflow_dispatch:
 
 permissions:
@@ -20,6 +34,8 @@ permissions:
 
 jobs:
   build:
+    # Pull requests only check that the site builds; publishing builds it again with mike.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,16 +48,64 @@ jobs:
           python -m pip install -e ".[docs]"
       - name: Build (strict)
         run: python -m mkdocs build --strict
-      - name: Upload site artifact
-        if: github.ref == 'refs/heads/master'
-        uses: actions/upload-pages-artifact@v3
+
+  publish:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # mike pushes to gh-pages: one publish at a time, none cancelled half-way.
+    concurrency:
+      group: docs-publish
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
         with:
-          path: site
+          # setuptools_scm and mike both need the history (and the gh-pages branch).
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[docs]"
+      - name: Build (strict)
+        run: python -m mkdocs build --strict
+      - name: Publish with mike
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages:gh-pages || true
+          if [ "$EVENT" = "release" ]; then
+            series="$(echo "${TAG#v}" | cut -d. -f1,2)"
+            mike deploy --push --update-aliases "$series" latest
+            mike set-default --push latest
+          else
+            mike deploy --push master
+          fi
+      - name: Deploy from master
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref master
+      - name: Assemble the site
+        if: github.event_name != 'release'
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/site" gh-pages
+          python misc/docs_root_redirects.py "$RUNNER_TEMP/site"
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'release'
+        with:
+          path: ${{ runner.temp }}/site
 
   deploy:
-    # Only deploy from master; PRs just run the strict build above as a check.
-    if: github.ref == 'refs/heads/master'
-    needs: build
+    needs: publish
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     permissions:
       pages: write
