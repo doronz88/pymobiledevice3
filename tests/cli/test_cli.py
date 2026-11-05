@@ -1,4 +1,5 @@
 import io
+import logging
 import re
 import subprocess
 import sys
@@ -9,6 +10,8 @@ from typer.core import TyperGroup
 from typer.testing import CliRunner
 
 from pymobiledevice3 import __main__
+from pymobiledevice3.cli import cli_common
+from pymobiledevice3.exceptions import RSDRequiredError
 
 pytestmark = [pytest.mark.cli]
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -358,6 +361,29 @@ def test_non_reconnectable_error_fails_the_process(monkeypatch):
     monkeypatch.setattr(__main__, "RECONNECT", False)
 
     assert __main__.main() == __main__.ExitCode.ERROR
+
+
+def test_rsd_retry_is_announced_as_info_not_a_warning(monkeypatch, caplog, no_transport_env):
+    """Retrying over a tunnel is the normal path for developer commands on iOS 17+, so it must not
+    read as a problem."""
+    calls = []
+
+    def needs_rsd_once(*args, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise RSDRequiredError("TARGET-UDID", "27.2")
+
+    monkeypatch.setattr(__main__, "app", needs_rsd_once)
+    monkeypatch.setattr(__main__, "RECONNECT", False)
+    monkeypatch.delenv(cli_common.UDID_ENV_VAR, raising=False)
+    monkeypatch.setenv(cli_common.FORCE_TUNNEL_ENV_VAR, "")
+
+    with caplog.at_level(logging.INFO, logger=__main__.logger.name):
+        assert __main__.main() == __main__.ExitCode.SUCCESS
+
+    assert len(calls) == 2
+    retry = [record for record in caplog.records if record.message.startswith("Trying again over")]
+    assert [record.levelno for record in retry] == [logging.INFO]
 
 
 def test_app_returning_without_raising_is_a_success(monkeypatch):

@@ -43,6 +43,9 @@ USBMUXD2_CONNECT_FIX_VERSION = "0.64"
 # usbmux performs no timeout of its own, and a device listed over Wi-Fi may simply be asleep.
 CONNECT_PROBE_TIMEOUT = 5.0
 MOUNTER_PROBE_TIMEOUT = 10.0
+# From iOS 17, DVT is reached over the RSD tunnel and served without a developer image; CoreDevice
+# services still need one.
+DVT_WITHOUT_IMAGE_MIN_VERSION = Version("17.0")
 # Widest title shipped, so every line in a section starts its detail at the same column.
 TITLE_COLUMN = 20
 
@@ -299,7 +302,7 @@ async def _device_checks(devices: list[usbmux.MuxDevice]) -> list[Check]:
         checks = [Check("Device", Status.OK, f"{identity}, paired")]
         version = Version(lockdown.product_version)
         checks.append(await _developer_mode_check(lockdown, version))
-        checks.append(await _developer_image_check(lockdown))
+        checks.append(await _developer_image_check(lockdown, version))
         return checks
     finally:
         await lockdown.close()
@@ -320,7 +323,7 @@ async def _developer_mode_check(lockdown: LockdownClient, version: Version) -> C
     )
 
 
-async def _developer_image_check(lockdown: LockdownClient) -> Check:
+async def _developer_image_check(lockdown: LockdownClient, version: Version) -> Check:
     """Is a developer disk image mounted?
 
     Which image applies is the mounter's rule, not ours -- asking it keeps this honest when the
@@ -348,7 +351,11 @@ async def _developer_image_check(lockdown: LockdownClient) -> Check:
         "Developer image",
         Status.WARNING,
         f"no {image_type} image is mounted",
-        impact="`developer` commands will fail even with a working tunnel",
+        impact=(
+            "`developer core-device` commands will fail (`developer dvt` does not need it from iOS 17)"
+            if version >= DVT_WITHOUT_IMAGE_MIN_VERSION
+            else "`developer` commands will fail"
+        ),
         hint="pymobiledevice3 mounter auto-mount",
     )
 

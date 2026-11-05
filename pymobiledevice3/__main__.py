@@ -376,7 +376,8 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
                 "userspace": "a no-root userspace tunnel",
                 "tunneld": "tunneld",
             }[default_transport_preference()]
-            logger.warning(
+            # The expected path on iOS 17+, not a problem: say what happens without alarming anyone.
+            logger.info(
                 f"Trying again over {preferred} since {reason} "
                 "(override with PYMOBILEDEVICE3_DEFAULT_FALLBACK, or --tunnel/--userspace/--native)"
             )
