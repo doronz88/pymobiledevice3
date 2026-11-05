@@ -874,9 +874,25 @@ class UserspaceRsdTunnel:
         service read parks forever. Keep-alive cannot cover it: a relay's peer is this very
         process, so loopback probes are always answered no matter what happened to the device.
         Closing the dial plane cancels the relay handlers, which surfaces EOF/connection errors
-        to all blocked callers."""
-        with suppress(Exception):
-            await client.wait_closed()
+        to all blocked callers.
+
+        Cancellation of this task is an orderly shutdown, never a disconnect: aclose() cancels
+        it, and so does asyncio.run() tearing down the loop when an embedder returns with the
+        tunnel still open. wait_closed() suppresses the read task's CancelledError, which would
+        also swallow ours, so it runs in its own task and a cancellation of this one is caught
+        here instead of being mistaken for a dead transport."""
+        closed = asyncio.create_task(client.wait_closed())
+        try:
+            await asyncio.wait({closed})
+        except asyncio.CancelledError:
+            closed.cancel()
+            if self._exit_stack is not None:
+                # Loop shutdown with the tunnel still open: release it quietly, as aclose() would.
+                with suppress(Exception):
+                    await self.aclose()
+            raise
+        if not closed.cancelled() and closed.exception() is not None:
+            logger.debug("transport wait_closed() failed", exc_info=closed.exception())
         if self._exit_stack is None:
             return  # normal aclose() already ran
         logger.warning("userspace tunnel transport closed (device disconnected?); tearing down")
@@ -1013,5 +1029,9 @@ def _close_cli_tunnel_at_exit() -> None:
         if loop.is_running():
             return  # exiting from inside the loop; nothing safe to run here
         loop.run_until_complete(asyncio.wait_for(_cli_tunnel.aclose(), timeout=3))
+    except KeyboardInterrupt:
+        # Ctrl-C again while the process is already exiting (the first one ended the command):
+        # the user wants out now, so abandon the teardown instead of a traceback.
+        logger.debug("closing the CLI tunnel at exit was interrupted")
     except Exception:
         logger.debug("closing the CLI tunnel at exit failed", exc_info=True)

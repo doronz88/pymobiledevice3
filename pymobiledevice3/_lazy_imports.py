@@ -18,14 +18,21 @@ from typing import Callable, Optional
 _LAZY_TOP_LEVEL_MODULES = ("pymobiledevice3", "__main__")
 
 
-def _lazy_filter(importing: str, imported: str, fromlist: object = None) -> bool:
-    """Keep an import lazy only when a pymobiledevice3 module (or the CLI ``__main__``) performs it."""
+def _lazy_filter(importing: Optional[str], imported: str, fromlist: object = None) -> bool:
+    """Keep an import lazy only when a pymobiledevice3 module (or the CLI ``__main__``) performs it.
+
+    ``importing`` is the importer's ``__name__`` and is None for code executed with globals that
+    lack one (e.g. Jinja's compiled templates, ``exec(code, {})``). Such an import has no known
+    importing module, so it is not one of ours and stays eager.
+    """
+    if importing is None:
+        return False
     return importing.partition(".")[0] in _LAZY_TOP_LEVEL_MODULES
 
 
 # getattr keeps pyright (pinned to the 3.9 floor) away from attributes typeshed gates on 3.15.
 _set_lazy_imports: Optional[Callable[[str], None]] = getattr(sys, "set_lazy_imports", None)
-_set_lazy_imports_filter: Optional[Callable[[Callable[[str, str, object], bool]], None]] = getattr(
+_set_lazy_imports_filter: Optional[Callable[[Callable[[Optional[str], str, object], bool]], None]] = getattr(
     sys, "set_lazy_imports_filter", None
 )
 

@@ -303,3 +303,23 @@ def test_async_command_lets_the_command_clean_up_on_ctrl_c() -> None:
     assert exc_info.value.exit_code == 130
     assert cleaned_up == [True]
     assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
+
+
+def test_async_command_exits_quietly_on_a_second_ctrl_c_during_cleanup() -> None:
+    # Impatient double Ctrl-C: the first cancels the command, the second lands while its cleanup
+    # (e.g. closing services over the tunnel) is still running. The task keeps that
+    # KeyboardInterrupt as its result, so awaiting it again must not let it escape as a traceback.
+    @async_command
+    async def command() -> None:
+        try:
+            signal.raise_signal(signal.SIGINT)
+            await asyncio.sleep(10)
+        finally:
+            signal.raise_signal(signal.SIGINT)
+            await asyncio.sleep(10)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        command()
+
+    assert exc_info.value.exit_code == 130
+    assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
