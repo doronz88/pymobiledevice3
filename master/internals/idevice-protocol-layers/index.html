@@ -1,0 +1,3500 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Pure Python 3 implementation for working with iOS devices (iPhone, iPad, ...)">
+      
+      
+      
+        <link rel="canonical" href="https://doronz88.github.io/pymobiledevice3/latest/internals/idevice-protocol-layers/">
+      
+      
+        <link rel="prev" href="../../api/dvt/">
+      
+      
+        <link rel="next" href="../remotexpc/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>iDevice protocol layers - pymobiledevice3</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/brand.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="iDevice protocol layers - pymobiledevice3">
+  <meta property="og:description" content="Pure Python 3 implementation for working with iOS devices (iPhone, iPad, ...)">
+  <meta property="og:image" content="https://doronz88.github.io/pymobiledevice3/latest/assets/social-card.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:url" content="https://doronz88.github.io/pymobiledevice3/latest/internals/idevice-protocol-layers/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="iDevice protocol layers - pymobiledevice3">
+  <meta name="twitter:description" content="Pure Python 3 implementation for working with iOS devices (iPhone, iPad, ...)">
+  <meta name="twitter:image" content="https://doronz88.github.io/pymobiledevice3/latest/assets/social-card.png">
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#understanding-idevice-protocol-layers" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the documentation of the latest release.
+  <a href="../../.."><strong>Go to the latest release.</strong></a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="pymobiledevice3" class="md-header__button md-logo" aria-label="pymobiledevice3" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            pymobiledevice3
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              iDevice protocol layers
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/doronz88/pymobiledevice3" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    doronz88/pymobiledevice3
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../installation/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Installation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/cli-recipes/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  Python API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  Protocol Internals
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../project/contributing/" class="md-tabs__link">
+          
+  
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="pymobiledevice3" class="md-nav__button md-logo" aria-label="pymobiledevice3" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    pymobiledevice3
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/doronz88/pymobiledevice3" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    doronz88/pymobiledevice3
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/cli-recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/kdebug/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tracing syscalls (strace-style)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/packet-capture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capturing network traffic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/screen-mirroring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mirroring and controlling the screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/webdav-mounting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounting device files (WebDAV)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/ios17-tunnels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    iOS 17+ tunnels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/network-stacks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding the network stacks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/environment-variables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/webview-debugging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WebView debugging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/machine-readable-output/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Machine-readable output
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/python-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/writing-commands-with-service-provider/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing CLI commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/codex-device-operator-skill/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device operator skill
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/restore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Restoring and updating devices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/activation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    activation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/afc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    afc
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/amfi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    amfi
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/backup2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    backup2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/btlogger/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    btlogger
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/bonjour/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bonjour
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/companion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    companion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/crash/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    crash
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/cryptex/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cryptex
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/developer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    developer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    diagnostics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/doctor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    doctor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/lockdown/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    lockdown
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/mobilesync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mobilesync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/mounter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mounter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/notification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    notification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/pcap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pcap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/power-assertion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    power-assertion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/processes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    processes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/profile/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    profile
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/provision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    provision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/restore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    restore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/springboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    springboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/syslog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    syslog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/usbmux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    usbmux
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/webinspector/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    webinspector
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/idam/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    idam
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/version/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    version
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/connection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connecting to a device
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/services/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lockdown services
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System & device
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/apps-files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apps, files & profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/capture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capture, logging & automation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/backup-symbols/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup, symbols & location
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dvt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer / DVT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Protocol Internals
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Protocol Internals
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    iDevice protocol layers
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    iDevice protocol layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usbmuxd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        usbmuxd
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lockdownd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lockdownd
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lockdown-services" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lockdown services
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#developerdiskimage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DeveloperDiskImage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dvt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DVT
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#remotexpc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoteXPC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wi-fi-recognizing-a-device-on-the-network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wi-Fi: recognizing a device on the network
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Wi-Fi: recognizing a device on the network">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lockdown-over-wi-fi-mobdev2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lockdown over Wi-Fi (mobdev2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remotepairing-over-wi-fi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemotePairing over Wi-Fi
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-tag-is-a-hint-not-authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The tag is a hint, not authentication
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#other-python-service-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other python service examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../remotexpc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RemoteXPC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dtx/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DTX client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dtx-development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DTX internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../project/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../project/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent guidance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../project/code-of-conduct/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code of conduct
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#usbmuxd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        usbmuxd
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lockdownd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lockdownd
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lockdown-services" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lockdown services
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#developerdiskimage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DeveloperDiskImage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dvt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DVT
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#remotexpc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemoteXPC
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#wi-fi-recognizing-a-device-on-the-network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wi-Fi: recognizing a device on the network
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Wi-Fi: recognizing a device on the network">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lockdown-over-wi-fi-mobdev2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lockdown over Wi-Fi (mobdev2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remotepairing-over-wi-fi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RemotePairing over Wi-Fi
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-tag-is-a-hint-not-authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The tag is a hint, not authentication
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#other-python-service-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other python service examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="understanding-idevice-protocol-layers">Understanding iDevice protocol layers<a class="headerlink" href="#understanding-idevice-protocol-layers" title="Permanent link">&para;</a></h1>
+<ul>
+<li><a href="#understanding-idevice-protocol-layers">Understanding iDevice protocol layers</a></li>
+<li><a href="#overview">Overview</a></li>
+<li><a href="#usbmuxd">usbmuxd</a></li>
+<li><a href="#lockdownd">lockdownd</a></li>
+<li><a href="#lockdown-services">Lockdown services</a></li>
+<li><a href="#developerdiskimage">DeveloperDiskImage</a></li>
+<li><a href="#dvt">DVT</a></li>
+<li><a href="#remotexpc">RemoteXPC</a></li>
+<li><a href="#wi-fi-recognizing-a-device-on-the-network">Wi-Fi: recognizing a device on the network</a></li>
+<li><a href="#other-python-service-examples">Other python service examples</a></li>
+</ul>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>In this article we're going to review how communicating to an iDevice (iOS/iPadOS/...) actually works.</p>
+<p>In order to understand it all, we are going to review:</p>
+<ul>
+<li><a href="#usbmuxd"><code>usbmuxd</code></a></li>
+<li><a href="#lockdownd"><code>lockdownd</code></a></li>
+<li><a href="#lockdown-services">Lockdown services</a></li>
+<li><a href="#developerdiskimage">DeveloperDiskImage</a></li>
+<li><a href="#dvt">DVT</a></li>
+<li><a href="#remotexpc">RemoteXPC</a></li>
+<li><a href="#wi-fi-recognizing-a-device-on-the-network">Wi-Fi: recognizing a device on the network</a></li>
+</ul>
+<p>Once we understand each part, we'll discuss how <a href="https://github.com/doronz88/pymobiledevice3"><code>pymobiledevice3</code></a> is
+structured to handle communication to all these moving parts.</p>
+<h2 id="usbmuxd">usbmuxd<a class="headerlink" href="#usbmuxd" title="Permanent link">&para;</a></h2>
+<p>The <code>usbmuxd</code> (USB Multiplexer Daemon, though technically it supports both USB and Wi-Fi) daemon is responsible for two
+main tasks:</p>
+<ul>
+<li>Detecting iDevices in both your LAN and via USB.</li>
+<li>Proxying traffic to any TCP port onto the target device.</li>
+</ul>
+<p>It provides this api by exposing a unix domain socket <code>/var/run/usbmuxd</code>.</p>
+<p>In order to interact with <code>usbmuxd</code>, you may use the following commands from your shell:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># List connected iDevices</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pymobiledevice3<span class="w"> </span>usbmux<span class="w"> </span>list
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Start a TCP server listening on port 2222, transferring all received traffic to</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># TCP port 22 on the device</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># NOTE: you may use `-d` in order to start this process as daemonized</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>pymobiledevice3<span class="w"> </span>usbmux<span class="w"> </span>forward<span class="w"> </span><span class="m">2222</span><span class="w"> </span><span class="m">22</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># If you are using corellium, you may want to forward all the commands to use their</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="c1"># remote usbmuxd, listening on the hard-coded port 5000</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># As such, (almost) all of pymobiledevice3's commands, may accept an optional `--usbmux` option </span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>pymobiledevice3<span class="w"> </span>usbmux<span class="w"> </span>list<span class="w"> </span>--usbmux<span class="w"> </span><span class="m">10</span>.11.1.2:5000
+</code></pre></div>
+<p>The same can be accessed via python API:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.usbmux</span><span class="w"> </span><span class="kn">import</span> <span class="n">list_devices</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> 
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  <span class="c1"># Listing all connected devices locally</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  <span class="n">usbmux_devices</span> <span class="o">=</span> <span class="k">await</span> <span class="n">list_devices</span><span class="p">()</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  <span class="c1"># Or if using corellium, or any other remote usbmuxd</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>  <span class="n">usbmux_devices</span> <span class="o">=</span> <span class="k">await</span> <span class="n">list_devices</span><span class="p">(</span><span class="s1">'10.11.1.2:5000'</span><span class="p">)</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>  <span class="c1"># Now may list them and establish a TCP connection to any port on-device</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>  <span class="k">for</span> <span class="n">device</span> <span class="ow">in</span> <span class="n">usbmux_devices</span><span class="p">:</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>      <span class="c1"># The serial can either be the device UDID if it's connected via USB, or its Wi-Fi mac address</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>      <span class="k">if</span> <span class="n">device</span><span class="o">.</span><span class="n">serial</span> <span class="o">==</span> <span class="s1">'11223344'</span><span class="p">:</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>          <span class="n">sock</span> <span class="o">=</span> <span class="k">await</span> <span class="n">device</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="mi">22</span><span class="p">)</span>  <span class="c1"># return a pure python socket object</span>
+</code></pre></div>
+<p>On a macOS workstation this daemon is builtin. On other platforms however you'll need an external tool for that:</p>
+<ul>
+<li>Windows</li>
+<li>iTunes installations include "Apple Mobile Service" to perform the same thing</li>
+<li>This version exposes the same API as <code>usbmuxd</code>, but over TCP port 27015</li>
+<li>Linux</li>
+<li><a href="https://github.com/libimobiledevice/usbmuxd">https://github.com/libimobiledevice/usbmuxd</a><ul>
+<li>Can be installed from APT on ubuntu, but only supports USB devices</li>
+</ul>
+</li>
+<li><a href="https://github.com/tihmstar/usbmuxd2">https://github.com/tihmstar/usbmuxd2</a><ul>
+<li>Technically supports both USB and Wi-Fi devices, but I haven't tested it myself</li>
+</ul>
+</li>
+</ul>
+<p>Okay, so now that we understand <code>usbmuxd</code> main purpose is to simply connecting to TCP ports in an iDevice, but where
+will we wish to connect to? Probably to <a href="#lockdownd"><code>lockdownd</code></a>.</p>
+<h2 id="lockdownd">lockdownd<a class="headerlink" href="#lockdownd" title="Permanent link">&para;</a></h2>
+<p><code>lockdownd</code> is a daemon that listens on the hard-coded TCP port 62078. It has 3 main purposes:</p>
+<ul>
+<li>Query general device information (ProductVersion, UDID, ...)</li>
+<li>Pairing</li>
+<li>Accessing lockdown services</li>
+</ul>
+<p>You may query the device information via <code>lockdownd</code> using <code>LockdownClient</code> from python:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.lockdown</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_using_usbmux</span><span class="p">,</span> <span class="n">create_using_tcp</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>  <span class="c1"># If we avoid passing the `serial` option, we'll get a `LockdownClient` instance </span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>  <span class="c1"># of the first available device </span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>  <span class="c1"># By default, pymobiledevice3 attempts to pair with the device, if it was not already </span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>  <span class="c1"># paired (presenting a "Trust/Don't Trust" dialog). We use the `autopair=False` when </span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>  <span class="c1"># we don't want to block on that operation</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>  <span class="n">lockdown</span> <span class="o">=</span> <span class="k">await</span> <span class="n">create_using_usbmux</span><span class="p">(</span><span class="n">serial</span><span class="o">=</span><span class="s1">'11223344'</span><span class="p">,</span> <span class="n">autopair</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>  <span class="c1"># Corellium anyone?</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>  <span class="n">correlium_lockdown</span> <span class="o">=</span> <span class="k">await</span> <span class="n">create_using_usbmux</span><span class="p">(</span><span class="n">serial</span><span class="o">=</span><span class="s1">'11223344'</span><span class="p">,</span> <span class="n">autopair</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">usbmux_address</span><span class="o">=</span><span class="s1">'10.11.1.2:5000'</span><span class="p">)</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>  <span class="c1"># If the device can be found in our LAN, and we know its address, we simply connect to it</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>  <span class="c1"># Please note the device does not allow pairing over LAN, so we must first pair it over USB</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>  <span class="n">lockdown</span> <span class="o">=</span> <span class="k">await</span> <span class="n">create_using_tcp</span><span class="p">(</span><span class="s1">'192.168.2.7'</span><span class="p">,</span> <span class="n">autopair</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>  <span class="c1"># An example for accessing a lockdown attribute</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>  <span class="nb">print</span><span class="p">(</span><span class="n">lockdown</span><span class="o">.</span><span class="n">product_version</span><span class="p">)</span>
+</code></pre></div>
+<p>As you may have noticed, we mentioned the iDevice can be interacted over Wi-Fi. For that, we'll need to first enable
+this feature over USB:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Turn it on</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>wifi-connections<span class="w"> </span>on
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Or off</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>wifi-connections<span class="w"> </span>off
+</code></pre></div>
+<p>Now the device will use the <a href="https://en.wikipedia.org/wiki/Bonjour_(software)">bonjour</a> protocol in order to announce
+its availability over the LAN. You may query these available devices using:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># It announces itself using the `_apple-mobdev2._tcp.local.` name</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>pymobiledevice3<span class="w"> </span>bonjour<span class="w"> </span>mobdev2
+</code></pre></div>
+<p>Of course this can also be done in python in asyncio API:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.lockdown</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_mobdev2_lockdowns</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>  <span class="k">async</span> <span class="k">for</span> <span class="n">ip</span><span class="p">,</span> <span class="n">lockdown</span> <span class="ow">in</span> <span class="n">get_mobdev2_lockdowns</span><span class="p">():</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>      <span class="nb">print</span><span class="p">(</span><span class="n">ip</span><span class="p">,</span> <span class="n">lockdown</span><span class="o">.</span><span class="n">product_version</span><span class="p">)</span>
+</code></pre></div>
+<p>However, as long as we don't pair, we can only access a pretty small pool of data. We won't delve into how the pairing
+is actually performed, since this is a top-level guide, but we'll tell you that after a key-exchange, followed by a user
+prompt to trust our client, we can access everything <code>lockdownd</code> has to offer.</p>
+<p><em>If you're interested, Jon Gabilondo wrote a fantastic thorough article about all the
+process. You may read about it in
+here: <a href="https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lockdown-service-7f2a1dfd07ae">https://jon-gabilondo-angulo-7635.medium.com/understanding-usbmux-and-the-ios-lockdown-service-7f2a1dfd07ae</a></em></p>
+<p>We may interact with <code>lockdownd</code> using any of the <code>lockdown</code> subcommands:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Pair with the device</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>pair
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Or unpair</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>unpair
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1"># Or just view general information</span>
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>info
+</code></pre></div>
+<p>This is all nice and all, but usually the more interesting stuff can be found in
+the <a href="#lockdown-services">lockdown services</a>.</p>
+<h2 id="lockdown-services">Lockdown services<a class="headerlink" href="#lockdown-services" title="Permanent link">&para;</a></h2>
+<p>The <code>lockdownd</code> daemon can also be used to spawn other device services and access their data. It does so according to a
+hard-coded plist built into one of <code>lockdownd</code> sections. We may examine them using:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>segedit<span class="w"> </span>/path/to/lockdownd<span class="w"> </span>-extract<span class="w"> </span>__TEXT<span class="w"> </span>__services<span class="w"> </span>/tmp/lockdown_services.plist
+</code></pre></div>
+<p>In that plist we'll see different service names, where each of them can be started using lockdown's <code>StartService</code>
+protocol command.</p>
+<p>The response to the <code>StartService</code> command we may then connect to using <code>usbmuxd</code> as discussed earlier. Each of these
+services implements its own unique protocol. You may try to play around these services using:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># You may try any other service name in order to study and mess with its protocol messages</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>service<span class="w"> </span>com.apple.mobile.heartbeat
+</code></pre></div>
+<p>And of course this is also available from code:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.lockdown</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_using_usbmux</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>  <span class="c1"># Create the LockdownClient instance </span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>  <span class="n">lockdown</span> <span class="o">=</span> <span class="k">await</span> <span class="n">create_using_usbmux</span><span class="p">()</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>  <span class="c1"># Get a handle to the service</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>  <span class="n">service</span> <span class="o">=</span> <span class="k">await</span> <span class="n">lockdown</span><span class="o">.</span><span class="n">start_lockdown_service</span><span class="p">(</span><span class="n">SERVICE_NAME</span><span class="p">)</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>  <span class="c1"># Attempt to send and receive messages from it</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>  <span class="k">await</span> <span class="n">service</span><span class="o">.</span><span class="n">sendall</span><span class="p">(</span><span class="sa">b</span><span class="s1">'hello'</span><span class="p">)</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>  <span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="n">service</span><span class="o">.</span><span class="n">recvall</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+</code></pre></div>
+<p>Many of the services exposed by <code>lockdownd</code>, are already implemented in <code>pymobiledevice3</code>.</p>
+<p>For example consider the following examples:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># View device syslog</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>pymobiledevice3<span class="w"> </span>syslog<span class="w"> </span>live
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># Reboot the device</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>pymobiledevice3<span class="w"> </span>diagnostics<span class="w"> </span>restart
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="c1"># And the list goes on and on...</span>
+</code></pre></div>
+<p>In order to access the different services, the project is structured in the following
+from: <code>pymobiledevice3.services.service_name.ServiceClass</code>.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.lockdown</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_using_usbmux</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.services.os_trace</span><span class="w"> </span><span class="kn">import</span> <span class="n">OsTraceService</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>  <span class="n">lockdown</span> <span class="o">=</span> <span class="k">await</span> <span class="n">create_using_usbmux</span><span class="p">()</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>  <span class="c1"># Print all syslog line entries, whereas `OsTraceService` as a wrapper to the </span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>  <span class="c1"># `com.apple.os_trace_relay` lockdown service, and the `syslog` method is a protocol operation</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>  <span class="c1"># for that service</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>  <span class="k">async</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">OsTraceService</span><span class="p">(</span><span class="n">lockdown</span><span class="p">)</span><span class="o">.</span><span class="n">syslog</span><span class="p">():</span>
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>      <span class="nb">print</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="developerdiskimage">DeveloperDiskImage<a class="headerlink" href="#developerdiskimage" title="Permanent link">&para;</a></h2>
+<p>Some of the more interesting services we can interact with for automation purposes can only be accessed from an external
+image, called the DeveloperDiskImage (or DDI for short). Once we mount it, <code>lockdownd</code> searches for
+services in <code>/Lockdown/ServiceAgents</code>, in an attempt to increase its possibilities for lockdown services.</p>
+<p>As of iOS 15, Apple added the "DeveloperMode" option, forcing users to first enable it before they can mount the DDI.
+Assuming, your iDevice doesn't have a pin-code defined, you can simply enable it from CLI:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Enable it</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>pymobiledevice3<span class="w"> </span>amfi<span class="w"> </span>enable-developer-mode
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Or just query its state</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>pymobiledevice3<span class="w"> </span>amfi<span class="w"> </span>developer-mode-status
+</code></pre></div>
+<p>As any other lockdown service, this of course can be accessed from python API:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.lockdown</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_using_usbmux</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.services.amfi</span><span class="w"> </span><span class="kn">import</span> <span class="n">AmfiService</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>  <span class="n">lockdown</span> <span class="o">=</span> <span class="k">await</span> <span class="n">create_using_usbmux</span><span class="p">()</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>  <span class="n">amfi</span> <span class="o">=</span> <span class="n">AmfiService</span><span class="p">(</span><span class="n">lockdown</span><span class="p">)</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>  <span class="k">await</span> <span class="n">amfi</span><span class="o">.</span><span class="n">enable_developer_mode</span><span class="p">()</span>
+</code></pre></div>
+<p>Once the DeveloperMode is on, we can mount the DDI. This however has very much changed in many aspects in iOS 17. For
+short, we'll just say you can simply use the following CLI command:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># This will automatically deduce the correct way to mount the DDI onto your device</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="c1"># Please note this will require network activity for mounting on iOS 17</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>pymobiledevice3<span class="w"> </span>mounter<span class="w"> </span>auto-mount
+</code></pre></div>
+<p>Once this is done, you may access a much wider variety of features in the device, such as process management, debugging,
+simulate locations and much more.</p>
+<p>To make it clear which of <code>pymobiledevice3</code> commands require the DeveloperMode to be on together with the DDI
+being mounted, we put it all in the <code>developer</code> subcommand.</p>
+<p>For example:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>launch<span class="w"> </span>com.apple.mobilesafari
+</code></pre></div>
+<h2 id="dvt">DVT<a class="headerlink" href="#dvt" title="Permanent link">&para;</a></h2>
+<p>One of the more interesting developer services is the one exposed by <code>DTServiceHub</code>. It is using DTX protocol messages,
+but since it mainly wraps and allows access to stuff in <code>DVTFoundation.framework</code> we called it DVT in our
+implementation (probably standing for DeveloperTools).</p>
+<p>We don't delve too much into this protocol, but we'll say in general it allows us to invoke a whitelist of ObjC methods
+in different ObjC objects. The terminology used by DVT to each such ObjC object is called "channels".</p>
+<p>To access this different object use the following APIs:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.lockdown</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_using_usbmux</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.services.dvt.instruments.dvt_provider</span><span class="w"> </span><span class="kn">import</span> <span class="n">DvtProvider</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.services.dvt.instruments.screenshot</span><span class="w"> </span><span class="kn">import</span> <span class="n">Screenshot</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>  <span class="c1"># Create a LockdownClient instance</span>
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>  <span class="n">lockdown</span> <span class="o">=</span> <span class="k">await</span> <span class="n">create_using_usbmux</span><span class="p">()</span>
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>
+<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a>  <span class="c1"># Use it to create a DVT provider (DTX lifecycle is handled automatically)</span>
+<a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a>  <span class="k">async</span> <span class="k">with</span> <span class="n">DvtProvider</span><span class="p">(</span><span class="n">lockdown</span><span class="p">)</span> <span class="k">as</span> <span class="n">dvt</span><span class="p">:</span>
+<a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a>    <span class="c1"># Use it to invoke methods on a DVT channel</span>
+<a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a>    <span class="n">dvt_channel</span> <span class="o">=</span> <span class="n">Screenshot</span><span class="p">(</span><span class="n">dvt</span><span class="p">)</span>
+<a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a>    <span class="nb">open</span><span class="p">(</span><span class="s1">'/tmp/screen.png'</span><span class="p">,</span> <span class="s1">'wb'</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="k">await</span> <span class="n">dvt_channel</span><span class="o">.</span><span class="n">get_screenshot</span><span class="p">())</span>
+</code></pre></div>
+<p>Looking for an unimplemented feature/channel? Feel free to play with it (and submit a PR afterward 🙏) using the
+following shell:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>shell
+</code></pre></div>
+<blockquote>
+<p><strong>NOTE:</strong> The full list of the methods that can be invoked on a DVT channel can be found by looking at all ObjC
+classes in <code>DVTInstrumentsFoundation.framework</code> implementing the <code>DTXAllowedRPC</code> protocol.
+There is an existing <a href="https://github.com/netanelc305/anubis/blob/9da337178ebd7e9f168e9df2d82b192eba4f1b30/example_rules.yaml#L14-L17">Anubis rule</a>
+I use to diff new methods against the existing ones.</p>
+</blockquote>
+<h2 id="remotexpc">RemoteXPC<a class="headerlink" href="#remotexpc" title="Permanent link">&para;</a></h2>
+<p>Starting at iOS 17.0, Apple made a large refactor in the manner we all interact with the developer services. There can
+be multiple reasons for that decision, but in general these refactor main key points are:</p>
+<ul>
+<li>Create a single standard for interacting with the new lockdown services (XPC Messages, Apple's proprietary IPC)</li>
+<li>Optimize the protocol for large file transfers (such as the dyld_shared_cache)</li>
+<li>Perform authentication with the device only once, and connect to each service via an encrypted tunnel from different
+  places</li>
+</ul>
+<p>However, Apple implemented it in a very confusing way, and seemed to regret some of its own steps along the way, so
+we'll cover all the chaotic mess we now can use to connect to the device.</p>
+<p>Firstly, we'll just say the protocol messages are layered as follows:</p>
+<ul>
+<li>HTTP/2 messages for more efficient parallel file transfers</li>
+<li>XPC messages (Apple's proprietary IPC)</li>
+<li>Remote Service Discovery protocol (or RSD for short)</li>
+</ul>
+<p>However, the connection broker used for this communication is <code>remoted</code> instead of <code>lockdownd</code>, using its own completely
+different pairing logic, leading into two different "Trust/Don't Trust" dialogs (though they appear exactly
+the same).</p>
+<p>Since all this communication is IP-based, but without any additional exported TCP port from the device, <code>usbmuxd</code> can't
+help us here. Instead, starting at iOS 16.0, when connecting an iDevice, it exports another non-standard USB-Ethernet
+adapter (with IPv6 link-local address), placing us in a subnet with the device's <code>remoted</code>.</p>
+<p>As we've said, this communication is non-standard and requires either:</p>
+<ul>
+<li>macOS Monterey or higher</li>
+<li>Special driver on your linux/Windows machine</li>
+</ul>
+<blockquote>
+<p><strong>Spoiler Alert:</strong> Apple may have regretted this, since starting at iOS 17.4, they added the <code>CodeDeviceProxy</code> - a new
+lockdown service, allowing us skip all the steps this special driver is required for.</p>
+</blockquote>
+<p>You can use the following shell command in order to query RSD instances over bonjour (over the USB Ethernet device
+specifically):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>pymobiledevice3<span class="w"> </span>bonjour<span class="w"> </span>rsd
+</code></pre></div>
+<p>We don't delve too much into what RSD exposes. For that you may read in:</p>
+<p><a href="https://github.com/doronz88/pymobiledevice3/blob/master/misc/RemoteXPC.md">https://github.com/doronz88/pymobiledevice3/blob/master/misc/RemoteXPC.md</a></p>
+<p>In short, it will allow us to both pair and start a VPN tunnel onto device, where we can access both
+lockdown and all the other RemoteXPC services. As we previously mentioned, starting at iOS 17.0, this is the only way to access
+the developer services.</p>
+<p>You'll have to start this tunnel using a privileged process, since it requires creating a TUN/TAP device:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1"># This will create a QUIC VPN tunnel to the connected USB device. </span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>sudo<span class="w"> </span>pymobiledevice3<span class="w"> </span>remote<span class="w"> </span>start-tunnel
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1"># Apple later switched from QUIC to TCP tunnels, but my SSLPSK seemed to cause troubles to some workstations</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="c1"># However, using TCP tunnels is much faster especially since the TCP stack is implemented by the OS, instead</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="c1"># of the QUIC which is implemented in pure python code</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="c1"># If the following command works for you, it will create MUCH faster tunnels</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>sudo<span class="w"> </span>pymobiledevice3<span class="w"> </span>remote<span class="w"> </span>start-tunnel<span class="w"> </span>-p<span class="w"> </span>tcp
+</code></pre></div>
+<p>If you're using a corellium instance, since you cannot pair it first over USB, they patched the iOS platform to expose
+another service over <code>remoted</code> to allow remote pairing. So, assuming you are on the same LAN as the device, you may use
+the following command:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>sudo<span class="w"> </span>pymobiledevice3<span class="w"> </span>remote<span class="w"> </span>pair
+</code></pre></div>
+<p>Once we have established pairing with the iDevice's <code>remoted</code>, we can now also establish trusted tunnels over Wi-Fi as
+follows:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>sudo<span class="w"> </span>pymobiledevice3<span class="w"> </span>remote<span class="w"> </span>start-tunnel<span class="w"> </span>-t<span class="w"> </span>wifi
+</code></pre></div>
+<p>This is nice and all but, as previously mentioned, Apple may have regretted this <code>remoted</code> separate pairing (perhaps
+thanks to EU ruling because of the special drivers needed), because iOS 17.4 added a new lockdown
+service allowing us to just establish this trusted tunnel over our existing lockdown connection. This means no extra
+pairing process is required - and the cherry on top is that it's always TCP tunnels, making it MUCH faster.</p>
+<p>To do so, simply use:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># You may also add a `--usbmux` option for working with a corellium instance</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="c1"># And of course, since `lockdownd` can be accessed over Wi-Fi, this can also be done remotely</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>sudo<span class="w"> </span>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>start-tunnel
+</code></pre></div>
+<p>Anyhow, once the tunnel has been established, you'll get an output that looks like this:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>Identifier: &lt;DEVICE-UDID&gt;
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>Interface: utun5
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>Protocol: TunnelProtocol.QUIC
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>RSD Address: fdc3:16b1:5cac::1
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>RSD Port: 52954
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>Use the follow connection option:
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>--rsd fdc3:16b1:5cac::1 52954
+</code></pre></div>
+<p>You may simply add this extra <code>--rsd</code> option to any existing <code>pymobiledevice3</code> subcommand for all its services to be
+available once more (including the developer ones) as follows:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>launch<span class="w"> </span>com.apple.mobilesafari<span class="w"> </span>--rsd<span class="w"> </span>fdc3:16b1:5cac::1<span class="w"> </span><span class="m">52954</span><span class="w"> </span>
+</code></pre></div>
+<p>This is of course also available via a python API:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.remote.remote_service_discovery</span><span class="w"> </span><span class="kn">import</span> <span class="n">RemoteServiceDiscoveryService</span>
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.services.os_trace</span><span class="w"> </span><span class="kn">import</span> <span class="n">OsTraceService</span>
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>
+<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a>
+<a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a>  <span class="c1"># Assuming </span>
+<a id="__codelineno-25-7" name="__codelineno-25-7" href="#__codelineno-25-7"></a>  <span class="n">host</span> <span class="o">=</span> <span class="s1">'fdc3:16b1:5cac::1'</span>
+<a id="__codelineno-25-8" name="__codelineno-25-8" href="#__codelineno-25-8"></a>  <span class="n">port</span> <span class="o">=</span> <span class="mi">52954</span>
+<a id="__codelineno-25-9" name="__codelineno-25-9" href="#__codelineno-25-9"></a>  <span class="n">rsd</span> <span class="o">=</span> <span class="n">RemoteServiceDiscoveryService</span><span class="p">((</span><span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="p">))</span>
+<a id="__codelineno-25-10" name="__codelineno-25-10" href="#__codelineno-25-10"></a>  <span class="k">await</span> <span class="n">rsd</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+<a id="__codelineno-25-11" name="__codelineno-25-11" href="#__codelineno-25-11"></a>
+<a id="__codelineno-25-12" name="__codelineno-25-12" href="#__codelineno-25-12"></a>  <span class="c1"># Both LockdownClient and RemoteServiceDiscoveryService implement LockdownServiceProvider, </span>
+<a id="__codelineno-25-13" name="__codelineno-25-13" href="#__codelineno-25-13"></a>  <span class="c1"># meaning you can simply use this instance as any other LockdownClient instance</span>
+<a id="__codelineno-25-14" name="__codelineno-25-14" href="#__codelineno-25-14"></a>  <span class="k">async</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">OsTraceService</span><span class="p">(</span><span class="n">rsd</span><span class="p">)</span><span class="o">.</span><span class="n">syslog</span><span class="p">():</span>
+<a id="__codelineno-25-15" name="__codelineno-25-15" href="#__codelineno-25-15"></a>      <span class="nb">print</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+</code></pre></div>
+<p>All the tunnels above need root/admin, since they create a kernel TUN/TAP interface. There's one
+more option that needs <strong>no root at all</strong>: add <code>--userspace</code> to any developer command to establish the iOS 17+ tunnel
+in-process over a pure-python network stack (PyTCP). There's no separate tunnel process - the flag builds the tunnel
+inside the command and tears it down on exit:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>ls<span class="w"> </span>/<span class="w"> </span>--userspace
+</code></pre></div>
+<p>See <a href="https://github.com/doronz88/pymobiledevice3/blob/master/docs/guides/ios17-tunnels.md">the dedicated guide</a> for what it supports and its limitations (most notably:
+the device address is reachable only from that process, so it can't be handed to external tools like <code>lldb</code>). This is
+of course also available via a python API, through the <code>UserspaceRsdTunnel</code> handle:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.remote.userspace_tunnel</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserspaceRsdTunnel</span>
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.services.os_trace</span><span class="w"> </span><span class="kn">import</span> <span class="n">OsTraceService</span>
+<a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a>
+<a id="__codelineno-27-4" name="__codelineno-27-4" href="#__codelineno-27-4"></a>
+<a id="__codelineno-27-5" name="__codelineno-27-5" href="#__codelineno-27-5"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-27-6" name="__codelineno-27-6" href="#__codelineno-27-6"></a>  <span class="c1"># serial=None picks the first USB device; pass a UDID to target a specific one</span>
+<a id="__codelineno-27-7" name="__codelineno-27-7" href="#__codelineno-27-7"></a>  <span class="c1"># It's an async context manager (or keep the handle and use `await tunnel.aopen()` / `await tunnel.aclose()`)</span>
+<a id="__codelineno-27-8" name="__codelineno-27-8" href="#__codelineno-27-8"></a>  <span class="k">async</span> <span class="k">with</span> <span class="n">UserspaceRsdTunnel</span><span class="p">(</span><span class="n">serial</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span> <span class="k">as</span> <span class="n">rsd</span><span class="p">:</span>
+<a id="__codelineno-27-9" name="__codelineno-27-9" href="#__codelineno-27-9"></a>      <span class="c1"># `rsd` is a RemoteServiceDiscoveryService - use it like any other LockdownServiceProvider</span>
+<a id="__codelineno-27-10" name="__codelineno-27-10" href="#__codelineno-27-10"></a>      <span class="k">async</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">OsTraceService</span><span class="p">(</span><span class="n">rsd</span><span class="p">)</span><span class="o">.</span><span class="n">syslog</span><span class="p">():</span>
+<a id="__codelineno-27-11" name="__codelineno-27-11" href="#__codelineno-27-11"></a>          <span class="nb">print</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+</code></pre></div>
+<p>Confused by all these "start-tunnel" permutations? Don't blame yourself - it's very confusing especially since there
+isn't only one way to achieve cross-platform for iOS 17.0-17.4.</p>
+<p>Because of that, and because it requires starting a privileged process to each tunnel, we made this process much simpler
+by implementing our own version of <code>remoted</code> called <code>tunneld</code>. To start it use the following:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>sudo<span class="w"> </span>pymobiledevice3<span class="w"> </span>remote<span class="w"> </span>tunneld
+</code></pre></div>
+<p>Now <code>tunneld</code> will always search for newly connected devices via all available manners of connecting to them (both USB
+and Wi-Fi) and just start establishing tunnels to them on its own.</p>
+<p>You can then request <code>pymobiledevice3</code> to work over the existing tunnel instead by adding the <code>--tunnel</code> option as
+follows:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="c1"># You'll get a prompt asking to which device you wish to connect to, if there are several active tunnels</span>
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>launch<span class="w"> </span>com.apple.mobilesafari<span class="w"> </span>--tunnel<span class="w"> </span><span class="s1">''</span>
+<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a>
+<a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a><span class="c1"># Or you can supply a specific UDID to not be prompted</span>
+<a id="__codelineno-29-5" name="__codelineno-29-5" href="#__codelineno-29-5"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>launch<span class="w"> </span>com.apple.mobilesafari<span class="w"> </span>--tunnel<span class="w"> </span><span class="s1">'11223344'</span>
+</code></pre></div>
+<p>This is of course also available via a python API:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.tunneld.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_tunneld_devices</span>
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.services.os_trace</span><span class="w"> </span><span class="kn">import</span> <span class="n">OsTraceService</span>
+<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>
+<a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a>
+<a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-30-6" name="__codelineno-30-6" href="#__codelineno-30-6"></a>  <span class="n">rsds</span> <span class="o">=</span> <span class="k">await</span> <span class="n">get_tunneld_devices</span><span class="p">()</span>
+<a id="__codelineno-30-7" name="__codelineno-30-7" href="#__codelineno-30-7"></a>
+<a id="__codelineno-30-8" name="__codelineno-30-8" href="#__codelineno-30-8"></a>  <span class="c1"># We can now simply use the returned list of RSDs as any other LockdownClients</span>
+<a id="__codelineno-30-9" name="__codelineno-30-9" href="#__codelineno-30-9"></a>  <span class="k">async</span> <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">OsTraceService</span><span class="p">(</span><span class="n">rsds</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="o">.</span><span class="n">syslog</span><span class="p">():</span>
+<a id="__codelineno-30-10" name="__codelineno-30-10" href="#__codelineno-30-10"></a>      <span class="nb">print</span><span class="p">(</span><span class="n">entry</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="wi-fi-recognizing-a-device-on-the-network">Wi-Fi: recognizing a device on the network<a class="headerlink" href="#wi-fi-recognizing-a-device-on-the-network" title="Permanent link">&para;</a></h2>
+<p>Over USB, <code>usbmuxd</code> hands us the UDID of whatever is plugged in. Over Wi-Fi there is no such luxury: the host hears
+<a href="https://en.wikipedia.org/wiki/Bonjour_(software)">bonjour</a> adverts from <em>every</em> Apple device on the LAN and has to
+work out which of them - if any - it is paired with.</p>
+<p>The adverts are deliberately built so a stranger learns nothing from them:</p>
+<ul>
+<li>The MAC in a <code>_apple-mobdev2._tcp</code> instance name (<code>&lt;mac&gt;@&lt;ipv6&gt;-supportsRP-&lt;version&gt;</code>) is the device's <strong>private
+  Wi-Fi address</strong> (the iOS default) - a randomized, locally-administered MAC that has nothing to do with the
+  <code>WiFiMACAddress</code> stored in the pair record. Never treat it as an identifier.</li>
+<li>The <code>identifier</code> key in the TXT record is an opaque UUID. It is neither the UDID nor any pairing identifier.</li>
+<li>A lockdown connection that has not presented a valid pair record does not reveal the UDID either.</li>
+</ul>
+<p>What the adverts do carry is an <strong><code>authTag</code></strong>: a few bytes a paired host can recompute from a secret it already
+holds, and that are noise to everyone else. Matching is pure local hashing - nothing is sent to a device until we
+know it is ours, and each device is only ever offered its own pair record.</p>
+<p>There are two advertised services and each has its own tag:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>_apple-mobdev2._tcp</code> (lockdown)</th>
+<th><code>_remotepairing._tcp</code> (RemotePairing)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Requires</td>
+<td><code>lockdown wifi-connections on</code></td>
+<td>iOS 17+</td>
+</tr>
+<tr>
+<td>Key behind the tag</td>
+<td>the <strong>host's</strong> <code>HostID</code></td>
+<td>the <strong>device's</strong> <code>altIRK</code></td>
+</tr>
+<tr>
+<td>Where we keep it</td>
+<td>every lockdown pair record</td>
+<td><code>peer_alt_irk</code> in <code>remote_&lt;udid&gt;.plist</code></td>
+</tr>
+<tr>
+<td>Tag</td>
+<td><code>HMAC-SHA256(HKDF-SHA512(HostID), identifier)[:8]</code></td>
+<td><code>SipHash-2-4(altIRK, identifier)</code>, 6 bytes</td>
+</tr>
+<tr>
+<td>TXT keys</td>
+<td><code>authTag</code>, <code>authTag#1</code>, ... (one per paired host)</td>
+<td><code>authTag</code></td>
+</tr>
+<tr>
+<td>Tells us</td>
+<td>"this device is paired with host H"</td>
+<td>"this is device D"</td>
+</tr>
+</tbody>
+</table>
+<h3 id="lockdown-over-wi-fi-mobdev2">Lockdown over Wi-Fi (mobdev2)<a class="headerlink" href="#lockdown-over-wi-fi-mobdev2" title="Permanent link">&para;</a></h3>
+<p>The device publishes one tag per host it is paired with. The key is derived from the <code>HostID</code> of the lockdown pair
+record, so every existing record already has what is needed:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.lockdown</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_mobdev2_auth_tag</span>
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>
+<a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a><span class="c1"># base64-decode the advert's `authTag` / `authTag#N` values and look for this one</span>
+<a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a><span class="n">compute_mobdev2_auth_tag</span><span class="p">(</span><span class="n">pair_record</span><span class="p">[</span><span class="s2">"HostID"</span><span class="p">],</span> <span class="n">txt</span><span class="p">[</span><span class="s2">"identifier"</span><span class="p">])</span>
+</code></pre></div>
+<p>This is the check Apple's MobileDevice performs (<code>AMDIsTXTRecordForUDID</code>). Note what it does and does not say: a
+host pairs <em>all</em> of its devices under a single <code>HostID</code>, so the tag rules out devices that are not ours without
+contacting them, but it cannot tell two of our own devices apart. Among those, the device still picks its record by
+accepting it - a lockdown <code>StartSession</code> with somebody else's record is simply refused.</p>
+<p><code>get_mobdev2_lockdowns()</code> applies all of this. With a <code>udid</code> it resolves that device's pair record (from our own
+folder or from <code>usbmuxd</code>), skips the browse entirely when there is none, and yields only a paired
+<code>TcpLockdownClient</code> for that UDID:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.lockdown</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_mobdev2_lockdowns</span>
+<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a>
+<a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a>
+<a id="__codelineno-32-4" name="__codelineno-32-4" href="#__codelineno-32-4"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-32-5" name="__codelineno-32-5" href="#__codelineno-32-5"></a>  <span class="k">async</span> <span class="k">for</span> <span class="n">ip</span><span class="p">,</span> <span class="n">lockdown</span> <span class="ow">in</span> <span class="n">get_mobdev2_lockdowns</span><span class="p">(</span><span class="n">udid</span><span class="o">=</span><span class="s1">'00008030-0000000000000000'</span><span class="p">,</span> <span class="n">only_paired</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<a id="__codelineno-32-6" name="__codelineno-32-6" href="#__codelineno-32-6"></a>      <span class="nb">print</span><span class="p">(</span><span class="n">ip</span><span class="p">,</span> <span class="n">lockdown</span><span class="o">.</span><span class="n">product_version</span><span class="p">)</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>pymobiledevice3<span class="w"> </span>syslog<span class="w"> </span>live<span class="w"> </span>--mobdev2<span class="w"> </span>--udid<span class="w"> </span><span class="m">00008030</span>-0000000000000000
+</code></pre></div>
+<p>An advert that carries no tags (older iOS versions) rules nothing out; such a device is offered the known records
+directly.</p>
+<h3 id="remotepairing-over-wi-fi">RemotePairing over Wi-Fi<a class="headerlink" href="#remotepairing-over-wi-fi" title="Permanent link">&para;</a></h3>
+<p>The RemotePairing advert identifies the <em>device</em>. The key is the device's <code>altIRK</code> - see
+<a href="../remotexpc/#wi-fi">RemoteXPC: Wi-Fi</a> for where it comes from and how the tag is computed. Because it is a device
+secret handed over during pairing, a RemotePairing record created before pymobiledevice3 started storing it cannot
+be matched over Wi-Fi (it keeps working over USB). A one-time warning names the stale file; delete it and pair again:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="c1"># Promptless over USB - no Trust dialog</span>
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>remotepairing<span class="w"> </span>--pair
+</code></pre></div>
+<h3 id="the-tag-is-a-hint-not-authentication">The tag is a hint, not authentication<a class="headerlink" href="#the-tag-is-a-hint-not-authentication" title="Permanent link">&para;</a></h3>
+<p>A 6 or 8 byte tag only decides <em>who to talk to</em>. Trust is still established afterwards by the real handshake:
+the TLS session built from the lockdown pair record, or RemotePairing's pair-verify (an X25519 exchange signed with
+the Ed25519 key of the pair record). A forged advert gets a connection attempt, never a session.</p>
+<h2 id="other-python-service-examples">Other python service examples<a class="headerlink" href="#other-python-service-examples" title="Permanent link">&para;</a></h2>
+<p>The best way to search for examples is via
+the <a href="https://github.com/doronz88/pymobiledevice3/tree/master/pymobiledevice3/cli"><code>pymobiledevice.cli</code></a> module.</p>
+<p>Each submodule represents a CLI subcommand. You can copy each subcommand implementation and simply replace
+the <code>service_provider</code> variable with any other <code>LockdownServiceProvider</code> (either <code>RemoteServiceDiscoveryService</code>
+or <code>LockdownClient</code>).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../../api/dvt/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Developer / DVT">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Developer / DVT
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../remotexpc/" class="md-footer__link md-footer__link--next" aria-label="Next: RemoteXPC">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                RemoteXPC
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Licensed under GPL-3.0-or-later
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.top", "navigation.footer", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>

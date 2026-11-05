@@ -1,0 +1,663 @@
+# CLI Recipes
+
+Common `pymobiledevice3` commands grouped by task. Every command has `--help`, which lists its arguments and options.
+
+Words in capitals (`DIRECTORY`, `PID`, `BUNDLE_ID`, ...) are placeholders for your own values. A bundle ID is an app's identifier, such as `com.apple.mobilesafari`; `pymobiledevice3 apps list` prints them. Commands under `developer` need Developer Mode turned on, and some also need the DeveloperDiskImage mounted (see [Developer Mode and DDI](#developer-mode-and-ddi)). On iOS 17+ many commands also need an RSD tunnel (the transport iOS 17+ uses for developer services); the CLI sets one up by itself, with no flag and no `sudo` ([iOS 17+ tunnels](https://doronz88.github.io/pymobiledevice3/latest/guides/ios17-tunnels/index.md) explains the options).
+
+## Device Discovery and Connectivity
+
+```
+# List connected devices
+pymobiledevice3 usbmux list
+
+# Find iOS 17+ devices advertising RemoteXPC (Apple's developer-service protocol) on the local network.
+# On macOS this needs sudo: it pauses the host's remoted while it connects to each device
+sudo pymobiledevice3 bonjour rsd
+
+# Forward a host TCP port to a port on the device, over USB
+pymobiledevice3 usbmux forward HOST_PORT DEVICE_PORT
+```
+
+## Logging and Diagnostics
+
+```
+# View all syslog lines (including debug)
+pymobiledevice3 syslog live
+
+# Filter syslog lines
+pymobiledevice3 syslog live -m SpringBoard
+
+# Exclude syslog lines
+pymobiledevice3 syslog live -v unwanted_log
+
+# Capture Bluetooth HCI traffic in PacketLogger format
+pymobiledevice3 btlogger trace.pklg
+
+# Capture Bluetooth HCI traffic as pcapng for Wireshark
+pymobiledevice3 btlogger -f pcapng trace.pcapng
+
+# Restart device
+pymobiledevice3 diagnostics restart
+
+# Pull crash reports
+pymobiledevice3 crash pull /path/to/crashes
+
+# Remove only matching crash reports, without copying them
+pymobiledevice3 crash clear --match '^MobileSafari'
+
+# Show the process list (no Developer Mode, DDI or tunnel needed)
+pymobiledevice3 processes ps
+
+# Match process pids by name (like pgrep)
+pymobiledevice3 processes pgrep SpringBoard
+```
+
+## Network Sniffing (PCAP)
+
+Every packet is labelled with the process that sent it; see [Capturing network traffic](https://doronz88.github.io/pymobiledevice3/latest/guides/packet-capture/index.md) for filtering by process in Wireshark and tshark.
+
+```
+# Sniff all device traffic and save it for Wireshark
+pymobiledevice3 pcap --out capture.pcapng
+
+# Sniff only a given process, stopping after 100 packets
+pymobiledevice3 pcap --process backboardd -c 100
+
+# Sniff a single interface
+pymobiledevice3 pcap -i en0
+```
+
+## Files, Apps, and Backup
+
+```
+# Open AFC shell (media directory). Inside it, device commands pipe into host tools and
+# redirect into local files: `cat notes.txt | grep todo`, `cat photo.heic > photo.heic`
+pymobiledevice3 afc shell
+
+# Offer more host tools inside the shell (any tool also works as `!tool` without the option)
+pymobiledevice3 afc shell --tool jq --tool plutil
+
+# List installed apps
+pymobiledevice3 apps list
+
+# Query specific app bundle IDs
+pymobiledevice3 apps query BUNDLE_ID1 BUNDLE_ID2
+
+# Dump contacts / calendars / Safari bookmarks / mail accounts without a backup
+pymobiledevice3 mobilesync dump contacts
+
+# Add or modify records (keyed by record id from `dump`; unknown ids add new records), then delete one
+# Use a plist instead of JSON for records with dates, such as calendar events
+pymobiledevice3 mobilesync push contacts changes.json
+pymobiledevice3 mobilesync delete contacts RECORD_ID
+
+# Full backup
+pymobiledevice3 backup2 backup --full DIRECTORY
+
+# Turn iCloud Backup on / off (needs a signed-in iCloud account)
+pymobiledevice3 backup2 cloud on
+
+# Preserve only selected backup payloads
+pymobiledevice3 backup2 backup --only messages DIRECTORY
+pymobiledevice3 backup2 backup --only messages --patch-manifest DIRECTORY
+pymobiledevice3 backup2 backup --only sms DIRECTORY
+pymobiledevice3 backup2 backup --only whatsapp DIRECTORY
+pymobiledevice3 backup2 backup --only contacts DIRECTORY
+pymobiledevice3 backup2 backup --only call_history DIRECTORY
+pymobiledevice3 backup2 backup --only bookmarks DIRECTORY
+pymobiledevice3 backup2 backup --only-regex '\.(plist|db|db-shm|db-wal|sqlite|sqlite-shm|sqlite-wal|sqlitedb|sqlitedb-shm|sqlitedb-wal|storedata|storedata-shm|storedata-wal)$' DIRECTORY
+
+# `messages` keeps sms.db plus the complete SMS/iMessage attachment, part,
+# sticker, and recent-item trees. Filtering saves host disk space, but the
+# device still sends all backup bytes during the first run. The complete
+# Manifest.db is retained so later runs can use incremental backup state.
+# Filtered backups are intended for data access, not full-device restore.
+# Use --patch-manifest when another tool requires Manifest.db to reference
+# only saved payloads. This forces each run to be full, and encrypted backups
+# require --password so the manifest can be decrypted and re-encrypted.
+# Filtered backups also require --patch-manifest when combined with --unback.
+
+# Restore backup
+pymobiledevice3 backup2 restore DIRECTORY
+```
+
+## Profiles and Configuration
+
+```
+# List installed configuration profiles
+pymobiledevice3 profile list
+
+# Install one or more profiles (.mobileconfig)
+pymobiledevice3 profile install my.mobileconfig
+
+# Remove a profile by its identifier/name
+pymobiledevice3 profile remove com.example.profile
+```
+
+Supervised devices only: these commands escalate with the supervision identity passed as `--keybag` (a PEM holding the supervisor certificate and private key, e.g. from `profile create-keybag`).
+
+```
+# Save the passcode unlock token (the device must have no passcode yet); written with mode 0600
+pymobiledevice3 profile request-unlock-token --keybag keybag.pem unlock-token.bin
+
+# Later: remove the passcode without knowing it; the device then drops the pairing, so re-pair
+pymobiledevice3 profile clear-passcode --keybag keybag.pem unlock-token.bin
+pymobiledevice3 lockdown pair-supervised keybag.pem
+
+# Clear the Screen Time passcode (iOS 27.2 rejects it device-side)
+pymobiledevice3 profile clear-restrictions-password --keybag keybag.pem
+
+# Security status as JSON; PasscodePresent reliably tells whether a passcode is set
+pymobiledevice3 profile security-info --keybag keybag.pem
+
+# Set the wallpaper (--screen lock|home|both; iOS 16+ may apply it to both regardless)
+pymobiledevice3 profile set-wallpaper --keybag keybag.pem wallpaper.png --screen both
+```
+
+## Cryptexes (iOS 17+, RSD tunnel)
+
+Talks to `cryptexd` directly. `cryptex list` reports a DeveloperDiskImage installed as a cryptex (by `cryptex auto-install`, by `mounter auto-mount`, or by Xcode) as `com.apple.MobileAsset.DDI`. A `PersonalizedDMG` mounted through the image mounter is not a cryptex, so it does not appear there -- `mounter list` shows both.
+
+```
+pymobiledevice3 cryptex list
+pymobiledevice3 cryptex personalization-identifiers
+pymobiledevice3 cryptex nonce
+pymobiledevice3 cryptex nonce --nonce-domain-handle 4
+```
+
+State-changing. Rolling a nonce invalidates anything personalized against it, so a mounted personalized DDI must be re-personalized and re-mounted afterwards:
+
+```
+pymobiledevice3 cryptex roll-nonce
+pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI
+```
+
+`cryptex auto-install` is the cryptex counterpart of `mounter auto-mount` — a cryptex is *installed*, not mounted, which is why the verb differs. It personalizes and installs the DeveloperDiskImage over `cryptexd` alone, without the image mounter: it has Apple sign a Cryptex1 ticket for this device and installs the payloads, leaving the DDI's developer services (DVT, testmanagerd, …) usable. The end result is indistinguishable from a `mounter auto-mount` — `mounter list` reports it as a `Personalized` image at `/System/Developer`. From iOS 27, `mounter auto-mount` itself installs this cryptex instead of mounting the older `PersonalizedDMG`: unlike the `PersonalizedDMG`, the cryptex is not tied to the boards listed in the DDI's build manifest, so it also covers devices newer than the DDI.
+
+iOS 26.4 and later
+
+iOS installs the DeveloperDiskImage as a cryptex only from 26.4. Below it, `cryptexd` may import the image but not mount it at `/System/Developer`, so `cryptex auto-install` refuses, and `mounter auto-mount` mounts the `PersonalizedDMG` instead ([#1991](https://github.com/doronz88/pymobiledevice3/issues/1991)).
+
+It refuses to run while a DeveloperDiskImage is already present, whichever front-end put it there: remove a cryptex with `cryptex uninstall com.apple.MobileAsset.DDI`, or a `PersonalizedDMG` with `mounter umount-personalized`.
+
+Also like `mounter auto-mount`, it downloads the DDI it needs and caches it under `~/.pymobiledevice3` (`$XDG_DATA_HOME/pymobiledevice3` on new Linux installs), so no Xcode installation is required and it works on any host:
+
+```
+pymobiledevice3 cryptex auto-install
+
+# Use a local bundle instead of the download, e.g. Xcode's own
+pymobiledevice3 cryptex auto-install --restore-dir /Library/Developer/DeveloperDiskImages/iOS_DDI/Restore
+```
+
+Overlap with `mounter`
+
+`cryptexd` and the image mounter are two front-ends onto the same cryptex subsystem, so some queries exist in both places. Where they overlap, `cryptex` is the more precise source:
+
+- `cryptex personalization-identifiers` returns a strict superset of `mounter query-personalization-identifiers` (19 `img4_chip_*` fields versus 8), including the product class used by the `Cryptex1,UseProductClass` personalization variant.
+- `cryptex nonce` returns the nonce structure (56 bytes, the 48-byte nonce at offset 2); `mounter query-nonce` returns those 48 bytes alone.
+- `cryptex nonce` validates the domain and fails loudly on an unknown one, whereas `mounter query-nonce` silently falls back to the default nonce for an unrecognized `--image-type`.
+
+`mounter` still wins when no tunnel can be set up: its queries work over plain USB, while every `cryptex` command needs RSD.
+
+## Streaming app install
+
+```
+# Stream the app the way Xcode does: the device extracts it while it arrives,
+# instead of unpacking an .ipa uploaded over AFC
+pymobiledevice3 apps install --streaming MyApp.ipa
+pymobiledevice3 apps install --streaming --developer build/MyApp.app
+```
+
+## Files in an app container (iOS 17+, RSD tunnel)
+
+```
+# Create, inspect, rename and remove files in an app's data container
+pymobiledevice3 developer core-device write-file appDataContainer Documents/note.txt ./note.txt --identifier com.example.app
+pymobiledevice3 developer core-device stat appDataContainer Documents/note.txt --identifier com.example.app
+pymobiledevice3 developer core-device rename appDataContainer Documents/note.txt Documents/old.txt --identifier com.example.app
+pymobiledevice3 developer core-device create-symlink appDataContainer Documents/latest.txt old.txt --identifier com.example.app
+pymobiledevice3 developer core-device remove-file appDataContainer Documents/old.txt --identifier com.example.app
+
+# Print changes as they happen, one JSON record per change (iOS 27+)
+pymobiledevice3 developer core-device watch appDataContainer --identifier com.example.app
+```
+
+## App console output (iOS 17+, RSD tunnel)
+
+```
+# Launch an app and print its stdout/stderr until it exits
+pymobiledevice3 developer core-device launch-application com.example.app --console
+```
+
+## App install records (iOS 17+)
+
+```
+# LaunchServices install record (DB UUID/sequence, install path, persistent identifier)
+pymobiledevice3 apps install-record com.apple.Preferences
+```
+
+## Darwin Notifications
+
+Darwin notifications are the system-wide named signals of `notify(3)`, which daemons post on state changes.
+
+```
+# Post a notification
+pymobiledevice3 notification post com.example.notification
+
+# Subscribe and stream notifications as they fire
+pymobiledevice3 notification observe com.example.notification
+```
+
+On iOS 17+, `--remotexpc` talks to the notification proxy directly over RemoteXPC instead of tunnelling the lockdown service through its `.shim.remote` alias. This option does not set up the tunnel by itself, so request one explicitly with `--userspace` (or `--rsd`/`--tunnel`):
+
+```
+pymobiledevice3 notification observe --remotexpc com.example.notification --userspace
+pymobiledevice3 notification post --remotexpc com.example.notification --userspace
+```
+
+Since iOS 27.2 a notification also carries a 64-bit state, which system daemons use to publish a current value (lock state, orientation, low power mode...). Reading and setting it goes over the RSD tunnel, which the CLI sets up by itself:
+
+```
+# Read the current value
+pymobiledevice3 notification get-state com.apple.springboard.lockstate com.apple.backboardd.orientation
+
+# Set a value and post the notification; the device keeps the value until you hit Ctrl+C
+pymobiledevice3 notification set-state com.example.notification 1
+```
+
+## SpringBoard UI
+
+```
+# Print current screen orientation
+pymobiledevice3 springboard orientation
+
+# Save an app's icon to a PNG
+pymobiledevice3 springboard icon com.apple.mobilesafari safari-icon.png
+
+# Save the home-screen wallpaper to a PNG
+pymobiledevice3 springboard wallpaper-home-screen wallpaper.png
+```
+
+## Firmware Update
+
+```
+# Pick a signed build interactively, download it and update in place (keeps user data)
+pymobiledevice3 restore update
+
+# Update using a local IPSW file
+pymobiledevice3 restore update -i /path/to/firmware.ipsw
+
+# Update using an IPSW URL
+pymobiledevice3 restore update -i https://example.com/firmware.ipsw
+```
+
+`--erase` restores instead, wiping the device. See the [restore guide](https://doronz88.github.io/pymobiledevice3/latest/guides/restore/index.md) for details.
+
+## Developer Mode and DDI
+
+Developer services (everything under `developer`) need Developer Mode (iOS 16+). Some also need the DeveloperDiskImage (DDI), an Apple-signed image that adds developer services to the device:
+
+- **iOS < 17**: every developer service, including `developer dvt`, needs the DDI.
+- **iOS 17+**: `developer dvt` needs only Developer Mode. `developer core-device` always needs the DDI.
+
+If a developer command fails with `InvalidServiceError`, mounting the DDI is the first thing to try.
+
+```
+# Check, then enable Developer Mode. Enabling restarts the device and only works when no passcode
+# is set; otherwise reveal the switch in Settings -> Privacy & Security and turn it on there
+pymobiledevice3 amfi developer-mode-status
+pymobiledevice3 amfi enable-developer-mode
+pymobiledevice3 amfi reveal-developer-mode
+
+# Mount the DeveloperDiskImage (needed again after every reboot)
+pymobiledevice3 mounter auto-mount
+
+# Trust the developer app signer of an installed provisioning profile (UUID from `provision list`)
+pymobiledevice3 amfi trust-app-signer PROFILE_UUID
+```
+
+`mounter auto-mount` picks the right DeveloperDiskImage for the device's iOS version:
+
+| iOS         | Image                                                                         |
+| ----------- | ----------------------------------------------------------------------------- |
+| < 17.0      | the classic `DeveloperDiskImage.dmg` for that version, over the image mounter |
+| 17.0 - 26.x | the `PersonalizedDMG` over the image mounter                                  |
+| 27.0+       | the Cryptex1 DDI over `cryptexd`                                              |
+
+On iOS 17+, `--image cryptex|personalized-dmg` overrides that choice. For example, a device whose cryptexd cannot install the cryptex (`syslog live -m cryptexd` shows `staging failed`) can still mount the `PersonalizedDMG` with `mounter auto-mount --image personalized-dmg`, as long as the DDI's build manifest lists its board.
+
+Newer devices (e.g. the iPhone 18 series) only work with the Cryptex1 DDI
+
+Every `PersonalizedDMG` build identity is tied to one chip/board pair, so it can only be personalized for the devices listed in the DDI's build manifest -- and even Xcode 27.1's DDI stops at `iPhone18,5`. A device outside that list gets no ticket for it (see [`NoSuchBuildIdentityError`](https://doronz88.github.io/pymobiledevice3/latest/guides/troubleshooting/#could-not-find-the-manifest-for-board-and-chip-nosuchbuildidentityerror)). The Cryptex1 identity names no device at all, so its ticket request is valid for any device and Apple's signing server decides. This is also how Xcode supports these devices, which run iOS 27 or later, where `auto-mount` installs the cryptex (as does `cryptex auto-install`).
+
+Installing the Cryptex1 DDI needs an RSD tunnel; you don't need to pass one: the CLI sets up a no-root tunnel and retries by itself (*"Trying again over ... since RSD is required for this command"*). All variants are downloaded and cached under `~/.pymobiledevice3` (`$XDG_DATA_HOME/pymobiledevice3` on new Linux installs), and the iOS 17+ ones end up mounted at `/System/Developer`. See [Cryptexes](#cryptexes-ios-17-rsd-tunnel) for installing the cryptex directly.
+
+## DVT Examples
+
+DVT is the developer-tools service Xcode and Instruments use. These commands need Developer Mode, plus a mounted DDI on iOS < 17 ([above](#developer-mode-and-ddi)).
+
+```
+# Simulate location (iOS < 17.0); `--` lets a negative coordinate through
+pymobiledevice3 developer simulate-location set -- LATITUDE LONGITUDE
+
+# Simulate location (iOS >= 17.0)
+pymobiledevice3 developer dvt simulate-location set -- LATITUDE LONGITUDE
+
+# Play GPX route
+pymobiledevice3 developer dvt simulate-location play route.gpx
+
+# Add random timing noise between -500 and 500 ms
+pymobiledevice3 developer dvt simulate-location play route.gpx 500
+
+# Clear simulated location
+pymobiledevice3 developer dvt simulate-location clear
+
+# Take a screenshot
+pymobiledevice3 developer dvt screenshot /path/to/screen.png
+
+# Detailed process list
+pymobiledevice3 developer dvt sysmon process single
+
+# Stream processes above 50% CPU
+pymobiledevice3 developer dvt sysmon process monitor threshold 50
+
+# Stream one process and only show the selected fields
+pymobiledevice3 developer dvt sysmon process monitor process --filter pid=123 --key name --key cpuUsage --key physFootprint
+
+# Stream one process with human-readable memory sizes
+pymobiledevice3 developer dvt sysmon process monitor process --filter name=SpringBoard --key name --key physFootprint --human
+
+# Keep streaming across relaunches: re-apply the filter on every snapshot instead of
+# stopping once the originally selected process is gone
+pymobiledevice3 developer dvt sysmon process monitor process --filter name=MyApp --choose last --keep-monitoring
+
+# Stream oslog
+pymobiledevice3 developer dvt oslog
+
+# Stream oslog as NDJSON (one JSON object per line). Each record also carries the message's format string and its arguments
+pymobiledevice3 developer dvt oslog --format json
+
+# Kill a process
+pymobiledevice3 developer dvt kill PID
+
+# Memory of a debuggable (development-signed) app. The device refuses any other process.
+# Regions of its address space
+pymobiledevice3 developer dvt vm-regions PID
+
+# Save the memory graph of a running app; prints the leak count and addresses as JSON
+pymobiledevice3 developer dvt memgraph PID app.memgraph
+
+# Inspect it with leaks(1), heap(1) or vmmap(1), which ship with macOS only
+leaks app.memgraph
+
+# To see where each allocation was made, launch the app with malloc stack logging first;
+# the memory graph then carries the backtraces
+pymobiledevice3 developer dvt launch --env MallocStackLogging=1 com.example.app
+pymobiledevice3 developer dvt memgraph PID app.memgraph
+malloc_history app.memgraph --fullStacks ADDRESS
+
+# Launch timing, image and dlopen counts as the dynamic loader recorded them (debuggable apps only)
+pymobiledevice3 developer dvt dyld-metrics PID
+
+# Launch an app and summarize its heap allocations by class once interrupted (or after --duration)
+pymobiledevice3 developer dvt allocations com.example.app --duration 10
+
+# Print every event instead, one JSON record each, with its backtrace as image+offset frames;
+# --kind adds reference-counts, vm or zombies events to the default heap ones
+pymobiledevice3 developer dvt allocations com.example.app --events --kind heap --kind reference-counts
+
+# Disable the jetsam memory limit for a process (stop it being killed for
+# exceeding its memory allowance)
+pymobiledevice3 developer dvt memlimitoff PID
+
+# List files in an un-chrooted path
+pymobiledevice3 developer dvt ls PATH
+
+# Launch an app
+pymobiledevice3 developer dvt launch com.apple.mobilesafari
+
+# Live kdebug (kernel event trace) parsing, strace-like; "Tracing with kdebug" covers the details. Unfiltered, the device emits events faster than they can
+# be parsed, so output fails once it falls --max-lag (2s) behind, or skips ahead (with a warning on
+# stderr) with --skip-behind; --bsc / --class-filters / --subclass-filters filter on the device (by
+# subclass at most). On exit it prints how many events were read, dropped by the device and
+# skipped. While apps launch, --bsc keeps up over any tunnel
+pymobiledevice3 developer dvt core-profile-session parse-live
+pymobiledevice3 developer dvt core-profile-session parse-live --bsc
+
+# Only some syscalls, with their paths (each also matches its _nocancel variant). The device still
+# sends every syscall; the others are dropped right after decoding, which keeps up over any tunnel.
+pymobiledevice3 developer dvt core-profile-session parse-live -s open -s openat
+
+# Syscalls by subsystem: --fs (syscalls that take a path), --net (sockets), --proc (process lifecycle),
+# --io (reads, writes and the other syscalls on file descriptors), --mem (memory mappings), --signal,
+# --cred (credentials, code signing and policy checks, access to other tasks), --sync (locks, kqueues,
+# workqueues) and --mach (Mach traps). Groups add up, and combine with -s and -e: `--fs --io` prints both.
+# `events` with the same options lists exactly what is printed
+pymobiledevice3 developer dvt core-profile-session parse-live --fs --io
+pymobiledevice3 developer dvt core-profile-session parse-live --mem --signal --cred
+pymobiledevice3 developer dvt core-profile-session events --io
+pymobiledevice3 developer dvt core-profile-session events -s open
+
+# dyld events (image loads, dlopen, dlsym, ...); unlike the syscall groups, filtered on the device
+pymobiledevice3 developer dvt core-profile-session parse-live --dyld
+
+# XPC messages and transactions, libdispatch Mach messages, CoreFoundation run loop activity, of every
+# process (printed as their name and raw arguments)
+pymobiledevice3 developer dvt core-profile-session parse-live --xpc --process SpringBoard
+pymobiledevice3 developer dvt core-profile-session parse-live --dispatch --runloop
+
+# Events by their trace code name (the device filters each event's subclass, and the other events
+# in it are dropped right after decoding). `events TEXT` finds a name, `events` alone lists them all
+pymobiledevice3 developer dvt core-profile-session events dlsym
+pymobiledevice3 developer dvt core-profile-session parse-live -e DBG_DYLD_TIMING_DLOPEN -e DBG_DYLD_TIMING_DLSYM
+
+# One JSON object per trace (time, thread, pid, process, event, parsed fields and text), e.g. for jq.
+# On a terminal, traces are otherwise colored by what they show; --color-mode fast colors only the columns
+pymobiledevice3 developer dvt core-profile-session parse-live --fs --json | jq -c 'select(.process == "MobileSafari")'
+
+# Save kdebug events to a file
+pymobiledevice3 developer dvt core-profile-session save FILENAME
+
+# Print the call stacks of every thread of every process (or of one: --process PID/NAME).
+# They are symbolicated using the Xcode device support of the device, which
+# `developer fetch-symbols download` creates; --json prints the raw stackshot instead
+pymobiledevice3 developer dvt core-profile-session stackshot --process SpringBoard
+
+# Also symbolicate the kernel frames, given the kernelcache of the firmware the device runs
+# (from its IPSW) and the `kernel` directory of https://github.com/blacktop/symbolicator.
+# Requires `ipsw`; --kernelcache alone names the kernel image of each frame
+pymobiledevice3 developer dvt core-profile-session stackshot \
+    --kernelcache kernelcache.release.iphone17 --kernel-signatures symbolicator/kernel
+
+# Device information
+pymobiledevice3 developer dvt device-information
+
+# Energy monitor
+pymobiledevice3 developer dvt energy PID1 PID2 ...
+
+# Per-process network traffic (bytes/packets, rx/tx)
+pymobiledevice3 developer dvt network-statistics PID1 PID2 ...
+
+# Display frame rate (Core Animation FPS), once a second
+pymobiledevice3 developer dvt fps
+```
+
+## Core Device (iOS 17+)
+
+These commands talk to iOS 17+ `CoreDevice` services (the ones Xcode's `devicectl` uses) through the RSD tunnel, which the CLI sets up by itself.
+
+Prerequisites
+
+These always require Developer Mode and the Developer Disk Image (DDI) mounted. Mount it once per boot with:
+
+```
+pymobiledevice3 mounter auto-mount
+```
+
+```
+# Take a screenshot (PNG)
+pymobiledevice3 developer core-device screen-capture screenshot /path/to/screen.png
+
+# Fetch an application's icon (PNG). Size is given in points; pixel size is size * scale
+pymobiledevice3 developer core-device fetch-app-icon com.apple.Preferences /path/to/icon.png
+pymobiledevice3 developer core-device fetch-app-icon com.example.app /path/to/icon.png --width 176 --height 176 --scale 2
+
+# Fail instead of returning a generic placeholder when the app has no icon
+pymobiledevice3 developer core-device fetch-app-icon com.example.app /path/to/icon.png --no-placeholder
+```
+
+### HID input
+
+```
+# Press a named hardware button (home, lock, volume-up, volume-down, mute, siri)
+pymobiledevice3 developer core-device hid button home press
+
+# Hold/release a named button (states: down, up, canceled)
+pymobiledevice3 developer core-device hid button volume-up down
+pymobiledevice3 developer core-device hid button volume-up up
+
+# Press by raw HID (usage_page, usage_code) — decimal or 0xHEX
+pymobiledevice3 developer core-device hid raw-button 0x0C 0x40 press
+
+# List the device's registered HID surfaces (each has a _ServiceID).
+# Touch goes via 257 (mainTouchscreen) or 1281 (touchscreenGesture).
+pymobiledevice3 developer core-device universal-hid-service list-connected
+
+# Deliver a raw HID report to a connected surface. The layout is
+# surface-specific; capture devicectl traffic with misc/remotexpc_sniffer.py
+# (in a source checkout) to learn it for a new surface.
+pymobiledevice3 developer core-device universal-hid-service send-report 1281 HEX_REPORT
+
+# --- touch gestures (the media stream they need is managed automatically) ---
+#
+# X/Y are UInt16 (0..65535) normalised across the device's screen, so
+# (0, 0) is top-left and (65535, 65535) is bottom-right regardless of the
+# device's pixel resolution. Useful anchors regardless of model:
+#   center                (32768, 32768)
+#   top-center            (32768,  5000)
+#   bottom-center         (32768, 60000)
+#   home-indicator area   (32768, 62000+)
+#
+# To convert from pixel coordinates, query the device's pixel size first:
+#   pymobiledevice3 developer core-device get-display-info
+#       # → displays[0].currentMode.size = [828, 1792] for an iPhone 11, etc.
+# then scale linearly: hid_x = round(px_x * 65535 / px_w).
+
+# Tap at the screen center
+pymobiledevice3 developer core-device universal-hid-service tap -- 32768 32768
+
+# Drag from near the top to near the bottom (e.g. pull-down)
+pymobiledevice3 developer core-device universal-hid-service drag -- 32768 5000 32768 60000
+
+# Multi-finger (up to 5): two-finger tap at X Y pairs
+pymobiledevice3 developer core-device universal-hid-service multi-tap -- 26000 30000 40000 30000
+
+# Multi-finger drag, X1 Y1 X2 Y2 (start, end) per finger: apart = zoom in,
+# together = pinch, parallel = multi-finger swipe
+pymobiledevice3 developer core-device universal-hid-service multi-drag -- 28000 28000 12000 20000 37536 32000 53536 40000
+
+# Pure pointer-motion gesture (moves cursor without registering a contact)
+pymobiledevice3 developer core-device universal-hid-service swipe -- 100 400 700 400
+
+# Batched gestures inside ONE media stream — reads stdin / a script file.
+# Recognised lines: tap, drag, swipe, move, sleep (and # comments).
+printf 'tap 32768 32768\nsleep 0.3\ndrag 32768 5000 32768 60000\n' | \
+    pymobiledevice3 developer core-device universal-hid-service session
+
+# --- keyboard (a virtual keyboard registered for the command) ---
+
+# Type text (a newline presses Return), then remove the last two characters
+pymobiledevice3 developer core-device universal-hid-service type 'Hello'
+pymobiledevice3 developer core-device universal-hid-service key backspace --count 2
+```
+
+### Screen streaming (HEVC video)
+
+Two ways to view (and control) the device's screen live, both fed by the same device-initiated HEVC stream over the RSD tunnel. Both need **iOS 27 or later**: older devices never send the stream, so these commands refuse to start on them.
+
+- **`serve-web`** — serves the screen over HTTP for any modern browser; the HEVC decode happens in-browser via WebCodecs, so it works cross-platform with no external tools. Touch, hardware buttons (drawn on the edges of the phone frame), and keyboard are wired back to the device. The **View** panel zooms (`Ctrl+=` / `Ctrl+-` / `Ctrl+0`) and rotates the displayed device.
+- **`serve-vnc`** — serves the screen as a VNC (RFB 3.8) server for macOS Screen Sharing or any VNC client. macOS-only, because the server-side HEVC decode goes through VideoToolbox. Right-click in the viewer is the Home button; `Ctrl+H/L/[/]/\/S` map to Home / Lock / Volume Down / Volume Up / Mute / Siri. Add `--audio` to also play the device's system audio out of the host Mac's speakers.
+
+```
+# Query what the device's media-stream server supports
+pymobiledevice3 developer core-device display get-media-support-info
+pymobiledevice3 developer core-device display get-media-stream-server-status
+
+# Serve the device screen live to any modern browser (see notes above)
+pymobiledevice3 developer core-device display serve-web
+# then open http://127.0.0.1:8080/
+
+# Serve the device screen as a VNC (RFB 3.8) server, macOS-only (see notes above)
+pymobiledevice3 developer core-device display serve-vnc
+# then Finder ⌘K -> vnc://127.0.0.1:5901
+
+# Either one, reachable from the rest of the LAN: bind every interface and set a password,
+# since whoever reaches the port can both watch and control the device
+pymobiledevice3 developer core-device display serve-web --bind 0.0.0.0 --password s3cret
+pymobiledevice3 developer core-device display serve-vnc --bind 0.0.0.0 --password s3cret
+
+# Capture raw RTP/HEVC packets to a file (length-prefixed)
+pymobiledevice3 developer core-device display start-video-stream /tmp/cap.rtp --duration 10
+
+# Convert that capture to an Annex-B .h265 bitstream playable by ffplay/VLC
+# (misc/rtp_dump.py is in a source checkout, not in the installed package)
+misc/rtp_dump.py /tmp/cap.rtp /tmp/cap.h265
+ffplay -framerate 60 /tmp/cap.h265
+```
+
+Both can share the clipboard with the device, in both directions:
+
+- `serve-web`: turn on **Sync** in the viewer's Clipboard panel. Text and images copied on the device land in the browser machine's clipboard, and whatever was copied there is on the device by the time you paste. A picture copied out of a rich-text app such as Notes is not shared: it only exists inside the app's rich representations, and reading those blocks the device's pasteboard service for about a minute (copy the picture from Photos, or take a screenshot, instead). The browser only grants clipboard access on a secure context (`localhost`, or `--https`) and asks for permission once; it also refuses clipboard writes from a background tab, so a device copy made meanwhile lands when you return to the page.
+- `serve-vnc --share-clipboard`: text only (RFB has no image clipboard). Uses the RFB clipboard messages, so it follows the VNC client's own clipboard setting. UTF-8 with clients that implement the Extended Clipboard pseudo-encoding (TigerVNC, noVNC, …); other clients get the classic Latin-1 message.
+
+```
+pymobiledevice3 developer core-device display serve-vnc --share-clipboard
+```
+
+Camera and microphone conflicts
+
+iOS will not start a screen-mirroring session while a foreground app is using the camera or microphone. This is the same restriction Apple's Xcode Device Hub enforces. If the **Camera**, **Voice Memos**, or a similar app is in the foreground when you launch `serve-web` / `serve-vnc`, the command prints a one-line explanation and exits with a non-zero code rather than serving — quit that app on the device and run it again. Conversely, while a mirroring session is active those apps cannot acquire the sensors and will record silence or black video, so stop mirroring before capturing with them.
+
+### Location
+
+```
+# List the location-simulation scenarios baked into the device
+pymobiledevice3 developer core-device location available-scenarios
+```
+
+## WebInspector Automation
+
+```
+# JavaScript shell on open tab (requires Web Inspector enabled: Settings -> Apps -> Safari ->
+# Advanced, or Settings -> Safari -> Advanced before iOS 18)
+pymobiledevice3 webinspector js-shell
+
+# JavaScript shell filtered to one app's WebViews
+pymobiledevice3 webinspector js-shell --bundle-id com.example.MyApp
+
+# JavaScript shell without inspector console events
+pymobiledevice3 webinspector js-shell --no-console-enable
+
+# JavaScript shell without the console history the page replays on attach
+pymobiledevice3 webinspector js-shell --no-replayed-log
+
+# List opened tabs
+pymobiledevice3 webinspector opened-tabs
+
+# JavaScript shell on automation tab (requires Remote Automation enabled, next to Web Inspector)
+pymobiledevice3 webinspector js-shell --automation
+
+# JavaScript automation shell for a specific app
+pymobiledevice3 webinspector js-shell --automation --bundle-id com.example.MyApp
+
+# Launch automation session to URL
+pymobiledevice3 webinspector launch URL
+
+# Selenium-like interactive shell
+pymobiledevice3 webinspector shell
+
+# CDP bridge: debug pages with Chrome DevTools or VS Code
+pymobiledevice3 webinspector cdp
+```
+
+See [WebView debugging](https://doronz88.github.io/pymobiledevice3/latest/guides/webview-debugging/index.md) for the CDP bridge and the device setup in detail.

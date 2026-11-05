@@ -1,0 +1,165 @@
+# Restoring and updating devices
+
+`pymobiledevice3 restore update` reimplements the host side of an IPSW restore (an IPSW is Apple's firmware package for a device): what Finder, iTunes, Xcode and idevicerestore do when they flash a device. This guide explains the choices the command offers, what happens on the device, and which requests go to Apple's signing server (TSS) along the way. The measured numbers come from an iPhone18,4 on iOS 27.0 (build 24A435); they differ per device.
+
+Restoring can erase your device
+
+`restore update --erase` is a factory reset: **everything on the device is deleted**. Even a plain update in place reflashes the whole firmware, and an interrupted or failed restore can leave the device in recovery mode, where getting it back may take an erase. Make a backup first (`pymobiledevice3 backup2 backup <directory>`) and keep the cable connected until the device has rebooted. After an erase the device goes through setup again, including Activation Lock if Find My was on.
+
+Before you start you need:
+
+- The device connected **over USB** (restore does not work over Wi-Fi).
+- Network access to Apple's signing server (`gs.apple.com`), and to ipsw.me or AppleDB when you let the tool pick the firmware.
+- A build Apple still signs for the device (see [Choosing the firmware](#choosing-the-firmware)).
+- Several GB of free disk space for the IPSW.
+- On Linux and Windows, `libusb` for recovery and DFU mode (see [Installation](https://doronz88.github.io/pymobiledevice3/latest/installation/index.md)).
+
+Two device modes come up throughout: **recovery mode** is the iBoot bootloader waiting for firmware from a computer; **DFU mode** (Device Firmware Update) is a lower-level mode run by the chip's boot ROM, used when even iBoot cannot start.
+
+The simplest run updates the connected device in place to a signed build you pick from a list:
+
+```
+pymobiledevice3 restore update
+```
+
+## What a restore does
+
+1. **Normal mode.** The device is found through usbmuxd. Its build, ECID (the chip's unique ID), AP and SEP nonces and the peripheral state (`PreflightInfo`) are read over lockdown, and the AP ticket is requested from TSS. Only then is the device sent into recovery mode.
+1. **Recovery.** iBSS/iBEC are uploaded and the device is booted into the restore ramdisk from the IPSW.
+1. **Restore mode.** The ramdisk's `restored` asks the host for everything it needs, item by item: the root filesystem, firmware components, per-peripheral tickets, the baseband, cryptexes. The host answers each request, proxying FDR (Factory Data Recovery, the device's factory calibration data) traffic in between. This phase is where all the time goes.
+1. **Reboot** into the new build.
+
+If the device is already in recovery or DFU mode, step 1 is skipped: the tool waits for such a device, identifies it by ECID (`--ecid` picks one when several are connected) and starts from step 2. Nothing that needs lockdown is available then, so anything derived from `PreflightInfo` (including `--tss-batch`, below) is simply not done.
+
+## Choosing the firmware
+
+`-i` / `--ipsw` accepts a local path or an `http(s)://` URL. A URL is downloaded to a temporary directory and deleted after the restore. With `-i` omitted, the tool asks ipsw.me for the builds Apple currently signs for the device's product type and lets you pick one interactively; that needs network access and works from normal mode as well as recovery (the product type comes from lockdown or from the recovery-mode device table).
+
+To stop downloading the same multi-GB IPSW on every run, pass `--ipsw-dir` (or set `PYMOBILEDEVICE3_IPSW_DIR` once; a leading `~` is expanded). Downloads then go into that directory under Apple's filename (e.g. `iPhone12,1_27.2_24B119_Restore.ipsw`) and are kept. A file already there with that name is used as-is, without re-hashing, and the interactive picker marks such builds `(local)`. A new download is written to `<name>.part`, which a later run resumes after an interruption, and is renamed into place only once it matches its SHA-256 (the one Apple's CDN publishes for the file, else ipsw.me's); a mismatching download is discarded. A single Ctrl-C stops the download and keeps the `.part`. If ipsw.me can't be reached, the picker reports it and exits.
+
+`--beta` lists the newest beta builds instead, from [AppleDB](https://appledb.dev) (ipsw.me has no betas), restricted to those with an IPSW for the device: e.g. `27.2 beta 4: 24B5110a`. AppleDB's signing status is shown as `(unsigned)` but is only a hint; TSS decides at restore time. `--ipsw-dir`, resuming and SHA-256 verification work the same way.
+
+Whatever the source, the build must be signed by Apple at restore time, since the AP ticket comes from TSS. A `--tss` SHSH blob can be supplied for the AP ticket instead of asking TSS; the peripheral tickets are still requested live.
+
+## Update or erase
+
+By default the restore is an **update in place**: the `Upgrade Install (IPSW)` build identity is used, the data volume is kept, and the device comes back with its apps and settings. `--erase` selects the `Erase Install (IPSW)` identity instead: a factory reset that recreates the filesystem and **deletes all data on the device**. Both go through the same steps above; erase is what you want for a device stuck in recovery with no usable data volume, or to wipe it.
+
+`--ignore-fdr` is a debugging option: the host connects to the FDR service but does not proxy its traffic.
+
+## Restoring from DFU mode
+
+DFU mode is entered with a button sequence; the host cannot enter it alone. `--dfu` walks you through it before the restore starts, and `restore enter-dfu` does just that part:
+
+```
+pymobiledevice3 restore update -i iPhone.ipsw --dfu
+pymobiledevice3 restore enter-dfu
+```
+
+The guide picks the buttons for the model (iPhones by product type; for an iPad it asks whether there is a Home button), counts each step down, and watches the device over USB: its screen going black, then the device coming back in DFU mode (classic DFU, or Debug USB/KIS on A16 and later), in recovery, or booted normally. Each step moves on as soon as the device reacts, and if it ends up anywhere but DFU the guide says what to change and offers another try. Apple documents only the recovery mode sequences; the DFU ones are the widely used sequences.
+
+On an iPhone 8 or later that is booted, the host restarts the phone itself, so the quick VOLUME UP, VOLUME DOWN, SIDE presses go away: you hold VOLUME DOWN, the phone restarts, you add SIDE once it went down, then release SIDE. `--manual` keeps the full button sequence instead.
+
+On macOS, an A16-or-later device in DFU mode (Debug USB/KIS) can only be opened by Apple's `deviceinterfaced`, so the restore loads its images through that daemon; elsewhere it talks KIS to the device over libusb.
+
+## Keeping deviceinterfaced off the device
+
+macOS's `deviceinterfaced` can claim the USB device while it re-enumerates during a restore, so the device in DFU mode is never seen. `--exclusive-usb` (experimental, macOS only) keeps the daemon off for the restore: it boots it out, or keeps killing it where System Integrity Protection refuses that, and loads and starts it again when the restore ends. The `launchctl` calls run through `sudo` and may prompt for your password. It cannot be used with an A16-or-later device in DFU mode on macOS, which is reached through that daemon.
+
+## How the host reaches the device
+
+On macOS, devices in recovery and DFU mode are reached through IOKit; elsewhere through libusb. A16-or-later devices in DFU mode go through `deviceinterfaced` on macOS (see above). `restore --libusb` (or `PYMOBILEDEVICE3_USB_BACKEND=libusb`) switches macOS to libusb, e.g. to compare the two:
+
+```
+pymobiledevice3 restore --libusb update -i iPhone.ipsw
+```
+
+## Several devices at once
+
+Each restore stays on its own device, so several can run side by side: start one `restore update` per device. With more than one device connected, the command asks which one to use; `--ecid` picks it non-interactively. On devices from the A12 on, the UDID is `<ChipID>-<ECID>`, so the ECID is the part after the dash:
+
+```
+# UDID 00008150-001074523440401C
+pymobiledevice3 restore update --ecid 0x001074523440401C -i iPhone18,4_Restore.ipsw
+```
+
+`lockdown info` reports it as `UniqueChipID` (decimal), and the `--ecid` option takes either form.
+
+## The helper commands
+
+- `restore enter` puts a normal-mode device into recovery, where it stays until `restore exit` re-enables auto-boot and reboots it back to iOS; `restore restart` reboots either (see below for `--vdm`).
+- `restore tss` requests (and with `--out` saves) the AP ticket for a build without restoring, `--behavior Update|Erase` selecting the identity.
+- `restore ramdisk` boots the IPSW's restore ramdisk and stops there.
+- `restore shell` opens an IPython shell with the iBoot (`irecv`) client of a recovery/DFU device.
+
+## Restarting over USB-C (macOS)
+
+`restore restart --vdm` restarts the device with Apple's USB Power Delivery reboot message, sent by the Mac's own USB-C port controller. The device's USB-C controller handles it, not iOS, so it needs no pairing or trust and works in recovery mode too:
+
+```
+sudo pymobiledevice3 restore restart --vdm
+```
+
+- It needs root: only root can open the port controller.
+- The device has to be on a Thunderbolt/USB4 port, the ports with Apple's PD controller, and connected directly: a hub in between does not pass the message on.
+- With several Apple devices on such ports, the command asks which one to restart; `--ecid` picks it non-interactively.
+
+## Inspecting the preflight data
+
+Two commands expose what the device reports before a restore, in JSON:
+
+```
+# what lockdown reports in normal mode: PreflightInfo (each peripheral updater's
+# identity fields and current nonce), FirmwarePreflightInfo, ApParameters
+pymobiledevice3 restore preflight
+
+# the TSS request each updater would send, built by the device itself for this
+# IPSW (restoreserviced over a tunnel; uploads each updater's firmware first)
+pymobiledevice3 restore preflight-requests -i iPhone.ipsw --updater T200 --updater Rose
+```
+
+`preflight-requests` returns, per updater, the request (`DeviceInfoRequests`), its ticket and manifest tags (`DeviceInfoTags`) and the updaters whose preflight failed (`DeviceInfoFailures`; the baseband always does in normal mode). Without `--updater` it queries every known updater except the baseband. It is what `--tss-batch` is validated against: a chip can only be served from the prefetch if the request pymobiledevice3 builds from `PreflightInfo` equals the one the device builds, nonce aside.
+
+## TSS requests during a restore
+
+Every restore signs firmware against `gs.apple.com`. Without any flag:
+
+1. **The AP request**, in normal mode, before the device enters recovery. It asks for `ApImg4Ticket` against the ECID, the AP and SEP nonces and the build manifest. When the build identity has a `RecoveryVariant`, a second AP request follows for the recoveryOS root ticket.
+1. **One request per peripheral updater**, during the restore. `restored` asks for each chip's ticket with a `FirmwareUpdaterData` message; on iOS 18 and later the device builds the TSS request itself (`DeviceGeneratedRequest`) and the host adds the manifest digests and forwards it. On this device that is T200 (battery management), Rose (UWB), Centauri (Wi-Fi/Bluetooth), Savage (Face ID, two loops), SE (Secure Element), Vinyl (eSIM), Baseband, and after FDR sealing Rose again plus Cryptex1 and its local policy: 11 requests.
+
+That is 13 sequential requests of about half a second each for a full update on this device. Nothing is reused between restores: every chip carries a nonce and most regenerate it at every boot.
+
+### The empty preflight message
+
+Before it asks for a chip's ticket, `restored` sends `FirmwareUpdaterPreflight` for that chip. It does so because the host's restore options declare `PersonalizedDuringPreflight`, which tells the device the host may already hold tickets from a personalization done in normal mode. Apple's own host only fills that stash for Apple displays (their USB-C and timing controllers); for iPhones it answers with an empty dictionary, and so does pymobiledevice3. The message is logged at debug level and is not a problem.
+
+### `--tss-batch`
+
+With the flag, the peripheral ticket requests are built up front from the device's lockdown `PreflightInfo` (each chip's identity fields and current nonce) plus the build manifest, and are sent **inside the AP request**. TSS answers every ticket in that one response, so the prefetch adds no request.
+
+During the restore, when `restored` asks for a chip's ticket, the host compares the device's own request with what it signed, entry for entry (nonces, digests and flags included). Only an identical request is answered from the prefetch; any difference, or a request on which the device asks for a fresh personalization (`MessageForceRepersonalization`, or any loop but the first), goes to TSS as usual. A prefetched ticket is never served against a nonce the chip has since discarded.
+
+At the end of the restore a summary is logged:
+
+```
+TSS PREFETCH SUMMARY
+  prefetched up-front : 7 ['SE', 'Rose', 'Centauri', 'Savage', 'T200', 'Vinyl', 'Baseband']
+  hits                : 3 ['T200', 'SE', 'Vinyl']
+  request mismatches  : 5 ['Rose', 'Centauri', 'Baseband', 'Savage', 'Rose']
+  not prefetched      : 0 []
+  >> TSS requests saved during the restore: 3
+```
+
+A hit saves one request. A mismatch costs nothing: the request the reactive path would have made is made, and the log line names the entries that differed (on this device always the chip's nonce). Which chips hit depends on whether the chip keeps its nonce across the boot into the restore ramdisk:
+
+| Chip                             | Nonce across the boot into the ramdisk | Outcome                           |
+| -------------------------------- | -------------------------------------- | --------------------------------- |
+| T200, SE, Vinyl                  | kept                                   | served from the prefetch          |
+| Rose, Centauri, Baseband, Savage | regenerated                            | live request, as without the flag |
+| Cryptex1                         | not exposed before the restore         | never prefetched                  |
+
+Request count per restore on this device: 13 without the flag, 10 with it.
+
+If TSS ever rejects the AP request because of a prefetched entry, the AP request is retried alone and the restore proceeds with every chip on the live path. That is the only case in which the flag costs a request, and it happens before the device leaves normal mode. A chip whose request cannot be built is left to the live path.
+
+The flag is opt-in because it relies on pymobiledevice3 reproducing each chip's request format from `PreflightInfo`; a format change in a future iOS build turns into misses, not into wrong tickets, and the miss log shows which entries no longer match. The per-chip request builders live in `pymobiledevice3/restore/tss.py` (`PREFETCHABLE_UPDATERS`); the `tss-batch-prefetch` skill in the repository describes how to validate and extend them.
