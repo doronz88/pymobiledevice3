@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Any, Callable, Optional, Union
 
 from pymobiledevice3.exceptions import (
+    AutomationSessionUnavailableError,
     ConnectionTerminatedError,
     LaunchingApplicationError,
     RemoteAutomationNotEnabledError,
@@ -28,6 +29,8 @@ WEBINSPECTORD_DISABLED_NOTIFICATION = "com.apple.webinspectord.disabled"
 # disabled, and how long to wait between attempts (see WebinspectorService._handshake).
 HANDSHAKE_RETRY_TIMEOUT = 20
 HANDSHAKE_RETRY_INTERVAL = 1
+# Safari hands out an automation page within a few seconds, including its own launch.
+AUTOMATION_SESSION_TIMEOUT = 10.0
 
 
 def key_to_pid(key: str) -> int:
@@ -366,27 +369,54 @@ class WebinspectorService(LockdownService):
                 return
             raise
 
-    async def automation_session(self, app: Application) -> AutomationSession:
+    async def automation_session(
+        self, app: Application, timeout: float = AUTOMATION_SESSION_TIMEOUT
+    ) -> AutomationSession:
         """Start a WebDriver automation session against an application.
 
         Requests a new automation session, waits for the corresponding automation page to appear,
         sets up its forwarding socket, and waits until the page reports an automation connection id.
 
         :param app: The application to automate.
+        :param timeout: Seconds to wait for each of the two steps the application has to answer.
         :returns: A connected automation session.
         :raises RemoteAutomationNotEnabledError: Remote automation is not available on the device.
+        :raises AutomationSessionUnavailableError: The application did not start the session in time,
+            typically because another client's automation session holds it.
         """
         if self.state == "WIRAutomationAvailabilityNotAvailable":
             raise RemoteAutomationNotEnabledError()
         session_id = str(uuid.uuid4()).upper()
         await self._forward_automation_session_request(session_id, app.id_)
         await self._forward_get_listing(app.id_)
-        page = await self._wait_for_page(session_id)
-        await self._forward_socket_setup(session_id, app.id_, page.id_)
-        await self._forward_get_listing(app.id_)
-        while not page.automation_connection_id:
-            await asyncio.sleep(0)
+        try:
+            page = await asyncio.wait_for(self._wait_for_page(session_id), timeout)
+            await self._forward_socket_setup(session_id, app.id_, page.id_)
+            await self._forward_get_listing(app.id_)
+            await asyncio.wait_for(self._wait_for_automation_connection(page), timeout)
+        except asyncio.TimeoutError:
+            raise self._automation_session_unavailable(app, session_id, timeout) from None
         return AutomationSession(SessionProtocol(self, session_id, app, page))
+
+    def _automation_session_unavailable(
+        self, app: Application, session_id: str, timeout: float
+    ) -> AutomationSessionUnavailableError:
+        # An application serves one automation session at a time: while another client holds it (a
+        # second pymobiledevice3, a WebDriver, a process orphaned by its parent), new requests go
+        # unanswered. The device frees it when that client's connection closes.
+        held = any(
+            page.type_ == WirTypes.AUTOMATION and page.automation_session_id != session_id
+            for page in self.application_pages.get(app.id_, {}).values()
+        )
+        if held:
+            return AutomationSessionUnavailableError(
+                f"{app.name} is already held by another automation session. Stop the other client using it "
+                f"(another pymobiledevice3 webinspector command or WebDriver), or quit {app.name} on the device "
+                f"(`pymobiledevice3 developer dvt pkill --bundle {app.bundle}`), and try again."
+            )
+        return AutomationSessionUnavailableError(
+            f"{app.name} did not start an automation session within {timeout:g} seconds"
+        )
 
     async def inspector_session(self, app: Application, page: Page) -> InspectorSession:
         """Open a Web Inspector session against a specific page of an application.
@@ -453,7 +483,7 @@ class WebinspectorService(LockdownService):
         await self.get_open_pages()
         try:
             return await asyncio.wait_for(self._wait_for_application(bundle), timeout)
-        except TimeoutError as e:
+        except asyncio.TimeoutError as e:  # not the builtin TimeoutError before Python 3.11
             raise LaunchingApplicationError() from e
 
     async def send_socket_data(self, session_id: str, app_id: str, page_id: int, data: dict[str, Any]):
@@ -774,6 +804,11 @@ class WebinspectorService(LockdownService):
                 for page in app.values():
                     if page.type_ == WirTypes.AUTOMATION and page.automation_session_id == session_id:
                         return page
+            await asyncio.sleep(0)
+
+    @staticmethod
+    async def _wait_for_automation_connection(page: Page) -> None:
+        while not page.automation_connection_id:
             await asyncio.sleep(0)
 
     async def _wait_for_application(self, bundle: str = "", app_id: str = "") -> Application:
