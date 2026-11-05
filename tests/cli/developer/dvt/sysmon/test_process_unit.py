@@ -31,6 +31,7 @@ from pymobiledevice3.cli.developer.dvt.sysmon.process import (
     _validate_process_keys,
     _write_json,
     _write_process,
+    _write_status,
     iter_processes,
     sysmon_process_monitor_process_task,
     sysmon_process_monitor_threshold_task,
@@ -188,17 +189,22 @@ def test_write_process_writes_jsonl_to_output_stream():
     assert out.getvalue() == '{"pid": 1}\n'
 
 
-def test_write_process_prints_json_when_out_is_none(monkeypatch):
-    captured = {}
+def test_write_process_prints_ndjson_when_out_is_none(capsys):
+    _write_process(None, {"pid": 1, "name": "App"})
+    _write_process(None, {"pid": 2, "name": "Other"})
 
-    def fake_print_json(value):
-        captured["value"] = value
+    captured = capsys.readouterr()
+    lines = captured.out.splitlines()
+    assert [json.loads(line) for line in lines] == [{"pid": 1, "name": "App"}, {"pid": 2, "name": "Other"}]
+    assert captured.err == ""
 
-    monkeypatch.setattr(process_module, "print_json", fake_print_json)
 
-    _write_process(None, {"pid": 1})
+def test_write_status_goes_to_stderr(capsys):
+    _write_status("Monitoring pid=1, ppid=0, name=App")
 
-    assert captured["value"] == {"pid": 1}
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "Monitoring pid=1, ppid=0, name=App\n"
 
 
 def test_write_json_writes_formatted_json_to_output_stream():
@@ -339,6 +345,24 @@ async def test_sysmon_process_monitor_threshold_task_skips_first_snapshot(monkey
     lines = [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
     assert len(lines) == 1
     assert lines[0]["pid"] == 20
+
+
+@pytest.mark.asyncio
+async def test_sysmon_process_monitor_threshold_task_streams_ndjson_to_stdout(monkeypatch, capsys):
+    async def fake_create(_dvt):
+        return _FakeSysmontap([
+            [{"pid": 10, "cpuUsage": 99.0}],
+            [{"pid": 20, "cpuUsage": 1.5}, {"pid": 30, "cpuUsage": 2.5}],
+        ])
+
+    monkeypatch.setattr(process_module, "DvtProvider", _FakeDvtProvider)
+    monkeypatch.setattr(process_module.Sysmontap, "create", fake_create)
+
+    await sysmon_process_monitor_threshold_task(cast(LockdownServiceProvider, object()), threshold=0.0, keys=["pid"])
+
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2
+    assert [json.loads(line)["pid"] for line in lines] == [20, 30]
 
 
 def test_process_sort_key_normalizes_missing_values():
@@ -560,7 +584,9 @@ async def test_sysmon_process_monitor_process_task_stops_when_selected_process_e
     emitted = await _run_monitor_process_task(snapshots, monkeypatch, choose=ProcessSelectionMode.FIRST)
 
     assert [record["pid"] for record in emitted] == [10]
-    assert "Selected process exited: pid=10, ppid=1, name=App" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Selected process exited: pid=10, ppid=1, name=App" in captured.err
 
 
 @pytest.mark.asyncio
@@ -591,7 +617,9 @@ async def test_sysmon_process_monitor_process_task_keep_monitoring_reacquires_re
     )
 
     assert [record["pid"] for record in emitted] == [10, 20]
-    status_output = capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    status_output = captured.err
     assert "Monitoring pid=10, ppid=1, name=App" in status_output
     assert "Monitoring pid=20, ppid=1, name=App" in status_output
     assert "Selected process exited" not in status_output

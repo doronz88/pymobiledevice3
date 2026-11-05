@@ -1,3 +1,5 @@
+import io
+import logging
 import struct
 import uuid
 from typing import Any, cast
@@ -254,3 +256,30 @@ def test_thread_queue_and_group_names_cut_mid_character_decode() -> None:
     expected = "中" * 10 + "�"
     assert [item["data"]["obj"] for item in items[:2]] == [expected, expected]
     assert items[2]["data"]["obj"][0]["obj"]["tgs_name"] == "中" * 5 + "�"
+
+
+@pytest.mark.asyncio
+async def test_dump_writes_only_trace_data_and_reports_progress_on_the_log(
+    capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    messages = [b"bplist00", b"trace-1", b"trace-22"]
+
+    async def next_message() -> bytes:
+        if not messages:
+            raise EOFError
+        return messages.pop(0)
+
+    tap = CoreProfileSessionTap(cast(DtxServiceProvider, None), {})
+    tap._next_message = next_message  # type: ignore[method-assign]
+    out = io.BytesIO()
+
+    with caplog.at_level(logging.INFO, logger=core_profile_session_tap.__name__), pytest.raises(EOFError):
+        await tap.dump(out)
+
+    assert out.getvalue() == b"trace-1trace-22"
+    # Progress is a diagnostic: it must never reach stdout.
+    assert capsys.readouterr().out == ""
+    assert [record.getMessage() for record in caplog.records] == [
+        "Receiving trace data (7B)",
+        "Receiving trace data (8B)",
+    ]

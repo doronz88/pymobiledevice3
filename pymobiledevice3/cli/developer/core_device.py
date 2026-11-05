@@ -4,9 +4,10 @@ import posixpath
 import sys
 import time
 from contextlib import AsyncExitStack, nullcontext
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
-from typing import IO, Annotated, Optional, cast
+from typing import IO, Annotated, Any, Optional, cast
 
 import typer
 from typer_injector import InjectingTyper
@@ -211,6 +212,21 @@ async def core_device_create_symlink(
         await file_service.create_symbolic_link(path, target)
 
 
+# FileService reports timestamps as seconds since the Cocoa epoch.
+_COCOA_EPOCH = datetime(2001, 1, 1, tzinfo=timezone.utc)
+_ATTRIBUTE_TIMESTAMPS = ("creationTime", "modificationTime", "accessTime")
+
+
+def _attributes_with_datetimes(attributes: dict[str, Any]) -> dict[str, Any]:
+    """Turn the Cocoa-epoch timestamps of `FileServiceService.get_attributes` into UTC datetimes."""
+    converted = dict(attributes)
+    for key in _ATTRIBUTE_TIMESTAMPS:
+        value = converted.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            converted[key] = _COCOA_EPOCH + timedelta(seconds=value)
+    return converted
+
+
 @cli.command("stat")
 @async_command
 async def core_device_stat(
@@ -222,7 +238,7 @@ async def core_device_stat(
 ) -> None:
     """Show the attributes of an item at the given domain/path."""
     async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
-        print_json(await file_service.get_attributes(path, follow_symlinks))
+        print_json(_attributes_with_datetimes(await file_service.get_attributes(path, follow_symlinks)))
 
 
 @cli.command("write-file")

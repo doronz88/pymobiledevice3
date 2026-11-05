@@ -774,7 +774,7 @@ async def parse_live_profile_session(
     )
     async with DvtProvider(service_provider) as dvt:
         if not json_output:
-            print("Receiving time information")
+            logger.info("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
         parser: Any = PyKdebugParser()
         parser.filter_class = list(selection.classes)
@@ -960,7 +960,7 @@ async def callstacks_live_profile_session(
 ) -> None:
     """Print callstacks received from the device in real time."""
     async with DvtProvider(service_provider) as dvt:
-        print("Receiving time information")
+        logger.info("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
         parser: Any = PyKdebugParser()
         _apply_time_config(parser, time_config)
