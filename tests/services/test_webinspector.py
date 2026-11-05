@@ -7,7 +7,11 @@ from typing import Any, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError, WebInspectorNotEnabledError
+from pymobiledevice3.exceptions import (
+    AutomationSessionUnavailableError,
+    ConnectionTerminatedError,
+    WebInspectorNotEnabledError,
+)
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.services import webinspector
 from pymobiledevice3.services.lockdown_service import LockdownService
@@ -295,3 +299,74 @@ async def test_a_disconnect_during_the_handshake_is_not_reported_as_disabled(
         with pytest.raises(ConnectionTerminatedError):
             await inspector._handshake(disabled_task)
     assert len(attempts) == 1
+
+
+def _safari() -> Application:
+    return Application.from_application_dictionary({
+        "WIRApplicationIdentifierKey": "PID:437",
+        "WIRApplicationBundleIdentifierKey": SAFARI,
+        "WIRApplicationNameKey": "Safari",
+        "WIRIsApplicationActiveKey": 1,
+        "WIRIsApplicationProxyKey": False,
+        "WIRIsApplicationReadyKey": True,
+    })
+
+
+def _automation_page(page_id: int, session_id: str, connection_id: str = "") -> Page:
+    listing = {
+        "WIRPageIdentifierKey": page_id,
+        "WIRTypeKey": "WIRTypeAutomation",
+        "WIRAutomationTargetIsPairedKey": True,
+        "WIRAutomationTargetNameKey": "",
+        "WIRAutomationTargetVersionKey": "",
+        "WIRSessionIdentifierKey": session_id,
+    }
+    if connection_id:
+        listing["WIRConnectionIdentifierKey"] = connection_id
+    return Page.from_page_dictionary(listing)
+
+
+def _unanswering_inspector(monkeypatch: pytest.MonkeyPatch) -> WebinspectorService:
+    """An inspector whose requests reach a device that never hands out the automation page."""
+    inspector = WebinspectorService(lockdown=cast(Any, object()))
+
+    async def sent(*args: Any) -> None:
+        return None
+
+    for request in ("_forward_automation_session_request", "_forward_get_listing", "_forward_socket_setup"):
+        monkeypatch.setattr(inspector, request, sent)
+    return inspector
+
+
+async def test_an_automation_session_held_by_another_client_is_reported_instead_of_waited_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Safari serves one automation session at a time. While another client holds it, new requests
+    go unanswered: `webinspector launch` and `js-shell --automation` hung silently behind an orphaned
+    `launch` process (seen on iOS 27.2)."""
+    inspector = _unanswering_inspector(monkeypatch)
+    safari = _safari()
+    inspector.application_pages[safari.id_] = {"1": _automation_page(1, "OTHER-CLIENT", "C0FFEE")}
+
+    with pytest.raises(AutomationSessionUnavailableError, match="already held by another automation session"):
+        await asyncio.wait_for(inspector.automation_session(safari, timeout=0.05), 5)
+
+
+async def test_an_unanswered_automation_session_request_times_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    inspector = _unanswering_inspector(monkeypatch)
+
+    with pytest.raises(AutomationSessionUnavailableError, match="did not start an automation session within"):
+        await asyncio.wait_for(inspector.automation_session(_safari(), timeout=0.05), 5)
+
+
+async def test_an_automation_session_starts_once_its_page_connects(monkeypatch: pytest.MonkeyPatch) -> None:
+    inspector = _unanswering_inspector(monkeypatch)
+    safari = _safari()
+
+    async def hand_out_page(session_id: str, app_id: str) -> None:
+        inspector.application_pages[app_id] = {"2": _automation_page(2, session_id, "C0FFEE")}
+
+    monkeypatch.setattr(inspector, "_forward_automation_session_request", hand_out_page)
+
+    session = await asyncio.wait_for(inspector.automation_session(safari, timeout=1), 5)
+    assert session.protocol.page.automation_connection_id == "C0FFEE"

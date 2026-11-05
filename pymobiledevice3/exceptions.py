@@ -7,6 +7,7 @@ __all__ = [
     "AmfiError",
     "ArbitrationError",
     "ArgumentError",
+    "AutomationSessionUnavailableError",
     "BackupFilterPasswordRequiredError",
     "BadCommandError",
     "BadDevError",
@@ -373,6 +374,10 @@ class ScreencastUnavailableError(PyMobileDevice3Exception):
 
 class RemoteAutomationNotEnabledError(PyMobileDevice3Exception):
     """Remote Automation is disabled. Enable it in Settings > Apps > Safari > Advanced > Remote Automation."""
+
+
+class AutomationSessionUnavailableError(PyMobileDevice3Exception):
+    """The application did not start a Web Inspector automation session in time."""
 
 
 class WirError(PyMobileDevice3Exception):
