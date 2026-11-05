@@ -166,7 +166,7 @@ it yet. In order:
 
 3. On **iOS 17+**, developer commands also need a tunnel — but you normally don't need to do
    anything: the CLI establishes a no-root userspace tunnel in-process automatically (you'll
-   see a *"Trying again over a no-root userspace tunnel"* warning, which is normal). The
+   see a *"Trying again over a no-root userspace tunnel"* message, which is normal). The
    exception is iOS 17.0-17.3 on Linux/Windows, which needs a running `tunneld` (see
    [below](#unable-to-connect-to-tunneld-tunneldconnectionerror)). See
    [iOS 17+ tunnels](ios17-tunnels.md) for the full picture.
@@ -192,7 +192,7 @@ same situation — remove the mounted image as above, or upgrade pymobiledevice3
 
 ### "Trying again over ... since RSD is required for this command"
 
-A warning, not an error: the command needs an RSD tunnel, so the CLI retries over a no-root tunnel
+A notice, not an error: the command needs an RSD tunnel, so the CLI retries over a no-root tunnel
 by itself. It appears for developer commands on iOS 17+ (*"since it is a developer command on an
 iOS 17+ device"*), and for `mounter auto-mount` from iOS 27, where the DeveloperDiskImage is
 installed as a cryptex over `cryptexd`, which is only reachable through an RSD tunnel. Pass `--tunnel`, `--userspace` or `--native`
