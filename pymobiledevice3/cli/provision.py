@@ -14,30 +14,36 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="provision",
-    help="Manage installed provision profiles",
+    help="Install, list, export and remove provisioning profiles (.mobileprovision).",
     no_args_is_help=True,
 )
 
 
 @cli.command("install")
 @async_command
-async def provision_install(service_provider: ServiceProviderDep, profile: Path) -> None:
-    """install a provision profile (.mobileprovision file)"""
+async def provision_install(
+    service_provider: ServiceProviderDep,
+    profile: Annotated[Path, typer.Argument(help="Provisioning profile file (.mobileprovision).")],
+) -> None:
+    """Install a provisioning profile on the device."""
     with profile.open("rb") as profile_file:
         await MisagentService(lockdown=service_provider).install(profile_file)
 
 
 @cli.command("remove")
 @async_command
-async def provision_remove(service_provider: ServiceProviderDep, profile_id: str) -> None:
-    """remove a provision profile"""
+async def provision_remove(
+    service_provider: ServiceProviderDep,
+    profile_id: Annotated[str, typer.Argument(help="UUID of the profile to remove (see `provision list`).")],
+) -> None:
+    """Remove an installed provisioning profile."""
     await MisagentService(lockdown=service_provider).remove(profile_id)
 
 
 @cli.command("clear")
 @async_command
 async def provision_clear(service_provider: ServiceProviderDep) -> None:
-    """remove all provision profiles"""
+    """Remove every installed provisioning profile (no confirmation)."""
     for profile in await MisagentService(lockdown=service_provider).copy_all():
         await MisagentService(lockdown=service_provider).remove(profile.plist["UUID"])
 
@@ -45,7 +51,7 @@ async def provision_clear(service_provider: ServiceProviderDep) -> None:
 @cli.command("list")
 @async_command
 async def provision_list(service_provider: ServiceProviderDep) -> None:
-    """list installed provision profiles"""
+    """Print the installed provisioning profiles (UUID, name, expiration, ...)."""
     print_json([p.plist for p in await MisagentService(lockdown=service_provider).copy_all()])
 
 
@@ -55,10 +61,12 @@ async def provision_dump(
     service_provider: ServiceProviderDep,
     out: Annotated[
         Path,
-        typer.Argument(file_okay=False, dir_okay=True, exists=True),
+        typer.Argument(
+            file_okay=False, dir_okay=True, exists=True, help="Existing directory to save the profiles into."
+        ),
     ],
 ) -> None:
-    """dump installed provision profiles to specified location"""
+    """Save every installed provisioning profile as OUT/<UUID>.mobileprovision."""
     for profile in await MisagentService(lockdown=service_provider).copy_all():
         path = device_file_path(Path(out), profile.plist["UUID"], ".mobileprovision")
         logger.info(f"downloading {path.name}")

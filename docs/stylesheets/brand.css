@@ -347,3 +347,12 @@
 .md-footer-meta {
   background-color: var(--pmd-navy-deep);
 }
+
+/* Recorded terminal sessions (docs/assets/terminal/*.html): a dark terminal in both color schemes. */
+.md-typeset .pmd-terminal pre > code {
+  background-color: #1e2127;
+  color: #dcdfe4;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  white-space: pre;
+}

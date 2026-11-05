@@ -26,13 +26,13 @@ from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 
 cli = InjectingTyper(
     name="process",
-    help="Process monitor options.",
+    help="Show or monitor per-process metrics (CPU, memory, ...).",
     no_args_is_help=True,
 )
 
 monitor_cli = InjectingTyper(
     name="monitor",
-    help="Continuously stream process metrics.",
+    help="Continuously stream process metrics, until interrupted (Ctrl+C) or --duration elapses.",
     no_args_is_help=True,
 )
 cli.add_typer(monitor_cli)
@@ -420,7 +420,7 @@ async def sysmon_process_single(
     human: HumanReadableProcessValues = False,
     output: ProcessResultsOutputPath = None,
 ) -> None:
-    """show a single snapshot of currently running processes."""
+    """Print a single snapshot of the running processes and their metrics."""
     with contextlib.ExitStack() as stack:
         out = stack.enter_context(open(output, "w")) if output else None
         await sysmon_process_single_task(service_provider, filter_expressions, keys, human, out)
@@ -473,7 +473,7 @@ async def sysmon_process_monitor_threshold(
     human: HumanReadableProcessValues = False,
     output: ProcessResultsOutputPath = None,
 ) -> None:
-    """Continuously monitor processes above a cpuUsage threshold."""
+    """Continuously print processes above a cpuUsage threshold, one JSON object per line."""
 
     with contextlib.ExitStack() as stack:
         out = stack.enter_context(open(output, "w")) if output else None
@@ -510,7 +510,7 @@ async def sysmon_process_monitor_process(
     human: HumanReadableProcessValues = False,
     output: ProcessResultsOutputPath = None,
 ) -> None:
-    """Continuously monitor one process selected from the current snapshot by key=value filters."""
+    """Continuously print one process selected by key=value filters, one JSON object per line."""
 
     with contextlib.ExitStack() as stack:
         out = stack.enter_context(open(output, "w")) if output else None
@@ -527,7 +527,7 @@ async def sysmon_process_monitor_threshold_task(
     human: bool = False,
     out: Optional[TextIO] = None,
 ) -> None:
-    """Continuously monitor processes above a cpuUsage threshold."""
+    """Continuously print processes above a cpuUsage threshold, one JSON object per line."""
 
     start_time = None
 
@@ -565,7 +565,7 @@ async def sysmon_process_monitor_process_task(
     out: Optional[TextIO] = None,
     keep_monitoring: bool = False,
 ) -> None:
-    """Continuously monitor one process selected from the current snapshot by key=value filters."""
+    """Continuously print one process selected by key=value filters, one JSON object per line."""
 
     parsed_filters = _parse_process_filters(filter_expressions)
 

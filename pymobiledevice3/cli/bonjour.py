@@ -11,7 +11,7 @@ from pymobiledevice3.lockdown import get_mobdev2_lockdowns
 
 cli = InjectingTyper(
     name="bonjour",
-    help="Browse devices over bonjour",
+    help="Discover devices on the local network over bonjour (mDNS).",
     no_args_is_help=True,
 )
 
@@ -19,18 +19,19 @@ cli = InjectingTyper(
 @cli.command("mobdev2")
 @async_command
 async def cli_mobdev2(
-    timeout: Annotated[float, typer.Option()] = DEFAULT_BONJOUR_TIMEOUT,
+    timeout: Annotated[float, typer.Option(help="How long to browse, in seconds.")] = DEFAULT_BONJOUR_TIMEOUT,
     pair_records: Annotated[
         Optional[Path],
         typer.Option(
             exists=True,
             dir_okay=True,
             file_okay=True,
-            help="pair records to attempt validation with",
+            help="Pair record file, or directory of them, to try against discovered devices "
+            "(default: this host's pair records).",
         ),
     ] = None,
 ) -> None:
-    """browse for mobdev2 devices over bonjour"""
+    """Find Wi-Fi-reachable devices advertising lockdown (mobdev2) and print their info."""
     output: list[dict[str, Any]] = []
     async for ip, lockdown in get_mobdev2_lockdowns(timeout=timeout, pair_records=pair_records):
         short_info = lockdown.short_info
@@ -41,8 +42,10 @@ async def cli_mobdev2(
 
 @cli.command("remotepairing")
 @async_command
-async def cli_remotepairing(timeout: Annotated[float, typer.Option()] = DEFAULT_BONJOUR_TIMEOUT) -> None:
-    """browse for remotepairing devices over bonjour (without attempting pair verification)"""
+async def cli_remotepairing(
+    timeout: Annotated[float, typer.Option(help="How long to browse, in seconds.")] = DEFAULT_BONJOUR_TIMEOUT,
+) -> None:
+    """List addresses advertising RemotePairing (iOS 17+ Wi-Fi tunnels), without verifying pairing."""
     output: list[dict[str, Any]] = []
     for answer in await browse_remotepairing(timeout=timeout):
         for address in answer.addresses:
@@ -53,9 +56,9 @@ async def cli_remotepairing(timeout: Annotated[float, typer.Option()] = DEFAULT_
 @cli.command("remotepairing-manual-pairing")
 @async_command
 async def cli_remotepairing_manual_pairing(
-    timeout: Annotated[float, typer.Option()] = DEFAULT_BONJOUR_TIMEOUT,
+    timeout: Annotated[float, typer.Option(help="How long to browse, in seconds.")] = DEFAULT_BONJOUR_TIMEOUT,
 ) -> None:
-    """browse for remotepairing-manual-pairing devices over bonjour"""
+    """List devices offering manual pairing (e.g. Apple TV); pair with `remote pair`."""
     output: list[dict[str, Any]] = []
     for answer in await browse_remotepairing_manual_pairing(timeout=timeout):
         for address in answer.addresses:
@@ -74,5 +77,5 @@ async def cli_browse_rsd() -> None:
 @cli.command("rsd")
 @async_command
 async def cli_rsd() -> None:
-    """browse RemoteXPC devices using bonjour"""
+    """List iOS 17+ devices whose RemoteServiceDiscovery (RSD) is reachable, via bonjour."""
     await cli_browse_rsd()

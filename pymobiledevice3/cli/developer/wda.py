@@ -19,7 +19,11 @@ from pymobiledevice3.utils import get_asyncio_loop
 
 cli = InjectingTyper(
     name="wda",
-    help="Interact with WebDriverAgent (launch apps and tap elements).",
+    help=(
+        "Drive the device UI through WebDriverAgent (launch apps, tap, type, swipe, screenshots).\n\n"
+        "WebDriverAgent must already be installed on the device. Start its runner with --xctrunner, "
+        "or have it running already; with --xctrunner it is stopped when the command ends."
+    ),
     no_args_is_help=True,
 )
 
@@ -135,7 +139,7 @@ def _stops_xctrunner(func: Callable[..., Coroutine[Any, Any, None]]) -> Callable
 async def wda_launch(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
-    bundle_id: str,
+    bundle_id: Annotated[str, typer.Argument(help="Bundle identifier of the app to launch.")],
 ) -> None:
     """Launch an app by starting a WDA session and print the session id."""
     session_id = await client.start_session(bundle_id=bundle_id)
@@ -148,7 +152,7 @@ async def wda_launch(
 async def wda_tap(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
-    selector: str,
+    selector: Annotated[str, typer.Argument(help="Element to tap, matched using the --using strategy.")],
     using: Annotated[
         str,
         typer.Option(
@@ -227,7 +231,7 @@ async def wda_unlock(
         ),
     ] = None,
 ) -> None:
-    """Unlock the device."""
+    """Unlock the device through WDA's unlock endpoint."""
     await client.unlock(session_id=session_id)
 
 
@@ -356,7 +360,7 @@ async def wda_list_items(
 async def wda_screenshot(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
-    out: Path,
+    out: Annotated[Path, typer.Argument(help="Local file to write the PNG screenshot to.")],
     session_id: Annotated[
         Optional[str],
         typer.Option(
@@ -366,7 +370,7 @@ async def wda_screenshot(
         ),
     ] = None,
 ) -> None:
-    """Save a screenshot via WDA."""
+    """Take a screenshot via WDA and save it as PNG."""
     data = await client.get_screenshot(session_id=session_id)
     out.write_bytes(data)
 
@@ -378,7 +382,7 @@ async def wda_status(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
 ) -> None:
-    """Show WDA status."""
+    """Show the WDA server status as JSON (useful to check that WDA is reachable)."""
     print_json(await client.get_status())
 
 
@@ -388,7 +392,7 @@ async def wda_status(
 async def wda_type(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
-    text: str,
+    text: Annotated[str, typer.Argument(help="Text to type into the focused element.")],
     session_id: Annotated[
         Optional[str],
         typer.Option(
@@ -419,10 +423,10 @@ async def wda_type(
 async def wda_swipe(
     client: WdaClientDep,
     _xctrunner: WdaXcRunnerDep,
-    start_x: int,
-    start_y: int,
-    end_x: int,
-    end_y: int,
+    start_x: Annotated[int, typer.Argument(help="Start X coordinate, in screen points.")],
+    start_y: Annotated[int, typer.Argument(help="Start Y coordinate, in screen points.")],
+    end_x: Annotated[int, typer.Argument(help="End X coordinate, in screen points.")],
+    end_y: Annotated[int, typer.Argument(help="End Y coordinate, in screen points.")],
     duration: Annotated[
         float,
         typer.Option(

@@ -540,7 +540,7 @@ async def restore_enter_dfu(device: DeviceDep, manual: ManualDfuOption = False) 
 
 @cli.command("shell")
 def restore_shell(device: DeviceDep) -> None:
-    """create an IPython shell for interacting with iBoot"""
+    """Open an IPython shell for talking to iBoot of a device in Recovery/DFU mode."""
     start_ipython_shell(
         header=highlight(
             SHELL_USAGE, cast(Any, lexers).PythonLexer(), cast(Any, formatters).Terminal256Formatter(style="native")
@@ -554,7 +554,7 @@ def restore_shell(device: DeviceDep) -> None:
 @cli.command("enter")
 @async_command
 async def restore_enter(device: DeviceDep) -> None:
-    """enter Recovery mode"""
+    """Reboot a device in normal mode into Recovery mode (does nothing otherwise)."""
     if await device.get_is_lockdown():
         assert device.lockdown is not None  # get_is_lockdown() guarantees it
         await device.lockdown.enter_recovery()
@@ -562,7 +562,7 @@ async def restore_enter(device: DeviceDep) -> None:
 
 @cli.command("exit")
 def restore_exit() -> None:
-    """exit Recovery mode"""
+    """Leave Recovery mode: enable auto-boot and reboot the device into iOS."""
     irecv = IRecv()
     irecv.set_autoboot(True)
     irecv.reboot()
@@ -632,7 +632,7 @@ async def restore_restart(
         ),
     ] = False,
 ) -> None:
-    """restarts device"""
+    """Restart the device (also works from Recovery mode)."""
     if vdm:
         _restart_over_power_delivery(ecid)
         return
@@ -665,10 +665,12 @@ async def restore_tss_task(
 async def restore_tss(
     device: DeviceDep,
     ipsw_ctx: IPSWCtxDep,
-    out: Optional[Path] = None,
+    out: Annotated[
+        Optional[Path], typer.Option(help="Also save the SHSH blob (TSS response) to this plist file.")
+    ] = None,
     behavior: BehaviorOption = Behavior.Update,
 ) -> None:
-    """query SHSH blobs"""
+    """Request SHSH blobs (TSS signing tickets) for the device from Apple and print them."""
     with out.open("wb") if out else contextlib.nullcontext() as out_file:
         await restore_tss_task(device, ipsw_ctx, out_file, behavior=behavior)
 
@@ -676,10 +678,11 @@ async def restore_tss(
 @cli.command("preflight")
 @async_command
 async def restore_preflight(device: DeviceDep) -> None:
-    """
-    Show the preflight data lockdown reports before a restore: PreflightInfo (each peripheral
-    updater's identity fields and current nonce), FirmwarePreflightInfo (baseband) and ApParameters
-    (AP and SEP nonces). Requires normal mode.
+    """Show the preflight data lockdown reports before a restore (normal mode only).
+
+    Prints PreflightInfo (each peripheral updater's identity fields and current
+    nonce), FirmwarePreflightInfo (baseband) and ApParameters (AP and SEP
+    nonces).
     """
     if device.lockdown is None:
         raise typer.BadParameter("preflight data is only available from a device in normal mode")
@@ -705,10 +708,11 @@ async def restore_preflight_requests(
         ),
     ] = None,
 ) -> None:
-    """
-    Ask the device to build the TSS request of each peripheral updater for the given IPSW, the way
-    restored does during a restore (restoreserviced getdevicesidepreflightinfo; needs a tunnel and
-    uploads each updater's firmware to the device). Prints the requests, their ticket and manifest
+    """Ask the device to build each peripheral updater's TSS request for an IPSW.
+
+    Does what restored does during a restore (restoreserviced
+    getdevicesidepreflightinfo; needs a tunnel and uploads each updater's
+    firmware to the device). Prints the requests, their ticket and manifest
     tags, and the updaters that failed.
     """
     async with ipsw_ctx as ipsw:
@@ -719,9 +723,7 @@ async def restore_preflight_requests(
 @cli.command("ramdisk")
 @async_command
 async def restore_ramdisk(device: DeviceDep, ipsw_ctx: IPSWCtxDep) -> None:
-    """
-    Boot only the update ramdisk without performing a restore (IPSW path or URL accepted).
-    """
+    """Boot only the update ramdisk without performing a restore (IPSW path or URL accepted)."""
     async with ipsw_ctx as ipsw:
         await Recovery(ipsw, device).boot_ramdisk()
 
@@ -734,7 +736,7 @@ async def restore_update(
     tss: TSSDep,
     erase: Annotated[
         bool,
-        typer.Option(help="Erase and restore (factory reset) instead of updating in place."),
+        typer.Option(help="Erase and restore (factory reset, DELETES ALL DATA) instead of updating in place."),
     ] = False,
     ignore_fdr: Annotated[
         bool,
@@ -773,8 +775,11 @@ async def restore_update(
     ] = False,
     manual_dfu: ManualDfuOption = False,
 ) -> None:
-    """
-    Update or restore the device using an IPSW (local path or URL).
+    """Update or restore the device's iOS from an IPSW (local path or URL).
+
+    Without --erase this updates in place and keeps user data; with --erase the
+    device is wiped. Needs Internet for Apple's signing server. Keep the device
+    connected until it finishes.
     """
     if exclusive_usb and sys.platform != "darwin":
         raise typer.BadParameter("--exclusive-usb is only supported on macOS", param_hint="--exclusive-usb")

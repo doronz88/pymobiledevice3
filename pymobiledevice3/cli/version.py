@@ -5,7 +5,7 @@ cli = Typer()
 
 @cli.command()
 def version() -> None:
-    """Query pymobiledevice3 version"""
+    """Print the installed pymobiledevice3 version."""
     try:
         from pymobiledevice3._version import __version__
 

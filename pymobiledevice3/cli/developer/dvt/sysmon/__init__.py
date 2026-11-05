@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="sysmon",
-    help="System monitor options.",
+    help="Monitor system-wide and per-process CPU, memory and other metrics (like Activity Monitor).",
     no_args_is_help=True,
 )
 cli.add_typer(process.cli)
@@ -30,11 +30,11 @@ async def sysmon_system(
         typer.Option(
             "--fields",
             "-f",
-            help='field names separated by ",".',
+            help='Only print these system fields, separated by "," (default: all).',
         ),
     ] = None,
 ) -> None:
-    """show current system stats."""
+    """Print a single snapshot of system-wide stats (CPU usage and other counters)."""
 
     split_fields = {field.strip() for field in fields.split(",")} if fields is not None else None
 

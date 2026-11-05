@@ -33,7 +33,7 @@ async def wait_for_restart(udid: Optional[str]) -> None:
 
 cli = InjectingTyper(
     name="diagnostics",
-    help="Reboot/Shutdown device or access other diagnostics services",
+    help="Restart, shut down or sleep the device, and query diagnostics (IORegistry, MobileGestalt, battery).",
     no_args_is_help=True,
 )
 cli.add_typer(battery.cli)
@@ -52,7 +52,7 @@ async def diagnostics_restart(
         ),
     ] = False,
 ) -> None:
-    """Restart device"""
+    """Restart the device."""
     # The device only goes down once the connection that asked for the restart is closed.
     async with DiagnosticsService(lockdown=service_provider) as diagnostics:
         await diagnostics.restart()
@@ -64,21 +64,21 @@ async def diagnostics_restart(
 @cli.command("shutdown")
 @async_command
 async def diagnostics_shutdown(service_provider: ServiceProviderDep) -> None:
-    """Shutdown device"""
+    """Shut the device down."""
     await DiagnosticsService(lockdown=service_provider).shutdown()
 
 
 @cli.command("sleep")
 @async_command
 async def diagnostics_sleep(service_provider: ServiceProviderDep) -> None:
-    """Put device into sleep"""
+    """Put the device to sleep."""
     await DiagnosticsService(lockdown=service_provider).sleep()
 
 
 @cli.command("info")
 @async_command
 async def diagnostics_info(service_provider: ServiceProviderDep) -> None:
-    """Get diagnostics info"""
+    """Print the device's diagnostics report (all categories)."""
     print_json(await DiagnosticsService(lockdown=service_provider).info())
 
 
@@ -86,18 +86,23 @@ async def diagnostics_info(service_provider: ServiceProviderDep) -> None:
 @async_command
 async def diagnostics_ioregistry(
     service_provider: ServiceProviderDep,
-    plane: Annotated[Optional[str], typer.Option()] = None,
-    name: Annotated[Optional[str], typer.Option()] = None,
-    ioclass: Annotated[Optional[str], typer.Option()] = None,
+    plane: Annotated[
+        Optional[str], typer.Option(help="IORegistry plane to traverse (e.g. IODeviceTree, IOService).")
+    ] = None,
+    name: Annotated[Optional[str], typer.Option(help="Only the entry with this name.")] = None,
+    ioclass: Annotated[Optional[str], typer.Option(help="Only the entry of this class.")] = None,
 ) -> None:
-    """Get ioregistry info"""
+    """Print IORegistry entries, optionally narrowed by plane, name or class."""
     print_json(await DiagnosticsService(lockdown=service_provider).ioregistry(plane=plane, name=name, ioclass=ioclass))
 
 
 @cli.command("mg")
 @async_command
 async def diagnostics_mg(
-    service_provider: ServiceProviderDep, keys: Annotated[Optional[list[str]], typer.Argument()] = None
+    service_provider: ServiceProviderDep,
+    keys: Annotated[
+        Optional[list[str]], typer.Argument(help="MobileGestalt keys to query; omit to query all known keys.")
+    ] = None,
 ) -> None:
-    """Get MobileGestalt key values from given list. If empty, return all known."""
+    """Print MobileGestalt values (not available on iOS 17.4+)."""
     print_json(await DiagnosticsService(lockdown=service_provider).mobilegestalt(keys=keys))

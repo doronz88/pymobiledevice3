@@ -8,7 +8,7 @@ from pymobiledevice3.services.mobile_activation import MobileActivationService
 
 cli = InjectingTyper(
     name="activation",
-    help="Perform iCloud activation/deactivation or query the current state",
+    help="Activate or deactivate the device with Apple's servers, or query its activation state.",
     no_args_is_help=True,
 )
 
@@ -16,7 +16,7 @@ cli = InjectingTyper(
 @cli.command()
 @async_command
 async def state(service_provider: ServiceProviderDep) -> None:
-    """Get current activation state"""
+    """Print the activation state (e.g. Unactivated, Activated)."""
     print(await MobileActivationService(service_provider).state())
 
 
@@ -26,10 +26,14 @@ async def activate(
     service_provider: ServiceProviderDep,
     now: Annotated[
         bool,
-        typer.Option(help="do not wait for next nonce cycle"),
+        typer.Option(help="Do not wait for a fresh activation session before activating."),
     ] = False,
 ) -> None:
-    """Activate device"""
+    """Activate the device against Apple's activation servers (needs Internet).
+
+    Does nothing if the device is already activated. If the server asks for
+    Apple ID credentials (Activation Lock), you are prompted for them.
+    """
     activation_service = MobileActivationService(service_provider)
     if not now:
         await activation_service.wait_for_activation_session()
@@ -39,12 +43,12 @@ async def activate(
 @cli.command()
 @async_command
 async def deactivate(service_provider: ServiceProviderDep) -> None:
-    """Deactivate device"""
+    """Deactivate the device (returns it to the unactivated state)."""
     await MobileActivationService(service_provider).deactivate()
 
 
 @cli.command()
 @async_command
 async def itunes(service_provider: ServiceProviderDep) -> None:
-    """Tell the device that it has been connected to iTunes (useful for < iOS 4)"""
+    """Tell the device it has been connected to iTunes (sets iTunesHasConnected; for iOS < 4)."""
     await service_provider.set_value(True, key="iTunesHasConnected")

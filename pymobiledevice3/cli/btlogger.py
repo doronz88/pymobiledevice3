@@ -38,7 +38,7 @@ async def _write(
 @async_command
 async def capture(
     service_provider: ServiceProviderDep,
-    out: Path,
+    out: Annotated[Path, typer.Argument(help="Output file, or - for stdout.")],
     format_: Annotated[
         BtLoggerFormat,
         typer.Option(
@@ -48,7 +48,7 @@ async def capture(
         ),
     ] = BtLoggerFormat.PACKETLOGGER,
 ) -> None:
-    """Capture Bluetooth HCI traffic to a file. Use '-' to stream to stdout."""
+    """Capture Bluetooth HCI traffic to a file or stdout until Ctrl+C."""
     async with BtPacketLoggerService(service_provider) as service:
         packet_generator = service.watch()
         if str(out) == "-":

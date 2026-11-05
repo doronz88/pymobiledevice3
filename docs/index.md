@@ -14,20 +14,31 @@ Windows, Linux, and macOS. Coming from Android? Think of it as `adb` for iOS.
 
 <div class="grid pmd-features" markdown>
 
-- :material-usb: **[Discovery](cli/usbmux.md)** over USB (usbmux) and bonjour, plus TCP port forwarding
+- :material-monitor-cellphone: **[Screen mirroring and control](guides/screen-mirroring.md)** in any
+  browser or VNC client: touch, buttons, keyboard, audio and a shared clipboard (iOS 27+)
+- :material-lan-connect: **[Packet capture per process](guides/packet-capture.md)**: every packet on
+  every interface, labelled with the app that sent it, straight into Wireshark
+- :material-magnify-scan: **[strace for iOS](guides/kdebug.md)**: every syscall of every process
+  with decoded arguments and paths, live, on a stock device
+- :material-language-javascript: **[JavaScript shell](guides/webview-debugging.md#interactive-javascript-shell)**
+  into any Safari tab or inspectable WebView, with completion from the live page
+- :material-web: **[Chrome DevTools, VS Code and Playwright](guides/webview-debugging.md)** on iOS
+  Safari and WebViews through a CDP bridge
+- :material-tools: **[Developer services without Xcode](guides/cli-recipes.md#dvt-examples)**: screenshots,
+  process control, location simulation, sysmon; on iOS 17+ over a [no-root tunnel](guides/ios17-tunnels.md)
+  built for you, on Windows and Linux too
 - :material-text-box-search-outline: **[Syslog and oslog](cli/syslog.md)** streaming
+- :material-folder-open-outline: **[Device files](cli/afc.md)**: shell, copy, and
+  [mount as a drive](guides/webdav-mounting.md)
 - :material-apps: **[Apps](cli/apps.md) and [profiles](cli/profile.md)**: install, list, manage
-- :material-folder-open-outline: **[AFC file access](cli/afc.md)**, shell and Finder mount
 - :material-bug-outline: **[Crash reports](cli/crash.md)** collection
-- :material-lan-connect: **[Packet capture](cli/pcap.md)** (PCAP) network sniffing
-- :material-cellphone-arrow-down: **[Firmware update](guides/restore.md)**, recovery and DFU workflows
-- :material-bell-ring-outline: **[Notifications](cli/notification.md)** listen and post
-- :material-view-grid-outline: **[SpringBoard](cli/springboard.md)** options, query and set
-- :material-web: **[WebInspector](guides/webview-debugging.md)** automation and a CDP bridge for DevTools,
-  VS Code, Playwright and Puppeteer
-- :material-tools: **[Developer tooling](cli/developer.md)**: Developer Disk Image (DDI) mounting and
-  Instruments-style DVT services, iOS 17+ over a [tunnel](guides/ios17-tunnels.md) built in-process
-- :material-backup-restore: **[Backup and restore](cli/backup2.md)**
+- :material-cellphone-arrow-down: **[Firmware update and restore](guides/restore.md)**, recovery and DFU,
+  without Finder or iTunes
+- :material-backup-restore: **[Backups](cli/backup2.md)**: create, restore, browse
+- :material-usb: **[Discovery](cli/usbmux.md)** over USB and Wi-Fi, plus TCP port forwarding
+- :material-bell-ring-outline: **[Notifications](cli/notification.md)** and
+  **[SpringBoard](cli/springboard.md)** control
+- :material-language-python: **[Python API](guides/python-api.md)** for all of the above
 
 </div>
 

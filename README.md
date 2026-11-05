@@ -12,12 +12,17 @@
 It ships both a **command-line tool** and a **Python API**, and runs on Windows, Linux, and macOS. Coming
 from Android? Think of it as `adb` for iOS.
 
-Highlights: device discovery, port forwarding, syslog/oslog streaming, app & profile management, AFC
-file access, crash reports, PCAP sniffing, firmware update, recovery/DFU, backup/restore, WebInspector
-automation, a [CDP bridge](https://doronz88.github.io/pymobiledevice3/guides/webview-debugging/) that
-lets Chrome DevTools, VS Code and Playwright debug Safari and WebViews on the device, and developer
-tooling such as Developer Disk Image (DDI) mounting and Instruments-style DVT services (on iOS 17+
-over a tunnel that each command builds in-process: no root, nothing to start first).
+Highlights:
+
+- [Screen mirroring and control](https://doronz88.github.io/pymobiledevice3/guides/screen-mirroring/) in any
+  browser or VNC client, with touch, buttons, keyboard, audio and clipboard (iOS 27+)
+- [Per-process packet capture](https://doronz88.github.io/pymobiledevice3/guides/packet-capture/) straight into Wireshark
+- [strace-style syscall tracing](https://doronz88.github.io/pymobiledevice3/guides/kdebug/) of every process, live
+- A [JavaScript shell and a CDP bridge](https://doronz88.github.io/pymobiledevice3/guides/webview-debugging/) for
+  Safari and WebViews (Chrome DevTools, VS Code, Playwright)
+- Developer services without Xcode (screenshots, location simulation, sysmon, DDI mounting); on iOS 17+ over a
+  no-root tunnel each command builds for you, on Windows and Linux too
+- Syslog/oslog, apps & profiles, device files, crash reports, backups, firmware update/restore and recovery/DFU
 
 ## Install
 

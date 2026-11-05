@@ -11,7 +11,7 @@ from pymobiledevice3.services.mobilesync import MobileSyncService
 
 cli = InjectingTyper(
     name="mobilesync",
-    help="Read and change contacts, calendars, Safari bookmarks and mail accounts (com.apple.mobilesync)",
+    help="Read and change contacts, calendars, Safari bookmarks and mail accounts (com.apple.mobilesync).",
     no_args_is_help=True,
 )
 
@@ -35,7 +35,7 @@ def callback() -> None:
 @async_command
 async def mobilesync_dump(
     service_provider: ServiceProviderDep,
-    data_class: Annotated[DataClass, typer.Argument()],
+    data_class: Annotated[DataClass, typer.Argument(help="Kind of records to read.")],
 ) -> None:
     """Print every record of a data class, keyed by record identifier."""
     async with MobileSyncService(service_provider) as sync:
@@ -46,14 +46,18 @@ async def mobilesync_dump(
 @async_command
 async def mobilesync_push(
     service_provider: ServiceProviderDep,
-    data_class: Annotated[DataClass, typer.Argument()],
-    changes: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    data_class: Annotated[DataClass, typer.Argument(help="Kind of records to change.")],
+    changes: Annotated[
+        Path,
+        typer.Argument(exists=True, dir_okay=False, help="JSON or .plist file mapping record identifiers to records."),
+    ],
 ) -> None:
     """
     Add or modify records from a JSON or plist file, keyed by record identifier.
 
-    A key that is an existing record identifier (as printed by `dump`) modifies that record; any other key adds
-    a new record. Use a plist for records with dates (calendar events). Prints the identifiers the device
+    A key that is an existing record identifier (as printed by `dump`)
+    modifies that record; any other key adds a new record. Use a plist for
+    records with dates (calendar events). Prints the identifiers the device
     assigned to added records.
     """
     data = plistlib.loads(changes.read_bytes()) if changes.suffix == ".plist" else json.loads(changes.read_text())
@@ -65,9 +69,9 @@ async def mobilesync_push(
 @async_command
 async def mobilesync_delete(
     service_provider: ServiceProviderDep,
-    data_class: Annotated[DataClass, typer.Argument()],
-    identifiers: Annotated[list[str], typer.Argument()],
+    data_class: Annotated[DataClass, typer.Argument(help="Kind of records to delete.")],
+    identifiers: Annotated[list[str], typer.Argument(help="Identifiers of the records to delete (from `dump`).")],
 ) -> None:
-    """Delete records by record identifier (as printed by `dump`)."""
+    """Delete records by record identifier from the device (no confirmation)."""
     async with MobileSyncService(service_provider) as sync:
         await sync.push_changes(DATA_CLASSES[data_class], dict.fromkeys(identifiers))

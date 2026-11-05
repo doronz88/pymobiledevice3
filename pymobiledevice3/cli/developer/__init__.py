@@ -58,16 +58,13 @@ SHELL_USAGE = dedent("""\
 cli = InjectingTyper(
     name="developer",
     help=dedent("""\
-        Developer tooling for iOS devices (requires Developer Mode + mounted DeveloperDiskImage).
+        Developer tooling for iOS devices (needs Developer Mode, and usually the DDI mounted).
 
-        These commands require the DeveloperDiskImage.dmg to be mounted on the device prior
-        to execution. You can achieve this using:
+        Most of these commands need the Developer Disk Image (DDI) mounted on the device first (`dvt` needs it only on iOS < 17, `core-device` always does). Mount it with:
 
         pymobiledevice3 mounter auto-mount
 
-        Also, starting at iOS 17.0, a tunnel must be created to the device for the services
-        to be accessible. Therefore, every CLI command is retried with a `--tunnel` option
-        for implicitly accessing tunneld when necessary
+        On iOS 17+ these services are reached through an RSD tunnel, which is set up automatically (no flag or root needed).
     """),
     no_args_is_help=True,
 )
@@ -84,7 +81,9 @@ cli.add_typer(wda.cli)
 @cli.command("shell")
 def developer_shell(
     service_provider: ServiceProviderDep,
-    service: str,
+    service: Annotated[
+        str, typer.Argument(help="DTX service name to open (e.g. com.apple.instruments.dtservicehub on iOS 17+).")
+    ],
     remove_ssl_context: Annotated[
         Optional[bool],
         typer.Option(
@@ -131,6 +130,9 @@ def developer_shell(
 
 @cli.command()
 @async_command
-async def screenshot(service_provider: ServiceProviderDep, out: Path) -> None:
-    """Capture a PNG screenshot (Depcrecated API)."""
+async def screenshot(
+    service_provider: ServiceProviderDep,
+    out: Annotated[Path, typer.Argument(help="Local file to write the PNG screenshot to.")],
+) -> None:
+    """Capture a PNG screenshot using the legacy screenshotr service (deprecated; prefer `dvt screenshot`)."""
     out.write_bytes(await ScreenshotService(lockdown=service_provider).take_screenshot())

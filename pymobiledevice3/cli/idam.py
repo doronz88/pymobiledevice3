@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 cli = InjectingTyper(
     name="idam",
     help=dedent("""\
-        Access IDAM (Inter-Device Audio and MIDI) configuration
+        Query or toggle IDAM (Inter-Device Audio and MIDI) on the device.
 
         For more info refer to:
         <https://www.youtube.com/watch?v=IXmP938brnc>
@@ -24,7 +24,7 @@ cli = InjectingTyper(
 @cli.command()
 @async_command
 async def configuration_inquiry(service_provider: ServiceProviderDep) -> None:
-    """Inquiry IDAM configuration"""
+    """Print the device's current IDAM configuration."""
     async with IDAMService(service_provider) as idam:
         print_json(await idam.configuration_inquiry())
 
@@ -32,7 +32,7 @@ async def configuration_inquiry(service_provider: ServiceProviderDep) -> None:
 @cli.command()
 @async_command
 async def enable(service_provider: ServiceProviderDep) -> None:
-    """Enable IDAM"""
+    """Turn IDAM (Inter-Device Audio and MIDI) on."""
     async with IDAMService(service_provider) as idam:
         await idam.set_idam_configuration(True)
 
@@ -40,6 +40,6 @@ async def enable(service_provider: ServiceProviderDep) -> None:
 @cli.command()
 @async_command
 async def disable(service_provider: ServiceProviderDep) -> None:
-    """Disable IDAM"""
+    """Turn IDAM (Inter-Device Audio and MIDI) off."""
     async with IDAMService(service_provider) as idam:
         await idam.set_idam_configuration(False)

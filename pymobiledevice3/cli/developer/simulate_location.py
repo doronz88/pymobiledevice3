@@ -27,10 +27,15 @@ async def simulate_location_clear(service_provider: ServiceProviderDep) -> None:
 
 @cli.command("set")
 @async_command
-async def simulate_location_set(service_provider: ServiceProviderDep, latitude: float, longitude: float) -> None:
+async def simulate_location_set(
+    service_provider: ServiceProviderDep,
+    latitude: Annotated[float, typer.Argument(help="Latitude in decimal degrees.")],
+    longitude: Annotated[float, typer.Argument(help="Longitude in decimal degrees (put `--` before negative values).")],
+) -> None:
     """
-    Set a fixed simulated location on iOS versions below 17 (latitude, longitude).
-    Example: `set 40.690008 -74.045843` (Liberty Island).
+    Set a fixed simulated location on iOS versions below 17 (stays until `clear`).
+
+    Example: `set -- 40.690008 -74.045843` (Liberty Island).
     """
     await DtSimulateLocation(service_provider).set(latitude, longitude)
 
@@ -41,10 +46,15 @@ async def simulate_location_play(
     service_provider: ServiceProviderDep,
     filename: Annotated[
         Path,
-        typer.Argument(exists=True, file_okay=True, dir_okay=False),
+        typer.Argument(exists=True, file_okay=True, dir_okay=False, help="GPX file with the route to replay."),
     ],
-    timing_randomness_range: int,
-    disable_sleep: Annotated[bool, typer.Option()] = False,
+    timing_randomness_range: Annotated[
+        int,
+        typer.Argument(help="Random jitter, in milliseconds (+/-), added to each wait between points (0 for none)."),
+    ],
+    disable_sleep: Annotated[
+        bool, typer.Option(help="Jump through the points without waiting the time between their timestamps.")
+    ] = False,
 ) -> None:
     """Replay a GPX route on iOS versions below 17; optionally disable sleeps and add timing jitter."""
     await DtSimulateLocation(service_provider).play_gpx_file(

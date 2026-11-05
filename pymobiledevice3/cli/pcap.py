@@ -46,29 +46,32 @@ def print_packet(packet: DevicePacket, color: Optional[bool] = None) -> DevicePa
 @async_command
 async def pcap(
     service_provider: ServiceProviderDep,
-    out: Optional[Path] = None,
+    out: Annotated[
+        Optional[Path], typer.Option(help="Also save the packets to this file, in pcapng format (e.g. for Wireshark).")
+    ] = None,
     count: Annotated[
         int,
         typer.Option(
             "--count",
             "-c",
-            help="Number of packets to sniff. Omit to endless sniff.",
+            help="Stop after this many packets. Omit to capture until Ctrl+C.",
         ),
     ] = -1,
     process: Annotated[
         Optional[str],
-        typer.Option(help="Process to filter. Omit for all."),
+        typer.Option(help="Only packets of this process (name or PID). Omit for all."),
     ] = None,
     interface: Annotated[
         Optional[str],
         typer.Option(
             "--interface",
             "-i",
-            help="Only this interface: a full name such as en0, or a name without its unit (en) for all units.",
+            help="Only packets on this interface: a full name such as en0 or pdp_ip0, or a name without its "
+            "unit (en) for all its units. Omit for all.",
         ),
     ] = None,
 ) -> None:
-    """Sniff device traffic."""
+    """Capture the device's network traffic, print it, and optionally save it to a pcapng file."""
     service = PcapdService(lockdown=service_provider)
     packets_generator = service.watch(packets_count=count, process=process, interface_name=interface)
 

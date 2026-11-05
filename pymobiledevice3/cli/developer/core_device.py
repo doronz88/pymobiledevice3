@@ -77,20 +77,34 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="core-device",
-    help="Access DeveloperDiskImage services (files, processes, app launch, diagnostics).",
+    help=(
+        "Use the CoreDevice services Xcode uses (files, apps, processes, screen, input, diagnostics).\n\n"
+        "Needs iOS 17+ and the Developer Disk Image mounted (`pymobiledevice3 mounter auto-mount`). "
+        "The required tunnel is set up automatically."
+    ),
     no_args_is_help=True,
 )
+
+DomainArgument = Annotated[
+    DomainName,
+    typer.Argument(
+        help="File domain: an app's data container, an app group container (both need --identifier), "
+        "the temporary directory or the system crash logs."
+    ),
+]
+PathArgument = Annotated[str, typer.Argument(help="Path relative to the domain's root.")]
+IdentifierOption = Annotated[str, typer.Option(help="App or app group identifier, for the container domains")]
 
 
 @cli.command("list-directory")
 @async_command
 async def core_device_list_directory(
     service_provider: RSDServiceProviderDep,
-    domain: Annotated[DomainName, typer.Argument()],
-    path: str,
-    identifier: Annotated[str, typer.Option()] = "",
+    domain: DomainArgument,
+    path: PathArgument,
+    identifier: IdentifierOption = "",
 ) -> None:
-    """List directory contents for a given domain/path."""
+    """List the contents of a directory in a file domain, as JSON."""
     async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
         print_json(await file_service.retrieve_directory_list(path))
 
@@ -114,16 +128,16 @@ async def core_device_read_file_task(
 @async_command
 async def core_device_read_file(
     service_provider: RSDServiceProviderDep,
-    domain: Annotated[DomainName, typer.Argument()],
-    path: str,
+    domain: DomainArgument,
+    path: PathArgument,
     *,
-    identifier: Annotated[str, typer.Option()] = "",
+    identifier: IdentifierOption = "",
     output: Annotated[
         Optional[Path],
-        typer.Option("--output", "-o"),
+        typer.Option("--output", "-o", help="Local file to write the contents to (default: print to stdout)."),
     ] = None,
 ) -> None:
-    """Read a file from a domain/path to stdout or --output."""
+    """Read a file from a file domain to stdout or --output."""
     with output.open("wb") if output is not None else nullcontext() as output_file:
         await core_device_read_file_task(service_provider, domain, path, identifier, output_file)
 
@@ -132,16 +146,22 @@ async def core_device_read_file(
 @async_command
 async def core_device_propose_empty_file(
     service_provider: RSDServiceProviderDep,
-    domain: Annotated[DomainName, typer.Argument()],
-    path: str,
-    identifier: Annotated[str, typer.Option()] = "",
-    file_permissions: Annotated[int, typer.Option()] = 0o644,
-    uid: Annotated[int, typer.Option()] = 501,
-    gid: Annotated[int, typer.Option()] = 501,
-    creation_time: Annotated[Optional[int], typer.Option()] = None,
-    last_modification_time: Annotated[Optional[int], typer.Option()] = None,
+    domain: DomainArgument,
+    path: PathArgument,
+    identifier: IdentifierOption = "",
+    file_permissions: Annotated[
+        int, typer.Option(help="Permission bits of the new file, as a decimal number (default 420 = 0o644).")
+    ] = 0o644,
+    uid: Annotated[int, typer.Option(help="Owner user ID (501 = mobile).")] = 501,
+    gid: Annotated[int, typer.Option(help="Owner group ID (501 = mobile).")] = 501,
+    creation_time: Annotated[
+        Optional[int], typer.Option(help="Creation time, in seconds since the epoch (default: now).")
+    ] = None,
+    last_modification_time: Annotated[
+        Optional[int], typer.Option(help="Last modification time, in seconds since the epoch (default: now).")
+    ] = None,
 ) -> None:
-    """Create an empty file at the given domain/path with custom permissions/owner/timestamps."""
+    """Create an empty file in a file domain with custom permissions, owner and timestamps."""
     async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
         await file_service.propose_empty_file(
             path,
@@ -153,14 +173,13 @@ async def core_device_propose_empty_file(
         )
 
 
-DomainArgument = Annotated[DomainName, typer.Argument()]
-IdentifierOption = Annotated[str, typer.Option(help="App or app group identifier, for the container domains")]
-
-
 @cli.command("create-directory")
 @async_command
 async def core_device_create_directory(
-    service_provider: RSDServiceProviderDep, domain: DomainArgument, path: str, identifier: IdentifierOption = ""
+    service_provider: RSDServiceProviderDep,
+    domain: DomainArgument,
+    path: PathArgument,
+    identifier: IdentifierOption = "",
 ) -> None:
     """Create a directory at the given domain/path."""
     async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
@@ -170,7 +189,10 @@ async def core_device_create_directory(
 @cli.command("remove-directory")
 @async_command
 async def core_device_remove_directory(
-    service_provider: RSDServiceProviderDep, domain: DomainArgument, path: str, identifier: IdentifierOption = ""
+    service_provider: RSDServiceProviderDep,
+    domain: DomainArgument,
+    path: PathArgument,
+    identifier: IdentifierOption = "",
 ) -> None:
     """Remove an empty directory at the given domain/path."""
     async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
@@ -180,7 +202,10 @@ async def core_device_remove_directory(
 @cli.command("remove-file")
 @async_command
 async def core_device_remove_file(
-    service_provider: RSDServiceProviderDep, domain: DomainArgument, path: str, identifier: IdentifierOption = ""
+    service_provider: RSDServiceProviderDep,
+    domain: DomainArgument,
+    path: PathArgument,
+    identifier: IdentifierOption = "",
 ) -> None:
     """Remove a file or symbolic link at the given domain/path."""
     async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
@@ -192,8 +217,8 @@ async def core_device_remove_file(
 async def core_device_rename(
     service_provider: RSDServiceProviderDep,
     domain: DomainArgument,
-    old_path: str,
-    new_path: str,
+    old_path: Annotated[str, typer.Argument(help="Current path, relative to the domain's root.")],
+    new_path: Annotated[str, typer.Argument(help="New path, relative to the domain's root.")],
     identifier: IdentifierOption = "",
 ) -> None:
     """Rename or move an item within a domain."""
@@ -206,7 +231,7 @@ async def core_device_rename(
 async def core_device_create_symlink(
     service_provider: RSDServiceProviderDep,
     domain: DomainArgument,
-    path: str,
+    path: PathArgument,
     target: Annotated[str, typer.Argument(help="What the link points to; stored as given")],
     identifier: IdentifierOption = "",
 ) -> None:
@@ -235,7 +260,7 @@ def _attributes_with_datetimes(attributes: dict[str, Any]) -> dict[str, Any]:
 async def core_device_stat(
     service_provider: RSDServiceProviderDep,
     domain: DomainArgument,
-    path: str,
+    path: PathArgument,
     identifier: IdentifierOption = "",
     follow_symlinks: Annotated[bool, typer.Option(help="Report on a link's target rather than the link")] = True,
 ) -> None:
@@ -249,8 +274,8 @@ async def core_device_stat(
 async def core_device_write_file(
     service_provider: RSDServiceProviderDep,
     domain: DomainArgument,
-    path: str,
-    local_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    path: PathArgument,
+    local_file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, help="Local file to upload.")],
     identifier: IdentifierOption = "",
 ) -> None:
     """Create or replace a file at the given domain/path with a local file's contents."""
@@ -268,7 +293,7 @@ async def core_device_watch(
     ] = None,
     identifier: IdentifierOption = "",
 ) -> None:
-    """Print file changes under a domain as they happen, one JSON record per change (iOS 27+)."""
+    """Print file changes under a domain as they happen, one JSON record per change, until Ctrl+C (iOS 27+)."""
     async with FileServiceService(service_provider, Domain.from_name(domain), identifier) as file_service:
         async for event in file_service.monitor(paths):
             print_json_line({"event": event.event_type, "path": event.relative_path})
@@ -278,13 +303,15 @@ async def core_device_watch(
 @async_command
 async def core_device_launch_application(
     service_provider: RSDServiceProviderDep,
-    bundle_identifier: str,
+    bundle_identifier: Annotated[str, typer.Argument(help="Bundle identifier of the app to launch.")],
     argument: Annotated[Optional[list[str]], typer.Argument(help="Arguments to pass to the app")] = None,
     kill_existing: Annotated[
         bool,
-        typer.Option(help="Whether to kill an existing instance of this process"),
+        typer.Option(help="Kill an already-running instance of the app before launching."),
     ] = True,
-    suspended: Annotated[bool, typer.Option(help="Same as WaitForDebugger")] = False,
+    suspended: Annotated[
+        bool, typer.Option(help="Start the process suspended, waiting for a debugger to attach.")
+    ] = False,
     env: Annotated[
         Optional[list[str]],
         typer.Option(
@@ -296,7 +323,7 @@ async def core_device_launch_application(
         typer.Option(help="Attach to the app's stdout and stderr and print them until it exits"),
     ] = False,
 ) -> None:
-    """Launch an app; optionally kill existing, wait for debugger, set env vars, or attach its console."""
+    """Launch an installed app and print the launch result as JSON (or its console, with --console)."""
     environment = dict(var.split("=", 1) for var in env or ())
     async with AsyncExitStack() as stack:
         app_service = await stack.enter_async_context(AppServiceService(service_provider))
@@ -320,23 +347,30 @@ async def core_device_launch_application(
 @cli.command("list-processes")
 @async_command
 async def core_device_list_processes(service_provider: RSDServiceProviderDep) -> None:
-    """List running processes via CoreDevice."""
+    """List running processes as JSON."""
     async with AppServiceService(service_provider) as app_service:
         print_json(await app_service.list_processes())
 
 
 @cli.command("uninstall")
 @async_command
-async def core_device_uninstall_app(service_provider: RSDServiceProviderDep, bundle_identifier: str) -> None:
-    """Uninstall an app by bundle identifier via CoreDevice."""
+async def core_device_uninstall_app(
+    service_provider: RSDServiceProviderDep,
+    bundle_identifier: Annotated[str, typer.Argument(help="Bundle identifier of the app to uninstall.")],
+) -> None:
+    """Uninstall an app by bundle identifier."""
     async with AppServiceService(service_provider) as app_service:
         await app_service.uninstall_app(bundle_identifier)
 
 
 @cli.command("send-signal-to-process")
 @async_command
-async def core_device_send_signal_to_process(service_provider: RSDServiceProviderDep, pid: int, signal: int) -> None:
-    """Send signal to process"""
+async def core_device_send_signal_to_process(
+    service_provider: RSDServiceProviderDep,
+    pid: Annotated[int, typer.Argument(help="Process ID (see `list-processes`).")],
+    signal: Annotated[int, typer.Argument(help="Signal number to send (e.g. 9 for SIGKILL, 15 for SIGTERM).")],
+) -> None:
+    """Send a signal (e.g. to terminate) to a process by PID and print the reply as JSON."""
     async with AppServiceService(service_provider) as app_service:
         print_json(await app_service.send_signal_to_process(pid, signal))
 
@@ -344,7 +378,7 @@ async def core_device_send_signal_to_process(service_provider: RSDServiceProvide
 @cli.command("get-device-info")
 @async_command
 async def core_device_get_device_info(service_provider: RSDServiceProviderDep) -> None:
-    """Get device information"""
+    """Print CoreDevice device information as JSON."""
     async with DeviceInfoService(service_provider) as app_service:
         print_json(await app_service.get_device_info())
 
@@ -352,15 +386,18 @@ async def core_device_get_device_info(service_provider: RSDServiceProviderDep) -
 @cli.command("get-display-info")
 @async_command
 async def core_device_get_display_info(service_provider: RSDServiceProviderDep) -> None:
-    """Get display information"""
+    """Print the device's displays and their modes as JSON."""
     async with DeviceInfoService(service_provider) as app_service:
         print_json(await app_service.get_display_info())
 
 
 @cli.command("query-mobilegestalt")
 @async_command
-async def core_device_query_mobilegestalt(service_provider: RSDServiceProviderDep, key: list[str]) -> None:
-    """Query MobileGestalt"""
+async def core_device_query_mobilegestalt(
+    service_provider: RSDServiceProviderDep,
+    key: Annotated[list[str], typer.Argument(help="One or more MobileGestalt keys (e.g. ProductType).")],
+) -> None:
+    """Query MobileGestalt (the device's hardware/software property store) for the given keys."""
     async with DeviceInfoService(service_provider) as app_service:
         print_json(await app_service.query_mobilegestalt(key))
 
@@ -368,7 +405,7 @@ async def core_device_query_mobilegestalt(service_provider: RSDServiceProviderDe
 @cli.command("get-lockstate")
 @async_command
 async def core_device_get_lockstate(service_provider: RSDServiceProviderDep) -> None:
-    """Get lockstate"""
+    """Print the device's lock state as JSON."""
     async with DeviceInfoService(service_provider) as app_service:
         print_json(await app_service.get_lockstate())
 
@@ -435,9 +472,11 @@ async def core_device_rotate(
 @async_command
 async def core_device_user_interface_style(
     service_provider: RSDServiceProviderDep,
-    style: Annotated[Optional[UserInterfaceStyle], typer.Argument()] = None,
+    style: Annotated[
+        Optional[UserInterfaceStyle], typer.Argument(help="Style to switch to; omit to print the current one.")
+    ] = None,
 ) -> None:
-    """Get the active user-interface style; pass dark/light to set it."""
+    """Print the user-interface style (dark/light mode); pass dark/light to change it."""
     async with ConfigurationService(service_provider) as config:
         if style is None:
             print_json(await config.get_user_interface_style())
@@ -448,7 +487,7 @@ async def core_device_user_interface_style(
 @cli.command("list-apps")
 @async_command
 async def core_device_list_apps(service_provider: RSDServiceProviderDep) -> None:
-    """Get application list"""
+    """List installed applications as JSON."""
     async with AppServiceService(service_provider) as app_service:
         print_json(await app_service.list_apps())
 
@@ -457,14 +496,16 @@ async def core_device_list_apps(service_provider: RSDServiceProviderDep) -> None
 @async_command
 async def core_device_fetch_app_icon(
     service_provider: RSDServiceProviderDep,
-    bundle_identifier: Annotated[str, typer.Argument()],
-    output: Annotated[Path, typer.Argument()],
-    width: Annotated[float, typer.Option("--width")] = 60.0,
-    height: Annotated[float, typer.Option("--height")] = 60.0,
-    scale: Annotated[float, typer.Option("--scale")] = 2.0,
-    no_placeholder: Annotated[bool, typer.Option("--no-placeholder")] = False,
+    bundle_identifier: Annotated[str, typer.Argument(help="Bundle identifier of the app.")],
+    output: Annotated[Path, typer.Argument(help="Local PNG file to write.")],
+    width: Annotated[float, typer.Option("--width", help="Requested width, in points.")] = 60.0,
+    height: Annotated[float, typer.Option("--height", help="Requested height, in points.")] = 60.0,
+    scale: Annotated[float, typer.Option("--scale", help="Scale factor (pixels = points x scale).")] = 2.0,
+    no_placeholder: Annotated[
+        bool, typer.Option("--no-placeholder", help="Fail instead of returning a generic icon for apps without one.")
+    ] = False,
 ) -> None:
-    """Fetch an application's icon as a PNG (com.apple.coredevice.iconservice)."""
+    """Save an application's icon as a PNG file (com.apple.coredevice.iconservice)."""
     async with IconService(service_provider) as icon_service:
         icon = await icon_service.fetch_icon(
             bundle_identifier=bundle_identifier,
@@ -483,7 +524,7 @@ async def core_device_fetch_app_icon(
 @cli.command("stream-processes")
 @async_command
 async def core_device_stream_processes(service_provider: RSDServiceProviderDep) -> None:
-    """Stream the running process list via CoreDevice."""
+    """Fetch the running process list through the streaming API and print it as JSON."""
     async with AppServiceService(service_provider) as app_service:
         print_json([process async for process in app_service.stream_processes()])
 
@@ -494,13 +535,19 @@ async def core_device_sysdiagnose(
     service_provider: RSDServiceProviderDep,
     output: Annotated[
         Path,
-        typer.Argument(dir_okay=True, file_okay=True, exists=True),
+        typer.Argument(
+            dir_okay=True,
+            file_okay=True,
+            exists=True,
+            help="Existing directory to save the archive into, or a file path to write it to.",
+        ),
     ],
 ) -> None:
-    """Execute sysdiagnose and fetch the output file
+    """
+    Generate a sysdiagnose archive on the device and download it (can take several minutes).
 
-    The file is downloaded over usbmux when usbmuxd lists the device (much faster), and through the RSD
-    tunnel otherwise.
+    The archive is downloaded over usbmux when usbmuxd lists the device (much faster), and through the
+    RSD tunnel otherwise.
     """
     async with DiagnosticsServiceService(service_provider) as service:
         response = await service.capture_sysdiagnose(False)
@@ -541,8 +588,10 @@ cli.add_typer(screen_capture_cli)
 @async_command
 async def core_device_screen_capture_screenshot(
     service_provider: RSDServiceProviderDep,
-    output: Annotated[Path, typer.Argument()],
-    display_unique_id: Annotated[Optional[str], typer.Option("--display-unique-id")] = None,
+    output: Annotated[Path, typer.Argument(help="Local PNG file to write.")],
+    display_unique_id: Annotated[
+        Optional[str], typer.Option("--display-unique-id", help="Display to capture (default: the primary display).")
+    ] = None,
 ) -> None:
     """Capture a PNG screenshot of the device's screen."""
     async with ScreenCaptureService(service_provider) as service:
@@ -640,14 +689,14 @@ async def core_device_hid_button(
     service_provider: RSDServiceProviderDep,
     name: Annotated[
         ButtonName,
-        typer.Argument(help="Named hardware button (home, power, volume-up, ...)"),
+        typer.Argument(help="Named hardware button (home, lock, volume-up, ...)"),
     ],
     state: Annotated[
         ButtonState,
         typer.Argument(help="press = send down+up; otherwise send a single state event"),
     ] = ButtonState.PRESS,
 ) -> None:
-    """Press a named iOS hardware button (home / power / volume-up / etc.)."""
+    """Press a named iOS hardware button (home / lock / volume-up / etc.)."""
     usage_page, usage_code, hold = name.usage()
     async with IndigoHIDService(service_provider) as service:
         await _send_button_press(service, usage_page, usage_code, state, hold)
@@ -674,7 +723,7 @@ async def core_device_hid_raw_button(
 # ---------------------------------------------------------------------------
 universal_hid_service_cli = InjectingTyper(
     name="universal-hid-service",
-    help="Register/inspect virtual HID services (com.apple.coredevice.hid.universalhidservice).",
+    help="Send touch, gesture and keyboard input to the device (com.apple.coredevice.hid.universalhidservice).",
     no_args_is_help=True,
 )
 cli.add_typer(universal_hid_service_cli)
@@ -816,7 +865,7 @@ async def core_device_universal_hid_service_drag(
     y1: Annotated[int, typer.Argument(help="Start Y (0..65535, screen-normalised)")],
     x2: Annotated[int, typer.Argument(help="End X (0..65535)")],
     y2: Annotated[int, typer.Argument(help="End Y (0..65535)")],
-    steps: Annotated[int, typer.Option("--steps")] = 30,
+    steps: Annotated[int, typer.Option("--steps", help="Interpolated frames")] = 30,
     duration: Annotated[float, typer.Option("--duration", help="Drag time, seconds")] = 0.6,
     touch_service_id: Annotated[
         str,
@@ -866,7 +915,7 @@ async def core_device_universal_hid_service_multi_drag(
     coordinates: Annotated[
         list[int], typer.Argument(help="X1 Y1 X2 Y2 (start, end) per finger (1..5 fingers, 0..65535 each)")
     ],
-    steps: Annotated[int, typer.Option("--steps")] = 30,
+    steps: Annotated[int, typer.Option("--steps", help="Interpolated frames")] = 30,
     duration: Annotated[float, typer.Option("--duration", help="Drag time, seconds")] = 0.6,
     touch_service_id: Annotated[
         str,
@@ -889,10 +938,10 @@ async def core_device_universal_hid_service_multi_drag(
 @async_command
 async def core_device_universal_hid_service_swipe(
     service_provider: RSDServiceProviderDep,
-    x1: Annotated[int, typer.Argument(help="Start X (Int32)")],
-    y1: Annotated[int, typer.Argument(help="Start Y (Int32)")],
-    x2: Annotated[int, typer.Argument(help="End X (Int32)")],
-    y2: Annotated[int, typer.Argument(help="End Y (Int32)")],
+    x1: Annotated[int, typer.Argument(help="Start X of the pointer path (gesture-surface units, Int32)")],
+    y1: Annotated[int, typer.Argument(help="Start Y of the pointer path (gesture-surface units, Int32)")],
+    x2: Annotated[int, typer.Argument(help="End X of the pointer path (gesture-surface units, Int32)")],
+    y2: Annotated[int, typer.Argument(help="End Y of the pointer path (gesture-surface units, Int32)")],
     steps: Annotated[int, typer.Option("--steps", help="Interpolated frames")] = 30,
     duration: Annotated[float, typer.Option("--duration", help="Swipe time, seconds")] = 0.3,
     service_id: Annotated[
@@ -1074,7 +1123,7 @@ async def core_device_universal_hid_service_key(
 # ---------------------------------------------------------------------------
 display_cli = InjectingTyper(
     name="display",
-    help="Query media-stream capabilities (com.apple.coredevice.displayservice).",
+    help="Stream and mirror the device's screen and audio (com.apple.coredevice.displayservice).",
     no_args_is_help=True,
 )
 cli.add_typer(display_cli)
@@ -1101,9 +1150,11 @@ async def core_device_display_get_media_stream_server_status(service_provider: R
 async def core_device_display_start_video_stream(
     service_provider: RSDServiceProviderDep,
     output: Annotated[Path, typer.Argument(help="Write received RTP packet bytes to this file")],
-    display_id: Annotated[int, typer.Option("--display-id")] = 1,
+    display_id: Annotated[int, typer.Option("--display-id", help="Display to stream (1 = the main display).")] = 1,
     duration: Annotated[float, typer.Option("--duration", help="Seconds to capture")] = 5.0,
-    receiver_port: Annotated[int, typer.Option("--port")] = 0,
+    receiver_port: Annotated[
+        int, typer.Option("--port", help="Local UDP port to receive the stream on (0 = any free port).")
+    ] = 0,
 ) -> None:
     """Capture raw RTP/HEVC packets from a display into a file (iOS 27+).
 
@@ -1125,7 +1176,9 @@ async def core_device_display_start_audio_stream(
     service_provider: RSDServiceProviderDep,
     output: Annotated[Path, typer.Argument(help="Write received RTP packet bytes to this file")],
     duration: Annotated[float, typer.Option("--duration", help="Seconds to capture")] = 10.0,
-    receiver_port: Annotated[int, typer.Option("--port")] = 0,
+    receiver_port: Annotated[
+        int, typer.Option("--port", help="Local UDP port to receive the stream on (0 = any free port).")
+    ] = 0,
 ) -> None:
     """Capture raw RTP audio packets from the device's system-audio output.
 
@@ -1146,7 +1199,7 @@ async def core_device_display_start_audio_stream(
 @async_command
 async def core_device_display_serve_web(
     service_provider: RSDServiceProviderDep,
-    display_id: Annotated[int, typer.Option("--display-id")] = 1,
+    display_id: Annotated[int, typer.Option("--display-id", help="Display to stream (1 = the main display).")] = 1,
     bind: Annotated[
         str,
         typer.Option(
@@ -1259,7 +1312,7 @@ async def core_device_display_serve_web(
         ),
     ] = True,
 ) -> None:
-    """Serve the device's screen via HTTP — view in any modern browser (iOS 27+).
+    """Serve the device's screen via HTTP — view in any modern browser (iOS 27+), until Ctrl+C.
 
     Pipeline (no external executables):
 
@@ -1292,7 +1345,7 @@ async def core_device_display_serve_web(
 @async_command
 async def core_device_display_serve_vnc(
     service_provider: RSDServiceProviderDep,
-    display_id: Annotated[int, typer.Option("--display-id")] = 1,
+    display_id: Annotated[int, typer.Option("--display-id", help="Display to stream (1 = the main display).")] = 1,
     bind: Annotated[
         str,
         typer.Option(
@@ -1349,7 +1402,7 @@ async def core_device_display_serve_vnc(
         ),
     ] = False,
 ) -> None:
-    """Serve the device's screen as a VNC (RFB 3.8) server (iOS 27+).
+    """Serve the device's screen as a VNC (RFB 3.8) server (iOS 27+), until Ctrl+C.
 
     Connect from any VNC client. macOS Finder: ``Cmd+K`` -> enter
     ``vnc://<bind>:<port>`` (default ``vnc://127.0.0.1:5901``; port

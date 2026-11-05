@@ -17,12 +17,15 @@ cli = InjectingTyper(
 @async_command
 async def power_assertion(
     service_provider: ServiceProviderDep,
-    assertion_type: Literal["AMDPowerAssertionTypeWirelessSync", "PreventUserIdleSystemSleep", "PreventSystemSleep"],
-    name: str,
-    timeout: int,
-    details: Annotated[Optional[str], typer.Argument()] = None,
+    assertion_type: Annotated[
+        Literal["AMDPowerAssertionTypeWirelessSync", "PreventUserIdleSystemSleep", "PreventSystemSleep"],
+        typer.Argument(help="Power assertion type to create."),
+    ],
+    name: Annotated[str, typer.Argument(help="Name to identify the assertion on the device.")],
+    timeout: Annotated[int, typer.Argument(help="How long to hold the assertion, in seconds.")],
+    details: Annotated[Optional[str], typer.Argument(help="Optional description attached to the assertion.")] = None,
 ) -> None:
-    """Create a power assertion"""
+    """Hold a power assertion on the device for TIMEOUT seconds (Ctrl+C to stop early)."""
     async with PowerAssertionService(service_provider).create_power_assertion(assertion_type, name, timeout, details):
         print("> Hit Ctrl+C to exit")
         await asyncio.sleep(timeout)

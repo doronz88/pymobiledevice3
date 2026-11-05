@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 cli = InjectingTyper(
     name="amfi",
-    help="Manage developer-mode and app signer trust",
+    help="Manage Developer Mode and trust of developer app signers (AMFI).",
     no_args_is_help=True,
 )
 
@@ -20,14 +20,23 @@ cli = InjectingTyper(
 @cli.command()
 @async_command
 async def reveal_developer_mode(service_provider: ServiceProviderDep) -> None:
-    """reveal developer mode option in device's UI"""
+    """Show the Developer Mode toggle in Settings > Privacy & Security.
+
+    Only reveals the switch; it does not turn Developer Mode on.
+    """
     await AmfiService(service_provider).reveal_developer_mode_option_in_ui()
 
 
 @cli.command()
 @async_command
 async def enable_developer_mode(service_provider: ServiceProviderDep) -> None:
-    """enable developer mode"""
+    """Enable Developer Mode (restarts the device).
+
+    Does nothing if Developer Mode is already on. Otherwise the device restarts;
+    this command waits for it to reconnect and confirms the post-restart
+    prompt for you. Fails if the device has a passcode set: in that case enable it
+    manually in Settings > Privacy & Security > Developer Mode.
+    """
     if await service_provider.get_developer_mode_status():
         logger.info("Developer mode is already enabled")
         return
@@ -37,7 +46,7 @@ async def enable_developer_mode(service_provider: ServiceProviderDep) -> None:
 @cli.command()
 @async_command
 async def developer_mode_status(service_provider: ServiceProviderDep) -> None:
-    """query developer mode status"""
+    """Print whether Developer Mode is enabled (true/false)."""
     print_json(await service_provider.get_developer_mode_status())
 
 
@@ -47,5 +56,9 @@ async def trust_app_signer(
     service_provider: ServiceProviderDep,
     profile_uuid: Annotated[str, typer.Argument(help="UUID of the installed provisioning profile")],
 ) -> None:
-    """trust the developer app signer of an installed provisioning profile"""
+    """Trust the developer app signer of an installed provisioning profile.
+
+    Same as tapping "Trust" under Settings > General > VPN & Device Management.
+    Find the UUID with `provision list`.
+    """
     print_json(await AmfiService(service_provider).trust_app_signer(profile_uuid))

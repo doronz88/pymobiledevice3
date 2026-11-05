@@ -142,14 +142,14 @@ def _apply_time_config(parser: Any, time_config: dict[str, object]) -> None:
 
 cli = InjectingTyper(
     name="core-profile-session",
-    help="Access tailspin features",
+    help="Trace kernel events (kdebug), call stacks and stackshots, like Instruments' System Trace.",
     no_args_is_help=True,
 )
 
 
 BSCFilter = Annotated[
     bool,
-    typer.Option(help="Whether to print BSC events or not."),
+    typer.Option(help="Add the BSD system call (BSC) subclass to the subclass filter."),
 ]
 ClassFilter = Annotated[
     list[int],
@@ -178,7 +178,7 @@ Count = Annotated[
     typer.Option(
         "--count",
         "-c",
-        help="Number of events to print. Omit to endless sniff.",
+        help="Number of events to print. Omit to run until interrupted (Ctrl+C).",
     ),
 ]
 ThreadID = Annotated[
@@ -317,7 +317,7 @@ async def live_profile_session(
         typer.Option(help="Whether to print event arguments or not."),
     ] = True,
 ) -> None:
-    """Print kevents received from the device in real time."""
+    """Print raw kernel trace events (kevents) in real time, until --count or Ctrl+C."""
     parser: Any = PyKdebugParser()
     class_filters = class_filters
     subclass_filters = subclass_filters
@@ -361,13 +361,13 @@ async def live_profile_session(
 @async_command
 async def save_profile_session(
     service_provider: ServiceProviderDep,
-    out: Path,
+    out: Annotated[Path, typer.Argument(help="Local file to write the raw kdebug trace to.")],
     *,
     bsc: BSCFilter = False,
     class_filters: ClassFilter,
     subclass_filters: SubclassFilter,
 ) -> None:
-    """Dump core profiling information."""
+    """Record raw kdebug trace data to a file, until interrupted (Ctrl+C)."""
     if bsc:
         subclass_filters.append(BSC_SUBCLASS)
     filters = parse_filters(subclass_filters, class_filters)
@@ -958,7 +958,7 @@ async def callstacks_live_profile_session(
     tid: ThreadID = None,
     show_tid: ShowThreadID = False,
 ) -> None:
-    """Print callstacks received from the device in real time."""
+    """Print sampled call stacks in real time, until --count or Ctrl+C."""
     async with DvtProvider(service_provider) as dvt:
         logger.info("Receiving time information")
         time_config = cast(dict[str, object], await CoreProfileSessionTap.get_time_config(dvt))
