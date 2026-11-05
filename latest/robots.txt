@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://doronz88.github.io/pymobiledevice3/sitemap.xml

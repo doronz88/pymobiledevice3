@@ -1,0 +1,3843 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Pure Python 3 implementation for working with iOS devices (iPhone, iPad, ...)">
+      
+      
+      
+        <link rel="canonical" href="https://doronz88.github.io/pymobiledevice3/latest/guides/cli-recipes/">
+      
+      
+        <link rel="prev" href="../../installation/">
+      
+      
+        <link rel="next" href="../kdebug/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/logo.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+    
+    
+      
+        <title>CLI recipes - pymobiledevice3</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/brand.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CLI recipes - pymobiledevice3">
+  <meta property="og:description" content="Pure Python 3 implementation for working with iOS devices (iPhone, iPad, ...)">
+  <meta property="og:image" content="https://doronz88.github.io/pymobiledevice3/latest/assets/social-card.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:url" content="https://doronz88.github.io/pymobiledevice3/latest/guides/cli-recipes/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CLI recipes - pymobiledevice3">
+  <meta name="twitter:description" content="Pure Python 3 implementation for working with iOS devices (iPhone, iPad, ...)">
+  <meta name="twitter:image" content="https://doronz88.github.io/pymobiledevice3/latest/assets/social-card.png">
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cli-recipes" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+          <aside class="md-banner md-banner--warning">
+            <div class="md-banner__inner md-grid md-typeset">
+              
+  This is not the documentation of the latest release.
+  <a href="../../.."><strong>Go to the latest release.</strong></a>
+
+            </div>
+            <script>var el=document.querySelector("[data-md-component=outdated]"),base=new URL("../.."),outdated=__md_get("__outdated",sessionStorage,base);!0===outdated&&el&&(el.hidden=!1)</script>
+          </aside>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="pymobiledevice3" class="md-header__button md-logo" aria-label="pymobiledevice3" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            pymobiledevice3
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CLI recipes
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m14.3 16-.7-2h-3.2l-.7 2H7.8L11 7h2l3.2 9zM20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12zm-9.15 3.96h2.3L12 9z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_2" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to system preference"  type="radio" name="__palette" id="__palette_2">
+    
+      <label class="md-header__button md-icon" title="Switch to system preference" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/doronz88/pymobiledevice3" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    doronz88/pymobiledevice3
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../installation/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Installation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  Python API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../internals/idevice-protocol-layers/" class="md-tabs__link">
+          
+  
+  
+  Protocol Internals
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../project/contributing/" class="md-tabs__link">
+          
+  
+  
+  Project
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="pymobiledevice3" class="md-nav__button md-logo" aria-label="pymobiledevice3" data-md-component="logo">
+      
+  <img src="../../assets/logo.png" alt="logo">
+
+    </a>
+    pymobiledevice3
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/doronz88/pymobiledevice3" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    doronz88/pymobiledevice3
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI recipes
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#device-discovery-and-connectivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Device Discovery and Connectivity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#logging-and-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Logging and Diagnostics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-sniffing-pcap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network Sniffing (PCAP)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files-apps-and-backup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files, Apps, and Backup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#profiles-and-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Profiles and Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cryptexes-ios-17-rsd-tunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cryptexes (iOS 17+, RSD tunnel)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streaming-app-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming app install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files-in-an-app-container-ios-17-rsd-tunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files in an app container (iOS 17+, RSD tunnel)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#app-console-output-ios-17-rsd-tunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        App console output (iOS 17+, RSD tunnel)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#app-install-records-ios-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        App install records (iOS 17+)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#darwin-notifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Darwin Notifications
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#springboard-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SpringBoard UI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#firmware-update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firmware Update
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#developer-mode-and-ddi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer Mode and DDI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dvt-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DVT Examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-device-ios-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Device (iOS 17+)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Core Device (iOS 17+)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hid-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HID input
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#screen-streaming-hevc-video" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Screen streaming (HEVC video)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Location
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#webinspector-automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WebInspector Automation
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kdebug/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tracing syscalls (strace-style)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packet-capture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capturing network traffic
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../screen-mirroring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mirroring and controlling the screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../webdav-mounting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounting device files (WebDAV)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ios17-tunnels/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    iOS 17+ tunnels
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../network-stacks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding the network stacks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../environment-variables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../webview-debugging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WebView debugging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../machine-readable-output/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Machine-readable output
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../python-api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../writing-commands-with-service-provider/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing CLI commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../codex-device-operator-skill/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Device operator skill
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../restore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Restoring and updating devices
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/activation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    activation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/afc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    afc
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/amfi/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    amfi
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/backup2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    backup2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/btlogger/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    btlogger
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/bonjour/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bonjour
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/companion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    companion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/crash/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    crash
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/cryptex/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cryptex
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/developer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    developer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/diagnostics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    diagnostics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/doctor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    doctor
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/lockdown/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    lockdown
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/mobilesync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mobilesync
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/mounter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mounter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/notification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    notification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/pcap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pcap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/power-assertion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    power-assertion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/processes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    processes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/profile/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    profile
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/provision/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    provision
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/remote/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    remote
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/restore/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    restore
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/springboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    springboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/syslog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    syslog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/usbmux/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    usbmux
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/webinspector/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    webinspector
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/idam/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    idam
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/version/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    version
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/connection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connecting to a device
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/services/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lockdown services
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System & device
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/apps-files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Apps, files & profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/capture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Capture, logging & automation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/backup-symbols/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backup, symbols & location
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/dvt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer / DVT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Protocol Internals
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Protocol Internals
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../internals/idevice-protocol-layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    iDevice protocol layers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../internals/remotexpc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RemoteXPC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../internals/dtx/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DTX client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../internals/dtx-development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DTX internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../project/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../project/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent guidance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../project/code-of-conduct/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code of conduct
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#device-discovery-and-connectivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Device Discovery and Connectivity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#logging-and-diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Logging and Diagnostics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#network-sniffing-pcap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network Sniffing (PCAP)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files-apps-and-backup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files, Apps, and Backup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#profiles-and-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Profiles and Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cryptexes-ios-17-rsd-tunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cryptexes (iOS 17+, RSD tunnel)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#streaming-app-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Streaming app install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files-in-an-app-container-ios-17-rsd-tunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files in an app container (iOS 17+, RSD tunnel)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#app-console-output-ios-17-rsd-tunnel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        App console output (iOS 17+, RSD tunnel)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#app-install-records-ios-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        App install records (iOS 17+)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#darwin-notifications" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Darwin Notifications
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#springboard-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SpringBoard UI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#firmware-update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firmware Update
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#developer-mode-and-ddi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Developer Mode and DDI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dvt-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DVT Examples
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#core-device-ios-17" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core Device (iOS 17+)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Core Device (iOS 17+)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hid-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HID input
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#screen-streaming-hevc-video" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Screen streaming (HEVC video)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Location
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#webinspector-automation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WebInspector Automation
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/doronz88/pymobiledevice3/edit/master/docs/guides/cli-recipes.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="cli-recipes">CLI Recipes<a class="headerlink" href="#cli-recipes" title="Permanent link">&para;</a></h1>
+<p>Common <code>pymobiledevice3</code> commands grouped by task. Every command has <code>--help</code>, which lists its
+arguments and options.</p>
+<p>Words in capitals (<code>DIRECTORY</code>, <code>PID</code>, <code>BUNDLE_ID</code>, ...) are placeholders for your own values. A
+bundle ID is an app's identifier, such as <code>com.apple.mobilesafari</code>; <code>pymobiledevice3 apps list</code>
+prints them. Commands under <code>developer</code> need Developer Mode turned on, and some also need the
+DeveloperDiskImage mounted (see <a href="#developer-mode-and-ddi">Developer Mode and DDI</a>). On iOS 17+ many commands also
+need an RSD tunnel (the transport iOS 17+ uses for developer services); the CLI sets one up by
+itself, with no flag and no <code>sudo</code> (<a href="../ios17-tunnels/">iOS 17+ tunnels</a> explains the options).</p>
+<h2 id="device-discovery-and-connectivity">Device Discovery and Connectivity<a class="headerlink" href="#device-discovery-and-connectivity" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># List connected devices</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>pymobiledevice3<span class="w"> </span>usbmux<span class="w"> </span>list
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Find iOS 17+ devices advertising RemoteXPC (Apple's developer-service protocol) on the local network.</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># On macOS this needs sudo: it pauses the host's remoted while it connects to each device</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>sudo<span class="w"> </span>pymobiledevice3<span class="w"> </span>bonjour<span class="w"> </span>rsd
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="c1"># Forward a host TCP port to a port on the device, over USB</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>pymobiledevice3<span class="w"> </span>usbmux<span class="w"> </span>forward<span class="w"> </span>HOST_PORT<span class="w"> </span>DEVICE_PORT
+</code></pre></div>
+<h2 id="logging-and-diagnostics">Logging and Diagnostics<a class="headerlink" href="#logging-and-diagnostics" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># View all syslog lines (including debug)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>pymobiledevice3<span class="w"> </span>syslog<span class="w"> </span>live
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Filter syslog lines</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>pymobiledevice3<span class="w"> </span>syslog<span class="w"> </span>live<span class="w"> </span>-m<span class="w"> </span>SpringBoard
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># Exclude syslog lines</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>pymobiledevice3<span class="w"> </span>syslog<span class="w"> </span>live<span class="w"> </span>-v<span class="w"> </span>unwanted_log
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="c1"># Capture Bluetooth HCI traffic in PacketLogger format</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>pymobiledevice3<span class="w"> </span>btlogger<span class="w"> </span>trace.pklg
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="c1"># Capture Bluetooth HCI traffic as pcapng for Wireshark</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>pymobiledevice3<span class="w"> </span>btlogger<span class="w"> </span>-f<span class="w"> </span>pcapng<span class="w"> </span>trace.pcapng
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="c1"># Restart device</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>pymobiledevice3<span class="w"> </span>diagnostics<span class="w"> </span>restart
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="c1"># Pull crash reports</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>pull<span class="w"> </span>/path/to/crashes
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="c1"># Remove only matching crash reports, without copying them</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>clear<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^MobileSafari'</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="c1"># Show the process list (no Developer Mode, DDI or tunnel needed)</span>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>ps
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="c1"># Match process pids by name (like pgrep)</span>
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>pgrep<span class="w"> </span>SpringBoard
+</code></pre></div>
+<h2 id="network-sniffing-pcap">Network Sniffing (PCAP)<a class="headerlink" href="#network-sniffing-pcap" title="Permanent link">&para;</a></h2>
+<p>Every packet is labelled with the process that sent it; see
+<a href="../packet-capture/">Capturing network traffic</a> for filtering by process in Wireshark and tshark.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Sniff all device traffic and save it for Wireshark</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>pymobiledevice3<span class="w"> </span>pcap<span class="w"> </span>--out<span class="w"> </span>capture.pcapng
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="c1"># Sniff only a given process, stopping after 100 packets</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>pymobiledevice3<span class="w"> </span>pcap<span class="w"> </span>--process<span class="w"> </span>backboardd<span class="w"> </span>-c<span class="w"> </span><span class="m">100</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1"># Sniff a single interface</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>pymobiledevice3<span class="w"> </span>pcap<span class="w"> </span>-i<span class="w"> </span>en0
+</code></pre></div>
+<h2 id="files-apps-and-backup">Files, Apps, and Backup<a class="headerlink" href="#files-apps-and-backup" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Open AFC shell (media directory). Inside it, device commands pipe into host tools and</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="c1"># redirect into local files: `cat notes.txt | grep todo`, `cat photo.heic &gt; photo.heic`</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>pymobiledevice3<span class="w"> </span>afc<span class="w"> </span>shell
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># Offer more host tools inside the shell (any tool also works as `!tool` without the option)</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>pymobiledevice3<span class="w"> </span>afc<span class="w"> </span>shell<span class="w"> </span>--tool<span class="w"> </span>jq<span class="w"> </span>--tool<span class="w"> </span>plutil
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="c1"># List installed apps</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>pymobiledevice3<span class="w"> </span>apps<span class="w"> </span>list
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="c1"># Query specific app bundle IDs</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>pymobiledevice3<span class="w"> </span>apps<span class="w"> </span>query<span class="w"> </span>BUNDLE_ID1<span class="w"> </span>BUNDLE_ID2
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="c1"># Dump contacts / calendars / Safari bookmarks / mail accounts without a backup</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>pymobiledevice3<span class="w"> </span>mobilesync<span class="w"> </span>dump<span class="w"> </span>contacts
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="c1"># Add or modify records (keyed by record id from `dump`; unknown ids add new records), then delete one</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="c1"># Use a plist instead of JSON for records with dates, such as calendar events</span>
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>pymobiledevice3<span class="w"> </span>mobilesync<span class="w"> </span>push<span class="w"> </span>contacts<span class="w"> </span>changes.json
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>pymobiledevice3<span class="w"> </span>mobilesync<span class="w"> </span>delete<span class="w"> </span>contacts<span class="w"> </span>RECORD_ID
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a><span class="c1"># Full backup</span>
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>pymobiledevice3<span class="w"> </span>backup2<span class="w"> </span>backup<span class="w"> </span>--full<span class="w"> </span>DIRECTORY
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>
+<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a><span class="c1"># Turn iCloud Backup on / off (needs a signed-in iCloud account)</span>
+<a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>pymobiledevice3<span class="w"> </span>backup2<span class="w"> </span>cloud<span class="w"> </span>on
+<a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a>
+<a id="__codelineno-3-28" name="__codelineno-3-28" href="#__codelineno-3-28"></a><span class="c1"># Preserve only selected backup payloads</span>
+<a id="__codelineno-3-29" name="__codelineno-3-29" href="#__codelineno-3-29"></a>pymobiledevice3<span class="w"> </span>backup2<span class="w"> </span>backup<span class="w"> </span>--only<span class="w"> </span>messages<span class="w"> </span>DIRECTORY
+<a id="__codelineno-3-30" name="__codelineno-3-30" href="#__codelineno-3-30"></a>pymobiledevice3<span class="w"> </span>backup2<span class="w"> </span>backup<span class="w"> </span>--only<span class="w"> </span>messages<span class="w"> </span>--patch-manifest<span class="w"> </span>DIRECTORY
+<a id="__codelineno-3-31" name="__codelineno-3-31" href="#__codelineno-3-31"></a>pymobiledevice3<span class="w"> </span>backup2<span class="w"> </span>backup<span class="w"> </span>--only<span class="w"> </span>sms<span class="w"> </span>DIRECTORY
+<a id="__codelineno-3-32" name="__codelineno-3-32" href="#__codelineno-3-32"></a>pymobiledevice3<span class="w"> </span>backup2<span class="w"> </span>backup<span class="w"> </span>--only<span class="w"> </span>whatsapp<span class="w"> </span>DIRECTORY
+<a id="__codelineno-3-33" name="__codelineno-3-33" href="#__codelineno-3-33"></a>pymobiledevice3<span class="w"> </span>backup2<span class="w"> </span>backup<span class="w"> </span>--only<span class="w"> </span>contacts<span class="w"> </span>DIRECTORY
+<a id="__codelineno-3-34" name="__codelineno-3-34" href="#__codelineno-3-34"></a>pymobiledevice3<span class="w"> </span>backup2<span class="w"> </span>backup<span class="w"> </span>--only<span class="w"> </span>call_history<span class="w"> </span>DIRECTORY
+<a id="__codelineno-3-35" name="__codelineno-3-35" href="#__codelineno-3-35"></a>pymobiledevice3<span class="w"> </span>backup2<span class="w"> </span>backup<span class="w"> </span>--only<span class="w"> </span>bookmarks<span class="w"> </span>DIRECTORY
+<a id="__codelineno-3-36" name="__codelineno-3-36" href="#__codelineno-3-36"></a>pymobiledevice3<span class="w"> </span>backup2<span class="w"> </span>backup<span class="w"> </span>--only-regex<span class="w"> </span><span class="s1">'\.(plist|db|db-shm|db-wal|sqlite|sqlite-shm|sqlite-wal|sqlitedb|sqlitedb-shm|sqlitedb-wal|storedata|storedata-shm|storedata-wal)$'</span><span class="w"> </span>DIRECTORY
+<a id="__codelineno-3-37" name="__codelineno-3-37" href="#__codelineno-3-37"></a>
+<a id="__codelineno-3-38" name="__codelineno-3-38" href="#__codelineno-3-38"></a><span class="c1"># `messages` keeps sms.db plus the complete SMS/iMessage attachment, part,</span>
+<a id="__codelineno-3-39" name="__codelineno-3-39" href="#__codelineno-3-39"></a><span class="c1"># sticker, and recent-item trees. Filtering saves host disk space, but the</span>
+<a id="__codelineno-3-40" name="__codelineno-3-40" href="#__codelineno-3-40"></a><span class="c1"># device still sends all backup bytes during the first run. The complete</span>
+<a id="__codelineno-3-41" name="__codelineno-3-41" href="#__codelineno-3-41"></a><span class="c1"># Manifest.db is retained so later runs can use incremental backup state.</span>
+<a id="__codelineno-3-42" name="__codelineno-3-42" href="#__codelineno-3-42"></a><span class="c1"># Filtered backups are intended for data access, not full-device restore.</span>
+<a id="__codelineno-3-43" name="__codelineno-3-43" href="#__codelineno-3-43"></a><span class="c1"># Use --patch-manifest when another tool requires Manifest.db to reference</span>
+<a id="__codelineno-3-44" name="__codelineno-3-44" href="#__codelineno-3-44"></a><span class="c1"># only saved payloads. This forces each run to be full, and encrypted backups</span>
+<a id="__codelineno-3-45" name="__codelineno-3-45" href="#__codelineno-3-45"></a><span class="c1"># require --password so the manifest can be decrypted and re-encrypted.</span>
+<a id="__codelineno-3-46" name="__codelineno-3-46" href="#__codelineno-3-46"></a><span class="c1"># Filtered backups also require --patch-manifest when combined with --unback.</span>
+<a id="__codelineno-3-47" name="__codelineno-3-47" href="#__codelineno-3-47"></a>
+<a id="__codelineno-3-48" name="__codelineno-3-48" href="#__codelineno-3-48"></a><span class="c1"># Restore backup</span>
+<a id="__codelineno-3-49" name="__codelineno-3-49" href="#__codelineno-3-49"></a>pymobiledevice3<span class="w"> </span>backup2<span class="w"> </span>restore<span class="w"> </span>DIRECTORY
+</code></pre></div>
+<h2 id="profiles-and-configuration">Profiles and Configuration<a class="headerlink" href="#profiles-and-configuration" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># List installed configuration profiles</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>pymobiledevice3<span class="w"> </span>profile<span class="w"> </span>list
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># Install one or more profiles (.mobileconfig)</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>pymobiledevice3<span class="w"> </span>profile<span class="w"> </span>install<span class="w"> </span>my.mobileconfig
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="c1"># Remove a profile by its identifier/name</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>pymobiledevice3<span class="w"> </span>profile<span class="w"> </span>remove<span class="w"> </span>com.example.profile
+</code></pre></div>
+<p>Supervised devices only: these commands escalate with the supervision identity passed as
+<code>--keybag</code> (a PEM holding the supervisor certificate and private key, e.g. from
+<code>profile create-keybag</code>).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Save the passcode unlock token (the device must have no passcode yet); written with mode 0600</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>pymobiledevice3<span class="w"> </span>profile<span class="w"> </span>request-unlock-token<span class="w"> </span>--keybag<span class="w"> </span>keybag.pem<span class="w"> </span>unlock-token.bin
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Later: remove the passcode without knowing it; the device then drops the pairing, so re-pair</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>pymobiledevice3<span class="w"> </span>profile<span class="w"> </span>clear-passcode<span class="w"> </span>--keybag<span class="w"> </span>keybag.pem<span class="w"> </span>unlock-token.bin
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>pair-supervised<span class="w"> </span>keybag.pem
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="c1"># Clear the Screen Time passcode (iOS 27.2 rejects it device-side)</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>pymobiledevice3<span class="w"> </span>profile<span class="w"> </span>clear-restrictions-password<span class="w"> </span>--keybag<span class="w"> </span>keybag.pem
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="c1"># Security status as JSON; PasscodePresent reliably tells whether a passcode is set</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>pymobiledevice3<span class="w"> </span>profile<span class="w"> </span>security-info<span class="w"> </span>--keybag<span class="w"> </span>keybag.pem
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="c1"># Set the wallpaper (--screen lock|home|both; iOS 16+ may apply it to both regardless)</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>pymobiledevice3<span class="w"> </span>profile<span class="w"> </span>set-wallpaper<span class="w"> </span>--keybag<span class="w"> </span>keybag.pem<span class="w"> </span>wallpaper.png<span class="w"> </span>--screen<span class="w"> </span>both
+</code></pre></div>
+<h2 id="cryptexes-ios-17-rsd-tunnel">Cryptexes (iOS 17+, RSD tunnel)<a class="headerlink" href="#cryptexes-ios-17-rsd-tunnel" title="Permanent link">&para;</a></h2>
+<p>Talks to <code>cryptexd</code> directly. <code>cryptex list</code> reports a DeveloperDiskImage installed as a cryptex
+(by <code>cryptex auto-install</code>, by <code>mounter auto-mount</code>, or by Xcode) as
+<code>com.apple.MobileAsset.DDI</code>. A <code>PersonalizedDMG</code> mounted through the image mounter is not a
+cryptex, so it does not appear there -- <code>mounter list</code> shows both.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pymobiledevice3<span class="w"> </span>cryptex<span class="w"> </span>list
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>pymobiledevice3<span class="w"> </span>cryptex<span class="w"> </span>personalization-identifiers
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>pymobiledevice3<span class="w"> </span>cryptex<span class="w"> </span>nonce
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>pymobiledevice3<span class="w"> </span>cryptex<span class="w"> </span>nonce<span class="w"> </span>--nonce-domain-handle<span class="w"> </span><span class="m">4</span>
+</code></pre></div>
+<p>State-changing. Rolling a nonce invalidates anything personalized against it, so a mounted
+personalized DDI must be re-personalized and re-mounted afterwards:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>pymobiledevice3<span class="w"> </span>cryptex<span class="w"> </span>roll-nonce
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>pymobiledevice3<span class="w"> </span>cryptex<span class="w"> </span>uninstall<span class="w"> </span>com.apple.MobileAsset.DDI
+</code></pre></div>
+<p><code>cryptex auto-install</code> is the cryptex counterpart of <code>mounter auto-mount</code> — a cryptex is
+<em>installed</em>, not mounted, which is why the verb differs. It personalizes and installs the
+DeveloperDiskImage over <code>cryptexd</code> alone, without the image mounter: it has Apple sign a Cryptex1
+ticket for this device and installs the payloads, leaving the DDI's developer services (DVT,
+testmanagerd, …) usable. The end result is indistinguishable from a <code>mounter auto-mount</code> —
+<code>mounter list</code> reports it as a <code>Personalized</code> image at <code>/System/Developer</code>. From iOS 27,
+<code>mounter auto-mount</code> itself installs this cryptex instead of mounting the older <code>PersonalizedDMG</code>:
+unlike the <code>PersonalizedDMG</code>, the cryptex is not tied to the boards listed in the DDI's build
+manifest, so it also covers devices newer than the DDI.</p>
+<div class="admonition note">
+<p class="admonition-title">iOS 26.4 and later</p>
+<p>iOS installs the DeveloperDiskImage as a cryptex only from 26.4. Below it, <code>cryptexd</code> may
+import the image but not mount it at <code>/System/Developer</code>, so <code>cryptex auto-install</code> refuses,
+and <code>mounter auto-mount</code> mounts the <code>PersonalizedDMG</code> instead
+(<a href="https://github.com/doronz88/pymobiledevice3/issues/1991">#1991</a>).</p>
+</div>
+<p>It refuses to run while a DeveloperDiskImage is already present, whichever front-end put it there:
+remove a cryptex with <code>cryptex uninstall com.apple.MobileAsset.DDI</code>, or a <code>PersonalizedDMG</code> with
+<code>mounter umount-personalized</code>.</p>
+<p>Also like <code>mounter auto-mount</code>, it downloads the DDI it needs and caches it under
+<code>~/.pymobiledevice3</code> (<code>$XDG_DATA_HOME/pymobiledevice3</code> on new Linux installs), so no Xcode
+installation is required and it works on any host:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>pymobiledevice3<span class="w"> </span>cryptex<span class="w"> </span>auto-install
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="c1"># Use a local bundle instead of the download, e.g. Xcode's own</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>pymobiledevice3<span class="w"> </span>cryptex<span class="w"> </span>auto-install<span class="w"> </span>--restore-dir<span class="w"> </span>/Library/Developer/DeveloperDiskImages/iOS_DDI/Restore
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Overlap with <code>mounter</code></p>
+<p><code>cryptexd</code> and the image mounter are two front-ends onto the same cryptex subsystem, so some
+queries exist in both places. Where they overlap, <code>cryptex</code> is the more precise source:</p>
+<ul>
+<li><code>cryptex personalization-identifiers</code> returns a strict superset of
+  <code>mounter query-personalization-identifiers</code> (19 <code>img4_chip_*</code> fields versus 8), including
+  the product class used by the <code>Cryptex1,UseProductClass</code> personalization variant.</li>
+<li><code>cryptex nonce</code> returns the nonce structure (56 bytes, the 48-byte nonce at offset 2);
+  <code>mounter query-nonce</code> returns those 48 bytes alone.</li>
+<li><code>cryptex nonce</code> validates the domain and fails loudly on an unknown one, whereas
+  <code>mounter query-nonce</code> silently falls back to the default nonce for an unrecognized
+  <code>--image-type</code>.</li>
+</ul>
+<p><code>mounter</code> still wins when no tunnel can be set up: its queries work over plain USB, while every
+<code>cryptex</code> command needs RSD.</p>
+</div>
+<h2 id="streaming-app-install">Streaming app install<a class="headerlink" href="#streaming-app-install" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Stream the app the way Xcode does: the device extracts it while it arrives,</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="c1"># instead of unpacking an .ipa uploaded over AFC</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>pymobiledevice3<span class="w"> </span>apps<span class="w"> </span>install<span class="w"> </span>--streaming<span class="w"> </span>MyApp.ipa
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>pymobiledevice3<span class="w"> </span>apps<span class="w"> </span>install<span class="w"> </span>--streaming<span class="w"> </span>--developer<span class="w"> </span>build/MyApp.app
+</code></pre></div>
+<h2 id="files-in-an-app-container-ios-17-rsd-tunnel">Files in an app container (iOS 17+, RSD tunnel)<a class="headerlink" href="#files-in-an-app-container-ios-17-rsd-tunnel" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Create, inspect, rename and remove files in an app's data container</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>write-file<span class="w"> </span>appDataContainer<span class="w"> </span>Documents/note.txt<span class="w"> </span>./note.txt<span class="w"> </span>--identifier<span class="w"> </span>com.example.app
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>stat<span class="w"> </span>appDataContainer<span class="w"> </span>Documents/note.txt<span class="w"> </span>--identifier<span class="w"> </span>com.example.app
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>rename<span class="w"> </span>appDataContainer<span class="w"> </span>Documents/note.txt<span class="w"> </span>Documents/old.txt<span class="w"> </span>--identifier<span class="w"> </span>com.example.app
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>create-symlink<span class="w"> </span>appDataContainer<span class="w"> </span>Documents/latest.txt<span class="w"> </span>old.txt<span class="w"> </span>--identifier<span class="w"> </span>com.example.app
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>remove-file<span class="w"> </span>appDataContainer<span class="w"> </span>Documents/old.txt<span class="w"> </span>--identifier<span class="w"> </span>com.example.app
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="c1"># Print changes as they happen, one JSON record per change (iOS 27+)</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>watch<span class="w"> </span>appDataContainer<span class="w"> </span>--identifier<span class="w"> </span>com.example.app
+</code></pre></div>
+<h2 id="app-console-output-ios-17-rsd-tunnel">App console output (iOS 17+, RSD tunnel)<a class="headerlink" href="#app-console-output-ios-17-rsd-tunnel" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># Launch an app and print its stdout/stderr until it exits</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>launch-application<span class="w"> </span>com.example.app<span class="w"> </span>--console
+</code></pre></div>
+<h2 id="app-install-records-ios-17">App install records (iOS 17+)<a class="headerlink" href="#app-install-records-ios-17" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># LaunchServices install record (DB UUID/sequence, install path, persistent identifier)</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>pymobiledevice3<span class="w"> </span>apps<span class="w"> </span>install-record<span class="w"> </span>com.apple.Preferences
+</code></pre></div>
+<h2 id="darwin-notifications">Darwin Notifications<a class="headerlink" href="#darwin-notifications" title="Permanent link">&para;</a></h2>
+<p>Darwin notifications are the system-wide named signals of <code>notify(3)</code>, which daemons post on state
+changes.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Post a notification</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>pymobiledevice3<span class="w"> </span>notification<span class="w"> </span>post<span class="w"> </span>com.example.notification
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Subscribe and stream notifications as they fire</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>pymobiledevice3<span class="w"> </span>notification<span class="w"> </span>observe<span class="w"> </span>com.example.notification
+</code></pre></div>
+<p>On iOS 17+, <code>--remotexpc</code> talks to the notification proxy directly over RemoteXPC instead of
+tunnelling the lockdown service through its <code>.shim.remote</code> alias. This option does not set up the
+tunnel by itself, so request one explicitly with <code>--userspace</code> (or <code>--rsd</code>/<code>--tunnel</code>):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>pymobiledevice3<span class="w"> </span>notification<span class="w"> </span>observe<span class="w"> </span>--remotexpc<span class="w"> </span>com.example.notification<span class="w"> </span>--userspace
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>pymobiledevice3<span class="w"> </span>notification<span class="w"> </span>post<span class="w"> </span>--remotexpc<span class="w"> </span>com.example.notification<span class="w"> </span>--userspace
+</code></pre></div>
+<p>Since iOS 27.2 a notification also carries a 64-bit state, which system daemons use to publish
+a current value (lock state, orientation, low power mode...). Reading and setting it goes over the
+RSD tunnel, which the CLI sets up by itself:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="c1"># Read the current value</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>pymobiledevice3<span class="w"> </span>notification<span class="w"> </span>get-state<span class="w"> </span>com.apple.springboard.lockstate<span class="w"> </span>com.apple.backboardd.orientation
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="c1"># Set a value and post the notification; the device keeps the value until you hit Ctrl+C</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>pymobiledevice3<span class="w"> </span>notification<span class="w"> </span>set-state<span class="w"> </span>com.example.notification<span class="w"> </span><span class="m">1</span>
+</code></pre></div>
+<h2 id="springboard-ui">SpringBoard UI<a class="headerlink" href="#springboard-ui" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="c1"># Print current screen orientation</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>pymobiledevice3<span class="w"> </span>springboard<span class="w"> </span>orientation
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1"># Save an app's icon to a PNG</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>pymobiledevice3<span class="w"> </span>springboard<span class="w"> </span>icon<span class="w"> </span>com.apple.mobilesafari<span class="w"> </span>safari-icon.png
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="c1"># Save the home-screen wallpaper to a PNG</span>
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>pymobiledevice3<span class="w"> </span>springboard<span class="w"> </span>wallpaper-home-screen<span class="w"> </span>wallpaper.png
+</code></pre></div>
+<h2 id="firmware-update">Firmware Update<a class="headerlink" href="#firmware-update" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># Pick a signed build interactively, download it and update in place (keeps user data)</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>update
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="c1"># Update using a local IPSW file</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>update<span class="w"> </span>-i<span class="w"> </span>/path/to/firmware.ipsw
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="c1"># Update using an IPSW URL</span>
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>update<span class="w"> </span>-i<span class="w"> </span>https://example.com/firmware.ipsw
+</code></pre></div>
+<p><code>--erase</code> restores instead, wiping the device. See the <a href="../restore/">restore guide</a> for details.</p>
+<h2 id="developer-mode-and-ddi">Developer Mode and DDI<a class="headerlink" href="#developer-mode-and-ddi" title="Permanent link">&para;</a></h2>
+<p>Developer services (everything under <code>developer</code>) need Developer Mode (iOS 16+). Some also need
+the DeveloperDiskImage (DDI), an Apple-signed image that adds developer services to the device:</p>
+<ul>
+<li><strong>iOS &lt; 17</strong>: every developer service, including <code>developer dvt</code>, needs the DDI.</li>
+<li><strong>iOS 17+</strong>: <code>developer dvt</code> needs only Developer Mode. <code>developer core-device</code> always needs the
+  DDI.</li>
+</ul>
+<p>If a developer command fails with <code>InvalidServiceError</code>, mounting the DDI is the first thing to try.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># Check, then enable Developer Mode. Enabling restarts the device and only works when no passcode</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="c1"># is set; otherwise reveal the switch in Settings -&gt; Privacy &amp; Security and turn it on there</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>pymobiledevice3<span class="w"> </span>amfi<span class="w"> </span>developer-mode-status
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>pymobiledevice3<span class="w"> </span>amfi<span class="w"> </span>enable-developer-mode
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>pymobiledevice3<span class="w"> </span>amfi<span class="w"> </span>reveal-developer-mode
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="c1"># Mount the DeveloperDiskImage (needed again after every reboot)</span>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>pymobiledevice3<span class="w"> </span>mounter<span class="w"> </span>auto-mount
+<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a>
+<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="c1"># Trust the developer app signer of an installed provisioning profile (UUID from `provision list`)</span>
+<a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a>pymobiledevice3<span class="w"> </span>amfi<span class="w"> </span>trust-app-signer<span class="w"> </span>PROFILE_UUID
+</code></pre></div>
+<p><code>mounter auto-mount</code> picks the right DeveloperDiskImage for the device's iOS version:</p>
+<table>
+<thead>
+<tr>
+<th>iOS</th>
+<th>Image</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>&lt; 17.0</td>
+<td>the classic <code>DeveloperDiskImage.dmg</code> for that version, over the image mounter</td>
+</tr>
+<tr>
+<td>17.0 - 26.x</td>
+<td>the <code>PersonalizedDMG</code> over the image mounter</td>
+</tr>
+<tr>
+<td>27.0+</td>
+<td>the Cryptex1 DDI over <code>cryptexd</code></td>
+</tr>
+</tbody>
+</table>
+<p>On iOS 17+, <code>--image cryptex|personalized-dmg</code> overrides that choice. For example, a device
+whose cryptexd cannot install the cryptex (<code>syslog live -m cryptexd</code> shows <code>staging failed</code>)
+can still mount the <code>PersonalizedDMG</code> with <code>mounter auto-mount --image personalized-dmg</code>,
+as long as the DDI's build manifest lists its board.</p>
+<div class="admonition note">
+<p class="admonition-title">Newer devices (e.g. the iPhone 18 series) only work with the Cryptex1 DDI</p>
+<p>Every <code>PersonalizedDMG</code> build identity is tied to one chip/board pair, so it can only be
+personalized for the devices listed in the DDI's build manifest -- and even Xcode 27.1's DDI
+stops at <code>iPhone18,5</code>. A device outside that list gets no ticket for it (see
+<a href="../troubleshooting/#could-not-find-the-manifest-for-board-and-chip-nosuchbuildidentityerror"><code>NoSuchBuildIdentityError</code></a>).
+The Cryptex1 identity names no device at all, so its ticket request is valid for any device and
+Apple's signing server decides. This is also how Xcode supports these devices, which run iOS
+27 or later, where <code>auto-mount</code> installs the cryptex (as does <code>cryptex auto-install</code>).</p>
+</div>
+<p>Installing the Cryptex1 DDI needs an RSD tunnel; you don't need to pass one: the CLI sets up a
+no-root tunnel and retries by itself (<em>"Trying again over ... since RSD is required for this
+command"</em>). All variants are downloaded
+and cached under <code>~/.pymobiledevice3</code> (<code>$XDG_DATA_HOME/pymobiledevice3</code> on new Linux installs),
+and the iOS 17+ ones end up mounted at <code>/System/Developer</code>. See
+<a href="#cryptexes-ios-17-rsd-tunnel">Cryptexes</a> for installing the cryptex directly.</p>
+<h2 id="dvt-examples">DVT Examples<a class="headerlink" href="#dvt-examples" title="Permanent link">&para;</a></h2>
+<p>DVT is the developer-tools service Xcode and Instruments use. These commands need Developer Mode,
+plus a mounted DDI on iOS &lt; 17 (<a href="#developer-mode-and-ddi">above</a>).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="c1"># Simulate location (iOS &lt; 17.0); `--` lets a negative coordinate through</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>simulate-location<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--<span class="w"> </span>LATITUDE<span class="w"> </span>LONGITUDE
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="c1"># Simulate location (iOS &gt;= 17.0)</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>simulate-location<span class="w"> </span><span class="nb">set</span><span class="w"> </span>--<span class="w"> </span>LATITUDE<span class="w"> </span>LONGITUDE
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="c1"># Play GPX route</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>simulate-location<span class="w"> </span>play<span class="w"> </span>route.gpx
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="c1"># Add random timing noise between -500 and 500 ms</span>
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>simulate-location<span class="w"> </span>play<span class="w"> </span>route.gpx<span class="w"> </span><span class="m">500</span>
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>
+<a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a><span class="c1"># Clear simulated location</span>
+<a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>simulate-location<span class="w"> </span>clear
+<a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a>
+<a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="c1"># Take a screenshot</span>
+<a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>screenshot<span class="w"> </span>/path/to/screen.png
+<a id="__codelineno-19-18" name="__codelineno-19-18" href="#__codelineno-19-18"></a>
+<a id="__codelineno-19-19" name="__codelineno-19-19" href="#__codelineno-19-19"></a><span class="c1"># Detailed process list</span>
+<a id="__codelineno-19-20" name="__codelineno-19-20" href="#__codelineno-19-20"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>sysmon<span class="w"> </span>process<span class="w"> </span>single
+<a id="__codelineno-19-21" name="__codelineno-19-21" href="#__codelineno-19-21"></a>
+<a id="__codelineno-19-22" name="__codelineno-19-22" href="#__codelineno-19-22"></a><span class="c1"># Stream processes above 50% CPU</span>
+<a id="__codelineno-19-23" name="__codelineno-19-23" href="#__codelineno-19-23"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>sysmon<span class="w"> </span>process<span class="w"> </span>monitor<span class="w"> </span>threshold<span class="w"> </span><span class="m">50</span>
+<a id="__codelineno-19-24" name="__codelineno-19-24" href="#__codelineno-19-24"></a>
+<a id="__codelineno-19-25" name="__codelineno-19-25" href="#__codelineno-19-25"></a><span class="c1"># Stream one process and only show the selected fields</span>
+<a id="__codelineno-19-26" name="__codelineno-19-26" href="#__codelineno-19-26"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>sysmon<span class="w"> </span>process<span class="w"> </span>monitor<span class="w"> </span>process<span class="w"> </span>--filter<span class="w"> </span><span class="nv">pid</span><span class="o">=</span><span class="m">123</span><span class="w"> </span>--key<span class="w"> </span>name<span class="w"> </span>--key<span class="w"> </span>cpuUsage<span class="w"> </span>--key<span class="w"> </span>physFootprint
+<a id="__codelineno-19-27" name="__codelineno-19-27" href="#__codelineno-19-27"></a>
+<a id="__codelineno-19-28" name="__codelineno-19-28" href="#__codelineno-19-28"></a><span class="c1"># Stream one process with human-readable memory sizes</span>
+<a id="__codelineno-19-29" name="__codelineno-19-29" href="#__codelineno-19-29"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>sysmon<span class="w"> </span>process<span class="w"> </span>monitor<span class="w"> </span>process<span class="w"> </span>--filter<span class="w"> </span><span class="nv">name</span><span class="o">=</span>SpringBoard<span class="w"> </span>--key<span class="w"> </span>name<span class="w"> </span>--key<span class="w"> </span>physFootprint<span class="w"> </span>--human
+<a id="__codelineno-19-30" name="__codelineno-19-30" href="#__codelineno-19-30"></a>
+<a id="__codelineno-19-31" name="__codelineno-19-31" href="#__codelineno-19-31"></a><span class="c1"># Keep streaming across relaunches: re-apply the filter on every snapshot instead of</span>
+<a id="__codelineno-19-32" name="__codelineno-19-32" href="#__codelineno-19-32"></a><span class="c1"># stopping once the originally selected process is gone</span>
+<a id="__codelineno-19-33" name="__codelineno-19-33" href="#__codelineno-19-33"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>sysmon<span class="w"> </span>process<span class="w"> </span>monitor<span class="w"> </span>process<span class="w"> </span>--filter<span class="w"> </span><span class="nv">name</span><span class="o">=</span>MyApp<span class="w"> </span>--choose<span class="w"> </span>last<span class="w"> </span>--keep-monitoring
+<a id="__codelineno-19-34" name="__codelineno-19-34" href="#__codelineno-19-34"></a>
+<a id="__codelineno-19-35" name="__codelineno-19-35" href="#__codelineno-19-35"></a><span class="c1"># Stream oslog</span>
+<a id="__codelineno-19-36" name="__codelineno-19-36" href="#__codelineno-19-36"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>oslog
+<a id="__codelineno-19-37" name="__codelineno-19-37" href="#__codelineno-19-37"></a>
+<a id="__codelineno-19-38" name="__codelineno-19-38" href="#__codelineno-19-38"></a><span class="c1"># Stream oslog as NDJSON (one JSON object per line). Each record also carries the message's format string and its arguments</span>
+<a id="__codelineno-19-39" name="__codelineno-19-39" href="#__codelineno-19-39"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>oslog<span class="w"> </span>--format<span class="w"> </span>json
+<a id="__codelineno-19-40" name="__codelineno-19-40" href="#__codelineno-19-40"></a>
+<a id="__codelineno-19-41" name="__codelineno-19-41" href="#__codelineno-19-41"></a><span class="c1"># Kill a process</span>
+<a id="__codelineno-19-42" name="__codelineno-19-42" href="#__codelineno-19-42"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span><span class="nb">kill</span><span class="w"> </span>PID
+<a id="__codelineno-19-43" name="__codelineno-19-43" href="#__codelineno-19-43"></a>
+<a id="__codelineno-19-44" name="__codelineno-19-44" href="#__codelineno-19-44"></a><span class="c1"># Memory of a debuggable (development-signed) app. The device refuses any other process.</span>
+<a id="__codelineno-19-45" name="__codelineno-19-45" href="#__codelineno-19-45"></a><span class="c1"># Regions of its address space</span>
+<a id="__codelineno-19-46" name="__codelineno-19-46" href="#__codelineno-19-46"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>vm-regions<span class="w"> </span>PID
+<a id="__codelineno-19-47" name="__codelineno-19-47" href="#__codelineno-19-47"></a>
+<a id="__codelineno-19-48" name="__codelineno-19-48" href="#__codelineno-19-48"></a><span class="c1"># Save the memory graph of a running app; prints the leak count and addresses as JSON</span>
+<a id="__codelineno-19-49" name="__codelineno-19-49" href="#__codelineno-19-49"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>memgraph<span class="w"> </span>PID<span class="w"> </span>app.memgraph
+<a id="__codelineno-19-50" name="__codelineno-19-50" href="#__codelineno-19-50"></a>
+<a id="__codelineno-19-51" name="__codelineno-19-51" href="#__codelineno-19-51"></a><span class="c1"># Inspect it with leaks(1), heap(1) or vmmap(1), which ship with macOS only</span>
+<a id="__codelineno-19-52" name="__codelineno-19-52" href="#__codelineno-19-52"></a>leaks<span class="w"> </span>app.memgraph
+<a id="__codelineno-19-53" name="__codelineno-19-53" href="#__codelineno-19-53"></a>
+<a id="__codelineno-19-54" name="__codelineno-19-54" href="#__codelineno-19-54"></a><span class="c1"># To see where each allocation was made, launch the app with malloc stack logging first;</span>
+<a id="__codelineno-19-55" name="__codelineno-19-55" href="#__codelineno-19-55"></a><span class="c1"># the memory graph then carries the backtraces</span>
+<a id="__codelineno-19-56" name="__codelineno-19-56" href="#__codelineno-19-56"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>launch<span class="w"> </span>--env<span class="w"> </span><span class="nv">MallocStackLogging</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>com.example.app
+<a id="__codelineno-19-57" name="__codelineno-19-57" href="#__codelineno-19-57"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>memgraph<span class="w"> </span>PID<span class="w"> </span>app.memgraph
+<a id="__codelineno-19-58" name="__codelineno-19-58" href="#__codelineno-19-58"></a>malloc_history<span class="w"> </span>app.memgraph<span class="w"> </span>--fullStacks<span class="w"> </span>ADDRESS
+<a id="__codelineno-19-59" name="__codelineno-19-59" href="#__codelineno-19-59"></a>
+<a id="__codelineno-19-60" name="__codelineno-19-60" href="#__codelineno-19-60"></a><span class="c1"># Launch timing, image and dlopen counts as the dynamic loader recorded them (debuggable apps only)</span>
+<a id="__codelineno-19-61" name="__codelineno-19-61" href="#__codelineno-19-61"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>dyld-metrics<span class="w"> </span>PID
+<a id="__codelineno-19-62" name="__codelineno-19-62" href="#__codelineno-19-62"></a>
+<a id="__codelineno-19-63" name="__codelineno-19-63" href="#__codelineno-19-63"></a><span class="c1"># Launch an app and summarize its heap allocations by class once interrupted (or after --duration)</span>
+<a id="__codelineno-19-64" name="__codelineno-19-64" href="#__codelineno-19-64"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>allocations<span class="w"> </span>com.example.app<span class="w"> </span>--duration<span class="w"> </span><span class="m">10</span>
+<a id="__codelineno-19-65" name="__codelineno-19-65" href="#__codelineno-19-65"></a>
+<a id="__codelineno-19-66" name="__codelineno-19-66" href="#__codelineno-19-66"></a><span class="c1"># Print every event instead, one JSON record each, with its backtrace as image+offset frames;</span>
+<a id="__codelineno-19-67" name="__codelineno-19-67" href="#__codelineno-19-67"></a><span class="c1"># --kind adds reference-counts, vm or zombies events to the default heap ones</span>
+<a id="__codelineno-19-68" name="__codelineno-19-68" href="#__codelineno-19-68"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>allocations<span class="w"> </span>com.example.app<span class="w"> </span>--events<span class="w"> </span>--kind<span class="w"> </span>heap<span class="w"> </span>--kind<span class="w"> </span>reference-counts
+<a id="__codelineno-19-69" name="__codelineno-19-69" href="#__codelineno-19-69"></a>
+<a id="__codelineno-19-70" name="__codelineno-19-70" href="#__codelineno-19-70"></a><span class="c1"># Disable the jetsam memory limit for a process (stop it being killed for</span>
+<a id="__codelineno-19-71" name="__codelineno-19-71" href="#__codelineno-19-71"></a><span class="c1"># exceeding its memory allowance)</span>
+<a id="__codelineno-19-72" name="__codelineno-19-72" href="#__codelineno-19-72"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>memlimitoff<span class="w"> </span>PID
+<a id="__codelineno-19-73" name="__codelineno-19-73" href="#__codelineno-19-73"></a>
+<a id="__codelineno-19-74" name="__codelineno-19-74" href="#__codelineno-19-74"></a><span class="c1"># List files in an un-chrooted path</span>
+<a id="__codelineno-19-75" name="__codelineno-19-75" href="#__codelineno-19-75"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>ls<span class="w"> </span>PATH
+<a id="__codelineno-19-76" name="__codelineno-19-76" href="#__codelineno-19-76"></a>
+<a id="__codelineno-19-77" name="__codelineno-19-77" href="#__codelineno-19-77"></a><span class="c1"># Launch an app</span>
+<a id="__codelineno-19-78" name="__codelineno-19-78" href="#__codelineno-19-78"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>launch<span class="w"> </span>com.apple.mobilesafari
+<a id="__codelineno-19-79" name="__codelineno-19-79" href="#__codelineno-19-79"></a>
+<a id="__codelineno-19-80" name="__codelineno-19-80" href="#__codelineno-19-80"></a><span class="c1"># Live kdebug (kernel event trace) parsing, strace-like; "Tracing with kdebug" covers the details. Unfiltered, the device emits events faster than they can</span>
+<a id="__codelineno-19-81" name="__codelineno-19-81" href="#__codelineno-19-81"></a><span class="c1"># be parsed, so output fails once it falls --max-lag (2s) behind, or skips ahead (with a warning on</span>
+<a id="__codelineno-19-82" name="__codelineno-19-82" href="#__codelineno-19-82"></a><span class="c1"># stderr) with --skip-behind; --bsc / --class-filters / --subclass-filters filter on the device (by</span>
+<a id="__codelineno-19-83" name="__codelineno-19-83" href="#__codelineno-19-83"></a><span class="c1"># subclass at most). On exit it prints how many events were read, dropped by the device and</span>
+<a id="__codelineno-19-84" name="__codelineno-19-84" href="#__codelineno-19-84"></a><span class="c1"># skipped. While apps launch, --bsc keeps up over any tunnel</span>
+<a id="__codelineno-19-85" name="__codelineno-19-85" href="#__codelineno-19-85"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>parse-live
+<a id="__codelineno-19-86" name="__codelineno-19-86" href="#__codelineno-19-86"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>parse-live<span class="w"> </span>--bsc
+<a id="__codelineno-19-87" name="__codelineno-19-87" href="#__codelineno-19-87"></a>
+<a id="__codelineno-19-88" name="__codelineno-19-88" href="#__codelineno-19-88"></a><span class="c1"># Only some syscalls, with their paths (each also matches its _nocancel variant). The device still</span>
+<a id="__codelineno-19-89" name="__codelineno-19-89" href="#__codelineno-19-89"></a><span class="c1"># sends every syscall; the others are dropped right after decoding, which keeps up over any tunnel.</span>
+<a id="__codelineno-19-90" name="__codelineno-19-90" href="#__codelineno-19-90"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>parse-live<span class="w"> </span>-s<span class="w"> </span>open<span class="w"> </span>-s<span class="w"> </span>openat
+<a id="__codelineno-19-91" name="__codelineno-19-91" href="#__codelineno-19-91"></a>
+<a id="__codelineno-19-92" name="__codelineno-19-92" href="#__codelineno-19-92"></a><span class="c1"># Syscalls by subsystem: --fs (syscalls that take a path), --net (sockets), --proc (process lifecycle),</span>
+<a id="__codelineno-19-93" name="__codelineno-19-93" href="#__codelineno-19-93"></a><span class="c1"># --io (reads, writes and the other syscalls on file descriptors), --mem (memory mappings), --signal,</span>
+<a id="__codelineno-19-94" name="__codelineno-19-94" href="#__codelineno-19-94"></a><span class="c1"># --cred (credentials, code signing and policy checks, access to other tasks), --sync (locks, kqueues,</span>
+<a id="__codelineno-19-95" name="__codelineno-19-95" href="#__codelineno-19-95"></a><span class="c1"># workqueues) and --mach (Mach traps). Groups add up, and combine with -s and -e: `--fs --io` prints both.</span>
+<a id="__codelineno-19-96" name="__codelineno-19-96" href="#__codelineno-19-96"></a><span class="c1"># `events` with the same options lists exactly what is printed</span>
+<a id="__codelineno-19-97" name="__codelineno-19-97" href="#__codelineno-19-97"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>parse-live<span class="w"> </span>--fs<span class="w"> </span>--io
+<a id="__codelineno-19-98" name="__codelineno-19-98" href="#__codelineno-19-98"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>parse-live<span class="w"> </span>--mem<span class="w"> </span>--signal<span class="w"> </span>--cred
+<a id="__codelineno-19-99" name="__codelineno-19-99" href="#__codelineno-19-99"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>events<span class="w"> </span>--io
+<a id="__codelineno-19-100" name="__codelineno-19-100" href="#__codelineno-19-100"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>events<span class="w"> </span>-s<span class="w"> </span>open
+<a id="__codelineno-19-101" name="__codelineno-19-101" href="#__codelineno-19-101"></a>
+<a id="__codelineno-19-102" name="__codelineno-19-102" href="#__codelineno-19-102"></a><span class="c1"># dyld events (image loads, dlopen, dlsym, ...); unlike the syscall groups, filtered on the device</span>
+<a id="__codelineno-19-103" name="__codelineno-19-103" href="#__codelineno-19-103"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>parse-live<span class="w"> </span>--dyld
+<a id="__codelineno-19-104" name="__codelineno-19-104" href="#__codelineno-19-104"></a>
+<a id="__codelineno-19-105" name="__codelineno-19-105" href="#__codelineno-19-105"></a><span class="c1"># XPC messages and transactions, libdispatch Mach messages, CoreFoundation run loop activity, of every</span>
+<a id="__codelineno-19-106" name="__codelineno-19-106" href="#__codelineno-19-106"></a><span class="c1"># process (printed as their name and raw arguments)</span>
+<a id="__codelineno-19-107" name="__codelineno-19-107" href="#__codelineno-19-107"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>parse-live<span class="w"> </span>--xpc<span class="w"> </span>--process<span class="w"> </span>SpringBoard
+<a id="__codelineno-19-108" name="__codelineno-19-108" href="#__codelineno-19-108"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>parse-live<span class="w"> </span>--dispatch<span class="w"> </span>--runloop
+<a id="__codelineno-19-109" name="__codelineno-19-109" href="#__codelineno-19-109"></a>
+<a id="__codelineno-19-110" name="__codelineno-19-110" href="#__codelineno-19-110"></a><span class="c1"># Events by their trace code name (the device filters each event's subclass, and the other events</span>
+<a id="__codelineno-19-111" name="__codelineno-19-111" href="#__codelineno-19-111"></a><span class="c1"># in it are dropped right after decoding). `events TEXT` finds a name, `events` alone lists them all</span>
+<a id="__codelineno-19-112" name="__codelineno-19-112" href="#__codelineno-19-112"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>events<span class="w"> </span>dlsym
+<a id="__codelineno-19-113" name="__codelineno-19-113" href="#__codelineno-19-113"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>parse-live<span class="w"> </span>-e<span class="w"> </span>DBG_DYLD_TIMING_DLOPEN<span class="w"> </span>-e<span class="w"> </span>DBG_DYLD_TIMING_DLSYM
+<a id="__codelineno-19-114" name="__codelineno-19-114" href="#__codelineno-19-114"></a>
+<a id="__codelineno-19-115" name="__codelineno-19-115" href="#__codelineno-19-115"></a><span class="c1"># One JSON object per trace (time, thread, pid, process, event, parsed fields and text), e.g. for jq.</span>
+<a id="__codelineno-19-116" name="__codelineno-19-116" href="#__codelineno-19-116"></a><span class="c1"># On a terminal, traces are otherwise colored by what they show; --color-mode fast colors only the columns</span>
+<a id="__codelineno-19-117" name="__codelineno-19-117" href="#__codelineno-19-117"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>parse-live<span class="w"> </span>--fs<span class="w"> </span>--json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-c<span class="w"> </span><span class="s1">'select(.process == "MobileSafari")'</span>
+<a id="__codelineno-19-118" name="__codelineno-19-118" href="#__codelineno-19-118"></a>
+<a id="__codelineno-19-119" name="__codelineno-19-119" href="#__codelineno-19-119"></a><span class="c1"># Save kdebug events to a file</span>
+<a id="__codelineno-19-120" name="__codelineno-19-120" href="#__codelineno-19-120"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>save<span class="w"> </span>FILENAME
+<a id="__codelineno-19-121" name="__codelineno-19-121" href="#__codelineno-19-121"></a>
+<a id="__codelineno-19-122" name="__codelineno-19-122" href="#__codelineno-19-122"></a><span class="c1"># Print the call stacks of every thread of every process (or of one: --process PID/NAME).</span>
+<a id="__codelineno-19-123" name="__codelineno-19-123" href="#__codelineno-19-123"></a><span class="c1"># They are symbolicated using the Xcode device support of the device, which</span>
+<a id="__codelineno-19-124" name="__codelineno-19-124" href="#__codelineno-19-124"></a><span class="c1"># `developer fetch-symbols download` creates; --json prints the raw stackshot instead</span>
+<a id="__codelineno-19-125" name="__codelineno-19-125" href="#__codelineno-19-125"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>stackshot<span class="w"> </span>--process<span class="w"> </span>SpringBoard
+<a id="__codelineno-19-126" name="__codelineno-19-126" href="#__codelineno-19-126"></a>
+<a id="__codelineno-19-127" name="__codelineno-19-127" href="#__codelineno-19-127"></a><span class="c1"># Also symbolicate the kernel frames, given the kernelcache of the firmware the device runs</span>
+<a id="__codelineno-19-128" name="__codelineno-19-128" href="#__codelineno-19-128"></a><span class="c1"># (from its IPSW) and the `kernel` directory of https://github.com/blacktop/symbolicator.</span>
+<a id="__codelineno-19-129" name="__codelineno-19-129" href="#__codelineno-19-129"></a><span class="c1"># Requires `ipsw`; --kernelcache alone names the kernel image of each frame</span>
+<a id="__codelineno-19-130" name="__codelineno-19-130" href="#__codelineno-19-130"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>stackshot<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-19-131" name="__codelineno-19-131" href="#__codelineno-19-131"></a><span class="w">    </span>--kernelcache<span class="w"> </span>kernelcache.release.iphone17<span class="w"> </span>--kernel-signatures<span class="w"> </span>symbolicator/kernel
+<a id="__codelineno-19-132" name="__codelineno-19-132" href="#__codelineno-19-132"></a>
+<a id="__codelineno-19-133" name="__codelineno-19-133" href="#__codelineno-19-133"></a><span class="c1"># Device information</span>
+<a id="__codelineno-19-134" name="__codelineno-19-134" href="#__codelineno-19-134"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>device-information
+<a id="__codelineno-19-135" name="__codelineno-19-135" href="#__codelineno-19-135"></a>
+<a id="__codelineno-19-136" name="__codelineno-19-136" href="#__codelineno-19-136"></a><span class="c1"># Energy monitor</span>
+<a id="__codelineno-19-137" name="__codelineno-19-137" href="#__codelineno-19-137"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>energy<span class="w"> </span>PID1<span class="w"> </span>PID2<span class="w"> </span>...
+<a id="__codelineno-19-138" name="__codelineno-19-138" href="#__codelineno-19-138"></a>
+<a id="__codelineno-19-139" name="__codelineno-19-139" href="#__codelineno-19-139"></a><span class="c1"># Per-process network traffic (bytes/packets, rx/tx)</span>
+<a id="__codelineno-19-140" name="__codelineno-19-140" href="#__codelineno-19-140"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>network-statistics<span class="w"> </span>PID1<span class="w"> </span>PID2<span class="w"> </span>...
+<a id="__codelineno-19-141" name="__codelineno-19-141" href="#__codelineno-19-141"></a>
+<a id="__codelineno-19-142" name="__codelineno-19-142" href="#__codelineno-19-142"></a><span class="c1"># Display frame rate (Core Animation FPS), once a second</span>
+<a id="__codelineno-19-143" name="__codelineno-19-143" href="#__codelineno-19-143"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>fps
+</code></pre></div>
+<h2 id="core-device-ios-17">Core Device (iOS 17+)<a class="headerlink" href="#core-device-ios-17" title="Permanent link">&para;</a></h2>
+<p>These commands talk to iOS 17+ <code>CoreDevice</code> services (the ones Xcode's <code>devicectl</code> uses) through
+the RSD tunnel, which the CLI sets up by itself.</p>
+<div class="admonition note">
+<p class="admonition-title">Prerequisites</p>
+<p>These always require Developer Mode and the Developer Disk Image (DDI) mounted. Mount it once
+per boot with:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>pymobiledevice3<span class="w"> </span>mounter<span class="w"> </span>auto-mount
+</code></pre></div>
+</div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># Take a screenshot (PNG)</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>screen-capture<span class="w"> </span>screenshot<span class="w"> </span>/path/to/screen.png
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="c1"># Fetch an application's icon (PNG). Size is given in points; pixel size is size * scale</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>fetch-app-icon<span class="w"> </span>com.apple.Preferences<span class="w"> </span>/path/to/icon.png
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>fetch-app-icon<span class="w"> </span>com.example.app<span class="w"> </span>/path/to/icon.png<span class="w"> </span>--width<span class="w"> </span><span class="m">176</span><span class="w"> </span>--height<span class="w"> </span><span class="m">176</span><span class="w"> </span>--scale<span class="w"> </span><span class="m">2</span>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="c1"># Fail instead of returning a generic placeholder when the app has no icon</span>
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>fetch-app-icon<span class="w"> </span>com.example.app<span class="w"> </span>/path/to/icon.png<span class="w"> </span>--no-placeholder
+</code></pre></div>
+<h3 id="hid-input">HID input<a class="headerlink" href="#hid-input" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># Press a named hardware button (home, lock, volume-up, volume-down, mute, siri)</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>hid<span class="w"> </span>button<span class="w"> </span>home<span class="w"> </span>press
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="c1"># Hold/release a named button (states: down, up, canceled)</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>hid<span class="w"> </span>button<span class="w"> </span>volume-up<span class="w"> </span>down
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>hid<span class="w"> </span>button<span class="w"> </span>volume-up<span class="w"> </span>up
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a>
+<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="c1"># Press by raw HID (usage_page, usage_code) — decimal or 0xHEX</span>
+<a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>hid<span class="w"> </span>raw-button<span class="w"> </span>0x0C<span class="w"> </span>0x40<span class="w"> </span>press
+<a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a>
+<a id="__codelineno-22-11" name="__codelineno-22-11" href="#__codelineno-22-11"></a><span class="c1"># List the device's registered HID surfaces (each has a _ServiceID).</span>
+<a id="__codelineno-22-12" name="__codelineno-22-12" href="#__codelineno-22-12"></a><span class="c1"># Touch goes via 257 (mainTouchscreen) or 1281 (touchscreenGesture).</span>
+<a id="__codelineno-22-13" name="__codelineno-22-13" href="#__codelineno-22-13"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>universal-hid-service<span class="w"> </span>list-connected
+<a id="__codelineno-22-14" name="__codelineno-22-14" href="#__codelineno-22-14"></a>
+<a id="__codelineno-22-15" name="__codelineno-22-15" href="#__codelineno-22-15"></a><span class="c1"># Deliver a raw HID report to a connected surface. The layout is</span>
+<a id="__codelineno-22-16" name="__codelineno-22-16" href="#__codelineno-22-16"></a><span class="c1"># surface-specific; capture devicectl traffic with misc/remotexpc_sniffer.py</span>
+<a id="__codelineno-22-17" name="__codelineno-22-17" href="#__codelineno-22-17"></a><span class="c1"># (in a source checkout) to learn it for a new surface.</span>
+<a id="__codelineno-22-18" name="__codelineno-22-18" href="#__codelineno-22-18"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>universal-hid-service<span class="w"> </span>send-report<span class="w"> </span><span class="m">1281</span><span class="w"> </span>HEX_REPORT
+<a id="__codelineno-22-19" name="__codelineno-22-19" href="#__codelineno-22-19"></a>
+<a id="__codelineno-22-20" name="__codelineno-22-20" href="#__codelineno-22-20"></a><span class="c1"># --- touch gestures (the media stream they need is managed automatically) ---</span>
+<a id="__codelineno-22-21" name="__codelineno-22-21" href="#__codelineno-22-21"></a><span class="c1">#</span>
+<a id="__codelineno-22-22" name="__codelineno-22-22" href="#__codelineno-22-22"></a><span class="c1"># X/Y are UInt16 (0..65535) normalised across the device's screen, so</span>
+<a id="__codelineno-22-23" name="__codelineno-22-23" href="#__codelineno-22-23"></a><span class="c1"># (0, 0) is top-left and (65535, 65535) is bottom-right regardless of the</span>
+<a id="__codelineno-22-24" name="__codelineno-22-24" href="#__codelineno-22-24"></a><span class="c1"># device's pixel resolution. Useful anchors regardless of model:</span>
+<a id="__codelineno-22-25" name="__codelineno-22-25" href="#__codelineno-22-25"></a><span class="c1">#   center                (32768, 32768)</span>
+<a id="__codelineno-22-26" name="__codelineno-22-26" href="#__codelineno-22-26"></a><span class="c1">#   top-center            (32768,  5000)</span>
+<a id="__codelineno-22-27" name="__codelineno-22-27" href="#__codelineno-22-27"></a><span class="c1">#   bottom-center         (32768, 60000)</span>
+<a id="__codelineno-22-28" name="__codelineno-22-28" href="#__codelineno-22-28"></a><span class="c1">#   home-indicator area   (32768, 62000+)</span>
+<a id="__codelineno-22-29" name="__codelineno-22-29" href="#__codelineno-22-29"></a><span class="c1">#</span>
+<a id="__codelineno-22-30" name="__codelineno-22-30" href="#__codelineno-22-30"></a><span class="c1"># To convert from pixel coordinates, query the device's pixel size first:</span>
+<a id="__codelineno-22-31" name="__codelineno-22-31" href="#__codelineno-22-31"></a><span class="c1">#   pymobiledevice3 developer core-device get-display-info</span>
+<a id="__codelineno-22-32" name="__codelineno-22-32" href="#__codelineno-22-32"></a><span class="c1">#       # → displays[0].currentMode.size = [828, 1792] for an iPhone 11, etc.</span>
+<a id="__codelineno-22-33" name="__codelineno-22-33" href="#__codelineno-22-33"></a><span class="c1"># then scale linearly: hid_x = round(px_x * 65535 / px_w).</span>
+<a id="__codelineno-22-34" name="__codelineno-22-34" href="#__codelineno-22-34"></a>
+<a id="__codelineno-22-35" name="__codelineno-22-35" href="#__codelineno-22-35"></a><span class="c1"># Tap at the screen center</span>
+<a id="__codelineno-22-36" name="__codelineno-22-36" href="#__codelineno-22-36"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>universal-hid-service<span class="w"> </span>tap<span class="w"> </span>--<span class="w"> </span><span class="m">32768</span><span class="w"> </span><span class="m">32768</span>
+<a id="__codelineno-22-37" name="__codelineno-22-37" href="#__codelineno-22-37"></a>
+<a id="__codelineno-22-38" name="__codelineno-22-38" href="#__codelineno-22-38"></a><span class="c1"># Drag from near the top to near the bottom (e.g. pull-down)</span>
+<a id="__codelineno-22-39" name="__codelineno-22-39" href="#__codelineno-22-39"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>universal-hid-service<span class="w"> </span>drag<span class="w"> </span>--<span class="w"> </span><span class="m">32768</span><span class="w"> </span><span class="m">5000</span><span class="w"> </span><span class="m">32768</span><span class="w"> </span><span class="m">60000</span>
+<a id="__codelineno-22-40" name="__codelineno-22-40" href="#__codelineno-22-40"></a>
+<a id="__codelineno-22-41" name="__codelineno-22-41" href="#__codelineno-22-41"></a><span class="c1"># Multi-finger (up to 5): two-finger tap at X Y pairs</span>
+<a id="__codelineno-22-42" name="__codelineno-22-42" href="#__codelineno-22-42"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>universal-hid-service<span class="w"> </span>multi-tap<span class="w"> </span>--<span class="w"> </span><span class="m">26000</span><span class="w"> </span><span class="m">30000</span><span class="w"> </span><span class="m">40000</span><span class="w"> </span><span class="m">30000</span>
+<a id="__codelineno-22-43" name="__codelineno-22-43" href="#__codelineno-22-43"></a>
+<a id="__codelineno-22-44" name="__codelineno-22-44" href="#__codelineno-22-44"></a><span class="c1"># Multi-finger drag, X1 Y1 X2 Y2 (start, end) per finger: apart = zoom in,</span>
+<a id="__codelineno-22-45" name="__codelineno-22-45" href="#__codelineno-22-45"></a><span class="c1"># together = pinch, parallel = multi-finger swipe</span>
+<a id="__codelineno-22-46" name="__codelineno-22-46" href="#__codelineno-22-46"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>universal-hid-service<span class="w"> </span>multi-drag<span class="w"> </span>--<span class="w"> </span><span class="m">28000</span><span class="w"> </span><span class="m">28000</span><span class="w"> </span><span class="m">12000</span><span class="w"> </span><span class="m">20000</span><span class="w"> </span><span class="m">37536</span><span class="w"> </span><span class="m">32000</span><span class="w"> </span><span class="m">53536</span><span class="w"> </span><span class="m">40000</span>
+<a id="__codelineno-22-47" name="__codelineno-22-47" href="#__codelineno-22-47"></a>
+<a id="__codelineno-22-48" name="__codelineno-22-48" href="#__codelineno-22-48"></a><span class="c1"># Pure pointer-motion gesture (moves cursor without registering a contact)</span>
+<a id="__codelineno-22-49" name="__codelineno-22-49" href="#__codelineno-22-49"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>universal-hid-service<span class="w"> </span>swipe<span class="w"> </span>--<span class="w"> </span><span class="m">100</span><span class="w"> </span><span class="m">400</span><span class="w"> </span><span class="m">700</span><span class="w"> </span><span class="m">400</span>
+<a id="__codelineno-22-50" name="__codelineno-22-50" href="#__codelineno-22-50"></a>
+<a id="__codelineno-22-51" name="__codelineno-22-51" href="#__codelineno-22-51"></a><span class="c1"># Batched gestures inside ONE media stream — reads stdin / a script file.</span>
+<a id="__codelineno-22-52" name="__codelineno-22-52" href="#__codelineno-22-52"></a><span class="c1"># Recognised lines: tap, drag, swipe, move, sleep (and # comments).</span>
+<a id="__codelineno-22-53" name="__codelineno-22-53" href="#__codelineno-22-53"></a><span class="nb">printf</span><span class="w"> </span><span class="s1">'tap 32768 32768\nsleep 0.3\ndrag 32768 5000 32768 60000\n'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-22-54" name="__codelineno-22-54" href="#__codelineno-22-54"></a><span class="w">    </span>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>universal-hid-service<span class="w"> </span>session
+<a id="__codelineno-22-55" name="__codelineno-22-55" href="#__codelineno-22-55"></a>
+<a id="__codelineno-22-56" name="__codelineno-22-56" href="#__codelineno-22-56"></a><span class="c1"># --- keyboard (a virtual keyboard registered for the command) ---</span>
+<a id="__codelineno-22-57" name="__codelineno-22-57" href="#__codelineno-22-57"></a>
+<a id="__codelineno-22-58" name="__codelineno-22-58" href="#__codelineno-22-58"></a><span class="c1"># Type text (a newline presses Return), then remove the last two characters</span>
+<a id="__codelineno-22-59" name="__codelineno-22-59" href="#__codelineno-22-59"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>universal-hid-service<span class="w"> </span><span class="nb">type</span><span class="w"> </span><span class="s1">'Hello'</span>
+<a id="__codelineno-22-60" name="__codelineno-22-60" href="#__codelineno-22-60"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>universal-hid-service<span class="w"> </span>key<span class="w"> </span>backspace<span class="w"> </span>--count<span class="w"> </span><span class="m">2</span>
+</code></pre></div>
+<h3 id="screen-streaming-hevc-video">Screen streaming (HEVC video)<a class="headerlink" href="#screen-streaming-hevc-video" title="Permanent link">&para;</a></h3>
+<p>Two ways to view (and control) the device's screen live, both fed by the same
+device-initiated HEVC stream over the RSD tunnel. Both need <strong>iOS 27 or later</strong>:
+older devices never send the stream, so these commands refuse to start on them.</p>
+<ul>
+<li><strong><code>serve-web</code></strong> — serves the screen over HTTP for any modern browser; the
+  HEVC decode happens in-browser via WebCodecs, so it works cross-platform with
+  no external tools. Touch, hardware buttons (drawn on the edges of the phone
+  frame), and keyboard are wired back to the device. The <strong>View</strong> panel zooms
+  (<code>Ctrl+=</code> / <code>Ctrl+-</code> / <code>Ctrl+0</code>) and rotates the displayed device.</li>
+<li><strong><code>serve-vnc</code></strong> — serves the screen as a VNC (RFB 3.8) server for macOS
+  Screen Sharing or any VNC client. macOS-only, because the server-side HEVC
+  decode goes through VideoToolbox. Right-click in the viewer is the Home
+  button; <code>Ctrl+H/L/[/]/\/S</code> map to Home / Lock / Volume Down / Volume Up /
+  Mute / Siri. Add <code>--audio</code> to also play the device's system audio out of the
+  host Mac's speakers.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="c1"># Query what the device's media-stream server supports</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>display<span class="w"> </span>get-media-support-info
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>display<span class="w"> </span>get-media-stream-server-status
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="c1"># Serve the device screen live to any modern browser (see notes above)</span>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>display<span class="w"> </span>serve-web
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a><span class="c1"># then open http://127.0.0.1:8080/</span>
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a>
+<a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a><span class="c1"># Serve the device screen as a VNC (RFB 3.8) server, macOS-only (see notes above)</span>
+<a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>display<span class="w"> </span>serve-vnc
+<a id="__codelineno-23-11" name="__codelineno-23-11" href="#__codelineno-23-11"></a><span class="c1"># then Finder ⌘K -&gt; vnc://127.0.0.1:5901</span>
+<a id="__codelineno-23-12" name="__codelineno-23-12" href="#__codelineno-23-12"></a>
+<a id="__codelineno-23-13" name="__codelineno-23-13" href="#__codelineno-23-13"></a><span class="c1"># Either one, reachable from the rest of the LAN: bind every interface and set a password,</span>
+<a id="__codelineno-23-14" name="__codelineno-23-14" href="#__codelineno-23-14"></a><span class="c1"># since whoever reaches the port can both watch and control the device</span>
+<a id="__codelineno-23-15" name="__codelineno-23-15" href="#__codelineno-23-15"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>display<span class="w"> </span>serve-web<span class="w"> </span>--bind<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--password<span class="w"> </span>s3cret
+<a id="__codelineno-23-16" name="__codelineno-23-16" href="#__codelineno-23-16"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>display<span class="w"> </span>serve-vnc<span class="w"> </span>--bind<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--password<span class="w"> </span>s3cret
+<a id="__codelineno-23-17" name="__codelineno-23-17" href="#__codelineno-23-17"></a>
+<a id="__codelineno-23-18" name="__codelineno-23-18" href="#__codelineno-23-18"></a><span class="c1"># Capture raw RTP/HEVC packets to a file (length-prefixed)</span>
+<a id="__codelineno-23-19" name="__codelineno-23-19" href="#__codelineno-23-19"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>display<span class="w"> </span>start-video-stream<span class="w"> </span>/tmp/cap.rtp<span class="w"> </span>--duration<span class="w"> </span><span class="m">10</span>
+<a id="__codelineno-23-20" name="__codelineno-23-20" href="#__codelineno-23-20"></a>
+<a id="__codelineno-23-21" name="__codelineno-23-21" href="#__codelineno-23-21"></a><span class="c1"># Convert that capture to an Annex-B .h265 bitstream playable by ffplay/VLC</span>
+<a id="__codelineno-23-22" name="__codelineno-23-22" href="#__codelineno-23-22"></a><span class="c1"># (misc/rtp_dump.py is in a source checkout, not in the installed package)</span>
+<a id="__codelineno-23-23" name="__codelineno-23-23" href="#__codelineno-23-23"></a>misc/rtp_dump.py<span class="w"> </span>/tmp/cap.rtp<span class="w"> </span>/tmp/cap.h265
+<a id="__codelineno-23-24" name="__codelineno-23-24" href="#__codelineno-23-24"></a>ffplay<span class="w"> </span>-framerate<span class="w"> </span><span class="m">60</span><span class="w"> </span>/tmp/cap.h265
+</code></pre></div>
+<p>Both can share the clipboard with the device, in both directions:</p>
+<ul>
+<li><code>serve-web</code>: turn on <strong>Sync</strong> in the viewer's Clipboard panel. Text and
+  images copied on the device land in the browser machine's clipboard, and
+  whatever was copied there is on the device by the time you paste. A picture
+  copied out of a rich-text app such as Notes is not shared: it only exists
+  inside the app's rich representations, and reading those blocks the device's
+  pasteboard service for about a minute (copy the picture from Photos, or take
+  a screenshot, instead). The browser only grants
+  clipboard access on a secure context (<code>localhost</code>, or <code>--https</code>) and asks for
+  permission once; it also refuses clipboard writes from a background tab, so a
+  device copy made meanwhile lands when you return to the page.</li>
+<li><code>serve-vnc --share-clipboard</code>: text only (RFB has no image clipboard). Uses
+  the RFB clipboard messages, so it follows
+  the VNC client's own clipboard setting. UTF-8 with clients that implement the
+  Extended Clipboard pseudo-encoding (TigerVNC, noVNC, …); other clients get
+  the classic Latin-1 message.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>display<span class="w"> </span>serve-vnc<span class="w"> </span>--share-clipboard
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Camera and microphone conflicts</p>
+<p>iOS will not start a screen-mirroring session while a foreground app is
+using the camera or microphone. This is the same restriction Apple's Xcode
+Device Hub enforces. If the <strong>Camera</strong>, <strong>Voice Memos</strong>, or a similar app is
+in the foreground when you launch <code>serve-web</code> / <code>serve-vnc</code>, the command
+prints a one-line explanation and exits with a non-zero code rather than
+serving — quit that app on the device and run it again. Conversely, while a
+mirroring session is active those apps cannot acquire the sensors and will
+record silence or black video, so stop mirroring before capturing with
+them.</p>
+</div>
+<h3 id="location">Location<a class="headerlink" href="#location" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="c1"># List the location-simulation scenarios baked into the device</span>
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>location<span class="w"> </span>available-scenarios
+</code></pre></div>
+<h2 id="webinspector-automation">WebInspector Automation<a class="headerlink" href="#webinspector-automation" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="c1"># JavaScript shell on open tab (requires Web Inspector enabled: Settings -&gt; Apps -&gt; Safari -&gt;</span>
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="c1"># Advanced, or Settings -&gt; Safari -&gt; Advanced before iOS 18)</span>
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>pymobiledevice3<span class="w"> </span>webinspector<span class="w"> </span>js-shell
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a>
+<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a><span class="c1"># JavaScript shell filtered to one app's WebViews</span>
+<a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a>pymobiledevice3<span class="w"> </span>webinspector<span class="w"> </span>js-shell<span class="w"> </span>--bundle-id<span class="w"> </span>com.example.MyApp
+<a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a>
+<a id="__codelineno-26-8" name="__codelineno-26-8" href="#__codelineno-26-8"></a><span class="c1"># JavaScript shell without inspector console events</span>
+<a id="__codelineno-26-9" name="__codelineno-26-9" href="#__codelineno-26-9"></a>pymobiledevice3<span class="w"> </span>webinspector<span class="w"> </span>js-shell<span class="w"> </span>--no-console-enable
+<a id="__codelineno-26-10" name="__codelineno-26-10" href="#__codelineno-26-10"></a>
+<a id="__codelineno-26-11" name="__codelineno-26-11" href="#__codelineno-26-11"></a><span class="c1"># JavaScript shell without the console history the page replays on attach</span>
+<a id="__codelineno-26-12" name="__codelineno-26-12" href="#__codelineno-26-12"></a>pymobiledevice3<span class="w"> </span>webinspector<span class="w"> </span>js-shell<span class="w"> </span>--no-replayed-log
+<a id="__codelineno-26-13" name="__codelineno-26-13" href="#__codelineno-26-13"></a>
+<a id="__codelineno-26-14" name="__codelineno-26-14" href="#__codelineno-26-14"></a><span class="c1"># List opened tabs</span>
+<a id="__codelineno-26-15" name="__codelineno-26-15" href="#__codelineno-26-15"></a>pymobiledevice3<span class="w"> </span>webinspector<span class="w"> </span>opened-tabs
+<a id="__codelineno-26-16" name="__codelineno-26-16" href="#__codelineno-26-16"></a>
+<a id="__codelineno-26-17" name="__codelineno-26-17" href="#__codelineno-26-17"></a><span class="c1"># JavaScript shell on automation tab (requires Remote Automation enabled, next to Web Inspector)</span>
+<a id="__codelineno-26-18" name="__codelineno-26-18" href="#__codelineno-26-18"></a>pymobiledevice3<span class="w"> </span>webinspector<span class="w"> </span>js-shell<span class="w"> </span>--automation
+<a id="__codelineno-26-19" name="__codelineno-26-19" href="#__codelineno-26-19"></a>
+<a id="__codelineno-26-20" name="__codelineno-26-20" href="#__codelineno-26-20"></a><span class="c1"># JavaScript automation shell for a specific app</span>
+<a id="__codelineno-26-21" name="__codelineno-26-21" href="#__codelineno-26-21"></a>pymobiledevice3<span class="w"> </span>webinspector<span class="w"> </span>js-shell<span class="w"> </span>--automation<span class="w"> </span>--bundle-id<span class="w"> </span>com.example.MyApp
+<a id="__codelineno-26-22" name="__codelineno-26-22" href="#__codelineno-26-22"></a>
+<a id="__codelineno-26-23" name="__codelineno-26-23" href="#__codelineno-26-23"></a><span class="c1"># Launch automation session to URL</span>
+<a id="__codelineno-26-24" name="__codelineno-26-24" href="#__codelineno-26-24"></a>pymobiledevice3<span class="w"> </span>webinspector<span class="w"> </span>launch<span class="w"> </span>URL
+<a id="__codelineno-26-25" name="__codelineno-26-25" href="#__codelineno-26-25"></a>
+<a id="__codelineno-26-26" name="__codelineno-26-26" href="#__codelineno-26-26"></a><span class="c1"># Selenium-like interactive shell</span>
+<a id="__codelineno-26-27" name="__codelineno-26-27" href="#__codelineno-26-27"></a>pymobiledevice3<span class="w"> </span>webinspector<span class="w"> </span>shell
+<a id="__codelineno-26-28" name="__codelineno-26-28" href="#__codelineno-26-28"></a>
+<a id="__codelineno-26-29" name="__codelineno-26-29" href="#__codelineno-26-29"></a><span class="c1"># CDP bridge: debug pages with Chrome DevTools or VS Code</span>
+<a id="__codelineno-26-30" name="__codelineno-26-30" href="#__codelineno-26-30"></a>pymobiledevice3<span class="w"> </span>webinspector<span class="w"> </span>cdp
+</code></pre></div>
+<p>See <a href="../webview-debugging/">WebView debugging</a> for the CDP bridge and the device setup in detail.</p>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../../installation/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Installation">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Installation
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../kdebug/" class="md-footer__link md-footer__link--next" aria-label="Next: Tracing syscalls (strace-style)">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Tracing syscalls (strace-style)
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Licensed under GPL-3.0-or-later
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.tabs", "navigation.sections", "navigation.top", "navigation.footer", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit", "toc.follow"], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"alias": true, "default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.c21346df.min.js"></script>
+      
+    
+  </body>
+</html>
