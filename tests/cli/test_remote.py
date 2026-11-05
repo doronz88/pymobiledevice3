@@ -8,7 +8,7 @@ import pytest
 import typer
 
 from pymobiledevice3.cli import remote
-from pymobiledevice3.exceptions import NoDeviceConnectedError, RemotePairingCompletedError
+from pymobiledevice3.exceptions import NoDeviceConnectedError, NotPairedError, RemotePairingCompletedError
 from pymobiledevice3.remote import native_tunnel
 from pymobiledevice3.remote.common import ConnectionType, TunnelProtocol
 
@@ -272,3 +272,20 @@ async def test_pair_reports_completion_instead_of_raising(monkeypatch, caplog):
         await cast(Any, remote.cli_pair).__wrapped__(name=None)
 
     assert "Pairing completed" in caplog.text
+
+
+def test_delete_pair_without_record_raises_not_paired(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(remote, "get_home_folder", lambda: tmp_path)
+
+    with pytest.raises(NotPairedError, match="No remote pairing record for 00008000-0000"):
+        remote.cli_delete_pair("00008000-0000")
+
+
+def test_delete_pair_removes_record(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(remote, "get_home_folder", lambda: tmp_path)
+    record = tmp_path / f"{remote.get_remote_pairing_record_filename('00008000-0000')}.{remote.PAIRING_RECORD_EXT}"
+    record.write_bytes(b"")
+
+    remote.cli_delete_pair("00008000-0000")
+
+    assert not record.exists()

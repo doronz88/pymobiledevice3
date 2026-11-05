@@ -27,7 +27,12 @@ from pymobiledevice3.cli.cli_common import (
     user_requested_colored_output,
 )
 from pymobiledevice3.common import get_home_folder
-from pymobiledevice3.exceptions import AccessDeniedError, NoDeviceConnectedError, RemotePairingCompletedError
+from pymobiledevice3.exceptions import (
+    AccessDeniedError,
+    NoDeviceConnectedError,
+    NotPairedError,
+    RemotePairingCompletedError,
+)
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, get_remote_pairing_record_filename
 from pymobiledevice3.remote.common import ConnectionType, TunnelProtocol
 from pymobiledevice3.remote.module_imports import MAX_IDLE_TIMEOUT, start_tunnel, verify_tunnel_imports
@@ -562,7 +567,10 @@ async def cli_pair_host(
 def cli_delete_pair(udid: str) -> None:
     """Delete a pairing record"""
     pair_record_path = get_home_folder() / f"{get_remote_pairing_record_filename(udid)}.{PAIRING_RECORD_EXT}"
-    pair_record_path.unlink()
+    try:
+        pair_record_path.unlink()
+    except FileNotFoundError:
+        raise NotPairedError(f"No remote pairing record for {udid} (looked for {pair_record_path})") from None
 
 
 @cli.command("service")

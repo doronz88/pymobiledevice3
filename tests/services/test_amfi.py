@@ -14,6 +14,13 @@ class _Connection:
     def __init__(self, reply: dict[str, Any]) -> None:
         self.reply = reply
         self.requests: list[dict[str, Any]] = []
+        self.closed = False
+
+    async def __aenter__(self) -> "_Connection":
+        return self
+
+    async def __aexit__(self, *_exc_info: Any) -> None:
+        self.closed = True
 
     async def send_recv_plist(self, data: dict[str, Any]) -> dict[str, Any]:
         self.requests.append(data)
@@ -37,6 +44,7 @@ async def test_trust_app_signer_request(reply: dict[str, Any], expected: Any) ->
     assert result is expected
     assert lockdown.service_names == ["com.apple.amfi.lockdown"]
     assert lockdown.connection.requests == [{"action": 4, "input_profile_uuid": PROFILE_UUID}]
+    assert lockdown.connection.closed
 
 
 # {"success": False} is what an iOS 27.0 device replies for an unknown profile UUID
@@ -45,3 +53,4 @@ async def test_trust_app_signer_failure_raises(reply: dict[str, Any]) -> None:
     lockdown = _Lockdown(reply)
     with pytest.raises(AmfiError):
         await AmfiService(cast(LockdownServiceProvider, lockdown)).trust_app_signer(PROFILE_UUID)
+    assert lockdown.connection.closed

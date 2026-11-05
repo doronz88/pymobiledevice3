@@ -1,3 +1,5 @@
+import logging
+import re
 from typing import Any, cast
 from urllib.error import URLError
 
@@ -5,8 +7,14 @@ import pytest
 import typer
 
 from pymobiledevice3.cli import mounter
-from pymobiledevice3.exceptions import AlreadyMountedError, DeveloperDiskImageNotFoundError, UnsupportedCommandError
+from pymobiledevice3.exceptions import (
+    AlreadyMountedError,
+    DeveloperDiskImageNotFoundError,
+    StartServiceError,
+    UnsupportedCommandError,
+)
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.mobile_image_mounter import PersonalizedDdi
 
 LOCKDOWN = cast(LockdownServiceProvider, object())
@@ -78,3 +86,25 @@ def test_auto_mount_refuses_a_forced_image_below_ios_17(monkeypatch: pytest.Monk
         mounter.mounter_auto_mount(service_provider=LOCKDOWN, image=PersonalizedDdi.CRYPTEX)
 
     assert exc_info.value.exit_code == 1
+
+
+class _RefusingProvider:
+    async def start_lockdown_service(self, name: str, include_escrow_bag: bool = False) -> None:
+        raise StartServiceError(name, "InvalidService")
+
+    async def start_lockdown_service_without_checkin(self, name: str) -> None:
+        raise StartServiceError(name, "InvalidService")
+
+
+@pytest.mark.parametrize("provider_class", [LockdownServiceProvider, RemoteServiceDiscoveryService])
+@pytest.mark.asyncio
+async def test_developer_service_failure_hints_an_existing_mounter_command(
+    provider_class: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.ERROR), pytest.raises(StartServiceError):
+        await provider_class.start_lockdown_developer_service(_RefusingProvider(), "com.apple.instruments.dtservicehub")
+
+    hinted = re.findall(r"pymobiledevice3 mounter ([\w-]+)", caplog.text)
+    assert hinted
+    registered = {command.name for command in mounter.cli.registered_commands}
+    assert set(hinted) <= registered

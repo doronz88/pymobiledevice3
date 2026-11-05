@@ -1,6 +1,6 @@
 import logging
 from dataclasses import asdict
-from typing import Annotated, Any, Optional, cast
+from typing import Annotated, Any, Optional
 
 import typer
 from typer_injector import InjectingTyper
@@ -36,7 +36,7 @@ async def sysmon_system(
 ) -> None:
     """show current system stats."""
 
-    split_fields = fields.split(",") if fields is not None else None
+    split_fields = {field.strip() for field in fields.split(",")} if fields is not None else None
 
     async with DvtProvider(service_provider) as dvt:
         sysmontap = await Sysmontap.create(dvt)
@@ -66,5 +66,5 @@ async def sysmon_system(
 
     attrs_dict: dict[str, Any] = {**asdict(system), **system_usage}
     for name, value in attrs_dict.items():
-        if (split_fields is None) or (name in cast(str, fields)):
+        if (split_fields is None) or (name in split_fields):
             print(f"{name}: {value}")

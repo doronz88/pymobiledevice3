@@ -112,8 +112,8 @@ class AmfiService:
         :return: The ``status`` value of the reply, or None if the device omitted it.
         :raises AmfiError: if the device does not report success (e.g. no profile with that UUID).
         """
-        service = await self._lockdown.start_lockdown_service(self.SERVICE_NAME)
-        resp = await service.send_recv_plist({"action": self.TRUST_APP_SIGNER, "input_profile_uuid": profile_uuid})
+        async with await self._lockdown.start_lockdown_service(self.SERVICE_NAME) as service:
+            resp = await service.send_recv_plist({"action": self.TRUST_APP_SIGNER, "input_profile_uuid": profile_uuid})
         error = resp.get("Error")
         if error is not None:
             raise AmfiError(f"AMFI refused to trust the app signer of profile {profile_uuid}: {error}")
