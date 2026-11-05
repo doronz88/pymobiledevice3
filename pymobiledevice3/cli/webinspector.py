@@ -264,14 +264,13 @@ async def launch(
 
     """
     async with webinspector_service(service_provider) as inspector:
-        safari = await inspector.open_app(SAFARI)
+        safari = await inspector.open_app(SAFARI, timeout)
         session = await inspector.automation_session(safari)
         driver = WebDriver(session)
         try:
-            print("Starting session")
             await driver.start_session()
-            print("Getting URL")
             await driver.get(url)
+            logger.info(f"Safari is showing {url} in an automation window, which closes when this command exits")
             OSUTILS.wait_return()
         finally:
             await session.stop_session()
@@ -323,7 +322,7 @@ def shell(
     inspector = WebinspectorService(lockdown=service_provider)
     run_in_loop(inspector.connect())
     try:
-        safari = run_in_loop(inspector.open_app(SAFARI))
+        safari = run_in_loop(inspector.open_app(SAFARI, timeout))
         session = run_in_loop(inspector.automation_session(safari))
         driver = WebDriver(session)
         try:
@@ -672,7 +671,7 @@ class AutomationJsShell(JsShell):
         if bundle_identifier is None:
             bundle_identifier = SAFARI
         async with webinspector_service(lockdown) as inspector:
-            application = await inspector.open_app(bundle_identifier)
+            application = await inspector.open_app(bundle_identifier, timeout)
             automation_session = await inspector.automation_session(application)
             driver = WebDriver(automation_session)
             await driver.start_session()
@@ -707,7 +706,7 @@ class InspectorJsShell(JsShell):
     ) -> "AsyncGenerator[InspectorJsShell, None]":
         async with webinspector_service(lockdown) as inspector:
             if open_safari:
-                _ = await inspector.open_app(SAFARI)
+                _ = await inspector.open_app(SAFARI, timeout)
             application_page = await cls.query_page(
                 inspector, bundle_identifier=SAFARI if open_safari else bundle_identifier
             )
