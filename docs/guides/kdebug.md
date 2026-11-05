@@ -1,4 +1,11 @@
-# Tracing with kdebug
+# Tracing Syscalls and Kernel Events (kdebug)
+
+Want `strace` for iOS? `pymobiledevice3 developer dvt core-profile-session parse-live` prints every
+syscall of every process with its decoded arguments and paths, plus image loads and process and
+thread lifecycle, live and on a stock device. Here it watches the Settings app start, from its first
+`open()` onward:
+
+--8<-- "docs/assets/terminal/strace.html"
 
 kdebug is the kernel's event tracing facility: the kernel and many system libraries record
 fixed-size events into it, and a trace session collects them from every process at once. It needs

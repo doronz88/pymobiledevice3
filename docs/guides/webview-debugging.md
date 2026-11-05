@@ -1,6 +1,8 @@
 # Debugging Safari and WebViews with Chrome DevTools or VS Code
 
-`pymobiledevice3 webinspector cdp` bridges Apple's Web Inspector protocol to the
+pymobiledevice3 gives you two ways into the JavaScript running in Safari and in apps' WebViews: an
+[interactive JavaScript shell](#interactive-javascript-shell) in your terminal, and a bridge for
+full debuggers. `pymobiledevice3 webinspector cdp` bridges Apple's Web Inspector protocol to the
 Chrome DevTools Protocol (CDP), so Chrome-compatible debugger clients can attach to
 Safari tabs and WebViews running on a connected device. One bridge instance serves
 both Chrome DevTools (per-page) and browser-level clients such as VS Code's
@@ -21,6 +23,28 @@ JavaScript debugger and test automation frameworks like Playwright and Puppeteer
   inspected.
 - Bare `JSContext`s opt in the same way (`jsContext.isInspectable = true`); see
   [JavaScript contexts](#javascript-contexts).
+
+## Interactive JavaScript shell
+
+For quick questions you don't need a browser at all. `webinspector js-shell` attaches to a Safari
+tab or an inspectable WebView and gives you a JavaScript prompt in your terminal:
+
+```shell
+pymobiledevice3 webinspector js-shell                          # pick from the open pages
+pymobiledevice3 webinspector js-shell --bundle-id com.example.MyApp   # one app's WebViews
+pymobiledevice3 webinspector js-shell --open-safari https://example.com
+```
+
+--8<-- "docs/assets/terminal/js-shell.html"
+
+Each line you type is evaluated in the page on the device, and the result is printed back. The page's
+own `console.log` output streams into the same terminal as it happens. Tab completion lists the
+real properties of live objects on the page (`document.`, `window.loc`...), and history (with
+suggestions as you type) persists across sessions. Ctrl+C abandons a slow evaluation, Ctrl+D exits.
+
+With `--automation` the shell instead drives a fresh, automation-controlled Safari (or the app given
+by `--bundle-id`), which also needs Remote Automation enabled next to Web Inspector. For
+an IPython prompt with the Python automation objects, use `webinspector shell`.
 
 ## Start the bridge
 
