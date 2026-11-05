@@ -561,6 +561,24 @@ async def test_the_image_type_follows_the_os_version(monkeypatch, version: str, 
     assert image.status is doctor.Status.WARNING
 
 
+@pytest.mark.parametrize(
+    ("version", "impact"),
+    [
+        ("27.2", "`developer core-device` commands will fail (`developer dvt` does not need it from iOS 17)"),
+        ("17.0", "`developer core-device` commands will fail (`developer dvt` does not need it from iOS 17)"),
+        ("16.7", "`developer` commands will fail"),
+    ],
+)
+async def test_a_missing_image_names_what_actually_fails(monkeypatch, version: str, impact: str):
+    # From iOS 17 DVT runs over the tunnel without the image; only CoreDevice still needs it.
+    _attach(monkeypatch, _FakeLockdownClient(version=version), mounted=False)
+
+    checks = await doctor._device_checks([_device("USB")])
+
+    image = next(check for check in checks if check.title == "Developer image")
+    assert image.impact == impact
+
+
 async def test_the_lockdown_connection_is_always_closed(monkeypatch):
     lockdown = _FakeLockdownClient()
     _attach(monkeypatch, lockdown)
@@ -615,6 +633,14 @@ def test_doctor_does_not_reach_into_bonjour_internals():
     assert "_DatagramProtocol" not in source
 
 
+def test_the_dvt_image_cutoff_is_the_tunnel_cutoff():
+    # DVT stops needing the image exactly where developer commands move to the RSD tunnel.
+    for version in ("16.7.9", "17.0", "17.4", "27.2"):
+        assert (Version(version) >= doctor.DVT_WITHOUT_IMAGE_MIN_VERSION) == __main__.product_version_needs_tunnel(
+            version
+        )
+
+
 def test_the_developer_mode_cutoff_is_lockdowns_own():
     # Stated twice it would drift: mounting refuses without developer mode, doctor reports it.
     for version, expected in (("15.7", False), ("16.0", True), ("16.4", True), ("17.0", True), ("27.2", True)):
@@ -660,5 +686,5 @@ async def test_developer_image_check_gives_up_on_a_mounter_that_does_not_answer(
     lockdown = cast(Any, SimpleNamespace(product_version="13.3", udid="UDID"))
     monkeypatch.setattr(doctor, "image_type_for_device", lambda lockdown: "Developer")
 
-    check = await asyncio.wait_for(doctor._developer_image_check(lockdown), 5)
+    check = await asyncio.wait_for(doctor._developer_image_check(lockdown, Version("13.3")), 5)
     assert check.status is doctor.Status.UNKNOWN
