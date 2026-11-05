@@ -3,7 +3,8 @@
 {#- Site-wide Open Graph / Twitter card so shared links preview the social card. -#}
 {% block extrahead %}
   {% set page_title = (page.title ~ " - " ~ config.site_name) if (page and page.title and not page.is_homepage) else config.site_name %}
-  {% set image = config.site_url ~ "assets/social-card.png" %}
+  {#- mike's canonical_version leaves site_url without its trailing slash. -#}
+  {% set image = config.site_url.rstrip("/") ~ "/assets/social-card.png" %}
   <meta property="og:type" content="website">
   <meta property="og:title" content="{{ page_title }}">
   <meta property="og:description" content="{{ config.site_description }}">
@@ -15,4 +16,10 @@
   <meta name="twitter:title" content="{{ page_title }}">
   <meta name="twitter:description" content="{{ config.site_description }}">
   <meta name="twitter:image" content="{{ image }}">
+{% endblock %}
+
+{#- Shown on every version except the default one (`latest`): `master` and older releases. -#}
+{% block outdated %}
+  This is not the documentation of the latest release.
+  <a href="{{ '../' ~ base_url }}"><strong>Go to the latest release.</strong></a>
 {% endblock %}
