@@ -75,7 +75,7 @@ variable the CLI honors).
 | Host OS | iOS 17.0-17.3 | iOS 17.4+ |
 | --- | --- | --- |
 | macOS | Supported (no root, native tunnel) | Supported (no root) |
-| Windows | Needs `tunneld` (Administrator) + additional drivers | Supported (no root) |
+| Windows | Needs `tunneld` (Administrator) + a third-party driver ([see below](#troubleshooting)) | Supported (no root) |
 | Linux | Needs `tunneld` (root) | Supported (no root) |
 
 ## When you still need a privileged `tunneld`
@@ -342,7 +342,9 @@ pymobiledevice3 syslog live --tunnel ''
   there. `--userspace` can still force the userspace path over Wi-Fi if you prefer.
 - Make sure the device is unlocked and trusts this computer; if you use `tunneld` or a manual
   tunnel, make sure it is still running.
-- On Windows for iOS 17.0-17.3, ensure required additional drivers are installed.
+- On Windows, iOS 17.0-17.3 needs a third-party driver that pymobiledevice3 does not ship or endorse.
+  Update the device to iOS 17.4 or later instead: it then works on Windows with no driver and no
+  Administrator.
 - **Wi-Fi-only usage (no USB cable)**: run `pymobiledevice3 lockdown wifi-connections on` once over
   USB. After that the host's own daemon finds the device over Wi-Fi and every command keeps working
   with no extra flag — on macOS always, and on Windows when the *Apple Mobile Device Service* comes

@@ -21,8 +21,9 @@ itself, with no flag and no `sudo` ([iOS 17+ tunnels](ios17-tunnels.md) explains
 # List connected devices
 pymobiledevice3 usbmux list
 
-# Find iOS 17+ devices advertising RemoteXPC (Apple's developer-service protocol) on the local network
-pymobiledevice3 bonjour rsd
+# Find iOS 17+ devices advertising RemoteXPC (Apple's developer-service protocol) on the local network.
+# On macOS this needs sudo: it pauses the host's remoted while it connects to each device
+sudo pymobiledevice3 bonjour rsd
 
 # Forward a host TCP port to a port on the device, over USB
 pymobiledevice3 usbmux forward HOST_PORT DEVICE_PORT
@@ -64,9 +65,12 @@ pymobiledevice3 processes pgrep SpringBoard
 
 ## Network Sniffing (PCAP)
 
+Every packet is labelled with the process that sent it; see
+[Capturing network traffic](packet-capture.md) for filtering by process in Wireshark and tshark.
+
 ```shell
-# Sniff all device traffic and write a pcap
-pymobiledevice3 pcap --out capture.pcap
+# Sniff all device traffic and save it for Wireshark
+pymobiledevice3 pcap --out capture.pcapng
 
 # Sniff only a given process, stopping after 100 packets
 pymobiledevice3 pcap --process backboardd -c 100
@@ -454,7 +458,7 @@ pymobiledevice3 developer dvt launch --env MallocStackLogging=1 com.example.app
 pymobiledevice3 developer dvt memgraph PID app.memgraph
 malloc_history app.memgraph --fullStacks ADDRESS
 
-# Launch timing, image and dlopen counts as the dynamic loader recorded them
+# Launch timing, image and dlopen counts as the dynamic loader recorded them (debuggable apps only)
 pymobiledevice3 developer dvt dyld-metrics PID
 
 # Launch an app and summarize its heap allocations by class once interrupted (or after --duration)
@@ -568,7 +572,7 @@ pymobiledevice3 developer core-device fetch-app-icon com.example.app /path/to/ic
 ### HID input
 
 ```shell
-# Press a named hardware button (home, power, lock, sleep, volume-up, volume-down, mute, siri)
+# Press a named hardware button (home, lock, volume-up, volume-down, mute, siri)
 pymobiledevice3 developer core-device hid button home press
 
 # Hold/release a named button (states: down, up, canceled)
