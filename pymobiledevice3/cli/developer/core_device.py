@@ -13,7 +13,9 @@ import typer
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import RSDServiceProviderDep, async_command, print_json, print_json_line
+from pymobiledevice3.exceptions import MuxException
 from pymobiledevice3.lockdown import create_using_usbmux
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.core_device.app_service import AppServiceService
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
@@ -62,6 +64,7 @@ from pymobiledevice3.remote.core_device.screen_stream import (
 from pymobiledevice3.remote.core_device.vnc_server import VncStreamServer
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.crash_reports import CrashReportsManager
+from pymobiledevice3.usbmux import select_device
 from pymobiledevice3.utils import try_decode
 
 PASSWORD_HELP = (
@@ -494,7 +497,11 @@ async def core_device_sysdiagnose(
         typer.Argument(dir_okay=True, file_okay=True, exists=True),
     ],
 ) -> None:
-    """Execute sysdiagnose and fetch the output file"""
+    """Execute sysdiagnose and fetch the output file
+
+    The file is downloaded over usbmux when usbmuxd lists the device (much faster), and through the RSD
+    tunnel otherwise.
+    """
     async with DiagnosticsServiceService(service_provider) as service:
         response = await service.capture_sysdiagnose(False)
         logger.info(f"Operation response: {response}")
@@ -502,12 +509,24 @@ async def core_device_sysdiagnose(
             output /= response.preferred_filename
         logger.info(f"Downloading sysdiagnose to: {output}")
 
-        # get the file over lockdownd which is WAYYY faster
-        lockdown = await create_using_usbmux(service_provider.udid)
-        async with CrashReportsManager(lockdown) as crash_reports_manager:
+        async with AsyncExitStack() as stack:
+            # get the file over lockdownd which is WAYYY faster, when the device is reachable that way
+            download_provider: LockdownServiceProvider = service_provider
+            if await _listed_by_usbmux(service_provider.udid):
+                download_provider = await stack.enter_async_context(await create_using_usbmux(service_provider.udid))
+            crash_reports_manager = await stack.enter_async_context(CrashReportsManager(download_provider))
             await crash_reports_manager.afc.pull(
                 posixpath.join(f"/DiagnosticLogs/sysdiagnose/{response.preferred_filename}"), str(output)
             )
+
+
+async def _listed_by_usbmux(udid: Optional[str]) -> bool:
+    if udid is None:
+        return False
+    try:
+        return await select_device(udid) is not None
+    except MuxException:
+        return False
 
 
 screen_capture_cli = InjectingTyper(
