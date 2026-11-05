@@ -10,6 +10,7 @@ import pytest
 from pymobiledevice3.exceptions import (
     AutomationSessionUnavailableError,
     ConnectionTerminatedError,
+    LaunchingApplicationError,
     WebInspectorNotEnabledError,
 )
 from pymobiledevice3.lockdown import LockdownClient
@@ -370,3 +371,18 @@ async def test_an_automation_session_starts_once_its_page_connects(monkeypatch: 
 
     session = await asyncio.wait_for(inspector.automation_session(safari, timeout=1), 5)
     assert session.protocol.page.automation_connection_id == "C0FFEE"
+
+
+async def test_an_application_that_never_connects_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Before Python 3.11 asyncio.wait_for raises asyncio.TimeoutError, which is not the builtin
+    TimeoutError there: catching the builtin let the raw timeout escape instead of this error."""
+    inspector = _unanswering_inspector(monkeypatch)
+
+    async def nothing(*args: Any) -> Any:
+        return {}
+
+    monkeypatch.setattr(inspector, "_request_application_launch", nothing)
+    monkeypatch.setattr(inspector, "get_open_pages", nothing)
+
+    with pytest.raises(LaunchingApplicationError):
+        await asyncio.wait_for(inspector.open_app(SAFARI, timeout=0.05), 5)

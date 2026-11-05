@@ -483,7 +483,7 @@ class WebinspectorService(LockdownService):
         await self.get_open_pages()
         try:
             return await asyncio.wait_for(self._wait_for_application(bundle), timeout)
-        except TimeoutError as e:
+        except asyncio.TimeoutError as e:  # not the builtin TimeoutError before Python 3.11
             raise LaunchingApplicationError() from e
 
     async def send_socket_data(self, session_id: str, app_id: str, page_id: int, data: dict[str, Any]):
