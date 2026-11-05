@@ -47,7 +47,7 @@ def print_packet(packet: DevicePacket, color: Optional[bool] = None) -> DevicePa
 async def pcap(
     service_provider: ServiceProviderDep,
     out: Annotated[
-        Optional[Path], typer.Option(help="Also save the packets to this .pcap file (e.g. for Wireshark).")
+        Optional[Path], typer.Option(help="Also save the packets to this file, in pcapng format (e.g. for Wireshark).")
     ] = None,
     count: Annotated[
         int,
@@ -71,7 +71,7 @@ async def pcap(
         ),
     ] = None,
 ) -> None:
-    """Capture the device's network traffic, print it, and optionally save it to a .pcap file."""
+    """Capture the device's network traffic, print it, and optionally save it to a pcapng file."""
     service = PcapdService(lockdown=service_provider)
     packets_generator = service.watch(packets_count=count, process=process, interface_name=interface)
 
