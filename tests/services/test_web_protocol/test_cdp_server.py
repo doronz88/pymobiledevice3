@@ -1202,7 +1202,9 @@ async def testp_cdp_server_answers_basic_auth_through_the_fetch_domain(lockdown:
             assert any("basic-auth" in url for url in paused_urls), (
                 f"the protected request must surface as Fetch.requestPaused: {paused_urls}"
             )
-            assert result == {"authenticated": True, "user": "user"}, (
+            # httpbin may add fields to its reply (it now also reports "authorized"); only these two
+            # say the challenge was answered
+            assert isinstance(result, dict) and (result.get("authenticated"), result.get("user")) == (True, "user"), (
                 f"the injected Authorization header must answer the Basic auth challenge: {result}"
             )
         finally:
