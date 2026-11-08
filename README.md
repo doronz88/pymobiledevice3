@@ -3,6 +3,9 @@
 <!-- markdownlint-disable MD013 -->
 [![Python application](https://github.com/doronz88/pymobiledevice3/workflows/Python%20application/badge.svg)](https://github.com/doronz88/pymobiledevice3/actions/workflows/python-app.yml "Python application action")
 [![Pypi version](https://img.shields.io/pypi/v/pymobiledevice3.svg)](https://pypi.org/project/pymobiledevice3/ "PyPi package")
+[![Python versions](https://img.shields.io/pypi/pyversions/pymobiledevice3)](https://pypi.org/project/pymobiledevice3/ "Supported Python versions")
+[![License](https://img.shields.io/pypi/l/pymobiledevice3)](https://github.com/doronz88/pymobiledevice3/blob/master/LICENSE "License")
+[![Docs](https://img.shields.io/badge/docs-online-blue)](https://doronz88.github.io/pymobiledevice3/ "Documentation")
 [![Downloads](https://static.pepy.tech/personalized-badge/pymobiledevice3?period=total&units=none&left_color=grey&right_color=blue&left_text=Downloads)](https://pepy.tech/project/pymobiledevice3)
 [![Discord](https://img.shields.io/discord/1133265168051208214?logo=Discord&label=Discord)](https://discord.gg/52mZGC3JXJ)
 <!-- markdownlint-enable MD013 -->
