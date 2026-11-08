@@ -599,6 +599,9 @@ class TunneldCore:
 
     @asyncio_print_traceback
     async def handle_new_potential_usb_cdc_ncm_interface_task(self, ip: str) -> None:
+        # the entry registered for this task; once cancel() or clear() removed it, the address may be
+        # registered again for a new task, whose entry this one must not touch
+        entry = self.tunnel_tasks.get(ip)
         rsd = None
         try:
             # establish an untrusted RSD handshake, as remoted: the NCM link is its too (see
@@ -654,8 +657,8 @@ class TunneldCore:
                 with suppress(OSError):
                     await rsd.close()
 
-            if ip in self.tunnel_tasks:
-                # In case the tunnel was removed just now
+            if entry is not None and self.tunnel_tasks.get(ip) is entry:
+                # unless cancel() or clear() removed it just now (and maybe registered a new one)
                 self.tunnel_tasks.pop(ip)
 
     async def close(self) -> None:
