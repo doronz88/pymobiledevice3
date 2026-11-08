@@ -709,3 +709,58 @@ async def test_start_tunnel_task_leaves_the_entry_of_a_task_that_replaced_it(mon
 
     assert core.tunnel_tasks == {"usbmux-DEVICE-USB": replacement}
     replacement.task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_usb_ncm_task_leaves_the_entry_of_a_task_that_replaced_it(monkeypatch):
+    # cancel() unregisters an NCM tunnel before its task has closed the RSD connection; the USB monitor
+    # may register a new task for the same address meanwhile, and the old task's end must not
+    # unregister it.
+    closing = asyncio.Event()
+    finish_close = asyncio.Event()
+
+    class Rsd:
+        product_version = "26.0"
+
+        def __init__(self, address, handshake_uuid=None) -> None:
+            pass
+
+        async def connect(self) -> None:
+            pass
+
+        async def close(self) -> None:
+            closing.set()
+            await finish_close.wait()
+
+    @asynccontextmanager
+    async def fake_start_tunnel(protocol_handler, protocol=None):
+        yield Mock(client=Mock(wait_closed=asyncio.Event().wait, stop_tunnel=AsyncMock()), address="fd00::1", port=1)
+
+    async def fake_tunnel_service(rsd):
+        return Mock(remote_identifier="DEVICE", close=AsyncMock())
+
+    monkeypatch.setattr(tunneld_server, "RemoteServiceDiscoveryService", Rsd)
+    monkeypatch.setattr(tunneld_server, "remoted_handshake_uuid", lambda: None)
+    monkeypatch.setattr(tunneld_server, "stop_remoted", nullcontext)
+    monkeypatch.setattr(tunneld_server, "create_core_device_tunnel_service_using_rsd", fake_tunnel_service)
+    monkeypatch.setattr(tunneld_server, "start_tunnel", fake_start_tunnel)
+    core = tunneld_server.TunneldCore(
+        wifi_monitor=False, usb_monitor=False, usbmux_monitor=False, mobdev2_monitor=False
+    )
+    task = asyncio.create_task(core.handle_new_potential_usb_cdc_ncm_interface_task("fe80::1"))
+    core.tunnel_tasks["fe80::1"] = tunneld_server.TunnelTask(task=task)
+    await _until(lambda: core.tunnel_exists_for_udid("DEVICE"))
+
+    core.cancel("DEVICE")
+    await closing.wait()
+
+    async def replacement_task() -> None:
+        await asyncio.Event().wait()
+
+    replacement = tunneld_server.TunnelTask(task=asyncio.create_task(replacement_task()))
+    core.tunnel_tasks["fe80::1"] = replacement
+    finish_close.set()
+    await task
+
+    assert core.tunnel_tasks == {"fe80::1": replacement}
+    replacement.task.cancel()
