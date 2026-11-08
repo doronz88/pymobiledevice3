@@ -146,7 +146,7 @@ async def condition_set(
     """
     async with DvtProvider(service_provider) as dvt, ConditionInducer(dvt) as condition_inducer:
         await condition_inducer.set(profile_identifier)
-        OSUTILS.wait_return()
+        await OSUTILS.wait_return()
 
 
 @cli.command("proclist")

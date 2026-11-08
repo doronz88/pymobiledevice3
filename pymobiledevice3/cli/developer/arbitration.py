@@ -44,7 +44,7 @@ async def check_in(
     async with DtDeviceArbitration(service_provider) as device_arbitration:
         try:
             await device_arbitration.check_in(hostname, force=force)
-            OSUTILS.wait_return()
+            await OSUTILS.wait_return()
         except DeviceAlreadyInUseError as e:
             logger.error(e.message)
             raise typer.Exit(1) from e

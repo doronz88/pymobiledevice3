@@ -151,7 +151,12 @@ class OsUtils:
     def chown_to_non_sudo_if_needed(self, path: Path) -> None:
         raise FeatureNotSupportedError(self._os_name, _calling_function_name())
 
-    def wait_return(self) -> None:
+    async def wait_return(self) -> None:
+        """Wait until the user asks to exit, without blocking the running event loop.
+
+        Commands that hold a device session open call this; the loop must keep running so the
+        userspace tunnel (driven by the same loop) keeps the session alive meanwhile.
+        """
         raise FeatureNotSupportedError(self._os_name, _calling_function_name())
 
     def get_homedir(self) -> Path:

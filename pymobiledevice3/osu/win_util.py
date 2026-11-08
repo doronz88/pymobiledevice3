@@ -1,7 +1,9 @@
+import asyncio
 import datetime
 import logging
 import os
 import socket
+import threading
 import winreg
 from contextlib import suppress
 from pathlib import Path
@@ -123,5 +125,16 @@ class Win32(OsUtils):
     def chown_to_non_sudo_if_needed(self, path: Path) -> None:
         return
 
-    def wait_return(self):
-        input("Press ENTER to exit>")
+    async def wait_return(self) -> None:
+        # input() blocks, so read it on a daemon thread: an executor thread would keep the
+        # process from exiting on Ctrl+C until ENTER is pressed.
+        loop = asyncio.get_running_loop()
+        done = loop.create_future()
+
+        def _read() -> None:
+            with suppress(EOFError):
+                input("Press ENTER to exit>")
+            loop.call_soon_threadsafe(lambda: done.done() or done.set_result(None))
+
+        threading.Thread(target=_read, daemon=True).start()
+        await done

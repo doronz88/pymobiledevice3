@@ -274,7 +274,7 @@ async def launch(
             await driver.start_session()
             await driver.get(url)
             logger.info(f"Safari is showing {url} in an automation window, which closes when this command exits")
-            OSUTILS.wait_return()
+            await OSUTILS.wait_return()
         finally:
             await session.stop_session()
 
