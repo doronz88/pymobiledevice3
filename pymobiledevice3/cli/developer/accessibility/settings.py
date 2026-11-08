@@ -40,7 +40,7 @@ async def accessibility_settings_set(
     """
     service = AccessibilityAudit(service_provider)
     await service.set_setting(setting, ast.literal_eval(value))
-    OSUTILS.wait_return()
+    await OSUTILS.wait_return()
 
 
 @cli.command("reset")

@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import ipaddress
 import os
@@ -139,9 +140,18 @@ class Posix(OsUtils):
     def parse_timestamp(self, time_stamp: float) -> datetime.datetime:
         return datetime.datetime.fromtimestamp(time_stamp)
 
-    def wait_return(self):
+    async def wait_return(self) -> None:
         print("Press Ctrl+C to send a SIGINT or use 'kill' command to send a SIGTERM")
-        signal.sigwait([signal.SIGINT, signal.SIGTERM])
+        loop = asyncio.get_running_loop()
+        stop = asyncio.Event()
+        signals = (signal.SIGINT, signal.SIGTERM)
+        for sig in signals:
+            loop.add_signal_handler(sig, stop.set)
+        try:
+            await stop.wait()
+        finally:
+            for sig in signals:
+                loop.remove_signal_handler(sig)
 
 
 class Darwin(Posix):

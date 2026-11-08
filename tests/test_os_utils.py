@@ -1,3 +1,8 @@
+import asyncio
+import os
+import signal
+import sys
+
 import pytest
 
 from pymobiledevice3 import common
@@ -196,3 +201,31 @@ def test_darwin_usb_rsd_addresses_cannot_tell_without_a_private_ncm_function(mon
     monkeypatch.setattr(posix_util, "get_adapters", lambda: adapters)
 
     assert posix_util.Darwin().usb_rsd_addresses() is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signal handling")
+@pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM])
+async def test_posix_wait_return_keeps_event_loop_running(signum):
+    # pymobiledevice3#2176: a blocking wait froze the loop, starving the userspace tunnel.
+    ticks = 0
+
+    async def _tick():
+        nonlocal ticks
+        while True:
+            ticks += 1
+            await asyncio.sleep(0.01)
+
+    async def _signal_later():
+        await asyncio.sleep(0.2)
+        os.kill(os.getpid(), signum)
+
+    ticker = asyncio.create_task(_tick())
+    signaller = asyncio.create_task(_signal_later())
+    try:
+        await asyncio.wait_for(Linux().wait_return(), timeout=5)
+    finally:
+        ticker.cancel()
+        await signaller
+    assert ticks > 5
+    # The handlers are removed again, so the default SIGINT behavior is back.
+    assert signal.getsignal(signal.SIGINT) is signal.default_int_handler

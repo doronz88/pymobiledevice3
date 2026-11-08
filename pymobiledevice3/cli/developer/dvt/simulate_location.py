@@ -39,7 +39,7 @@ async def dvt_simulate_location_set(
     """
     async with DvtProvider(service_provider) as dvt, LocationSimulation(dvt) as location_simulation:
         await location_simulation.set(latitude, longitude)
-        OSUTILS.wait_return()
+        await OSUTILS.wait_return()
 
 
 @cli.command("play")
@@ -64,4 +64,4 @@ async def dvt_simulate_location_play(
             disable_sleep=disable_sleep,
             timing_randomness_range=timing_randomness_range,
         )
-        OSUTILS.wait_return()
+        await OSUTILS.wait_return()
