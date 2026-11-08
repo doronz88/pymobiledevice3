@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager, nullcontext
+from typing import Any, Callable
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -325,6 +326,9 @@ class _ListeningMux:
 
 
 class _Lockdown:
+    def __init__(self, serial: str = "DEVICE") -> None:
+        self.serial = serial
+
     async def __aenter__(self):
         return self
 
@@ -595,26 +599,113 @@ async def test_monitor_usbmux_task_rescans_after_a_pending_usb_attempt_fails(mon
         await core.close()
 
 
+class _ScriptedMux:
+    """A usbmux listen connection whose device-state updates are fed one at a time by the test."""
+
+    def __init__(self) -> None:
+        self.devices = []
+        self.updates: asyncio.Queue[Callable[[list[Any]], None]] = asyncio.Queue()
+
+    async def listen(self) -> None:
+        return None
+
+    async def receive_device_state_update(self) -> None:
+        (await self.updates.get())(self.devices)
+
+    async def close(self) -> None:
+        pass
+
+
 @pytest.mark.asyncio
-async def test_cancelled_tunnels_do_not_signal_a_usbmux_rescan(monkeypatch):
-    # A tunnel ended through the API (cancel or clear) must stay gone, not be rebuilt by the monitor.
+async def test_monitor_usbmux_task_keeps_a_cancelled_tunnel_down_until_a_usbmux_event(monkeypatch):
+    # A tunnel cancelled through the API stays gone when another tunnel ending signals a rescan; only
+    # usbmuxd reporting that device attaching or detaching brings it back, as before the rescan.
+    attempts: list[str] = []
+
     @asynccontextmanager
     async def fake_start_tunnel(protocol_handler, protocol=None):
+        attempts.append(protocol_handler.remote_identifier)
         yield Mock(client=Mock(wait_closed=asyncio.Event().wait, stop_tunnel=AsyncMock()), address="fd00::1", port=1)
+
+    async def fake_create_using_usbmux(serial, usbmux_address=None):
+        return _Lockdown(serial)
+
+    async def fake_proxy_create(lockdown):
+        return Mock(remote_identifier=lockdown.serial, close=AsyncMock())
+
+    mux = _ScriptedMux()
+
+    async def fake_create_mux(usbmux_address=None):
+        return mux
+
+    monkeypatch.setattr(tunneld_server, "start_tunnel", fake_start_tunnel)
+    monkeypatch.setattr(tunneld_server, "create_using_usbmux", fake_create_using_usbmux)
+    monkeypatch.setattr(tunneld_server.CoreDeviceTunnelProxy, "create", fake_proxy_create)
+    monkeypatch.setattr(tunneld_server.usbmux, "create_mux", fake_create_mux)
+    monkeypatch.setattr(tunneld_server, "USBMUX_INTERVAL", 0.05)
+    core = tunneld_server.TunneldCore(wifi_monitor=False, usb_monitor=False, usbmux_monitor=True, mobdev2_monitor=False)
+
+    device = Mock(devid=1, serial="DEVICE", connection_type="USB")
+    other = Mock(devid=2, serial="OTHER", connection_type="USB")
+    monitor = asyncio.create_task(core.monitor_usbmux_task())
+    try:
+        mux.updates.put_nowait(lambda devices: devices.append(device))
+        mux.updates.put_nowait(lambda devices: devices.append(other))
+        await _until(lambda: core.tunnel_exists_for_udid("DEVICE") and core.tunnel_exists_for_udid("OTHER"))
+
+        core.cancel("DEVICE")
+        core.tunnel_tasks["usbmux-OTHER-USB"].task.cancel()  # OTHER's tunnel ends on its own
+        await _until(lambda: attempts.count("OTHER") == 2)
+        mux.updates.put_nowait(lambda devices: None)  # an update that attaches or detaches nothing
+        await asyncio.sleep(0.3)
+        assert attempts.count("DEVICE") == 1
+        assert not core.tunnel_exists_for_udid("DEVICE")
+
+        mux.updates.put_nowait(lambda devices: devices.remove(device))
+        mux.updates.put_nowait(lambda devices: devices.append(device))
+        await _until(lambda: core.tunnel_exists_for_udid("DEVICE"))
+        assert attempts.count("DEVICE") == 2
+    finally:
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)
+        await core.close()
+
+
+@pytest.mark.asyncio
+async def test_start_tunnel_task_leaves_the_entry_of_a_task_that_replaced_it(monkeypatch):
+    # cancel() unregisters a tunnel before its task has stopped it; a new task may be registered under
+    # the same identifier meanwhile, and the old task's end must not unregister it.
+    stopping = asyncio.Event()
+    finish_stop = asyncio.Event()
+
+    async def stop_tunnel() -> None:
+        stopping.set()
+        await finish_stop.wait()
+
+    @asynccontextmanager
+    async def fake_start_tunnel(protocol_handler, protocol=None):
+        yield Mock(client=Mock(wait_closed=asyncio.Event().wait, stop_tunnel=stop_tunnel), address="fd00::1", port=1)
 
     monkeypatch.setattr(tunneld_server, "start_tunnel", fake_start_tunnel)
     core = tunneld_server.TunneldCore(
         wifi_monitor=False, usb_monitor=False, usbmux_monitor=False, mobdev2_monitor=False
     )
-    rescan = core._usbmux_rescan = asyncio.Event()
+    task = asyncio.create_task(
+        core.start_tunnel_task("usbmux-DEVICE-USB", Mock(remote_identifier="DEVICE", close=AsyncMock()))
+    )
+    core.tunnel_tasks["usbmux-DEVICE-USB"] = tunneld_server.TunnelTask(task=task, udid="DEVICE")
+    await _until(lambda: core.tunnel_exists_for_udid("DEVICE"))
 
-    for end in (lambda: core.cancel("DEVICE"), core.clear):
-        task = asyncio.create_task(
-            core.start_tunnel_task("usbmux-DEVICE-USB", Mock(remote_identifier="DEVICE", close=AsyncMock()))
-        )
-        core.tunnel_tasks["usbmux-DEVICE-USB"] = tunneld_server.TunnelTask(task=task, udid="DEVICE")
-        await _until(lambda: core.tunnel_exists_for_udid("DEVICE"))
-        end()
-        await task
-        assert not rescan.is_set()
-        assert not core._cancel_requested
+    core.cancel("DEVICE")
+    await stopping.wait()
+
+    async def replacement_task() -> None:
+        await asyncio.Event().wait()
+
+    replacement = tunneld_server.TunnelTask(task=asyncio.create_task(replacement_task()), udid="DEVICE")
+    core.tunnel_tasks["usbmux-DEVICE-USB"] = replacement
+    finish_stop.set()
+    await task
+
+    assert core.tunnel_tasks == {"usbmux-DEVICE-USB": replacement}
+    replacement.task.cancel()

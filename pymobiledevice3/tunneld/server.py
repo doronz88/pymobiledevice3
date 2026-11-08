@@ -204,8 +204,10 @@ class TunneldCore:
         # knows of: one skipped while it had another tunnel or attempt (e.g. over Wi-Fi) produces no
         # new attach event once that is gone (#2052). Created by the monitor, on its own loop.
         self._usbmux_rescan: Optional[asyncio.Event] = None
-        # Tunnel tasks ended through cancel() or clear(), which must not bring the tunnel back.
-        self._cancel_requested: set[str] = set()
+        # UDIDs whose tunnels were ended through cancel() or clear(). The usbmux monitor leaves them
+        # alone until usbmuxd next reports that device attaching or detaching, so a rescan signaled
+        # by an unrelated tunnel ending doesn't bring them back.
+        self._usbmux_cancelled_udids: set[str] = set()
 
     def start(self) -> None:
         """Register all tasks"""
@@ -384,6 +386,9 @@ class TunneldCore:
             # it is cancelled only when the connection is discarded.
             receive: Optional[asyncio.Task[None]] = None
             rescan_wait: Optional[asyncio.Task[bool]] = None
+            # (devid, serial) of the devices usbmuxd had reported as of the previous read, to tell
+            # which devices a read reported attaching or detaching
+            reported: set[tuple[int, str]] = set()
             try:
                 mux = await usbmux.create_mux(usbmux_address=self.usbmux_address)
                 await mux.listen()
@@ -407,10 +412,17 @@ class TunneldCore:
                         received, receive = receive, None
                         # raises what the read raised (e.g. the connection was lost)
                         received.result()
+                        current = {(mux_device.devid, mux_device.serial) for mux_device in mux.devices}
+                        # a device reported attaching or detaching may get a tunnel again
+                        self._usbmux_cancelled_udids -= {serial for _devid, serial in current ^ reported}
+                        reported = current
 
                     mux_devices: list[usbmux.MuxDevice] = list(mux.devices)
                     for mux_device in mux_devices:
                         task_identifier = f"usbmux-{mux_device.serial}-{mux_device.connection_type}"
+                        if mux_device.serial in self._usbmux_cancelled_udids:
+                            # Skip if its tunnel was cancelled through the API
+                            continue
                         if self.tunnel_exists_for_udid(mux_device.serial):
                             # Skip if already established a tunnel for this udid
                             continue
@@ -518,6 +530,9 @@ class TunneldCore:
             protocol = self.protocol
         if isinstance(protocol_handler, CoreDeviceTunnelProxy):
             protocol = TunnelProtocol.TCP
+        # the entry registered for this task; once cancel() or clear() removed it, the identifier
+        # may be registered again for a new task, whose entry this one must not touch
+        entry = self.tunnel_tasks.get(task_identifier)
         tun = None
         bailed_out = False
         try:
@@ -526,9 +541,9 @@ class TunneldCore:
                 raise asyncio.CancelledError()
 
             async with start_tunnel(protocol_handler, protocol=protocol) as tun:
-                if not self.tunnel_exists_for_udid(protocol_handler.remote_identifier):
-                    self.tunnel_tasks[task_identifier].tunnel = tun
-                    self.tunnel_tasks[task_identifier].udid = protocol_handler.remote_identifier
+                if entry is not None and not self.tunnel_exists_for_udid(protocol_handler.remote_identifier):
+                    entry.tunnel = tun
+                    entry.udid = protocol_handler.remote_identifier
                     if queue is not None:
                         queue.put_nowait(tun)
                         # avoid sending another message if succeeded
@@ -572,13 +587,11 @@ class TunneldCore:
             with suppress(OSError):
                 await protocol_handler.close()
 
-            if task_identifier in self.tunnel_tasks:
-                # in case the tunnel was removed just now
+            if entry is not None and self.tunnel_tasks.get(task_identifier) is entry:
+                # unless cancel() or clear() removed it just now (and maybe registered a new one)
                 self.tunnel_tasks.pop(task_identifier)
 
-            if task_identifier in self._cancel_requested:
-                self._cancel_requested.discard(task_identifier)
-            elif self._usbmux_rescan is not None:
+            if self._usbmux_rescan is not None:
                 # only now that this entry is unregistered: another connection to the same device
                 # may take over (#2052)
                 self._usbmux_rescan.set()
@@ -666,15 +679,16 @@ class TunneldCore:
     def cancel(self, udid: str) -> None:
         """Cancel active tunnels"""
         for tunnel_ip in self.get_tunnels_ips().get(udid, []):
-            self._cancel_requested.add(tunnel_ip)
+            self._usbmux_cancelled_udids.add(udid)
             self.tunnel_tasks.pop(tunnel_ip).task.cancel()
             logger.info(f"Canceling tunnel {tunnel_ip}")
 
     def clear(self) -> None:
         """Clear active tunnels"""
-        for task_identifier, tunnel in self.tunnel_tasks.items():
+        for tunnel in self.tunnel_tasks.values():
             logger.info(f"Removing tunnel {tunnel}")
-            self._cancel_requested.add(task_identifier)
+            if tunnel.udid is not None:
+                self._usbmux_cancelled_udids.add(tunnel.udid)
             tunnel.task.cancel()
         self.tunnel_tasks = {}
 
