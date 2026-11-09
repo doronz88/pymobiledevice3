@@ -16,6 +16,24 @@ _ns_types.register_ns_keyed_classes()
 logger = logging.getLogger(__name__)
 
 
+def _to_builtin_scalar(arg: Any) -> Any:
+    """
+    Reduce an int/float/str subclass (e.g. ``signal.SIGTERM``) to its exact builtin type.
+
+    The archiver only recognises the exact builtin scalar types. ``bool`` has its own encoding and is
+    kept. ``str.__str__`` is used because ``Enum`` overrides ``__str__`` (``str(S.X)`` is ``"S.X"``).
+    """
+    if type(arg) in (bool, int, float, str):
+        return arg
+    if isinstance(arg, int):
+        return int(arg)
+    if isinstance(arg, float):
+        return float(arg)
+    if isinstance(arg, str):
+        return str.__str__(arg)
+    return arg
+
+
 class MessageAux(list[Any]):
     """An adapter that parse DISPTACH arguments from/to primitive dictionaries"""
 
@@ -69,6 +87,7 @@ class MessageAux(list[Any]):
                 # An empty buffer is placed instead of a PrimitiveNull ¯\_(ツ)_/¯
                 converted_list.append(PBuf(b""))
             else:
+                arg = _to_builtin_scalar(arg)
                 try:
                     converted_list.append(PBuf(archiver.archive(arg)))
                 except Exception as e:

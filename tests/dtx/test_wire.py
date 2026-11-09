@@ -1,3 +1,5 @@
+import enum
+import signal
 import struct
 
 import pytest
@@ -45,6 +47,20 @@ def test_message_aux_roundtrip() -> None:
     raw = MessageAux.build(["hi", 7, None])
     assert MessageAux.parse(raw) == ["hi", 7, None]  # None travels as an empty buffer
     assert MessageAux.parse(b"") == []
+
+
+def test_message_aux_builtin_subclasses() -> None:
+    class Flag(enum.IntFlag):
+        A = 1
+
+    class Name(str, enum.Enum):
+        X = "x"
+
+    raw = MessageAux.build([signal.SIGTERM, Flag.A, Name.X, True, 173])
+    assert raw == MessageAux.build([int(signal.SIGTERM), 1, "x", True, 173])
+    parsed = MessageAux.parse(raw)
+    assert parsed == [int(signal.SIGTERM), 1, "x", True, 173]
+    assert [type(v) for v in parsed] == [int, int, str, bool, int]
 
 
 def test_fragment_headers() -> None:
