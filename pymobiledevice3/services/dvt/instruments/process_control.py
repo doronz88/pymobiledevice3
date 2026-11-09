@@ -123,7 +123,7 @@ class ProcessControl(DtxService[ProcessControlService]):
         :param pid: PID of the process to signal.
         :param sig: Signal number to send.
         """
-        return await self.service.send_signal_to_pid_(sig, pid)
+        return await self.service.send_signal_to_pid_(int(sig), pid)
 
     async def disable_memory_limit_for_pid(self, pid: int) -> None:
         """
