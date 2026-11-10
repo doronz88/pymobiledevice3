@@ -12,7 +12,12 @@ from io import BufferedWriter
 from pathlib import Path
 from typing import Any, Callable, Optional, cast
 
-from pymobiledevice3.exceptions import NotEnoughDiskSpaceError, ProtocolError, PyMobileDevice3Exception
+from pymobiledevice3.exceptions import (
+    InvalidBackupError,
+    NotEnoughDiskSpaceError,
+    ProtocolError,
+    PyMobileDevice3Exception,
+)
 from pymobiledevice3.safe_paths import resolve_device_path
 from pymobiledevice3.service_connection import ServiceConnection
 
@@ -32,6 +37,9 @@ PURGE_DISK_SPACE_ERROR_STRING = "DLPurgeDiskSpace failed to purge"
 PURGE_REQUEST_OVERSHOOT = 0x80000000
 # MBErrorDomain/105, the device's own verdict once the host answers the purge request.
 MB_ERROR_INSUFFICIENT_DISK_SPACE = 105
+# MBErrorDomain/205, the device's verdict that the backup on the host is not a valid one. See
+# `DeviceLink._invalid_backup_error()`.
+MB_ERROR_INVALID_BACKUP = 205
 ERRNO_TO_DEVICE_ERROR = {
     errno.ENOENT: -6,
     errno.EEXIST: -7,
@@ -165,6 +173,8 @@ class DeviceLink:
                     return message[1].get("Content")
                 elif message[1]["ErrorCode"] == MB_ERROR_INSUFFICIENT_DISK_SPACE:
                     raise NotEnoughDiskSpaceError(self._insufficient_disk_space_error(message[1]))
+                elif message[1]["ErrorCode"] == MB_ERROR_INVALID_BACKUP:
+                    raise InvalidBackupError(self._invalid_backup_error(message[1]))
                 else:
                     raise PyMobileDevice3Exception(f"The device reported an error: {message[1]}")
             await self._dl_handlers[command](message)
@@ -211,6 +221,59 @@ class DeviceLink:
             f"at {self.root_path}, host reported {self._reported_free_space} "
             f"({self._required_free_space + 1 - self._reported_free_space} more needed) "
             f"(MBErrorDomain/{MB_ERROR_INSUFFICIENT_DISK_SPACE}).{detail}"
+        )
+
+    def _invalid_backup_error(self, response: Mapping[str, Any]) -> str:
+        """Describe an ``MBErrorDomain/205`` refusal: the device does not accept the host's backup.
+
+        ``BackupAgent2`` uses this one code for every way the backup directory can contradict
+        itself (read in ``/usr/libexec/BackupAgent2`` of iOS 26.7 23H24; the builds of 17.0, 27.0
+        and 27.2 carry the same verification strings), so the device's own ``ErrorDescription``
+        is what tells them apart:
+
+        - ``Manifest references files not in backup`` (issue #2184), from
+          ``-[MBDriveBackupEngine _verifyBackupReloadingManifest:]``. The device lists the backup
+          directory recursively (``DLContentsOfDirectory``), marks every ``Manifest.db`` row whose
+          file ID it saw, and fails if ``-[MBManifestDB hasUnverifiedFilesWithError:]`` still finds
+          a regular file unmarked::
+
+              SELECT COUNT(*) From Files WHERE (flags & 54) = 0 AND file IS NOT NULL
+
+          It logs each one as ``Referenced File Not In Backup: <fileID>|<domain>|<path>|<flags>``.
+          ``_backupAfterPreflight`` runs this once everything was uploaded, moved and removed,
+          which is why it arrives after the transfer reached 100%.
+        - ``Invalid snapshot state: N``, from ``-[MBDriveBackupEngine _resume]``, for a
+          ``Status.plist`` whose ``SnapshotState`` is none of the known ones.
+        - ``Encryption key missing: ...``, from ``fileScanner:didFindFile:``, for an encrypted
+          backup whose manifest holds a regular file without its key.
+        - ``Backup properties encrypted but no password set`` and ``Backup password set but
+          properties not encrypted``, also from the verification.
+
+        ``_preflight`` runs the same verification before an incremental backup and, when it fails,
+        only logs ``Existing backup is corrupt, forcing a full backup``. So the device recovers from
+        a backup directory that was already incomplete when the backup started; the error surfaces
+        for a directory that stopped matching its manifest by the time the backup finished.
+
+        Measured on an iPhone12,1 running iOS 27.2 (24B119), 1469 payload files, encrypted backup:
+
+        ============================================  ==========================================
+        backup directory                              incremental backup
+        ============================================  ==========================================
+        complete                                      succeeds, 61 files sent
+        every payload file removed beforehand         succeeds, all 1469 files sent again
+        9 in 10 payload files removed beforehand      succeeds, all files sent again
+        5 payload files removed while it runs         205, ``Manifest references files not in``
+                                                      ``backup``, after reaching 100%
+        the directory that 205 left behind            succeeds, all 1469 files sent again
+        ============================================  ==========================================
+        """
+        return (
+            f"Device rejected the backup under {self.root_path}: "
+            f"{response.get('ErrorDescription', response)}. "
+            "The backup directory contradicts its own records, typically because backup files were "
+            "removed or changed while the backup was running. Run the backup again: the device "
+            "checks the directory first and makes a full backup when it is incomplete. If it keeps "
+            "failing, pass `--full` or back up into an empty directory."
         )
 
     async def version_exchange(self) -> None:

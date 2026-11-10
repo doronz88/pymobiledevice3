@@ -17,7 +17,9 @@ from pymobiledevice3.exceptions import (
     BackupFilterPasswordRequiredError,
     ConnectionFailedError,
     ConnectionTerminatedError,
+    InvalidBackupError,
     NotEnoughDiskSpaceError,
+    PyMobileDevice3Exception,
 )
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.service_connection import ServiceConnection
@@ -493,6 +495,52 @@ async def test_device_link_dl_loop_insufficient_disk_space_without_derivation(tm
 
     assert str(response) in str(excinfo.value)
     assert "counts every hardlink and clone at full size" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_device_link_dl_loop_reports_invalid_backup(tmp_path: Path) -> None:
+    """MBErrorDomain/205 says what is wrong with the backup directory instead of asking for a report."""
+    service = AsyncMock()
+    service.recv_plist = AsyncMock(
+        side_effect=[
+            [
+                "DLMessageProcessMessage",
+                {
+                    "ErrorCode": 205,
+                    "ErrorDescription": "Manifest references files not in backup (MBErrorDomain/205)",
+                    "MessageName": "Response",
+                },
+            ]
+        ]
+    )
+    device_link = DeviceLink(service, tmp_path)
+
+    with pytest.raises(InvalidBackupError) as excinfo:
+        await device_link.dl_loop()
+
+    message = str(excinfo.value)
+    assert message.startswith(
+        f"Device rejected the backup under {tmp_path.resolve()}: "
+        "Manifest references files not in backup (MBErrorDomain/205). "
+    )
+    assert "`--full`" in message
+    assert "Please report it" not in message
+
+
+@pytest.mark.asyncio
+async def test_device_link_dl_loop_unknown_error_asks_to_be_reported(tmp_path: Path) -> None:
+    """An error code with no dedicated handling stays loud: the raw response plus a report request."""
+    service = AsyncMock()
+    response = {"ErrorCode": 999, "ErrorDescription": "Something new (MBErrorDomain/999)"}
+    service.recv_plist = AsyncMock(side_effect=[["DLMessageProcessMessage", response]])
+    device_link = DeviceLink(service, tmp_path)
+
+    with pytest.raises(PyMobileDevice3Exception) as excinfo:
+        await device_link.dl_loop()
+
+    assert type(excinfo.value) is PyMobileDevice3Exception
+    assert str(response) in str(excinfo.value)
+    assert "Please report it" in str(excinfo.value)
 
 
 @pytest.mark.asyncio
