@@ -401,10 +401,10 @@ class Recovery(BaseRestore):
         self.device.irecv.set_autoboot(enable)
 
     async def enter_restore(self):
-        if self.macos_variant:
+        if self.macos_variant or self.ipsw.build_manifest.build_major >= 8:
+            # MobileDevice's default `RestoreBootArgs` for every device class (AMRestoreCreateDefaultOptions).
+            # Without `-restore` a cloudOS research VM's restore ramdisk panics in `seputil --gigalocker-shutdown`.
             self.restore_boot_args = "rd=md0 nand-enable-reformat=1 -progress -restore"
-        elif self.ipsw.build_manifest.build_major >= 8:
-            self.restore_boot_args = "rd=md0 nand-enable-reformat=1 -progress"
 
         # upload data to make device boot restore mode
 
