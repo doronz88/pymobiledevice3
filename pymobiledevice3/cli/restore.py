@@ -342,6 +342,16 @@ BehaviorOption = Annotated[
     typer.Option(help="Restore behavior to use when selecting the BuildIdentity."),
 ]
 
+VariantOption = Annotated[
+    Optional[str],
+    typer.Option(
+        help=(
+            "Exact BuildIdentity variant to use instead of the one picked by the restore behavior, e.g. "
+            "'Research Darwin Cloud Customer Erase Install (IPSW)' for a research VM."
+        ),
+    ),
+]
+
 
 def query_ipswme(identifier: str, ipsw_dir: Optional[Path] = None) -> dict[str, Any]:
     """Let the user pick a signed build from ipsw.me, marking the ones already in ``ipsw_dir``."""
@@ -428,6 +438,7 @@ async def restore_update_task(
     erase: bool,
     ignore_fdr: bool,
     enable_tss_batch: bool = False,
+    variant: Optional[str] = None,
 ) -> None:
     behavior = Behavior.Update
     if erase:
@@ -440,6 +451,7 @@ async def restore_update_task(
         behavior=behavior,
         ignore_fdr=ignore_fdr,
         enable_tss_batch=enable_tss_batch,
+        variant=variant,
     ).update()
 
 
@@ -652,9 +664,10 @@ async def restore_tss_task(
     ipsw_ctx: contextlib.AbstractAsyncContextManager[IPSW],
     out: Optional[IO[bytes]],
     behavior: Behavior = Behavior.Update,
+    variant: Optional[str] = None,
 ) -> None:
     async with ipsw_ctx as ipsw:
-        tss = await Recovery(ipsw, device, behavior=behavior).fetch_tss_record()
+        tss = await Recovery(ipsw, device, behavior=behavior, variant=variant).fetch_tss_record()
     if out:
         plistlib.dump(tss, out)
     print_json(tss)
@@ -669,10 +682,11 @@ async def restore_tss(
         Optional[Path], typer.Option(help="Also save the SHSH blob (TSS response) to this plist file.")
     ] = None,
     behavior: BehaviorOption = Behavior.Update,
+    variant: VariantOption = None,
 ) -> None:
     """Request SHSH blobs (TSS signing tickets) for the device from Apple and print them."""
     with out.open("wb") if out else contextlib.nullcontext() as out_file:
-        await restore_tss_task(device, ipsw_ctx, out_file, behavior=behavior)
+        await restore_tss_task(device, ipsw_ctx, out_file, behavior=behavior, variant=variant)
 
 
 @cli.command("preflight")
@@ -774,6 +788,7 @@ async def restore_update(
         ),
     ] = False,
     manual_dfu: ManualDfuOption = False,
+    variant: VariantOption = None,
 ) -> None:
     """Update or restore the device's iOS from an IPSW (local path or URL).
 
@@ -802,4 +817,5 @@ async def restore_update(
                 erase,
                 ignore_fdr,
                 enable_tss_batch=tss_batch,
+                variant=variant,
             )

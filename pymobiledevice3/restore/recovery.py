@@ -23,9 +23,14 @@ RESTORE_VARIANT_MACOS_RECOVERY_OS = "macOS Customer"
 
 class Recovery(BaseRestore):
     def __init__(
-        self, ipsw: IPSW, device: Device, tss: Optional[dict[str, Any]] = None, behavior: Behavior = Behavior.Update
+        self,
+        ipsw: IPSW,
+        device: Device,
+        tss: Optional[dict[str, Any]] = None,
+        behavior: Behavior = Behavior.Update,
+        variant: Optional[str] = None,
     ):
-        super().__init__(ipsw, device, tss, behavior)
+        super().__init__(ipsw, device, tss, behavior, variant)
         self.tss_localpolicy = None
         self.tss_recoveryos_root_ticket = None
         self.restore_boot_args = None

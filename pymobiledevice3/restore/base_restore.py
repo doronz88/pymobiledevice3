@@ -24,7 +24,12 @@ class Behavior(Enum):
 
 class BaseRestore:
     def __init__(
-        self, ipsw: IPSW, device: Device, tss: Optional[dict[str, Any]] = None, behavior: Behavior = Behavior.Update
+        self,
+        ipsw: IPSW,
+        device: Device,
+        tss: Optional[dict[str, Any]] = None,
+        behavior: Behavior = Behavior.Update,
+        variant: Optional[str] = None,
     ) -> None:
         self.ipsw = ipsw
         self.device = device
@@ -34,23 +39,38 @@ class BaseRestore:
 
         self.logger.debug("scanning BuildManifest.plist for the correct BuildIdentity")
 
-        variant = {
-            Behavior.Update: RESTORE_VARIANT_UPGRADE_INSTALL,
-            Behavior.Erase: RESTORE_VARIANT_ERASE_INSTALL,
-        }[behavior]
         hardware_model = self.device.get_hardware_model_value()
 
-        try:
-            self.build_identity = self.ipsw.build_manifest.get_build_identity(
-                hardware_model, restore_behavior=behavior.value, variant=variant
-            )
-        except NoSuchBuildIdentityError:
-            if behavior == Behavior.Update:
-                self.build_identity = self.ipsw.build_manifest.get_build_identity(
-                    hardware_model, restore_behavior=behavior.value
+        if variant is not None:
+            # matched whole: the default substring match below picks the first "... Erase Install (IPSW)" identity,
+            # e.g. the customer one instead of "Research Darwin Cloud Customer Erase Install (IPSW)"
+            build_identity = self._get_build_identity_with_exact_variant(hardware_model, variant)
+            if build_identity is None:
+                available = sorted({
+                    str(bi.variant)
+                    for bi in self.ipsw.build_manifest.build_identities
+                    if bi.device_class == hardware_model
+                })
+                raise NoSuchBuildIdentityError(
+                    f"no BuildIdentity with variant {variant!r} for {hardware_model}, available: {available}"
                 )
-            else:
-                raise
+            self.build_identity = build_identity
+        else:
+            default_variant = {
+                Behavior.Update: RESTORE_VARIANT_UPGRADE_INSTALL,
+                Behavior.Erase: RESTORE_VARIANT_ERASE_INSTALL,
+            }[behavior]
+            try:
+                self.build_identity = self.ipsw.build_manifest.get_build_identity(
+                    hardware_model, restore_behavior=behavior.value, variant=default_variant
+                )
+            except NoSuchBuildIdentityError:
+                if behavior == Behavior.Update:
+                    self.build_identity = self.ipsw.build_manifest.get_build_identity(
+                        hardware_model, restore_behavior=behavior.value
+                    )
+                else:
+                    raise
 
         self.macos_variant = None
         try:
