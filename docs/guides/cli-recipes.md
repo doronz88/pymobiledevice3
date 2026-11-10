@@ -664,8 +664,8 @@ pymobiledevice3 developer core-device display get-media-stream-server-status
 pymobiledevice3 developer core-device display serve-web
 # then open http://127.0.0.1:8080/
 
-# On a device with several displays (a foldable) both show the display in use, and serve-web
-# follows a fold/unfold; pin one with --display-id (see get-display-info)
+# On a device with several displays (a foldable) both show the display in use and follow a
+# fold/unfold; pin one with --display-id (see get-display-info)
 pymobiledevice3 developer core-device display serve-web --display-id 2
 
 # Serve the device screen as a VNC (RFB 3.8) server, macOS-only (see notes above)

@@ -23,6 +23,7 @@ Protocol reference: RFC 6143 (RFB 3.8).
 
 import asyncio
 import contextlib
+import ctypes
 import hmac
 import logging
 import os
@@ -33,7 +34,7 @@ import sys
 import uuid
 import zlib
 from collections import deque
-from typing import Optional
+from typing import Any, Optional
 
 from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
 from cryptography.hazmat.primitives.ciphers import Cipher, modes
@@ -42,7 +43,7 @@ from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device import rfb_clipboard
 from pymobiledevice3.remote.core_device.aac_eld import AACELDDecoder
 from pymobiledevice3.remote.core_device.audio_player import AudioQueuePlayer
-from pymobiledevice3.remote.core_device.device_info import DeviceInfoService, select_display
+from pymobiledevice3.remote.core_device.device_info import DeviceInfoService, display_rotation, select_display
 from pymobiledevice3.remote.core_device.display_service import (
     MEDIA_IN_USE_MESSAGE,
     DisplayService,
@@ -223,6 +224,94 @@ _CTRL_COMBO_TO_HID: dict[int, tuple[int, int]] = {
 }
 
 
+def content_size(frame_width: int, frame_height: int, display_size: Optional[tuple[int, int]]) -> tuple[int, int]:
+    """The part of a decoded frame that holds the display, cutting off the encoder's padding.
+
+    The encoder pads a frame up to a multiple of 16 without signalling it (a 1398x2034
+    foldable cover panel arrives as 1408x2048, black right and bottom), and scales a wider
+    display down to the frame's width. Same computation as serve-web's viewer.
+    """
+    if display_size is None or display_size[0] <= 0 or display_size[1] <= 0:
+        return frame_width, frame_height
+    scale = min(1.0, frame_width / display_size[0])
+    return (
+        min(frame_width, round(display_size[0] * scale)),
+        min(frame_height, round(display_size[1] * scale)),
+    )
+
+
+class _VImageBuffer(ctypes.Structure):
+    _fields_ = [
+        ("data", ctypes.c_void_p),
+        ("height", ctypes.c_size_t),
+        ("width", ctypes.c_size_t),
+        ("rowBytes", ctypes.c_size_t),
+    ]
+
+
+# vImageRotate90_ARGB8888 rotation constants, by clockwise degrees.
+_VIMAGE_ROTATE = {0: 0, 90: 3, 180: 2, -90: 1}
+_vimage_rotate90: Any = None
+
+
+def _load_vimage_rotate90() -> Any:
+    global _vimage_rotate90
+    if _vimage_rotate90 is None:
+        accelerate = ctypes.CDLL("/System/Library/Frameworks/Accelerate.framework/Accelerate")
+        fn = accelerate.vImageRotate90_ARGB8888
+        fn.argtypes = [
+            ctypes.POINTER(_VImageBuffer),
+            ctypes.POINTER(_VImageBuffer),
+            ctypes.c_uint8,
+            ctypes.c_uint8 * 4,
+            ctypes.c_uint32,
+        ]
+        fn.restype = ctypes.c_ssize_t
+        _vimage_rotate90 = fn
+    return _vimage_rotate90
+
+
+def present_frame(bgra: bytes, width: int, height: int, crop: tuple[int, int], rotation: int) -> tuple[bytes, int, int]:
+    """Cut a ``width`` x ``height`` BGRA frame to its top-left ``crop`` and turn it ``rotation``
+    degrees clockwise (0/90/180/-90). Returns the new frame and its size.
+
+    Uses Accelerate's vImage, so it rotates on macOS only; elsewhere it only cuts the bottom
+    rows off.
+    """
+    crop_w, crop_h = crop
+    if (crop_w, crop_h) == (width, height) and rotation == 0:
+        return bgra, width, height
+    out_w, out_h = (crop_h, crop_w) if rotation in (90, -90) else (crop_w, crop_h)
+    if sys.platform == "darwin":
+        src = ctypes.create_string_buffer(bgra, len(bgra))
+        dst = ctypes.create_string_buffer(out_w * out_h * 4)
+        src_buf = _VImageBuffer(ctypes.cast(src, ctypes.c_void_p), crop_h, crop_w, width * 4)
+        dst_buf = _VImageBuffer(ctypes.cast(dst, ctypes.c_void_p), out_h, out_w, out_w * 4)
+        error = _load_vimage_rotate90()(
+            ctypes.byref(src_buf), ctypes.byref(dst_buf), _VIMAGE_ROTATE[rotation], (ctypes.c_uint8 * 4)(), 0
+        )
+        if error == 0:
+            return dst.raw, out_w, out_h
+        logger.debug("vImageRotate90_ARGB8888 failed: %d", error)
+    # Without vImage (serve-vnc is macOS-first): cut the padding rows, leave the rest.
+    if crop_w == width:
+        return bgra[: width * crop_h * 4], width, crop_h
+    return bgra, width, height
+
+
+def framebuffer_to_display(x: float, y: float, width: int, height: int, rotation: int) -> tuple[float, float]:
+    """Map a framebuffer point to 0..1 coordinates on the display, undoing ``present_frame``'s rotation."""
+    u = x / max(1, width - 1)
+    v = y / max(1, height - 1)
+    if rotation == 90:
+        return v, 1.0 - u
+    if rotation == -90:
+        return 1.0 - v, u
+    if rotation == 180:
+        return 1.0 - u, 1.0 - v
+    return u, v
+
+
 class _VncClient:
     """Per-connection state."""
 
@@ -266,6 +355,8 @@ class _VncClient:
         self.outbox: list[bytes] = []
         # The client advertised the Extended Clipboard pseudo-encoding (UTF-8).
         self.extended_clipboard = False
+        # Framebuffer size this client was last told (ServerInit or DesktopSize).
+        self.fb_size: tuple[int, int] = (0, 0)
 
 
 def vnc_auth_response(password: str, challenge: bytes) -> bytes:
@@ -315,6 +406,26 @@ class VncStreamServer:
         # ``uniqueId`` of the streamed display, naming its touchscreen.
         self._display_unique_id: Optional[str] = None
         self._touch_service_id: Optional[int] = None
+        # Its pixel size (cuts the encoder's padding off the frames, see
+        # content_size) and the clockwise degrees that turn its frames upright
+        # (see display_rotation): a foldable's inner panel held sideways
+        # sends native-portrait frames of a landscape UI.
+        self._display_size: Optional[tuple[int, int]] = None
+        self._rotation = 0
+        # The streamed display follows the built-in display in use (a fold or
+        # unfold switches it) unless --display-id pinned one.
+        self._follow_active_display = display_id is None
+        # Last decoded frame as the decoder produced it, to present it again
+        # when the rotation changes on a static screen.
+        self._latest_raw: Optional[tuple[bytes, int, int]] = None
+        # Rotation the current framebuffer was presented with (pointer mapping).
+        self._fb_rotation = 0
+        # Video stream plumbing, restarted on a display switch.
+        self._shared_session_id = uuid.uuid4()
+        self._video_svc: Optional[DisplayService] = None
+        self._feed_task: Optional[asyncio.Task[None]] = None
+        self._rtcp_task: Optional[asyncio.Task[None]] = None
+        self._video_lock = asyncio.Lock()
         self._password = password
         self._audio_enabled = audio
         self._sender_ip = rsd.service.address[0]
@@ -409,12 +520,32 @@ class VncStreamServer:
         self._kb_service_id: Optional[int] = None
 
     # ----- HEVC -> BGRA callback marshalling --------------------------------
-    def _on_frame_from_worker(self, bgra: bytes) -> None:
-        """Called from the VT transcoder worker thread."""
+    def _new_transcoder(self, vps: bytes, sps: bytes, pps: bytes) -> Any:
+        size: dict[str, int] = {}
+
+        def on_frame(bgra: bytes) -> None:
+            self._on_frame_from_worker(bgra, size["width"], size["height"])
+
+        transcoder = self._transcoder_cls(
+            vps, sps, pps, on_frame=on_frame, on_decode_error=self._on_decode_error_from_worker
+        )
+        size.update(width=transcoder.width, height=transcoder.height)
+        return transcoder
+
+    def _present(self, bgra: bytes, width: int, height: int) -> tuple[bytes, int, int, int]:
+        rotation = self._rotation
+        frame, fb_width, fb_height = present_frame(
+            bgra, width, height, content_size(width, height, self._display_size), rotation
+        )
+        return frame, fb_width, fb_height, rotation
+
+    def _on_frame_from_worker(self, bgra: bytes, width: int, height: int) -> None:
+        """Called from the VT transcoder worker thread: crop + rotate here, off the event loop."""
         loop = self._loop
         if loop is None:
             return
-        loop.call_soon_threadsafe(self._broadcast_frame, bgra)
+        self._latest_raw = (bgra, width, height)
+        loop.call_soon_threadsafe(self._broadcast_frame, *self._present(bgra, width, height))
 
     def _on_decode_error_from_worker(self) -> None:
         """Worker-thread hook for VT decode failures / FrameDropped."""
@@ -448,12 +579,17 @@ class VncStreamServer:
         self._idr_observed = False
         self._fire_decoder_refresh(now, reason="decode-error")
 
-    def _broadcast_frame(self, bgra: bytes) -> None:
+    def _broadcast_frame(self, bgra: bytes, width: int, height: int, rotation: int) -> None:
+        if (width, height) != (self._fb_width, self._fb_height):
+            # A display switch or rotation: every client gets a DesktopSize
+            # update before the next frame (see _client_send_loop).
+            logger.info("framebuffer %dx%d", width, height)
+        self._fb_width = width
+        self._fb_height = height
+        self._fb_rotation = rotation
         self._latest_frame = bgra
         self._frames_emitted += 1
-        if not self._ready.is_set() and self._transcoder is not None:
-            self._fb_width = self._transcoder.width
-            self._fb_height = self._transcoder.height
+        if not self._ready.is_set():
             self._ready.set()
         # Sticky-keyframe two-condition clear: a clean decoded frame
         # only counts as "recovered" if we already saw the IDR fed
@@ -577,13 +713,7 @@ class VncStreamServer:
                         and cached_pps is not None
                     ):
                         try:
-                            self._transcoder = self._transcoder_cls(
-                                cached_vps,
-                                cached_sps,
-                                cached_pps,
-                                on_frame=self._on_frame_from_worker,
-                                on_decode_error=self._on_decode_error_from_worker,
-                            )
+                            self._transcoder = self._new_transcoder(cached_vps, cached_sps, cached_pps)
                             logger.info(
                                 "VT transcoder started: HEVC %dx%d -> BGRA",
                                 self._transcoder.width,
@@ -987,6 +1117,10 @@ class VncStreamServer:
                 self._indigo = ihs
 
     async def _stop_hid(self) -> None:
+        # A new stream re-publishes the HID surfaces: forget the touchscreen
+        # and the host-registered keyboard, both resolved against the old one.
+        self._touch_service_id = None
+        self._kb_service_id = None
         if self._uhs is not None:
             with contextlib.suppress(Exception):
                 await self._uhs.close()
@@ -1033,8 +1167,9 @@ class VncStreamServer:
                 await self._send_hid_button(page, code, down=bool(button_mask & mask))
         client.last_button_mask = button_mask
 
-        hid_x = max(0, min(65535, int(x * 65535 / max(1, self._fb_width - 1))))
-        hid_y = max(0, min(65535, int(y * 65535 / max(1, self._fb_height - 1))))
+        u, v = framebuffer_to_display(x, y, self._fb_width, self._fb_height, self._fb_rotation)
+        hid_x = max(0, min(65535, int(u * 65535)))
+        hid_y = max(0, min(65535, int(v * 65535)))
         pressed = bool(button_mask & 1)
         try:
             await self._ensure_hid()
@@ -1285,6 +1420,7 @@ class VncStreamServer:
         )
         w.write(server_init)
         await w.drain()
+        client.fb_size = (self._fb_width, self._fb_height)
         logger.debug("handshake: sent ServerInit (%dx%d, name=%r)", self._fb_width, self._fb_height, _SERVER_NAME)
 
     async def _client_recv_loop(self, client: _VncClient) -> None:
@@ -1433,7 +1569,6 @@ class VncStreamServer:
 
     async def _client_send_loop(self, client: _VncClient) -> None:
         loop = asyncio.get_running_loop()
-        expected = self._fb_width * self._fb_height * 4
         # Each framebuffer is width*height*4 (~14 MB at 1264x2752). Writing that
         # through the asyncio StreamWriter runs the copy+flush ON the event loop,
         # and at motion frame rates it starves ``sock_recv`` of the RTP socket
@@ -1462,8 +1597,6 @@ class VncStreamServer:
                     except BlockingIOError:
                         select.select([], [send_sock], [], 2.0)
 
-        rect_header = struct.pack(">HHHHi", 0, 0, self._fb_width, self._fb_height, _ENC_RAW)
-        header = b"\x00\x00" + struct.pack(">H", 1) + rect_header
         try:
             while True:
                 await client.wants_update.wait()
@@ -1477,6 +1610,20 @@ class VncStreamServer:
                 frame = self._latest_frame
                 if frame is None or frame is client.last_sent_frame:
                     continue
+                fb_size = (self._fb_width, self._fb_height)
+                if fb_size != client.fb_size:
+                    if _ENC_DESKTOP_SIZE not in client.encodings:
+                        logger.warning(
+                            "VNC client can't follow the framebuffer to %dx%d (no DesktopSize); reconnect it", *fb_size
+                        )
+                        return
+                    desktop_size = b"\x00\x00" + struct.pack(">HHHHHi", 1, 0, 0, *fb_size, _ENC_DESKTOP_SIZE)
+                    try:
+                        await loop.run_in_executor(None, _blocking_send, desktop_size)
+                    except (ConnectionResetError, BrokenPipeError, OSError):
+                        return
+                    client.fb_size = fb_size
+                expected = fb_size[0] * fb_size[1] * 4
                 if len(frame) != expected:
                     # SPS-locked dimensions shouldn't change mid-session, but if
                     # VT ever hands us a differently sized buffer we skip rather
@@ -1490,6 +1637,7 @@ class VncStreamServer:
                     )
                     continue
                 client.last_sent_frame = frame
+                header = b"\x00\x00" + struct.pack(">HHHHHi", 1, 0, 0, *fb_size, _ENC_RAW)
                 try:
                     await loop.run_in_executor(None, _blocking_send, header, frame)
                 except (ConnectionResetError, BrokenPipeError, OSError):
@@ -1498,24 +1646,28 @@ class VncStreamServer:
             with contextlib.suppress(OSError):
                 send_sock.close()
 
-    # ----- top-level orchestration ------------------------------------------
-    async def serve(self) -> None:
-        require_video_stream_support(self._rsd)
-        # 1) Start device-side video stream + open the RTP receiver on the right transport:
-        # the pytcp stack over the userspace tunnel (a host kernel socket is unreachable from
-        # the device), a host kernel socket otherwise. Generate a single client_session_id up
-        # front so the audio stream (started below) gets paired with the video session on the
-        # device -- this is what Xcode's Mirror does.
-        shared_session_id = uuid.uuid4()
-        try:
-            async with DeviceInfoService(self._rsd) as info:
-                display = select_display(await info.get_display_info(), self._requested_display_id)
-            self._display_id = int(display["displayId"])
-            self._display_unique_id = display.get("uniqueId")
-            logger.info("streaming display %d (%s)", self._display_id, display.get("name", "?"))
-        except Exception:
-            logger.warning("failed to query the device's displays; streaming display %d", self._display_id)
-            logger.debug("get_display_info failed", exc_info=True)
+    # ----- display selection + video stream lifecycle -----------------------
+    def _apply_display(self, display: dict[str, Any]) -> bool:
+        """Make *display* (a ``get_display_info`` entry) the streamed one; True if it changed."""
+        display_id = int(display["displayId"])
+        unique_id = display.get("uniqueId")
+        size = display.get("currentMode", {}).get("size")
+        self._display_size = (round(size[0]), round(size[1])) if size and size[0] > 0 and size[1] > 0 else None
+        self._rotation = display_rotation(display)
+        if display_id == self._display_id and unique_id == self._display_unique_id:
+            return False
+        self._display_id = display_id
+        self._display_unique_id = unique_id
+        return True
+
+    async def _start_video(self) -> None:
+        """Start the device's video stream of ``self._display_id`` and the tasks that consume it.
+
+        Opens the RTP receiver on the right transport: the pytcp stack over the userspace
+        tunnel (a host kernel socket is unreachable from the device), a host kernel socket
+        otherwise. Every stream shares ``self._shared_session_id`` with the audio stream, which
+        pairs them on the device -- this is what Xcode's Mirror does.
+        """
         svc = DisplayService(self._rsd)
         await svc.connect()
         transport, receiver_ip = open_media_receiver(svc, (8 * 1024 * 1024, 4 * 1024 * 1024))
@@ -1525,7 +1677,7 @@ class VncStreamServer:
                 receiver_port=transport.port,
                 sender_ip=self._sender_ip,
                 display_id=self._display_id,
-                client_session_id=shared_session_id,
+                client_session_id=self._shared_session_id,
                 allow_rtcp_fb=self._allow_rtcp_fb,
                 ltrp_enabled=self._ltrp_enabled,
             )
@@ -1542,7 +1694,8 @@ class VncStreamServer:
             raise
         cfg = answer["connection"].get("streamConfig", {})
         logger.info(
-            "video stream up: %dx%d HEVC, sender_port=%s",
+            "video stream up: display %d, %dx%d HEVC, sender_port=%s",
+            self._display_id,
             int(cfg.get("CustomWidth", 0)),
             int(cfg.get("CustomHeight", 0)),
             cfg.get("SourcePort"),
@@ -1557,6 +1710,8 @@ class VncStreamServer:
         self._local_ssrc = int(cfg.get("RemoteSSRC", 0))
         self._remote_ssrc = int(cfg.get("LocalSSRC", 0))
         self._rtcp_dest = (self._sender_ip, source_port) if source_port else None
+        self._rtp_highest_seq = 0
+        self._video_svc = svc
         self._active_transport = transport
         if self._rtcp_dest and self._local_ssrc and self._remote_ssrc:
             logger.info(
@@ -1573,6 +1728,98 @@ class VncStreamServer:
                 self._local_ssrc,
                 self._remote_ssrc,
             )
+        self._feed_task = asyncio.create_task(self._udp_recv_and_pipe(transport))
+        # Video RR keepalive -- without this the device reaps the video session
+        # after ~25 s (RTCPTimeoutEnabled) and serve-vnc freezes with no recovery.
+        self._rtcp_task = asyncio.create_task(self._rtcp_send_loop(transport))
+
+    async def _stop_video(self) -> None:
+        """Stop consuming the video stream and close its connection (the device-side session is
+        reclaimed by the next start, or by ``stop_all_streams`` at shutdown)."""
+        for task in (self._rtcp_task, self._feed_task):
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+        self._rtcp_task = self._feed_task = None
+        if self._transcoder is not None:
+            with contextlib.suppress(Exception):
+                self._transcoder.close()
+            self._transcoder = None
+        if self._active_transport is not None:
+            with contextlib.suppress(Exception):
+                self._active_transport.close()
+            self._active_transport = None
+        if self._video_svc is not None:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(self._video_svc.close(), timeout=2.0)
+            self._video_svc = None
+
+    async def _switch_video(self) -> None:
+        """Restart the video stream on the newly selected display, with a fresh decoder."""
+        async with self._video_lock:
+            await self._stop_video()
+            await self._stop_hid()
+            self._refresh_pending = False
+            self._keyframe_required = False
+            self._idr_observed = False
+            self._rps_tracker.reset()
+            self._latest_raw = None
+            await self._start_video()
+
+    def _present_latest(self) -> None:
+        """Present the last decoded frame again (the rotation changed; a static screen sends none)."""
+        raw = self._latest_raw
+        if raw is not None:
+            self._broadcast_frame(*self._present(*raw))
+
+    async def _display_monitor_loop(self) -> None:
+        """Follow the streamed display's rotation and, unless pinned, the built-in display in
+        use: on a fold/unfold, switch the stream to the other panel."""
+        while True:
+            try:
+                async with DeviceInfoService(self._rsd) as info:
+                    async for update in info.display_info_updates():
+                        display = select_display(update, None if self._follow_active_display else self._display_id)
+                        previous = self._display_id
+                        previous_rotation = self._rotation
+                        if self._apply_display(display):
+                            logger.info(
+                                "active display changed %d -> %d (%s); switching stream",
+                                previous,
+                                self._display_id,
+                                display.get("name", "?"),
+                            )
+                            try:
+                                await self._switch_video()
+                            except Exception:
+                                logger.warning("stream switch to display %d failed", self._display_id, exc_info=True)
+                        elif self._rotation != previous_rotation:
+                            logger.info("display %d rotated to %d°", self._display_id, self._rotation)
+                            self._present_latest()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.debug("display monitor failed; retrying", exc_info=True)
+            await asyncio.sleep(2.0)
+
+    # ----- top-level orchestration ------------------------------------------
+    async def serve(self) -> None:
+        require_video_stream_support(self._rsd)
+        loop = asyncio.get_running_loop()
+        self._loop = loop
+        # 1) Pick the display: the pinned one, or the built-in display in use.
+        try:
+            async with DeviceInfoService(self._rsd) as info:
+                display = select_display(await info.get_display_info(), self._requested_display_id)
+            self._apply_display(display)
+            logger.info("streaming display %d (%s)", self._display_id, display.get("name", "?"))
+        except Exception:
+            logger.warning("failed to query the device's displays; streaming display %d", self._display_id)
+            logger.debug("get_display_info failed", exc_info=True)
+        # 2) Start the device-side video stream.
+        await self._start_video()
+        shared_session_id = self._shared_session_id
 
         # 3) Audio stream (optional). RFB has no audio; we play the
         # decoded PCM through the host's speakers via AudioQueue. The
@@ -1625,13 +1872,8 @@ class VncStreamServer:
                 self._audio_session_id = None
 
         # 4) Background tasks.
-        loop = asyncio.get_running_loop()
-        self._loop = loop
-        feed_task = asyncio.create_task(self._udp_recv_and_pipe(transport))
         refresh_task = asyncio.create_task(self._decoder_refresh_loop())
-        # Video RR keepalive -- without this the device reaps the video session
-        # after ~25 s (RTCPTimeoutEnabled) and serve-vnc freezes with no recovery.
-        rtcp_task = asyncio.create_task(self._rtcp_send_loop(transport))
+        display_monitor_task = asyncio.create_task(self._display_monitor_loop())
         if self._audio_enabled and self._audio_transport is not None:
             audio_recv_task = asyncio.create_task(self._audio_udp_recv(self._audio_transport))
             if self._audio_rtcp_dest and self._audio_local_ssrc and self._audio_remote_ssrc:
@@ -1685,22 +1927,12 @@ class VncStreamServer:
             refresh_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await refresh_task
-            rtcp_task.cancel()
+            display_monitor_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
-                await rtcp_task
-            logger.debug("shutdown: stopping VT transcoder")
-            feed_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await feed_task
+                await display_monitor_task
             if self._pli_tasks:
                 with contextlib.suppress(Exception):
                     await asyncio.wait(list(self._pli_tasks), timeout=1.0)
-            if self._transcoder is not None:
-                with contextlib.suppress(Exception):
-                    self._transcoder.close()
-                self._transcoder = None
-            with contextlib.suppress(Exception):
-                transport.close()
             if audio_recv_task is not None:
                 logger.debug("shutdown: stopping audio recv loop")
                 audio_recv_task.cancel()
@@ -1723,9 +1955,9 @@ class VncStreamServer:
             if self._audio_transport is not None:
                 with contextlib.suppress(Exception):
                     self._audio_transport.close()
-            logger.debug("shutdown: closing device stream connection")
-            with contextlib.suppress(Exception):
-                await svc.close()
+            logger.debug("shutdown: stopping video stream and VT transcoder")
+            async with self._video_lock:
+                await self._stop_video()
             # Release the device-side session, so the device clears its
             # remote-observation state and frees the camera/microphone (see
             # DisplayService.stop_all_streams).
