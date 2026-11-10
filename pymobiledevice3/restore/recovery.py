@@ -98,16 +98,21 @@ class Recovery(BaseRestore):
         tss.add_common_tags(parameters)
         tss.add_ap_tags(parameters)
 
-        # TODO: This break updating iPhone 15P Pro. Consider re-adding it once we figure out what went wrong
-        # build_manifest_info = self.build_identity['Info']
-        # for manifest_property in build_manifest_info.get('RequestManifestProperties', []):
-        #     tss.add_tags({manifest_property: build_manifest_info[manifest_property]})
-
         # add personalized parameters
         if await self.device.get_is_image4_supported():
             tss.add_ap_img4_tags(parameters)
         else:
             tss.add_ap_img3_tags(parameters)
+
+        # The identity names more of its properties to send, like MobileDevice's
+        # `_AMAuthInstallBundlePopulateManifestProperties`: each is read from the identity, else from its Info,
+        # and skipped when it is in neither (e.g. `Ap,VM` on a physical device)
+        identity = self.build_identity if build_identity is None else build_identity
+        info = identity["Info"]
+        for name in info.get("RequestManifestProperties", []):
+            value = identity.get(name, info.get(name))
+            if value is not None:
+                tss.setdefault_tags({name: value})
 
         # normal mode; request baseband ticket as well
         if self.device.lockdown is not None:
