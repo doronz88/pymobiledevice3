@@ -391,7 +391,11 @@ class Recovery(BaseRestore):
             self.device.irecv.send_zero_length_download()
 
         if self.restore_boot_args:
-            self.device.irecv.send_command(f"setenv boot-args {self.restore_boot_args}")
+            # like MobileDevice's `_setArgs`: non-persistent, unless the iBoot is too old to know the command
+            try:
+                self.device.irecv.send_command(f"setenvnp boot-args {self.restore_boot_args}")
+            except UsbError:
+                self.device.irecv.send_command(f"setenv boot-args {self.restore_boot_args}")
 
         with contextlib.suppress(UsbError):
             self.device.irecv.send_command("bootx", b_request=1)
