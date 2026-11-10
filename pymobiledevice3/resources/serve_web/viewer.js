@@ -533,7 +533,9 @@ const ORIENTATION_DEGREES = {
     landscapeRight: 90,
 };
 async function postRotate(direction) {
-    setVisualRotation(visualRotation + (direction === 'left' ? -90 : 90));
+    // With displayRotation the server reports the resulting orientation itself (framing type 4).
+    const serverDriven = displayRotation !== null;
+    if (!serverDriven) setVisualRotation(visualRotation + (direction === 'left' ? -90 : 90));
     try {
         const r = await fetch('/rotate', {
             method: 'POST',
@@ -543,7 +545,7 @@ async function postRotate(direction) {
         if (!r.ok) { log('rotate HTTP ' + r.status); return; }
         const j = await r.json();
         const target = ORIENTATION_DEGREES[j.currentDeviceOrientation];
-        if (typeof target === 'number') setVisualRotation(target);
+        if (!serverDriven && typeof target === 'number') setVisualRotation(target);
         log('rotate: ' + j.currentDeviceOrientation);
     } catch (e) { log('rotate err: ' + (e.message || e)); }
 }
@@ -832,6 +834,7 @@ async function fetchCodecWithRetry() {
             const info = await resp.json();
             if (!info.codec || !info.description) { lastErr = 'incomplete codec info (params not yet seen)'; continue; }
             const description = Uint8Array.from(atob(info.description), c => c.charCodeAt(0));
+            setDisplaySize(info.display);
             return { codec: info.codec.trim(), description };
         } catch (e) {
             lastErr = e.message || String(e);
@@ -876,6 +879,38 @@ let lastFrameLandscape = null;
 const _detCanvas = document.createElement('canvas');
 const _detCtx = _detCanvas.getContext('2d', {willReadFrequently: true});
 let _cropSrcW = 0, _cropSrcH = 0;   // 0 => draw the full frame (not collapsed)
+// Pixel size of the streamed display ({width, height} from /codec), or null.
+// The encoder pads a frame up to a multiple of 16 without signalling it (a
+// 1398x2034 foldable cover panel arrives as 1408x2048 with black bars right
+// and bottom), and scales a wider display down to the frame's width. Only
+// the content rectangle is drawn, so touches map onto the display itself.
+let displaySize = null;
+// Clockwise degrees that turn the streamed display's frames upright, from the
+// server (its currentOrientation), or null when the server doesn't say. A
+// foldable's inner panel held sideways keeps sending native-portrait frames of
+// a landscape UI (90).
+let displayRotation = null;
+function setDisplaySize(d) {
+    displaySize = (d && d.width > 0 && d.height > 0) ? d : null;
+    displayRotation = (d && typeof d.rotation === 'number') ? d.rotation : null;
+    if (lastFrame) applyDisplayRotation(lastFrame);
+}
+// Turn the canvas by displayRotation -- only while frames come in the
+// display's native orientation: a device that re-renders its buffer in
+// landscape already sends upright frames.
+function applyDisplayRotation(f) {
+    if (displayRotation === null || !displaySize) return;
+    const frameLandscape = f.displayWidth > f.displayHeight;
+    const nativeLandscape = displaySize.width > displaySize.height;
+    const want = frameLandscape === nativeLandscape ? displayRotation : 0;
+    if (want !== visualRotation) setVisualRotation(want);
+}
+function contentSize(fw, fh) {
+    if (!displaySize) return [fw, fh];
+    const scale = Math.min(1, fw / displaySize.width);
+    return [Math.min(fw, Math.round(displaySize.width * scale)),
+            Math.min(fh, Math.round(displaySize.height * scale))];
+}
 let _lockW = 0, _lockH = 0;         // locked canvas footprint (max seen); see window.LOCKCANVAS
 const DET_H = 344;                  // downsample height for detection
 function detectContentCrop(f) {
@@ -913,7 +948,7 @@ function detectContentCrop(f) {
 
 function drawFrame(f) {
     const sideways = Math.abs(visualRotation % 180) === 90;
-    const fw = f.displayWidth, fh = f.displayHeight;
+    const [fw, fh] = contentSize(f.displayWidth, f.displayHeight);
     const targetW = sideways ? fh : fw;
     const targetH = sideways ? fw : fh;
     if (window.LOCKCANVAS) {
@@ -958,7 +993,9 @@ function drawPending() {
     pendingFrame = null;
     if (!f) return;
     const landscape = f.displayWidth > f.displayHeight;
-    if (lastFrameLandscape !== null && landscape !== lastFrameLandscape && visualRotation !== 0) {
+    if (displayRotation !== null) {
+        if (landscape !== lastFrameLandscape) applyDisplayRotation(f);
+    } else if (lastFrameLandscape !== null && landscape !== lastFrameLandscape && visualRotation !== 0) {
         // iOS rerendered the buffer in the new orientation — content is
         // now natively upright, so drop our in-canvas rotation.
         visualRotation = 0;
@@ -1357,7 +1394,7 @@ async function run() {
     // Shared hvcC decoder config: the `description` (HEVCDecoderConfigurationRecord)
     // selects VideoToolbox's native hvcC path; chunks carry 4-byte-length-prefixed
     // NALUs (the /stream.bin framing) rather than Annex-B start codes.
-    const decoderConfig = { codec, description, optimizeForLatency: true };
+    let decoderConfig = { codec, description, optimizeForLatency: true };
 
     let support;
     try {
@@ -1489,6 +1526,39 @@ async function run() {
             //       decoder's reference state may be silently stale, so
             //       rebuild before decoding this IDR. (VideoToolbox often
             //       renders torn frames without firing the error callback.)
+            //   3 = new decoder config (JSON {codec, description}, as /codec)
+            //       -- the stream switched displays (a foldable's panels), so
+            //       the next key has another resolution and parameter sets.
+            //   4 = the display turned: JSON {rotation} (see displayRotation)
+            if (type === 4) {
+                try {
+                    displayRotation = JSON.parse(new TextDecoder().decode(data)).rotation;
+                    if (lastFrame) applyDisplayRotation(lastFrame);
+                    log('display rotation: ' + displayRotation);
+                } catch (e) {
+                    log('bad rotation: ' + e.message);
+                }
+                continue;
+            }
+            if (type === 3) {
+                try {
+                    const info = JSON.parse(new TextDecoder().decode(data));
+                    const desc = Uint8Array.from(atob(info.description), c => c.charCodeAt(0));
+                    decoderConfig = { codec: info.codec.trim(), description: desc, optimizeForLatency: true };
+                    setDisplaySize(info.display);
+                    try { decoder.close(); } catch (e) {}
+                    decoder = buildDecoder();
+                    decoder.configure(decoderConfig);
+                    _lockW = _lockH = 0;
+                    _cropSrcW = _cropSrcH = 0;
+                    gotKey = false;
+                    needsResync = false;
+                    log('display switched: codec ' + decoderConfig.codec + ' (hvcC ' + desc.length + 'B)');
+                } catch (e) {
+                    log('bad decoder config: ' + e.message);
+                }
+                continue;
+            }
             if (type === 2) {
                 try { decoder.close(); } catch (e) {}
                 decoder = buildDecoder();

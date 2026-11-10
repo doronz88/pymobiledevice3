@@ -383,5 +383,6 @@ def test_auto_mount_accepts_an_xcode_directory(tmp_path: Path) -> None:
     from pymobiledevice3.cli import mounter as mounter_cli
 
     command = cast(Any, typer.main.get_command(mounter_cli.cli)).commands["auto-mount"]
-    xcode = next(param for param in command.params if param.name == "xcode")
-    assert xcode.type.convert(str(tmp_path), xcode, None) == str(tmp_path)
+    # Parsing converts the option the way an invocation would (a file-only type raises BadParameter).
+    context = command.make_context("auto-mount", ["--xcode", str(tmp_path)])
+    assert str(context.params["xcode"]) == str(tmp_path)
