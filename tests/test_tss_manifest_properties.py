@@ -7,13 +7,13 @@ from ipsw_parser.ipsw import IPSW
 
 from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.recovery import Behavior, Recovery
-from pymobiledevice3.restore.tss import TSSRequest, TSSResponse
+from pymobiledevice3.restore.tss import AP_MANIFEST_PROPERTIES, TSSRequest, TSSResponse
 
 HARDWARE_MODEL = "vresearch101ap"
 
 
-def _manifest(os_environment: Optional[str]) -> dict[str, Any]:
-    # modeled on a cloudOS (PCC) BuildManifest: every identity carries Ap,OSEnvironment = 0x06
+def _manifest(properties: dict[str, Any]) -> dict[str, Any]:
+    # modeled on a cloudOS (PCC) BuildManifest
     identity: dict[str, Any] = {
         "ApBoardID": "0x90",
         "ApChipID": "0xFE01",
@@ -24,9 +24,8 @@ def _manifest(os_environment: Optional[str]) -> dict[str, Any]:
             "RestoreBehavior": "Erase",
         },
         "Manifest": {},
+        **properties,
     }
-    if os_environment is not None:
-        identity["Ap,OSEnvironment"] = os_environment
     return {
         "ProductBuildVersion": "22B5054e",
         "ProductVersion": "18.1",
@@ -60,9 +59,9 @@ class _FakeDevice:
         return True
 
 
-async def _ap_tss_request(monkeypatch: pytest.MonkeyPatch, os_environment: Optional[str]) -> dict[str, Any]:
+async def _ap_tss_request(monkeypatch: pytest.MonkeyPatch, properties: dict[str, Any]) -> dict[str, Any]:
     recovery = Recovery(
-        cast(IPSW, _FakeIPSW(_manifest(os_environment))), cast(Device, _FakeDevice()), behavior=Behavior.Erase
+        cast(IPSW, _FakeIPSW(_manifest(properties))), cast(Device, _FakeDevice()), behavior=Behavior.Erase
     )
     sent: list[dict[str, Any]] = []
 
@@ -80,11 +79,23 @@ async def _ap_tss_request(monkeypatch: pytest.MonkeyPatch, os_environment: Optio
 async def test_os_environment_is_copied_into_the_ap_ticket_request(monkeypatch: pytest.MonkeyPatch) -> None:
     # without it iBoot keeps the default DeviceTree environment instead of the trusted darwinOS one, so a cloudOS
     # research build boots without developer mode and its research cryptexes fail to mount (#1701)
-    request = await _ap_tss_request(monkeypatch, "0x06")
+    # every cloudOS identity carries Ap,OSEnvironment = 0x06
+    request = await _ap_tss_request(monkeypatch, {"Ap,OSEnvironment": "0x06"})
     assert request["Ap,OSEnvironment"] == 6
 
 
 @pytest.mark.asyncio
 async def test_identities_without_os_environment_do_not_get_one(monkeypatch: pytest.MonkeyPatch) -> None:
-    request = await _ap_tss_request(monkeypatch, None)
+    request = await _ap_tss_request(monkeypatch, {})
     assert "Ap,OSEnvironment" not in request
+    assert not set(AP_MANIFEST_PROPERTIES) & set(request)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", AP_MANIFEST_PROPERTIES)
+async def test_manifest_property_is_copied_into_the_ap_ticket_request(
+    monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    # Apple's host copies each of these from the build identity whenever it is there
+    request = await _ap_tss_request(monkeypatch, {name: "0x01"})
+    assert request[name] == 1

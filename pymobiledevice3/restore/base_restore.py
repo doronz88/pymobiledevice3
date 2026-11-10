@@ -9,7 +9,7 @@ from ipsw_parser.ipsw import IPSW
 from pymobiledevice3.exceptions import PyMobileDevice3Exception
 from pymobiledevice3.restore.device import Device
 from pymobiledevice3.restore.img4 import stitch_component
-from pymobiledevice3.restore.tss import TSSResponse
+from pymobiledevice3.restore.tss import AP_MANIFEST_PROPERTIES, TSSResponse
 from pymobiledevice3.utils import current_task_name
 
 RESTORE_VARIANT_ERASE_INSTALL = "Erase Install (IPSW)"
@@ -148,6 +148,7 @@ class BaseRestore:
         key_list = ["ApBoardID", "ApChipID"]
         if additional_keys is None:
             key_list += [
+                *AP_MANIFEST_PROPERTIES,
                 "UniqueBuildID",
                 # cloudOS: selects the DeviceTree environment overlay iBoot applies (0x06 = trusted darwinOS)
                 "Ap,OSEnvironment",
