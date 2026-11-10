@@ -89,6 +89,26 @@ Useful options:
 - `--bind 0.0.0.0 --password 'CHOOSE_ONE'` makes it reachable from other machines, with the same
   warning as above.
 
+## Devices with several displays
+
+On a device with more than one built-in display, such as a foldable iPhone, both viewers show the
+display in use, and touches go to that display. Both follow the device as it is folded or unfolded,
+switching to the other display by themselves, and show an unfolded device in landscape when it is
+held that way. `serve-vnc` resizes the VNC client's screen for that, which needs a client supporting
+the DesktopSize extension (TigerVNC, noVNC, ...); other clients are disconnected and have to
+reconnect.
+
+To show one display regardless, pass its `displayId` from `get-display-info`:
+
+```shell
+pymobiledevice3 developer core-device get-display-info
+pymobiledevice3 developer core-device display serve-web --display-id 2
+```
+
+`monitor-display-info` prints the display information again each time it changes. The touch commands
+of `universal-hid-service` (`tap`, `drag`, ...) also act on the display in use; `--touch-service-id`
+picks another display's touchscreen, as listed by `universal-hid-service list-connected`.
+
 ## Camera and microphone
 
 iOS won't start a mirroring session while a foreground app is using the camera or microphone; Xcode

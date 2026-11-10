@@ -43,6 +43,7 @@ import pymobiledevice3.resources
 from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
+from pymobiledevice3.remote.core_device.device_info import DeviceInfoService, display_rotation, select_display
 from pymobiledevice3.remote.core_device.display_service import (
     MEDIA_IN_USE_MESSAGE,
     DisplayService,
@@ -50,7 +51,6 @@ from pymobiledevice3.remote.core_device.display_service import (
     require_video_stream_support,
 )
 from pymobiledevice3.remote.core_device.hid_service import (
-    DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     HID_BUTTON_STATE_DOWN,
     HID_BUTTON_STATE_UP,
     TOUCHSCREEN_STATE_CONTACT,
@@ -404,17 +404,21 @@ async def capture_rtp_to_file(
     rsd: RemoteServiceDiscoveryService,
     output_path: Path,
     *,
-    display_id: int = 1,
+    display_id: Optional[int] = None,
     duration: float = 5.0,
     receiver_port: int = 0,
 ) -> int:
     """Capture raw RTP packets from the device's screen-stream into a file.
 
     Each packet is written as ``[4-byte BE length][packet bytes]``. Returns the
-    number of captured packets.
+    number of captured packets. ``display_id=None`` captures the built-in
+    display in use (on a foldable, the lit panel).
     """
     sender_ip = rsd.service.address[0]
     captured = 0
+    if display_id is None:
+        async with DeviceInfoService(rsd) as info:
+            display_id = int(select_display(await info.get_display_info())["displayId"])
     async with DisplayService(rsd) as service:
         # Bind the RTP receiver on the right transport (pytcp stack over the userspace tunnel,
         # host kernel socket otherwise) and advertise the matching address to the device.
@@ -677,7 +681,7 @@ class ScreenStreamServer:
         *,
         bind: str = "127.0.0.1",
         http_port: int = 8080,
-        display_id: int = 1,
+        display_id: Optional[int] = None,
         password: Optional[str] = None,
         audio_default_on: bool = True,
         allow_rtcp_fb: bool = False,
@@ -712,7 +716,28 @@ class ScreenStreamServer:
         # viewer's same-origin fetches by itself.
         self._password = password
         self._http_port = http_port
-        self._display_id = display_id
+        # ``display_id=None`` follows the built-in display in use: a foldable
+        # lights one panel at a time, so the stream (and the touchscreen that
+        # input goes to) switches panels when the device is folded or unfolded.
+        # An explicit id pins the stream to that display.
+        self._follow_active_display = display_id is None
+        self._display_id = 1 if display_id is None else display_id
+        # ``uniqueId`` of the streamed display: names the touchscreen that
+        # drives it (see UniversalHIDServiceService.touchscreen_service_id).
+        self._display_unique_id: Optional[str] = None
+        # Its pixel size (``currentMode.size``), sent to the viewer with the
+        # decoder config so it can cut the encoder's padding off the frames.
+        self._display_size: Optional[tuple[int, int]] = None
+        # Clockwise degrees that turn its frames upright (see display_rotation);
+        # sent with the decoder config, and as framing type 4 when it changes.
+        self._display_rotation = 0
+        # _ServiceID of that touchscreen; resolved lazily by _ensure_hid.
+        self._touch_service_id: Optional[int] = None
+        # Set when the stream switches displays: the next keyframe has a
+        # different resolution, so the viewer must reconfigure its decoder
+        # (framing type 3) before decoding it.
+        self._reconfigure_pending = False
+        self._display_monitor_task: Optional[asyncio.Task[None]] = None
         self._audio_default_on = audio_default_on
         self._https = https
         # Protobuf-level negotiation knobs forwarded to every
@@ -1090,6 +1115,12 @@ class ScreenStreamServer:
                         self._saw_first_key = True
                         if self._codec_string is not None:
                             self._stream_ready.set()
+                        if self._reconfigure_pending:
+                            config_msg = self._build_decoder_config_message()
+                            if config_msg is not None:
+                                self._reconfigure_pending = False
+                                for q in self._subscribers:
+                                    q.put_nowait(config_msg)
                     self._last_good_au_t = loop.time()
                     # Feed the byte-rate window used by the decoder-refresh
                     # motion detector. Count DELTA AUs only: a forced IDR is
@@ -1830,6 +1861,11 @@ class ScreenStreamServer:
                 uhs = UniversalHIDServiceService(self._rsd)
                 await uhs.connect()
                 self._uhs = uhs
+            if self._touch_service_id is None:
+                self._touch_service_id = await self._uhs.touchscreen_service_id(self._display_unique_id)
+                logger.info(
+                    "touch input -> touchscreen _ServiceID %d (display %d)", self._touch_service_id, self._display_id
+                )
             if self._indigo is None:
                 indigo = IndigoHIDService(self._rsd)
                 await indigo.connect()
@@ -1852,6 +1888,7 @@ class ScreenStreamServer:
                 with contextlib.suppress(Exception):
                     await self._uhs.close()
                 self._uhs = None
+            self._touch_service_id = None
             if self._indigo is not None:
                 with contextlib.suppress(Exception):
                     await self._indigo.close()
@@ -1912,19 +1949,16 @@ class ScreenStreamServer:
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return 400, f"invalid touch request: {exc}".encode()
         await self._ensure_hid()
-        assert self._uhs is not None
+        assert self._uhs is not None and self._touch_service_id is not None
+        service_id = self._touch_service_id
         if op == "contact":
-            await self._uhs.send_touchscreen(
-                TOUCHSCREEN_STATE_CONTACT, x, y, service_id=DIGITIZER_SURFACE_MAIN_TOUCHSCREEN
-            )
+            await self._uhs.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y, service_id=service_id)
         elif op == "release":
-            await self._uhs.send_touchscreen(
-                TOUCHSCREEN_STATE_RELEASE, x, y, service_id=DIGITIZER_SURFACE_MAIN_TOUCHSCREEN
-            )
+            await self._uhs.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x, y, service_id=service_id)
         elif op == "tap":
-            await self._uhs.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y)
+            await self._uhs.send_touchscreen(TOUCHSCREEN_STATE_CONTACT, x, y, service_id=service_id)
             await asyncio.sleep(0.05)
-            await self._uhs.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x, y)
+            await self._uhs.send_touchscreen(TOUCHSCREEN_STATE_RELEASE, x, y, service_id=service_id)
         else:
             return 400, f"unknown touch type {op!r}".encode()
         return 200, b"ok"
@@ -2256,7 +2290,7 @@ class ScreenStreamServer:
                 except Exception:
                     logger.exception("failed to build hvcC record")
             if self._codec_string and description_b64:
-                body = json.dumps({"codec": self._codec_string, "description": description_b64}).encode()
+                body = json.dumps(self._decoder_config(description_b64)).encode()
                 status = b"200 OK"
             else:
                 body = b""
@@ -2953,6 +2987,95 @@ class ScreenStreamServer:
                 else:
                     logger.exception("post-reconnect stream start failed")
 
+    def _build_decoder_config_message(self) -> Optional[bytes]:
+        """Framing type 3: the viewer's new decoder config, ``{codec, description}`` JSON.
+
+        Same payload as ``/codec``, built from the current stream's parameter sets.
+        ``None`` while any of them is missing.
+        """
+        if not (self._codec_string and self._vps_nal and self._sps_nal and self._pps_nal):
+            return None
+        hvcc = hevc_decoder_configuration_record(self._vps_nal, self._sps_nal, self._pps_nal)
+        body = json.dumps(self._decoder_config(base64.b64encode(hvcc).decode())).encode()
+        return (len(body) + 1).to_bytes(4, "big") + b"\x03" + body
+
+    def _decoder_config(self, description_b64: str) -> dict[str, Any]:
+        """The viewer's decoder config: codec string, hvcC record and the streamed display's size."""
+        config: dict[str, Any] = {"codec": self._codec_string, "description": description_b64}
+        if self._display_size is not None:
+            config["display"] = {
+                "width": self._display_size[0],
+                "height": self._display_size[1],
+                "rotation": self._display_rotation,
+            }
+        return config
+
+    def _broadcast_rotation(self) -> None:
+        """Framing type 4: ``{"rotation": degrees}``, the streamed display turned (no stream change)."""
+        body = json.dumps({"rotation": self._display_rotation}).encode()
+        message = (len(body) + 1).to_bytes(4, "big") + b"\x04" + body
+        for q in self._subscribers:
+            q.put_nowait(message)
+
+    def _apply_display(self, display: dict[str, Any]) -> bool:
+        """Make *display* (a ``get_display_info`` entry) the streamed one; True if it changed."""
+        display_id = int(display["displayId"])
+        unique_id = display.get("uniqueId")
+        size = display.get("currentMode", {}).get("size")
+        self._display_size = (round(size[0]), round(size[1])) if size and size[0] > 0 and size[1] > 0 else None
+        self._display_rotation = display_rotation(display)
+        if display_id == self._display_id and unique_id == self._display_unique_id:
+            return False
+        self._display_id = display_id
+        self._display_unique_id = unique_id
+        self._touch_service_id = None
+        return True
+
+    async def _resolve_display(self) -> None:
+        """Pick the display to stream: the pinned one, or the built-in display in use."""
+        pinned = None if self._follow_active_display else self._display_id
+        try:
+            async with DeviceInfoService(self._rsd) as info:
+                display = select_display(await info.get_display_info(), pinned)
+        except Exception:
+            logger.warning("failed to query the device's displays; streaming display %d", self._display_id)
+            logger.debug("get_display_info failed", exc_info=True)
+            return
+        self._apply_display(display)
+        logger.info("streaming display %d (%s)", self._display_id, display.get("name", "?"))
+
+    async def _display_monitor_loop(self) -> None:
+        """Follow the streamed display's orientation and, unless pinned, the built-in display in
+        use: on a fold/unfold, switch the stream to the other panel."""
+        while True:
+            try:
+                async with DeviceInfoService(self._rsd) as info:
+                    async for update in info.display_info_updates():
+                        display = select_display(update, None if self._follow_active_display else self._display_id)
+                        previous = self._display_id
+                        previous_rotation = self._display_rotation
+                        if not self._apply_display(display):
+                            if self._display_rotation != previous_rotation:
+                                logger.info("display %d rotated to %d°", self._display_id, self._display_rotation)
+                                self._broadcast_rotation()
+                            continue
+                        logger.info(
+                            "active display changed %d -> %d (%s); switching stream",
+                            previous,
+                            self._display_id,
+                            display.get("name", "?"),
+                        )
+                        self._reconfigure_pending = True
+                        try:
+                            await self._ensure_fresh_stream(force=True)
+                        except Exception:
+                            logger.warning("stream switch to display %d failed", self._display_id, exc_info=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.debug("display monitor failed; retrying", exc_info=True)
+            await asyncio.sleep(2.0)
+
     async def _keep_awake_loop(self) -> None:
         """Hold a PreventUserIdleSystemSleep IOPMAssertion on the device
         so it doesn't auto-lock mid-session.
@@ -3033,6 +3156,7 @@ class ScreenStreamServer:
         # Checked up front: the eager start below swallows every other failure, which on an older
         # device would serve a viewer that stays black
         require_video_stream_support(self._rsd)
+        await self._resolve_display()
         # Preflight the device-side stream before binding the HTTP server. If
         # the camera or microphone is in use there is nothing to serve, so fail
         # fast with a clean, actionable error (a non-zero exit, no traceback)
@@ -3060,6 +3184,7 @@ class ScreenStreamServer:
         self._rctl_task = asyncio.create_task(self._rctl_feedback_loop())
         self._reconnect_task = asyncio.create_task(self._reconnect_loop())
         self._keep_awake_task = asyncio.create_task(self._keep_awake_loop())
+        self._display_monitor_task = asyncio.create_task(self._display_monitor_loop())
         # Eagerly start the HID worker so queued /touch requests are
         # processed even before the device-stream is fully up. The video/audio
         # streams were already brought up by the preflight above.
@@ -3124,6 +3249,9 @@ class ScreenStreamServer:
             self._keep_awake_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._keep_awake_task
+            self._display_monitor_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._display_monitor_task
             # Close the HTTP listener first so no new connections come in
             # while we tear the device-side streams down.
             logger.debug("shutdown: closing HTTP server")
