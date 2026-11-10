@@ -558,6 +558,7 @@ class TSSRequest:
             "ApNonce",
             "ApProductionMode",
             "ApSecurityMode",
+            "Ap,OSEnvironment",
             "Ap,OSLongVersion",
             "ApSecurityMode",
             "ApSepNonce",

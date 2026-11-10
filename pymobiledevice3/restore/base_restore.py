@@ -129,6 +129,8 @@ class BaseRestore:
         if additional_keys is None:
             key_list += [
                 "UniqueBuildID",
+                # cloudOS: selects the DeviceTree environment overlay iBoot applies (0x06 = trusted darwinOS)
+                "Ap,OSEnvironment",
                 "Ap,OSLongVersion",
                 "Ap,OSReleaseType",
                 "Ap,ProductType",
