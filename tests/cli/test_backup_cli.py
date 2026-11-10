@@ -72,7 +72,9 @@ def test_unback_accepts_unfiltered_or_patched_backup():
 def test_backup_command_offers_messages_selection():
     runner = CliRunner()
 
-    result = runner.invoke(__main__.app, ["backup2", "backup", "--help"])
+    # Wide enough for the --only choices: Typer >= 0.29 lists them in the type column, which a
+    # narrow terminal truncates.
+    result = runner.invoke(__main__.app, ["backup2", "backup", "--help"], env={"COLUMNS": "200"})
 
     assert result.exit_code == 0
     assert "messages" in plain_cli_output(result.output)
