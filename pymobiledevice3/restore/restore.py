@@ -135,9 +135,10 @@ class Restore(BaseRestore):
         behavior: Behavior = Behavior.Update,
         ignore_fdr: bool = False,
         enable_tss_batch: bool = False,
+        variant: Optional[str] = None,
     ):
-        super().__init__(ipsw, device, tss, behavior)
-        self.recovery = Recovery(ipsw, device, tss=tss, behavior=behavior)
+        super().__init__(ipsw, device, tss, behavior, variant)
+        self.recovery = Recovery(ipsw, device, tss=tss, behavior=behavior, variant=variant)
         self.bbtss: Optional[TSSResponse] = None
         self._restored: Optional[RestoredClient] = None
         self._restore_finished = False

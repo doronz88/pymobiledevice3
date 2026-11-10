@@ -99,6 +99,17 @@ data on the device**. Both go through the
 same steps above; erase is what you want for a device stuck in recovery with no
 usable data volume, or to wipe it.
 
+Some IPSWs have several identities matching that name for the same device,
+for example the cloudOS (Private Cloud Compute) research IPSW, where
+`Darwin Cloud Customer Erase Install (IPSW)` comes before
+`Research Darwin Cloud Customer Erase Install (IPSW)`. `--variant` picks an
+identity by its exact name instead (`restore tss` accepts it too):
+
+```shell
+pymobiledevice3 restore update --erase --ipsw <ipsw> \
+    --variant "Research Darwin Cloud Customer Erase Install (IPSW)"
+```
+
 `--ignore-fdr` is a debugging option: the host connects to the FDR service but
 does not proxy its traffic.
 
@@ -174,7 +185,7 @@ option takes either form.
   until `restore exit` re-enables auto-boot and reboots it back to iOS;
   `restore restart` reboots either (see below for `--vdm`).
 - `restore tss` requests (and with `--out` saves) the AP ticket for a build
-  without restoring, `--behavior Update|Erase` selecting the identity.
+  without restoring, `--behavior Update|Erase` or `--variant` selecting the identity.
 - `restore ramdisk` boots the IPSW's restore ramdisk and stops there.
 - `restore shell` opens an IPython shell with the iBoot (`irecv`) client of a
   recovery/DFU device.
