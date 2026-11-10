@@ -27,6 +27,7 @@ import time
 from collections.abc import AsyncGenerator, Iterable, Sequence
 from typing import Any, NamedTuple, Optional
 
+from pymobiledevice3.remote.core_device.device_info import DeviceInfoService, select_display
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.xpc_message import XpcInt64Type, XpcUInt64Type
@@ -453,6 +454,32 @@ class UniversalHIDServiceService(RemoteService):
             "messageType": "Request",
             "payload": {"connectedServices": {}},
         })
+
+    async def touchscreen_service_id(self, display_unique_id: Optional[str]) -> int:
+        """Return the ``_ServiceID`` of the touchscreen that drives a display.
+
+        A device with several panels (a foldable) registers one touchscreen per
+        panel, each tagged with its display's ``uniqueId`` (see
+        :meth:`DeviceInfoService.get_display_info`) as ``displayUUID``: on the
+        first such device, 257 drives the cover panel and 258 the inner one.
+        Falls back to :data:`DIGITIZER_SURFACE_MAIN_TOUCHSCREEN` when no
+        touchscreen carries ``display_unique_id``.
+        """
+        if display_unique_id is not None:
+            response = await self.list_connected_services()
+            for service in response.get("connectedServices", []):
+                if service.get("displayUUID") == display_unique_id and "_ServiceID" in service:
+                    return int(service["_ServiceID"])
+        return DIGITIZER_SURFACE_MAIN_TOUCHSCREEN
+
+    async def active_touchscreen_service_id(self) -> int:
+        """Return the ``_ServiceID`` of the touchscreen of the built-in display in use.
+
+        On a foldable that is the panel currently lit (see :func:`select_display`).
+        """
+        async with DeviceInfoService(self.rsd) as info:
+            display = select_display(await info.get_display_info())
+        return await self.touchscreen_service_id(display.get("uniqueId"))
 
     async def send_report(self, service_id: int, report: bytes) -> None:
         """Deliver a raw HID report to one of the device's HID surfaces.

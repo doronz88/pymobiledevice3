@@ -601,6 +601,9 @@ pymobiledevice3 developer core-device universal-hid-service send-report 1281 HEX
 #   bottom-center         (32768, 60000)
 #   home-indicator area   (32768, 62000+)
 #
+# On a device with several displays, the gestures go to the display in use;
+# --touch-service-id picks another display's touchscreen (see list-connected).
+#
 # To convert from pixel coordinates, query the device's pixel size first:
 #   pymobiledevice3 developer core-device get-display-info
 #       # → displays[0].currentMode.size = [828, 1792] for an iPhone 11, etc.
@@ -660,6 +663,10 @@ pymobiledevice3 developer core-device display get-media-stream-server-status
 # Serve the device screen live to any modern browser (see notes above)
 pymobiledevice3 developer core-device display serve-web
 # then open http://127.0.0.1:8080/
+
+# On a device with several displays (a foldable) both show the display in use, and serve-web
+# follows a fold/unfold; pin one with --display-id (see get-display-info)
+pymobiledevice3 developer core-device display serve-web --display-id 2
 
 # Serve the device screen as a VNC (RFB 3.8) server, macOS-only (see notes above)
 pymobiledevice3 developer core-device display serve-vnc

@@ -42,6 +42,7 @@ from pymobiledevice3.exceptions import CoreDeviceError
 from pymobiledevice3.remote.core_device import rfb_clipboard
 from pymobiledevice3.remote.core_device.aac_eld import AACELDDecoder
 from pymobiledevice3.remote.core_device.audio_player import AudioQueuePlayer
+from pymobiledevice3.remote.core_device.device_info import DeviceInfoService, select_display
 from pymobiledevice3.remote.core_device.display_service import (
     MEDIA_IN_USE_MESSAGE,
     DisplayService,
@@ -51,7 +52,6 @@ from pymobiledevice3.remote.core_device.display_service import (
 from pymobiledevice3.remote.core_device.hevc_rps import HevcRpsTracker, is_slice_nal
 from pymobiledevice3.remote.core_device.hid_service import (
     ASCII_TO_HID,
-    DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     HID_BUTTON_STATE_DOWN,
     HID_BUTTON_STATE_UP,
     KEY_BACKSPACE,
@@ -291,7 +291,7 @@ class VncStreamServer:
         *,
         bind: str = "127.0.0.1",
         port: int = 5901,
-        display_id: int = 1,
+        display_id: Optional[int] = None,
         password: Optional[str] = None,
         audio: bool = False,
         decoder: str = "auto",
@@ -308,7 +308,13 @@ class VncStreamServer:
         self._clipboard_text: Optional[str] = None
         self._bind = bind
         self._port = port
-        self._display_id = display_id
+        # ``None``: the built-in display in use when the server starts (on a
+        # foldable, the lit panel); resolved in serve().
+        self._requested_display_id = display_id
+        self._display_id = 1 if display_id is None else display_id
+        # ``uniqueId`` of the streamed display, naming its touchscreen.
+        self._display_unique_id: Optional[str] = None
+        self._touch_service_id: Optional[int] = None
         self._password = password
         self._audio_enabled = audio
         self._sender_ip = rsd.service.address[0]
@@ -967,6 +973,11 @@ class VncStreamServer:
                 uhs = UniversalHIDServiceService(self._rsd)
                 await uhs.connect()
                 self._uhs = uhs
+            if self._touch_service_id is None:
+                self._touch_service_id = await self._uhs.touchscreen_service_id(self._display_unique_id)
+                logger.info(
+                    "touch input -> touchscreen _ServiceID %d (display %d)", self._touch_service_id, self._display_id
+                )
 
     async def _ensure_indigo(self) -> None:
         async with self._hid_lock:
@@ -1027,13 +1038,13 @@ class VncStreamServer:
         pressed = bool(button_mask & 1)
         try:
             await self._ensure_hid()
-            assert self._uhs is not None
+            assert self._uhs is not None and self._touch_service_id is not None
             if pressed:
                 await self._uhs.send_touchscreen(
                     TOUCHSCREEN_STATE_CONTACT,
                     hid_x,
                     hid_y,
-                    service_id=DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
+                    service_id=self._touch_service_id,
                 )
             elif client.pressed:
                 # Transition pressed -> released: send release at the
@@ -1042,7 +1053,7 @@ class VncStreamServer:
                     TOUCHSCREEN_STATE_RELEASE,
                     hid_x,
                     hid_y,
-                    service_id=DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
+                    service_id=self._touch_service_id,
                 )
         except Exception:
             logger.exception("HID send failed")
@@ -1496,6 +1507,15 @@ class VncStreamServer:
         # front so the audio stream (started below) gets paired with the video session on the
         # device -- this is what Xcode's Mirror does.
         shared_session_id = uuid.uuid4()
+        try:
+            async with DeviceInfoService(self._rsd) as info:
+                display = select_display(await info.get_display_info(), self._requested_display_id)
+            self._display_id = int(display["displayId"])
+            self._display_unique_id = display.get("uniqueId")
+            logger.info("streaming display %d (%s)", self._display_id, display.get("name", "?"))
+        except Exception:
+            logger.warning("failed to query the device's displays; streaming display %d", self._display_id)
+            logger.debug("get_display_info failed", exc_info=True)
         svc = DisplayService(self._rsd)
         await svc.connect()
         transport, receiver_ip = open_media_receiver(svc, (8 * 1024 * 1024, 4 * 1024 * 1024))
