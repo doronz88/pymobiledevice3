@@ -2665,7 +2665,7 @@
 <p>Read and change contacts, calendars, Safari bookmarks and mail accounts (com.apple.mobilesync).</p>
 <h2 id="dump"><code>dump</code><a class="headerlink" href="#dump" title="Permanent link">&para;</a></h2>
 <p>Print every record of a data class, keyed by record identifier.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pymobiledevice3 mobilesync dump [OPTIONS] {data_class}:&lt;contacts|calendars|bookmarks|mail-accounts&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pymobiledevice3 mobilesync dump [OPTIONS] {data_class}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -2677,7 +2677,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>data_class:&lt;contacts\|calendars\|bookmarks\|mail-accounts&gt;</code></td>
+<td><code>data_class &lt;contacts\|calendars\|bookmarks\|mail-accounts&gt;</code></td>
 <td>Kind of records to read. [required]</td>
 </tr>
 </tbody>
@@ -2704,7 +2704,7 @@
 modifies that record; any other key adds a new record. Use a plist for
 records with dates (calendar events). Prints the identifiers the device
 assigned to added records.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pymobiledevice3 mobilesync push [OPTIONS] {data_class}:&lt;contacts|calendars|bookmarks|mail-accounts&gt; {changes}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pymobiledevice3 mobilesync push [OPTIONS] {data_class} {changes}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -2716,11 +2716,11 @@ assigned to added records.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>data_class:&lt;contacts\|calendars\|bookmarks\|mail-accounts&gt;</code></td>
+<td><code>data_class &lt;contacts\|calendars\|bookmarks\|mail-accounts&gt;</code></td>
 <td>Kind of records to change. [required]</td>
 </tr>
 <tr>
-<td><code>changes</code></td>
+<td><code>changes &lt;file&gt;</code></td>
 <td>JSON or .plist file mapping record identifiers to records. [required]</td>
 </tr>
 </tbody>
@@ -2743,7 +2743,7 @@ assigned to added records.</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="delete"><code>delete</code><a class="headerlink" href="#delete" title="Permanent link">&para;</a></h2>
 <p>Delete records by record identifier from the device (no confirmation).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pymobiledevice3 mobilesync delete [OPTIONS] {data_class}:&lt;contacts|calendars|bookmarks|mail-accounts&gt; {identifiers}...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pymobiledevice3 mobilesync delete [OPTIONS] {data_class} {identifiers}...
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -2755,11 +2755,11 @@ assigned to added records.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>data_class:&lt;contacts\|calendars\|bookmarks\|mail-accounts&gt;</code></td>
+<td><code>data_class &lt;contacts\|calendars\|bookmarks\|mail-accounts&gt;</code></td>
 <td>Kind of records to delete. [required]</td>
 </tr>
 <tr>
-<td><code>identifiers...</code></td>
+<td><code>identifiers... &lt;list[str]&gt;</code></td>
 <td>Identifiers of the records to delete (from <code>dump</code>). [required]</td>
 </tr>
 </tbody>

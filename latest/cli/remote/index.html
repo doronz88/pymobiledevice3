@@ -2820,7 +2820,7 @@ commands. Runs until Ctrl+C (or in the background with --daemonize).</p>
 <td>Port to bind the tunneld server to. [default: 49151]</td>
 </tr>
 <tr>
-<td><code>--upstream &lt;str&gt;</code></td>
+<td><code>--upstream &lt;list[str]&gt;</code></td>
 <td>URL of another tunneld to federate (repeatable). Its devices appear in this instance's listing, and connections to them are relayed through it, so clients need a route to this tunneld only.</td>
 </tr>
 <tr>
@@ -3029,7 +3029,7 @@ printed here. The resulting pairing record is reused by
 </thead>
 <tbody>
 <tr>
-<td><code>udid</code></td>
+<td><code>udid &lt;str&gt;</code></td>
 <td>Identifier (UDID) of the device whose pairing record to delete. [required]</td>
 </tr>
 </tbody>
@@ -3048,7 +3048,7 @@ printed here. The resulting pairing record is reused by
 </thead>
 <tbody>
 <tr>
-<td><code>service_name</code></td>
+<td><code>service_name &lt;str&gt;</code></td>
 <td>RSD service name (see <code>remote rsd-info</code>). [required]</td>
 </tr>
 </tbody>

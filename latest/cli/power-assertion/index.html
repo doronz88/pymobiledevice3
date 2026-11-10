@@ -2552,7 +2552,7 @@
 
 <h1 id="pymobiledevice3-power-assertion"><code>pymobiledevice3 power-assertion</code><a class="headerlink" href="#pymobiledevice3-power-assertion" title="Permanent link">&para;</a></h1>
 <p>Hold a power assertion on the device for TIMEOUT seconds (Ctrl+C to stop early).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pymobiledevice3 power-assertion [OPTIONS] {assertion_type}:&lt;AMDPowerAssertionTypeWirelessSync|PreventUserIdleSystemSleep|PreventSystemSleep&gt; {name} {timeout} [details]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pymobiledevice3 power-assertion [OPTIONS] {assertion_type} {name} {timeout} [details]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -2564,19 +2564,19 @@
 </thead>
 <tbody>
 <tr>
-<td><code>assertion_type:&lt;AMDPowerAssertionTypeWirelessSync\|PreventUserIdleSystemSleep\|PreventSystemSleep&gt;</code></td>
+<td><code>assertion_type &lt;AMDPowerAssertionTypeWirelessSync\|PreventUserIdleSystemSleep\|PreventSystemSleep&gt;</code></td>
 <td>Power assertion type to create. [required]</td>
 </tr>
 <tr>
-<td><code>name</code></td>
+<td><code>name &lt;str&gt;</code></td>
 <td>Name to identify the assertion on the device. [required]</td>
 </tr>
 <tr>
-<td><code>timeout</code></td>
+<td><code>timeout &lt;int&gt;</code></td>
 <td>How long to hold the assertion, in seconds. [required]</td>
 </tr>
 <tr>
-<td><code>details</code></td>
+<td><code>details &lt;str&gt;</code></td>
 <td>Optional description attached to the assertion.</td>
 </tr>
 </tbody>

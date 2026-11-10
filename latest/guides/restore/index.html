@@ -2989,14 +2989,22 @@ instead: a factory reset that recreates the filesystem and <strong>deletes all
 data on the device</strong>. Both go through the
 same steps above; erase is what you want for a device stuck in recovery with no
 usable data volume, or to wipe it.</p>
+<p>Some IPSWs have several identities matching that name for the same device,
+for example the cloudOS (Private Cloud Compute) research IPSW, where
+<code>Darwin Cloud Customer Erase Install (IPSW)</code> comes before
+<code>Research Darwin Cloud Customer Erase Install (IPSW)</code>. <code>--variant</code> picks an
+identity by its exact name instead (<code>restore tss</code> accepts it too):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>update<span class="w"> </span>--erase<span class="w"> </span>--ipsw<span class="w"> </span>&lt;ipsw&gt;<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span>--variant<span class="w"> </span><span class="s2">"Research Darwin Cloud Customer Erase Install (IPSW)"</span>
+</code></pre></div>
 <p><code>--ignore-fdr</code> is a debugging option: the host connects to the FDR service but
 does not proxy its traffic.</p>
 <h2 id="restoring-from-dfu-mode">Restoring from DFU mode<a class="headerlink" href="#restoring-from-dfu-mode" title="Permanent link">&para;</a></h2>
 <p>DFU mode is entered with a button sequence; the host cannot enter it alone.
 <code>--dfu</code> walks you through it before the restore starts, and <code>restore enter-dfu</code>
 does just that part:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>update<span class="w"> </span>-i<span class="w"> </span>iPhone.ipsw<span class="w"> </span>--dfu
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>enter-dfu
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>update<span class="w"> </span>-i<span class="w"> </span>iPhone.ipsw<span class="w"> </span>--dfu
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>enter-dfu
 </code></pre></div>
 <p>The guide picks the buttons for the model (iPhones by product type; for an iPad
 it asks whether there is a Home button), counts each step down, and watches the
@@ -3026,7 +3034,7 @@ which is reached through that daemon.</p>
 through libusb. A16-or-later devices in DFU mode go through <code>deviceinterfaced</code>
 on macOS (see above). <code>restore --libusb</code> (or <code>PYMOBILEDEVICE3_USB_BACKEND=libusb</code>)
 switches macOS to libusb, e.g. to compare the two:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>--libusb<span class="w"> </span>update<span class="w"> </span>-i<span class="w"> </span>iPhone.ipsw
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>--libusb<span class="w"> </span>update<span class="w"> </span>-i<span class="w"> </span>iPhone.ipsw
 </code></pre></div>
 <h2 id="several-devices-at-once">Several devices at once<a class="headerlink" href="#several-devices-at-once" title="Permanent link">&para;</a></h2>
 <p>Each restore stays on its own device, so several can run side by side: start
@@ -3034,8 +3042,8 @@ one <code>restore update</code> per device. With more than one device connected,
 command asks which one to use; <code>--ecid</code> picks it non-interactively. On devices
 from the A12 on, the UDID is <code>&lt;ChipID&gt;-&lt;ECID&gt;</code>, so the ECID is the part after
 the dash:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># UDID 00008150-001074523440401C</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>update<span class="w"> </span>--ecid<span class="w"> </span>0x001074523440401C<span class="w"> </span>-i<span class="w"> </span>iPhone18,4_Restore.ipsw
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># UDID 00008150-001074523440401C</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>update<span class="w"> </span>--ecid<span class="w"> </span>0x001074523440401C<span class="w"> </span>-i<span class="w"> </span>iPhone18,4_Restore.ipsw
 </code></pre></div>
 <p><code>lockdown info</code> reports it as <code>UniqueChipID</code> (decimal), and the <code>--ecid</code>
 option takes either form.</p>
@@ -3045,7 +3053,7 @@ option takes either form.</p>
   until <code>restore exit</code> re-enables auto-boot and reboots it back to iOS;
   <code>restore restart</code> reboots either (see below for <code>--vdm</code>).</li>
 <li><code>restore tss</code> requests (and with <code>--out</code> saves) the AP ticket for a build
-  without restoring, <code>--behavior Update|Erase</code> selecting the identity.</li>
+  without restoring, <code>--behavior Update|Erase</code> or <code>--variant</code> selecting the identity.</li>
 <li><code>restore ramdisk</code> boots the IPSW's restore ramdisk and stops there.</li>
 <li><code>restore shell</code> opens an IPython shell with the iBoot (<code>irecv</code>) client of a
   recovery/DFU device.</li>
@@ -3055,7 +3063,7 @@ option takes either form.</p>
 reboot message, sent by the Mac's own USB-C port controller. The device's USB-C
 controller handles it, not iOS, so it needs no pairing or trust and works in
 recovery mode too:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>sudo<span class="w"> </span>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>restart<span class="w"> </span>--vdm
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>sudo<span class="w"> </span>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>restart<span class="w"> </span>--vdm
 </code></pre></div>
 <ul>
 <li>It needs root: only root can open the port controller.</li>
@@ -3067,13 +3075,13 @@ recovery mode too:</p>
 </ul>
 <h2 id="inspecting-the-preflight-data">Inspecting the preflight data<a class="headerlink" href="#inspecting-the-preflight-data" title="Permanent link">&para;</a></h2>
 <p>Two commands expose what the device reports before a restore, in JSON:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># what lockdown reports in normal mode: PreflightInfo (each peripheral updater's</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="c1"># identity fields and current nonce), FirmwarePreflightInfo, ApParameters</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>preflight
-<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
-<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># the TSS request each updater would send, built by the device itself for this</span>
-<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1"># IPSW (restoreserviced over a tunnel; uploads each updater's firmware first)</span>
-<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>preflight-requests<span class="w"> </span>-i<span class="w"> </span>iPhone.ipsw<span class="w"> </span>--updater<span class="w"> </span>T200<span class="w"> </span>--updater<span class="w"> </span>Rose
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># what lockdown reports in normal mode: PreflightInfo (each peripheral updater's</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># identity fields and current nonce), FirmwarePreflightInfo, ApParameters</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>preflight
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="c1"># the TSS request each updater would send, built by the device itself for this</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="c1"># IPSW (restoreserviced over a tunnel; uploads each updater's firmware first)</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>pymobiledevice3<span class="w"> </span>restore<span class="w"> </span>preflight-requests<span class="w"> </span>-i<span class="w"> </span>iPhone.ipsw<span class="w"> </span>--updater<span class="w"> </span>T200<span class="w"> </span>--updater<span class="w"> </span>Rose
 </code></pre></div>
 <p><code>preflight-requests</code> returns, per updater, the request (<code>DeviceInfoRequests</code>),
 its ticket and manifest tags (<code>DeviceInfoTags</code>) and the updaters whose preflight
@@ -3121,12 +3129,12 @@ personalization (<code>MessageForceRepersonalization</code>, or any loop but the
 goes to TSS as usual. A prefetched ticket is never served against a nonce the
 chip has since discarded.</p>
 <p>At the end of the restore a summary is logged:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>TSS PREFETCH SUMMARY
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>  prefetched up-front : 7 ['SE', 'Rose', 'Centauri', 'Savage', 'T200', 'Vinyl', 'Baseband']
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>  hits                : 3 ['T200', 'SE', 'Vinyl']
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>  request mismatches  : 5 ['Rose', 'Centauri', 'Baseband', 'Savage', 'Rose']
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>  not prefetched      : 0 []
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>  &gt;&gt; TSS requests saved during the restore: 3
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>TSS PREFETCH SUMMARY
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>  prefetched up-front : 7 ['SE', 'Rose', 'Centauri', 'Savage', 'T200', 'Vinyl', 'Baseband']
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>  hits                : 3 ['T200', 'SE', 'Vinyl']
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>  request mismatches  : 5 ['Rose', 'Centauri', 'Baseband', 'Savage', 'Rose']
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>  not prefetched      : 0 []
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>  &gt;&gt; TSS requests saved during the restore: 3
 </code></pre></div>
 <p>A hit saves one request. A mismatch costs nothing: the request the reactive
 path would have made is made, and the log line names the entries that differed

@@ -2833,7 +2833,7 @@ named with the device's udid. Keep the device connected until it finishes.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>backup_directory</code></td>
+<td><code>backup_directory &lt;dir&gt;</code></td>
 <td>Local directory holding the backups (each device's backup is in a subdirectory named by its UDID). [required]</td>
 </tr>
 </tbody>
@@ -2856,11 +2856,11 @@ named with the device's udid. Keep the device connected until it finishes.</p>
 <td>Force a full backup and discard previous local backup state. By default, backup is incremental when valid local metadata exists, and automatically becomes full for an empty or incomplete backup directory. [default: no-full]</td>
 </tr>
 <tr>
-<td><code>--only &lt;bookmarks\|call_history\|contacts\|messages\|sms\|whatsapp&gt;</code></td>
+<td><code>--only &lt;list[bookmarks\|call_history\|contacts\|messages\|sms\|whatsapp]&gt;</code></td>
 <td>Preserve only selected backup payload presets. Repeat to keep multiple presets.</td>
 </tr>
 <tr>
-<td><code>--only-regex &lt;str&gt;</code></td>
+<td><code>--only-regex &lt;list[str]&gt;</code></td>
 <td>Preserve only backup payloads whose device path or manifest path matches this regex. Repeat to keep multiple regexes.</td>
 </tr>
 <tr>
@@ -2895,7 +2895,7 @@ named with the device's udid. Keep the device connected until it finishes.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>backup_directory</code></td>
+<td><code>backup_directory &lt;dir&gt;</code></td>
 <td>Local directory holding the backups (each device's backup is in a subdirectory named by its UDID). [required]</td>
 </tr>
 </tbody>
@@ -2962,7 +2962,7 @@ named with the device's udid. Keep the device connected until it finishes.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>backup_directory</code></td>
+<td><code>backup_directory &lt;dir&gt;</code></td>
 <td>Local directory holding the backups (each device's backup is in a subdirectory named by its UDID). [required]</td>
 </tr>
 </tbody>
@@ -3001,7 +3001,7 @@ named with the device's udid. Keep the device connected until it finishes.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>backup_directory</code></td>
+<td><code>backup_directory &lt;dir&gt;</code></td>
 <td>Local directory holding the backups (each device's backup is in a subdirectory named by its UDID). [required]</td>
 </tr>
 </tbody>
@@ -3040,7 +3040,7 @@ named with the device's udid. Keep the device connected until it finishes.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>backup_directory</code></td>
+<td><code>backup_directory &lt;dir&gt;</code></td>
 <td>Local directory holding the backups (each device's backup is in a subdirectory named by its UDID). [required]</td>
 </tr>
 </tbody>
@@ -3085,15 +3085,15 @@ will be extracted to the BACKUP_DIRECTORY.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>domain_name</code></td>
+<td><code>domain_name &lt;str&gt;</code></td>
 <td>Backup domain of the file (e.g. HomeDomain). [required]</td>
 </tr>
 <tr>
-<td><code>relative_path</code></td>
+<td><code>relative_path &lt;str&gt;</code></td>
 <td>Path of the file within the domain. [required]</td>
 </tr>
 <tr>
-<td><code>backup_directory</code></td>
+<td><code>backup_directory &lt;dir&gt;</code></td>
 <td>Local directory holding the backups (each device's backup is in a subdirectory named by its UDID). [required]</td>
 </tr>
 </tbody>
@@ -3126,7 +3126,7 @@ will be extracted to the BACKUP_DIRECTORY.</p>
 <p>Set backup encryption on / off, or report the current encryption state when run without arguments.</p>
 <p>When on, PASSWORD will be the new backup password.
 When off, PASSWORD is the current backup password.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pymobiledevice3 backup2 encryption [OPTIONS] [mode]:&lt;on|off&gt; [password]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pymobiledevice3 backup2 encryption [OPTIONS] [mode] [password]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3138,11 +3138,11 @@ When off, PASSWORD is the current backup password.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>mode:&lt;on\|off&gt;</code></td>
+<td><code>mode &lt;on\|off&gt;</code></td>
 <td>Turn encryption on or off; omit to print the current state.</td>
 </tr>
 <tr>
-<td><code>password</code></td>
+<td><code>password &lt;str&gt;</code></td>
 <td>New password when turning on; current password when turning off.</td>
 </tr>
 </tbody>
@@ -3161,7 +3161,7 @@ When off, PASSWORD is the current backup password.</p>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
 <tr>
-<td><code>-b, --backup-directory &lt;directory&gt;</code></td>
+<td><code>-b, --backup-directory &lt;dir&gt;</code></td>
 <td>Local backup directory used for the exchange with the device. [default: .]</td>
 </tr>
 </tbody>
@@ -3169,7 +3169,7 @@ When off, PASSWORD is the current backup password.</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="cloud"><code>cloud</code><a class="headerlink" href="#cloud" title="Permanent link">&para;</a></h2>
 <p>Turn iCloud Backup on / off.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>pymobiledevice3 backup2 cloud [OPTIONS] {mode}:&lt;on|off&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>pymobiledevice3 backup2 cloud [OPTIONS] {mode}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3181,7 +3181,7 @@ When off, PASSWORD is the current backup password.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>mode:&lt;on\|off&gt;</code></td>
+<td><code>mode &lt;on\|off&gt;</code></td>
 <td>Turn iCloud Backup on or off. [required]</td>
 </tr>
 </tbody>
@@ -3216,11 +3216,11 @@ When off, PASSWORD is the current backup password.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>old_password</code></td>
+<td><code>old_password &lt;str&gt;</code></td>
 <td>Current backup password. [required]</td>
 </tr>
 <tr>
-<td><code>new_password</code></td>
+<td><code>new_password &lt;str&gt;</code></td>
 <td>New backup password. [required]</td>
 </tr>
 </tbody>
@@ -3239,7 +3239,7 @@ When off, PASSWORD is the current backup password.</p>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
 <tr>
-<td><code>-b, --backup-directory &lt;directory&gt;</code></td>
+<td><code>-b, --backup-directory &lt;dir&gt;</code></td>
 <td>Local backup directory used for the exchange with the device. [default: .]</td>
 </tr>
 </tbody>
@@ -3260,7 +3260,7 @@ When off, PASSWORD is the current backup password.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>backup_directory</code></td>
+<td><code>backup_directory &lt;dir&gt;</code></td>
 <td>Local backup directory used for the exchange with the device. [required]</td>
 </tr>
 </tbody>

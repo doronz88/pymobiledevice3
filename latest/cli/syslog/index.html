@@ -2713,19 +2713,19 @@
 <td>Only entries from the process with this name.</td>
 </tr>
 <tr>
-<td><code>-m, --match &lt;str&gt;</code></td>
+<td><code>-m, --match &lt;list[str]&gt;</code></td>
 <td>Keep only lines containing this text (repeatable; all must match).</td>
 </tr>
 <tr>
-<td><code>-v, --invert-match &lt;str&gt;</code></td>
+<td><code>-v, --invert-match &lt;list[str]&gt;</code></td>
 <td>Drop lines containing this text (repeatable; any match drops the line).</td>
 </tr>
 <tr>
-<td><code>-mi, --match-insensitive &lt;str&gt;</code></td>
+<td><code>-mi, --match-insensitive &lt;list[str]&gt;</code></td>
 <td>Keep only lines containing this text, ignoring case (repeatable; all must match).</td>
 </tr>
 <tr>
-<td><code>-vi, --invert-match-insensitive &lt;str&gt;</code></td>
+<td><code>-vi, --invert-match-insensitive &lt;list[str]&gt;</code></td>
 <td>Drop lines containing this text, ignoring case (repeatable; any match drops the line).</td>
 </tr>
 <tr>
@@ -2733,19 +2733,19 @@
 <td>Include the subsystem/category label in the rendered line (JSON output always emits the label field).</td>
 </tr>
 <tr>
-<td><code>-e, --regex &lt;str&gt;</code></td>
+<td><code>-e, --regex &lt;list[str]&gt;</code></td>
 <td>Keep only lines matching this regex (repeatable; any one may match).</td>
 </tr>
 <tr>
-<td><code>-ei, --insensitive-regex &lt;str&gt;</code></td>
+<td><code>-ei, --insensitive-regex &lt;list[str]&gt;</code></td>
 <td>Keep only lines matching this regex, ignoring case (repeatable; any one may match).</td>
 </tr>
 <tr>
-<td><code>-s, --subsystem &lt;str&gt;</code></td>
+<td><code>-s, --subsystem &lt;list[str]&gt;</code></td>
 <td>Keep only entries whose os_log subsystem matches this case-insensitive glob (e.g. 'com.apple.WebKit*'). Repeatable; an entry is kept if it matches any (disjunction). Entries with no subsystem/category label are dropped when set.</td>
 </tr>
 <tr>
-<td><code>-c, --category &lt;str&gt;</code></td>
+<td><code>-c, --category &lt;list[str]&gt;</code></td>
 <td>Keep only entries whose os_log category matches this case-insensitive glob (e.g. 'Network'). Repeatable; an entry is kept if it matches any (disjunction). Combined with --subsystem as a conjunction (both must match).</td>
 </tr>
 <tr>
@@ -2787,7 +2787,7 @@ those tools recognize it.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>out</code></td>
+<td><code>out &lt;dir&gt;</code></td>
 <td>Directory to extract the archive into (created if missing), e.g. system_logs.logarchive. [required]</td>
 </tr>
 </tbody>

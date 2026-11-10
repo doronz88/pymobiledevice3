@@ -2942,6 +2942,10 @@
 <td><code>--behavior &lt;Update\|Erase&gt;</code></td>
 <td>Restore behavior to use when selecting the BuildIdentity. [default: Update]</td>
 </tr>
+<tr>
+<td><code>--variant &lt;str&gt;</code></td>
+<td>Exact BuildIdentity variant to use instead of the one picked by the restore behavior, e.g. 'Research Darwin Cloud Customer Erase Install (IPSW)' for a research VM.</td>
+</tr>
 </tbody>
 </table>
 <h2 id="preflight"><code>preflight</code><a class="headerlink" href="#preflight" title="Permanent link">&para;</a></h2>
@@ -3004,7 +3008,7 @@ tags, and the updaters that failed.</p>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
 <tr>
-<td><code>--updater &lt;str&gt;</code></td>
+<td><code>--updater &lt;list[str]&gt;</code></td>
 <td>Updater to query (repeatable); default: all of T200, Rose, SE, Vinyl, Savage, Centauri, Baseband except Baseband.</td>
 </tr>
 </tbody>
@@ -3100,6 +3104,10 @@ connected until it finishes.</p>
 <tr>
 <td><code>--manual</code></td>
 <td>Do the whole DFU button sequence yourself, instead of having a booted device restarted from here.</td>
+</tr>
+<tr>
+<td><code>--variant &lt;str&gt;</code></td>
+<td>Exact BuildIdentity variant to use instead of the one picked by the restore behavior, e.g. 'Research Darwin Cloud Customer Erase Install (IPSW)' for a research VM.</td>
 </tr>
 </tbody>
 </table>

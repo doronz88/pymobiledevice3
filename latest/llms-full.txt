@@ -724,6 +724,9 @@ pymobiledevice3 developer core-device universal-hid-service send-report 1281 HEX
 #   bottom-center         (32768, 60000)
 #   home-indicator area   (32768, 62000+)
 #
+# On a device with several displays, the gestures go to the display in use;
+# --touch-service-id picks another display's touchscreen (see list-connected).
+#
 # To convert from pixel coordinates, query the device's pixel size first:
 #   pymobiledevice3 developer core-device get-display-info
 #       # → displays[0].currentMode.size = [828, 1792] for an iPhone 11, etc.
@@ -772,6 +775,10 @@ pymobiledevice3 developer core-device display get-media-stream-server-status
 # Serve the device screen live to any modern browser (see notes above)
 pymobiledevice3 developer core-device display serve-web
 # then open http://127.0.0.1:8080/
+
+# On a device with several displays (a foldable) both show the display in use and follow a
+# fold/unfold; pin one with --display-id (see get-display-info)
+pymobiledevice3 developer core-device display serve-web --display-id 2
 
 # Serve the device screen as a VNC (RFB 3.8) server, macOS-only (see notes above)
 pymobiledevice3 developer core-device display serve-vnc
@@ -1967,6 +1974,14 @@ Free up at least the requested number of bytes and retry. Note that the first fi
 
 Run with `-vv` to also see the figure the host reported for `DLMessageGetFreeDiskSpace`; that is the number the device compared against, and it comes from `statvfs` on the backup directory (on macOS, raised to the purgeable-aware capacity Finder uses).
 
+### "Manifest references files not in backup" (`InvalidBackupError`, MBErrorDomain/205)
+
+When a backup finishes transferring, the device lists the backup directory on this computer and checks it against the new `Manifest.db`. If a file the manifest lists is not there, it fails the backup with `MBErrorDomain/205` — after the progress bar reached 100%. The device uses the same code for other contradictions in the backup directory (an unknown `SnapshotState` in `Status.plist`, a missing file encryption key, a password that does not match the manifest), and the message carries its wording.
+
+A backup directory that is already incomplete when the backup starts does not cause this: the device runs the same check before an incremental backup and, when it fails, quietly makes a full backup instead. The error means files went missing by the time the backup *finished* — something removed or changed them while it was running (a sync or cleanup tool, another backup into the same directory, a script that moves payload files away).
+
+Run the backup again and leave the directory alone until it finishes: the device sends everything that is missing. If it keeps failing, pass `--full` or back up into an empty directory.
+
 ## Still stuck?
 
 - Re-run with `-vv` and read the debug logs.
@@ -2020,6 +2035,13 @@ Whatever the source, the build must be signed by Apple at restore time, since th
 
 By default the restore is an **update in place**: the `Upgrade Install (IPSW)` build identity is used, the data volume is kept, and the device comes back with its apps and settings. `--erase` selects the `Erase Install (IPSW)` identity instead: a factory reset that recreates the filesystem and **deletes all data on the device**. Both go through the same steps above; erase is what you want for a device stuck in recovery with no usable data volume, or to wipe it.
 
+Some IPSWs have several identities matching that name for the same device, for example the cloudOS (Private Cloud Compute) research IPSW, where `Darwin Cloud Customer Erase Install (IPSW)` comes before `Research Darwin Cloud Customer Erase Install (IPSW)`. `--variant` picks an identity by its exact name instead (`restore tss` accepts it too):
+
+```
+pymobiledevice3 restore update --erase --ipsw <ipsw> \
+    --variant "Research Darwin Cloud Customer Erase Install (IPSW)"
+```
+
 `--ignore-fdr` is a debugging option: the host connects to the FDR service but does not proxy its traffic.
 
 ## Restoring from DFU mode
@@ -2063,7 +2085,7 @@ pymobiledevice3 restore update --ecid 0x001074523440401C -i iPhone18,4_Restore.i
 ## The helper commands
 
 - `restore enter` puts a normal-mode device into recovery, where it stays until `restore exit` re-enables auto-boot and reboots it back to iOS; `restore restart` reboots either (see below for `--vdm`).
-- `restore tss` requests (and with `--out` saves) the AP ticket for a build without restoring, `--behavior Update|Erase` selecting the identity.
+- `restore tss` requests (and with `--out` saves) the AP ticket for a build without restoring, `--behavior Update|Erase` or `--variant` selecting the identity.
 - `restore ramdisk` boots the IPSW's restore ramdisk and stops there.
 - `restore shell` opens an IPython shell with the iBoot (`irecv`) client of a recovery/DFU device.
 

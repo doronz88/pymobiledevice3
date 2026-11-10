@@ -1,0 +1,122 @@
+<div class="pmd-terminal"><style>.pmd-terminal .t0{color:#98c379;font-weight:bold}.pmd-terminal .t1{color:#56b6c2}.pmd-terminal .t2{color:#61afef}.pmd-terminal .t3{color:#98c379}.pmd-terminal .t4{color:#e5c07b}.pmd-terminal .t5{color:#e06c75}</style><pre><code><span class="t0">$ </span>pymobiledevice3 developer dvt core-profile-session parse-live --fs --process Preferences -c 60
+2026-11-05 09:28:55 Studio-MacBook-Pro.local <span class="t1">pymobiledevice3.__main__</span>[45074] <span class="t0">INFO </span>Trying again over a no-root
+userspace tunnel since it is a developer command on an iOS 17+ device (override with PYMOBILEDEVICE3_DEFAULT_F
+ALLBACK, or --tunnel/--userspace/--native)
+2026-11-05 09:28:56 Studio-MacBook-Pro.local <span class="t1">pymobiledevice3.cli.developer.dvt.core_profile_session</span>[45074] <span class="t0">INF</span>
+<span class="t0">O </span>Receiving time information
+              Time              |             Process             |   Event
+2026-11-05 09:28:57.207760 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;&quot;</span>, <span class="t4">O_RDONLY</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.207803 Preferences(807)                  <span class="t2">openat</span>(<span class="t1">3</span>, <span class="t3">&quot;../../private/preboot/Cryptexes/OS&quot;</span>, <span class="t4">O</span>
+<span class="t4">_RDONLY</span>), fd: <span class="t1">4</span>
+2026-11-05 09:28:57.207947 Preferences(807)                  <span class="t2">fstatat64</span>(<span class="t1">4</span>, <span class="t3">&quot;System/Library/Caches/com.apple.dyl</span>
+<span class="t3">d&quot;</span>, <span class="t1">0x16b0a9bd0</span>, <span class="t1">0</span>)
+2026-11-05 09:28:57.207993 Preferences(807)                  <span class="t2">openat</span>(<span class="t1">4</span>, <span class="t3">&quot;System/Library/Caches/com.apple.dyld&quot;</span>,
+ <span class="t4">O_RDONLY</span>), fd: <span class="t1">6</span>
+2026-11-05 09:28:57.213553 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/Applications/Preferences.app/Preferences</span>
+<span class="t3">&quot;</span>, <span class="t1">0x16b0a5ff8</span>)
+2026-11-05 09:28:57.213732 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/Applications/Preferences.app/Preferences&quot;</span>,
+ <span class="t4">O_RDONLY</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.214556 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/Applications/Preferences.app/Preferences&quot;</span>,
+ <span class="t4">O_RDONLY</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.240227 Preferences(807)                  <span class="t2">getattrlist</span>(<span class="t3">&quot;/Applications/Preferences.app/Prefer</span>
+<span class="t3">ences&quot;</span>, <span class="t1">0x16b09fcc0</span>, <span class="t1">0x16b09fd04</span>, <span class="t1">1036</span>)
+2026-11-05 09:28:57.240263 Preferences(807)                  <span class="t2">access</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>, <span class="t4">R_OK</span>)
+2026-11-05 09:28:57.240280 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>, <span class="t4">O_RDONLY</span>),
+fd: <span class="t1">3</span>
+2026-11-05 09:28:57.240313 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/Applications/Preferences.app/Info.plist&quot;</span>,
+<span class="t4">O_RDONLY</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.240629 Preferences(807)                  <span class="t2">getattrlist</span>(<span class="t3">&quot;/Applications/Preferences.app/Prefer</span>
+<span class="t3">ences&quot;</span>, <span class="t1">0x16b09fbf0</span>, <span class="t1">0x16b09fc34</span>, <span class="t1">1036</span>)
+2026-11-05 09:28:57.240641 Preferences(807)                  <span class="t2">open_nocancel</span>(<span class="t3">&quot;/Applications/Preferences.app/XPCS</span>
+<span class="t3">ervices&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.240649 Preferences(807)                  <span class="t2">getattrlist</span>(<span class="t3">&quot;/Applications/Preferences.app/Resour</span>
+<span class="t3">ces&quot;</span>, <span class="t1">0x16b09fcb0</span>, <span class="t1">0x16b09fcf4</span>, <span class="t1">1036</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.243226 Preferences(807)                  <span class="t2">getattrlist</span>(<span class="t3">&quot;/Applications/Preferences.app/Prefer</span>
+<span class="t3">ences&quot;</span>, <span class="t1">0x16b09fc00</span>, <span class="t1">0x16b09fc44</span>, <span class="t1">1036</span>)
+2026-11-05 09:28:57.243255 Preferences(807)                  <span class="t2">access</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>, <span class="t4">R_OK</span>)
+2026-11-05 09:28:57.243268 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>, <span class="t4">O_RDONLY</span>),
+fd: <span class="t1">3</span>
+2026-11-05 09:28:57.243296 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/Applications/Preferences.app/Info.plist&quot;</span>,
+<span class="t4">O_RDONLY</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.243484 Preferences(807)                  <span class="t2">getattrlist</span>(<span class="t3">&quot;/Applications/Preferences.app/Prefer</span>
+<span class="t3">ences&quot;</span>, <span class="t1">0x16b09fb30</span>, <span class="t1">0x16b09fb74</span>, <span class="t1">1036</span>)
+2026-11-05 09:28:57.243494 Preferences(807)                  <span class="t2">open_nocancel</span>(<span class="t3">&quot;/Applications/Preferences.app/XPCS</span>
+<span class="t3">ervices&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.243500 Preferences(807)                  <span class="t2">getattrlist</span>(<span class="t3">&quot;/Applications/Preferences.app/Resour</span>
+<span class="t3">ces&quot;</span>, <span class="t1">0x16b09fbf0</span>, <span class="t1">0x16b09fc34</span>, <span class="t1">1036</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.276082 Preferences(807)                  <span class="t2">lstat64</span>(<span class="t3">&quot;/AppleInternal/Settings/SettingsComponen</span>
+<span class="t3">tManifest.json&quot;</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.276111 Preferences(807)                  <span class="t2">getattrlist</span>(<span class="t3">&quot;/Applications/Preferences.app/Prefer</span>
+<span class="t3">ences&quot;</span>, <span class="t1">0x16b0aa5c0</span>, <span class="t1">0x16b0aa604</span>, <span class="t1">1036</span>)
+2026-11-05 09:28:57.276120 Preferences(807)                  <span class="t2">access</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>, <span class="t4">R_OK</span>)
+2026-11-05 09:28:57.276125 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>, <span class="t4">O_RDONLY</span>),
+fd: <span class="t1">3</span>
+2026-11-05 09:28:57.276133 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/Applications/Preferences.app/Info.plist&quot;</span>,
+<span class="t4">O_RDONLY</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.276232 Preferences(807)                  <span class="t2">getattrlist</span>(<span class="t3">&quot;/Applications/Preferences.app/Prefer</span>
+<span class="t3">ences&quot;</span>, <span class="t1">0x16b0aa4f0</span>, <span class="t1">0x16b0aa534</span>, <span class="t1">1036</span>)
+2026-11-05 09:28:57.276236 Preferences(807)                  <span class="t2">open_nocancel</span>(<span class="t3">&quot;/Applications/Preferences.app/XPCS</span>
+<span class="t3">ervices&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.276238 Preferences(807)                  <span class="t2">getattrlist</span>(<span class="t3">&quot;/Applications/Preferences.app/Resour</span>
+<span class="t3">ces&quot;</span>, <span class="t1">0x16b0aa5b0</span>, <span class="t1">0x16b0aa5f4</span>, <span class="t1">1036</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.279282 Preferences(807)                  <span class="t2">openat</span>(<span class="t1">4294967294</span>, <span class="t3">&quot;../private/var/preferences/Lo</span>
+<span class="t3">gging/com.apple.diagnosticd.filter.plist&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_NONBLOCK </span>| <span class="t4">O_NOFOLLOW </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.279318 Preferences(807)                  <span class="t2">openat</span>(<span class="t1">4294967294</span>, <span class="t3">&quot;/System/Library/Preferences/L</span>
+<span class="t3">ogging/Processes/com.apple.Preferences.plist&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_NONBLOCK </span>| <span class="t4">O_NOFOLLOW </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(
+<span class="t5">2</span>)
+2026-11-05 09:28:57.279341 Preferences(807)                  <span class="t2">openat</span>(<span class="t1">4294967294</span>, <span class="t3">&quot;../private/var/preferences/Lo</span>
+<span class="t3">gging/Processes/com.apple.Preferences.plist&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_NONBLOCK </span>| <span class="t4">O_NOFOLLOW </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>
+)
+2026-11-05 09:28:57.279434 Preferences(807)                  <span class="t2">openat</span>(<span class="t1">4294967294</span>, <span class="t3">&quot;../private/var/preferences/Lo</span>
+<span class="t3">gging/com.apple.diagnosticd.filter.plist&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_NONBLOCK </span>| <span class="t4">O_NOFOLLOW </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.279488 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/private/var/containers/Shared/SystemGroup/</span>
+<span class="t3">systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist&quot;</span>, <span class="t4">O_RDONLY</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.280250 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/System/Library/CoreServices/SystemVersion.</span>
+<span class="t3">plist&quot;</span>, <span class="t4">O_RDONLY</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.280325 Preferences(807)                  <span class="t2">open_nocancel</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>, <span class="t4">O_</span>
+<span class="t4">RDONLY </span>| <span class="t4">O_CLOEXEC</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.280402 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>, <span class="t1">0x16b0a9b</span>
+<span class="t1">50</span>)
+2026-11-05 09:28:57.280411 Preferences(807)                  <span class="t2">open_nocancel</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>, <span class="t4">O_</span>
+<span class="t4">RDONLY </span>| <span class="t4">O_CLOEXEC</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.280476 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/Applications/Preferences.app/Info.plist&quot;</span>,
+<span class="t4">O_RDONLY </span>| <span class="t4">O_NONBLOCK</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.280614 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/Applications/Preferences.app/Preferences</span>
+<span class="t3">&quot;</span>, <span class="t1">0x16b0aa1a0</span>)
+2026-11-05 09:28:57.280629 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;/Applications/Preferences.app/Preferences&quot;</span>,
+ <span class="t4">O_RDONLY</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.280658 Preferences(807)                  <span class="t2">open_nocancel</span>(<span class="t3">&quot;/System/Library/CoreServices/Syste</span>
+<span class="t3">mVersion.bundle&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.280660 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/System/Library/CoreServices/SystemVersio</span>
+<span class="t3">n.bundle&quot;</span>, <span class="t1">0x16b0a9fc0</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.280665 Preferences(807)                  <span class="t2">open_nocancel</span>(<span class="t3">&quot;/System/Library/CoreServices/Syste</span>
+<span class="t3">mVersion.bundle&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.280667 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/System/Library/CoreServices/SystemVersio</span>
+<span class="t3">n.bundle&quot;</span>, <span class="t1">0x16b0a9fc0</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.280670 Preferences(807)                  <span class="t2">open_nocancel</span>(<span class="t3">&quot;/System/Library/CoreServices/Syste</span>
+<span class="t3">mVersion.bundle&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.280672 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/System/Library/CoreServices/SystemVersio</span>
+<span class="t3">n.bundle&quot;</span>, <span class="t1">0x16b0a9fc0</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.280713 Preferences(807)                  <span class="t2">open</span>(<span class="t3">&quot;SystemVersion.plist&quot;</span>, <span class="t4">O_RDONLY</span>), fd: <span class="t1">3</span>
+2026-11-05 09:28:57.280738 Preferences(807)                  <span class="t2">open_nocancel</span>(<span class="t3">&quot;/System/Library/CoreServices/Syste</span>
+<span class="t3">mVersion.bundle&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.280740 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/System/Library/CoreServices/SystemVersio</span>
+<span class="t3">n.bundle&quot;</span>, <span class="t1">0x16b0a9fc0</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.280744 Preferences(807)                  <span class="t2">open_nocancel</span>(<span class="t3">&quot;/System/Library/CoreServices/Syste</span>
+<span class="t3">mVersion.bundle&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.280745 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/System/Library/CoreServices/SystemVersio</span>
+<span class="t3">n.bundle&quot;</span>, <span class="t1">0x16b0a9fc0</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.280749 Preferences(807)                  <span class="t2">open_nocancel</span>(<span class="t3">&quot;/System/Library/CoreServices/Syste</span>
+<span class="t3">mVersion.bundle&quot;</span>, <span class="t4">O_RDONLY </span>| <span class="t4">O_CLOEXEC</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.280750 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/System/Library/CoreServices/SystemVersio</span>
+<span class="t3">n.bundle&quot;</span>, <span class="t1">0x16b0a9fc0</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.282660 Preferences(807)                  <span class="t2">lstat64</span>(<span class="t3">&quot;/Applications&quot;</span>)
+2026-11-05 09:28:57.282673 Preferences(807)                  <span class="t2">lstat64</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>)
+2026-11-05 09:28:57.282687 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>, <span class="t1">0x16b0aa9</span>
+<span class="t1">80</span>)
+2026-11-05 09:28:57.282691 Preferences(807)                  <span class="t2">access</span>(<span class="t3">&quot;/Applications/Preferences.app&quot;</span>, <span class="t4">R_OK</span>)
+2026-11-05 09:28:57.291333 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/usr/lib/libobjc-trampolines.dylib&quot;</span>, <span class="t1">0x10</span>
+<span class="t1">4feaa00</span>), <span class="t5">errno: ENOENT</span>(<span class="t5">2</span>)
+2026-11-05 09:28:57.291404 Preferences(807)                  <span class="t2">stat64</span>(<span class="t3">&quot;/private/preboot/Cryptexes/OS/usr/lib/lib</span>
+<span class="t3">objc-trampolines.dylib&quot;</span>, <span class="t1">0x104feaa00</span>)
+Read 67866 events, the kernel dropped events 0 times, 0 events were skipped to catch up</code></pre></div>

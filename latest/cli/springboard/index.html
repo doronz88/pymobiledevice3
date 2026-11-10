@@ -2807,11 +2807,11 @@
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_id</code></td>
+<td><code>bundle_id &lt;str&gt;</code></td>
 <td>Bundle identifier of the app. [required]</td>
 </tr>
 <tr>
-<td><code>out</code></td>
+<td><code>out &lt;path&gt;</code></td>
 <td>Local file to write the PNG to. [required]</td>
 </tr>
 </tbody>
@@ -2866,7 +2866,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>out</code></td>
+<td><code>out &lt;path&gt;</code></td>
 <td>Local file to write the PNG to. [required]</td>
 </tr>
 </tbody>
@@ -2889,7 +2889,7 @@
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wallpaper-preview-image"><code>wallpaper-preview-image</code><a class="headerlink" href="#wallpaper-preview-image" title="Permanent link">&para;</a></h2>
 <p>Save the preview image for the homescreen or lockscreen wallpaper (optionally reload state first).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pymobiledevice3 springboard wallpaper-preview-image [OPTIONS] {wallpaper_name}:&lt;homescreen|lockscreen&gt; {out}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pymobiledevice3 springboard wallpaper-preview-image [OPTIONS] {wallpaper_name} {out}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -2901,11 +2901,11 @@
 </thead>
 <tbody>
 <tr>
-<td><code>wallpaper_name:&lt;homescreen\|lockscreen&gt;</code></td>
+<td><code>wallpaper_name &lt;homescreen\|lockscreen&gt;</code></td>
 <td>Which wallpaper to fetch. [required]</td>
 </tr>
 <tr>
-<td><code>out</code></td>
+<td><code>out &lt;path&gt;</code></td>
 <td>Local file to write the image to. [required]</td>
 </tr>
 </tbody>

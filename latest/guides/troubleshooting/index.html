@@ -1295,6 +1295,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#manifest-references-files-not-in-backup-invalidbackuperror-mberrordomain205" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        "Manifest references files not in backup" (InvalidBackupError, MBErrorDomain/205)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3216,6 +3227,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#manifest-references-files-not-in-backup-invalidbackuperror-mberrordomain205" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        "Manifest references files not in backup" (InvalidBackupError, MBErrorDomain/205)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3476,6 +3498,21 @@ space accordingly.</p>
 <p>Run with <code>-vv</code> to also see the figure the host reported for <code>DLMessageGetFreeDiskSpace</code>; that is
 the number the device compared against, and it comes from <code>statvfs</code> on the backup directory (on
 macOS, raised to the purgeable-aware capacity Finder uses).</p>
+<h3 id="manifest-references-files-not-in-backup-invalidbackuperror-mberrordomain205">"Manifest references files not in backup" (<code>InvalidBackupError</code>, MBErrorDomain/205)<a class="headerlink" href="#manifest-references-files-not-in-backup-invalidbackuperror-mberrordomain205" title="Permanent link">&para;</a></h3>
+<p>When a backup finishes transferring, the device lists the backup directory on this computer and
+checks it against the new <code>Manifest.db</code>. If a file the manifest lists is not there, it fails the
+backup with <code>MBErrorDomain/205</code> — after the progress bar reached 100%. The device uses the same
+code for other contradictions in the backup directory (an unknown <code>SnapshotState</code> in
+<code>Status.plist</code>, a missing file encryption key, a password that does not match the manifest), and
+the message carries its wording.</p>
+<p>A backup directory that is already incomplete when the backup starts does not cause this: the
+device runs the same check before an incremental backup and, when it fails, quietly makes a
+full backup instead. The error means files went missing by the time the backup <em>finished</em> —
+something removed or changed them while it was running (a sync or cleanup tool, another backup
+into the same directory, a script that moves payload files away).</p>
+<p>Run the backup again and leave the directory alone until it finishes: the device sends
+everything that is missing. If it keeps failing, pass <code>--full</code> or back up into an empty
+directory.</p>
 <h2 id="still-stuck">Still stuck?<a class="headerlink" href="#still-stuck" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Re-run with <code>-vv</code> and read the debug logs.</li>
