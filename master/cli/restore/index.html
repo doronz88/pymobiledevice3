@@ -3004,7 +3004,7 @@ tags, and the updaters that failed.</p>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
 <tr>
-<td><code>--updater &lt;str&gt;</code></td>
+<td><code>--updater &lt;list[str]&gt;</code></td>
 <td>Updater to query (repeatable); default: all of T200, Rose, SE, Vinyl, Savage, Centauri, Baseband except Baseband.</td>
 </tr>
 </tbody>

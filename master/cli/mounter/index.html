@@ -2917,7 +2917,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>image_type</code></td>
+<td><code>image_type &lt;str&gt;</code></td>
 <td>Image type to look up: <code>Developer</code> (iOS &lt; 17) or <code>Personalized</code> (iOS 17+). [required]</td>
 </tr>
 </tbody>
@@ -2995,11 +2995,11 @@
 </thead>
 <tbody>
 <tr>
-<td><code>image</code></td>
+<td><code>image &lt;file&gt;</code></td>
 <td>DeveloperDiskImage.dmg file. [required]</td>
 </tr>
 <tr>
-<td><code>signature</code></td>
+<td><code>signature &lt;file&gt;</code></td>
 <td>Matching DeveloperDiskImage.dmg.signature file. [required]</td>
 </tr>
 </tbody>
@@ -3037,15 +3037,15 @@ Most users want <code>auto-mount</code> instead.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>image</code></td>
+<td><code>image &lt;file&gt;</code></td>
 <td>Personalized image file (Image.dmg). [required]</td>
 </tr>
 <tr>
-<td><code>trust_cache</code></td>
+<td><code>trust_cache &lt;file&gt;</code></td>
 <td>Trust cache shipped with the image (e.g. Image.trustcache). [required]</td>
 </tr>
 <tr>
-<td><code>build_manifest</code></td>
+<td><code>build_manifest &lt;file&gt;</code></td>
 <td>BuildManifest.plist shipped with the image. [required]</td>
 </tr>
 </tbody>
@@ -3089,7 +3089,7 @@ asked for, so that succeeds -- scripts can run this unconditionally before devel
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
 <tr>
-<td><code>-x, --xcode &lt;directory&gt;</code></td>
+<td><code>-x, --xcode &lt;dir&gt;</code></td>
 <td>iOS &lt; 17 only: Xcode.app to take the DeveloperDiskImage from (default: /Applications/Xcode.app, falling back to a download cache in the home folder).</td>
 </tr>
 <tr>

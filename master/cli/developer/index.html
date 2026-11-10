@@ -2497,6 +2497,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#core-device-monitor-display-info" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        core-device monitor-display-info
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#core-device-query-mobilegestalt" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5263,6 +5274,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#core-device-monitor-display-info" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        core-device monitor-display-info
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#core-device-query-mobilegestalt" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5804,7 +5826,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>service</code></td>
+<td><code>service &lt;str&gt;</code></td>
 <td>DTX service name to open (e.g. com.apple.instruments.dtservicehub on iOS 17+). [required]</td>
 </tr>
 </tbody>
@@ -5843,7 +5865,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>out</code></td>
+<td><code>out &lt;path&gt;</code></td>
 <td>Local file to write the PNG screenshot to. [required]</td>
 </tr>
 </tbody>
@@ -5901,7 +5923,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>pid</code></td>
+<td><code>pid &lt;int&gt;</code></td>
 <td>Process ID on the device (see <code>developer dvt proclist</code>). [required]</td>
 </tr>
 </tbody>
@@ -5936,7 +5958,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>pid</code></td>
+<td><code>pid &lt;int&gt;</code></td>
 <td>Process ID on the device (see <code>developer dvt proclist</code>). [required]</td>
 </tr>
 </tbody>
@@ -5991,11 +6013,11 @@
 </thead>
 <tbody>
 <tr>
-<td><code>pid</code></td>
+<td><code>pid &lt;int&gt;</code></td>
 <td>Process ID on the device (see <code>developer dvt proclist</code>). [required]</td>
 </tr>
 <tr>
-<td><code>sig</code></td>
+<td><code>sig &lt;int&gt;</code></td>
 <td>Signal number to send (e.g. 15 for SIGTERM). Mutually exclusive with --signal-name.</td>
 </tr>
 </tbody>
@@ -6034,7 +6056,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>pid</code></td>
+<td><code>pid &lt;int&gt;</code></td>
 <td>Process ID on the device (see <code>developer dvt proclist</code>). [required]</td>
 </tr>
 </tbody>
@@ -6069,7 +6091,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>app_bundle_identifier</code></td>
+<td><code>app_bundle_identifier &lt;str&gt;</code></td>
 <td>Bundle identifier of the app (e.g. com.apple.Preferences). [required]</td>
 </tr>
 </tbody>
@@ -6104,7 +6126,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>expressions...</code></td>
+<td><code>expressions... &lt;list[str]&gt;</code></td>
 <td>One or more process-name (or bundle id) expressions to match. [required]</td>
 </tr>
 </tbody>
@@ -6143,7 +6165,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>arguments</code></td>
+<td><code>arguments &lt;str&gt;</code></td>
 <td>Bundle identifier followed by optional launch arguments, as one quoted string (e.g. 'com.apple.mobilesafari -arg value'). [required]</td>
 </tr>
 </tbody>
@@ -6170,7 +6192,7 @@
 <td>Start the process suspended, waiting for a debugger to attach. [default: no-suspended]</td>
 </tr>
 <tr>
-<td><code>--env &lt;str&gt;</code></td>
+<td><code>--env &lt;list[str]&gt;</code></td>
 <td>Environment variable to pass to process given as key=value (can be specified multiple times)</td>
 </tr>
 <tr>
@@ -6214,7 +6236,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>path</code></td>
+<td><code>path &lt;str&gt;</code></td>
 <td>Absolute path of the device directory to list. [required]</td>
 </tr>
 </tbody>
@@ -6297,7 +6319,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>out</code></td>
+<td><code>out &lt;path&gt;</code></td>
 <td>Local file to write the PNG screenshot to. [required]</td>
 </tr>
 </tbody>
@@ -6332,7 +6354,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>pid</code></td>
+<td><code>pid &lt;int&gt;</code></td>
 <td>Process ID on the device (see <code>developer dvt proclist</code>). [required]</td>
 </tr>
 </tbody>
@@ -6369,11 +6391,11 @@ with leaks(1), heap(1) or vmmap(1). With --leaked-only, no file is written when 
 </thead>
 <tbody>
 <tr>
-<td><code>pid</code></td>
+<td><code>pid &lt;int&gt;</code></td>
 <td>Process ID on the device (see <code>developer dvt proclist</code>). [required]</td>
 </tr>
 <tr>
-<td><code>out</code></td>
+<td><code>out &lt;path&gt;</code></td>
 <td>Local .memgraph file to write. [required]</td>
 </tr>
 </tbody>
@@ -6412,7 +6434,7 @@ with leaks(1), heap(1) or vmmap(1). With --leaked-only, no file is written when 
 </thead>
 <tbody>
 <tr>
-<td><code>pid</code></td>
+<td><code>pid &lt;int&gt;</code></td>
 <td>Process ID on the device (see <code>developer dvt proclist</code>). [required]</td>
 </tr>
 </tbody>
@@ -6452,7 +6474,7 @@ with leaks(1), heap(1) or vmmap(1). With --leaked-only, no file is written when 
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_id</code></td>
+<td><code>bundle_id &lt;str&gt;</code></td>
 <td>Bundle identifier of the development-signed app to launch. [required]</td>
 </tr>
 </tbody>
@@ -6475,7 +6497,7 @@ with leaks(1), heap(1) or vmmap(1). With --leaked-only, no file is written when 
 <td>Seconds to record for. Records until interrupted by default.</td>
 </tr>
 <tr>
-<td><code>--kind &lt;heap\|reference-counts\|vm\|zombies&gt;</code></td>
+<td><code>--kind &lt;list[heap\|reference-counts\|vm\|zombies]&gt;</code></td>
 <td>Kind of events to record; can be repeated. Heap events by default.</td>
 </tr>
 <tr>
@@ -6502,7 +6524,7 @@ Usage example:
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_id</code></td>
+<td><code>bundle_id &lt;str&gt;</code></td>
 <td>Bundle identifier of the XCTest runner (e.g. com.apple.test.WebDriverAgentRunner.xctrunner) [required]</td>
 </tr>
 </tbody>
@@ -6533,7 +6555,7 @@ Usage example:
 <td>Maximum execution time, in seconds (default: no limit).</td>
 </tr>
 <tr>
-<td><code>--env &lt;str&gt;</code></td>
+<td><code>--env &lt;list[str]&gt;</code></td>
 <td>Environment variable to pass to process given as key=value (can be specified multiple times)</td>
 </tr>
 </tbody>
@@ -6573,7 +6595,7 @@ Usage example:
 </thead>
 <tbody>
 <tr>
-<td><code>uid</code></td>
+<td><code>uid &lt;int&gt;</code></td>
 <td>Numeric user ID. [required]</td>
 </tr>
 </tbody>
@@ -6608,7 +6630,7 @@ Usage example:
 </thead>
 <tbody>
 <tr>
-<td><code>gid</code></td>
+<td><code>gid &lt;int&gt;</code></td>
 <td>Numeric group ID. [required]</td>
 </tr>
 </tbody>
@@ -6672,7 +6694,7 @@ Usage example:
 </thead>
 <tbody>
 <tr>
-<td><code>pid_list...</code></td>
+<td><code>pid_list... &lt;list[str]&gt;</code></td>
 <td>One or more process IDs to monitor. [required]</td>
 </tr>
 </tbody>
@@ -6707,7 +6729,7 @@ Usage example:
 </thead>
 <tbody>
 <tr>
-<td><code>pid_list...</code></td>
+<td><code>pid_list... &lt;list[int]&gt;</code></td>
 <td>One or more process IDs to monitor. [required]</td>
 </tr>
 </tbody>
@@ -6861,11 +6883,11 @@ For more information, please read:
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
 <tr>
-<td><code>-f, --filter &lt;str&gt;</code></td>
+<td><code>-f, --filter &lt;list[str]&gt;</code></td>
 <td>Filter processes by key=value. Can be specified multiple times.</td>
 </tr>
 <tr>
-<td><code>-k, --key &lt;str&gt;</code></td>
+<td><code>-k, --key &lt;list[str]&gt;</code></td>
 <td>Show only selected process keys for each emitted record. Can be specified multiple times.</td>
 </tr>
 <tr>
@@ -6895,7 +6917,7 @@ For more information, please read:
 </thead>
 <tbody>
 <tr>
-<td><code>threshold</code></td>
+<td><code>threshold &lt;float&gt;</code></td>
 <td>Minimum cpuUsage value to emit [required]</td>
 </tr>
 </tbody>
@@ -6914,7 +6936,7 @@ For more information, please read:
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
 <tr>
-<td><code>-k, --key &lt;str&gt;</code></td>
+<td><code>-k, --key &lt;list[str]&gt;</code></td>
 <td>Show only selected process keys for each emitted record. Can be specified multiple times.</td>
 </tr>
 <tr>
@@ -6950,11 +6972,11 @@ For more information, please read:
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
 <tr>
-<td><code>-f, --filter &lt;str&gt;</code></td>
+<td><code>-f, --filter &lt;list[str]&gt;</code></td>
 <td>Filter processes by key=value. Can be specified multiple times.</td>
 </tr>
 <tr>
-<td><code>-k, --key &lt;str&gt;</code></td>
+<td><code>-k, --key &lt;list[str]&gt;</code></td>
 <td>Show only selected process keys for each emitted record. Can be specified multiple times.</td>
 </tr>
 <tr>
@@ -7012,11 +7034,11 @@ For more information, please read:
 <td>Add the BSD system call (BSC) subclass to the subclass filter. [default: no-bsc]</td>
 </tr>
 <tr>
-<td><code>-cf, --class-filters &lt;based_int&gt;</code></td>
+<td><code>-cf, --class-filters &lt;list[int]&gt;</code></td>
 <td>Events class filter. Omit for all. Can be specified multiple times.</td>
 </tr>
 <tr>
-<td><code>-sf, --subclass-filters &lt;based_int&gt;</code></td>
+<td><code>-sf, --subclass-filters &lt;list[int]&gt;</code></td>
 <td>Events subclass filter. Omit for all. Can be specified multiple times.</td>
 </tr>
 <tr>
@@ -7064,7 +7086,7 @@ For more information, please read:
 </thead>
 <tbody>
 <tr>
-<td><code>out</code></td>
+<td><code>out &lt;path&gt;</code></td>
 <td>Local file to write the raw kdebug trace to. [required]</td>
 </tr>
 </tbody>
@@ -7087,11 +7109,11 @@ For more information, please read:
 <td>Add the BSD system call (BSC) subclass to the subclass filter. [default: no-bsc]</td>
 </tr>
 <tr>
-<td><code>-cf, --class-filters &lt;based_int&gt;</code></td>
+<td><code>-cf, --class-filters &lt;list[int]&gt;</code></td>
 <td>Events class filter. Omit for all. Can be specified multiple times.</td>
 </tr>
 <tr>
-<td><code>-sf, --subclass-filters &lt;based_int&gt;</code></td>
+<td><code>-sf, --subclass-filters &lt;list[int]&gt;</code></td>
 <td>Events subclass filter. Omit for all. Can be specified multiple times.</td>
 </tr>
 </tbody>
@@ -7130,7 +7152,7 @@ For more information, please read:
 <td>Process ID / name to filter. Omit for all.</td>
 </tr>
 <tr>
-<td><code>--symbols &lt;directory&gt;</code></td>
+<td><code>--symbols &lt;dir&gt;</code></td>
 <td>Directory of symbols to use (as created by <code>developer fetch-symbols download</code>), instead of the Xcode device support of the device.</td>
 </tr>
 <tr>
@@ -7138,7 +7160,7 @@ For more information, please read:
 <td>Kernelcache of the firmware the device runs (as found in its IPSW), to name the kernel images of kernel frames. Requires <code>ipsw</code> unless it is already decompressed.</td>
 </tr>
 <tr>
-<td><code>--kernel-signatures &lt;directory&gt;</code></td>
+<td><code>--kernel-signatures &lt;dir&gt;</code></td>
 <td>Directory of <code>ipsw</code> kernel symbolication signatures (the <code>kernel</code> directory of https://github.com/blacktop/symbolicator), to symbolicate kernel frames of --kernelcache. Requires <code>ipsw</code>.</td>
 </tr>
 </tbody>
@@ -7173,11 +7195,11 @@ events that are printed.</p>
 <td>Add the BSD system call (BSC) subclass to the subclass filter. [default: no-bsc]</td>
 </tr>
 <tr>
-<td><code>-cf, --class-filters &lt;based_int&gt;</code></td>
+<td><code>-cf, --class-filters &lt;list[int]&gt;</code></td>
 <td>Events class filter. Omit for all. Can be specified multiple times.</td>
 </tr>
 <tr>
-<td><code>-sf, --subclass-filters &lt;based_int&gt;</code></td>
+<td><code>-sf, --subclass-filters &lt;list[int]&gt;</code></td>
 <td>Events subclass filter. Omit for all. Can be specified multiple times.</td>
 </tr>
 <tr>
@@ -7193,11 +7215,11 @@ events that are printed.</p>
 <td>Process ID / name to filter. Omit for all.</td>
 </tr>
 <tr>
-<td><code>-s, --syscall &lt;str&gt;</code></td>
+<td><code>-s, --syscall &lt;list[str]&gt;</code></td>
 <td>This syscall (e.g. open, openat; with its _nocancel and _dprotected_np variants), with its paths. Can be specified multiple times.</td>
 </tr>
 <tr>
-<td><code>-e, --event &lt;str&gt;</code></td>
+<td><code>-e, --event &lt;list[str]&gt;</code></td>
 <td>This event, by its trace code name (e.g. DBG_DYLD_TIMING_DLSYM; <code>events TEXT</code> finds the name). Can be specified multiple times.</td>
 </tr>
 <tr>
@@ -7253,27 +7275,27 @@ events that are printed.</p>
 <td>CoreFoundation run loop events: iterations, waits, sources, timers, observers and blocks.</td>
 </tr>
 <tr>
-<td><code>-m, --match &lt;str&gt;</code></td>
+<td><code>-m, --match &lt;list[str]&gt;</code></td>
 <td>Only print the traces containing this text, highlighted (repeatable; all must match).</td>
 </tr>
 <tr>
-<td><code>-v, --invert-match &lt;str&gt;</code></td>
+<td><code>-v, --invert-match &lt;list[str]&gt;</code></td>
 <td>Only print the traces not containing this text (repeatable; any match excludes).</td>
 </tr>
 <tr>
-<td><code>-mi, --match-insensitive &lt;str&gt;</code></td>
+<td><code>-mi, --match-insensitive &lt;list[str]&gt;</code></td>
 <td>Like --match, ignoring case.</td>
 </tr>
 <tr>
-<td><code>-vi, --invert-match-insensitive &lt;str&gt;</code></td>
+<td><code>-vi, --invert-match-insensitive &lt;list[str]&gt;</code></td>
 <td>Like --invert-match, ignoring case.</td>
 </tr>
 <tr>
-<td><code>-r, --regex &lt;str&gt;</code></td>
+<td><code>-r, --regex &lt;list[str]&gt;</code></td>
 <td>Only print the traces matching this regex, highlighted (repeatable; any match includes).</td>
 </tr>
 <tr>
-<td><code>-ri, --insensitive-regex &lt;str&gt;</code></td>
+<td><code>-ri, --insensitive-regex &lt;list[str]&gt;</code></td>
 <td>Like --regex, ignoring case.</td>
 </tr>
 <tr>
@@ -7310,7 +7332,7 @@ name <code>parse-live --event</code> accepts.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>pattern</code></td>
+<td><code>pattern &lt;str&gt;</code></td>
 <td>Only list the names containing this text, ignoring case (e.g. dlsym).</td>
 </tr>
 </tbody>
@@ -7329,19 +7351,19 @@ name <code>parse-live --event</code> accepts.</p>
 <td>Add the BSD system call (BSC) subclass to the subclass filter. [default: no-bsc]</td>
 </tr>
 <tr>
-<td><code>-cf, --class-filters &lt;based_int&gt;</code></td>
+<td><code>-cf, --class-filters &lt;list[int]&gt;</code></td>
 <td>Events class filter. Omit for all. Can be specified multiple times.</td>
 </tr>
 <tr>
-<td><code>-sf, --subclass-filters &lt;based_int&gt;</code></td>
+<td><code>-sf, --subclass-filters &lt;list[int]&gt;</code></td>
 <td>Events subclass filter. Omit for all. Can be specified multiple times.</td>
 </tr>
 <tr>
-<td><code>-s, --syscall &lt;str&gt;</code></td>
+<td><code>-s, --syscall &lt;list[str]&gt;</code></td>
 <td>This syscall (e.g. open, openat; with its _nocancel and _dprotected_np variants), with its paths. Can be specified multiple times.</td>
 </tr>
 <tr>
-<td><code>-e, --event &lt;str&gt;</code></td>
+<td><code>-e, --event &lt;list[str]&gt;</code></td>
 <td>This event, by its trace code name (e.g. DBG_DYLD_TIMING_DLSYM; <code>events TEXT</code> finds the name). Can be specified multiple times.</td>
 </tr>
 <tr>
@@ -7473,11 +7495,11 @@ For example:
 </thead>
 <tbody>
 <tr>
-<td><code>latitude</code></td>
+<td><code>latitude &lt;float&gt;</code></td>
 <td>Latitude in decimal degrees. [required]</td>
 </tr>
 <tr>
-<td><code>longitude</code></td>
+<td><code>longitude &lt;float&gt;</code></td>
 <td>Longitude in decimal degrees (put <code>--</code> before negative values). [required]</td>
 </tr>
 </tbody>
@@ -7512,11 +7534,11 @@ For example:
 </thead>
 <tbody>
 <tr>
-<td><code>filename</code></td>
+<td><code>filename &lt;file&gt;</code></td>
 <td>GPX file with the route to replay. [required]</td>
 </tr>
 <tr>
-<td><code>timing_randomness_range</code></td>
+<td><code>timing_randomness_range &lt;int&gt;</code></td>
 <td>Random jitter, in milliseconds (+/-), added to each wait between points. [default: 0]</td>
 </tr>
 </tbody>
@@ -7598,7 +7620,7 @@ For example:
 </thead>
 <tbody>
 <tr>
-<td><code>profile_identifier</code></td>
+<td><code>profile_identifier &lt;str&gt;</code></td>
 <td>Profile identifier to activate (see <code>developer dvt condition list</code>). [required]</td>
 </tr>
 </tbody>
@@ -7659,7 +7681,7 @@ be stored. If no output directory is provided, the symbols will be downloaded in
 </thead>
 <tbody>
 <tr>
-<td><code>out</code></td>
+<td><code>out &lt;dir&gt;</code></td>
 <td>Directory to download into (default: this device's Xcode DeviceSupport directory).</td>
 </tr>
 </tbody>
@@ -7721,11 +7743,11 @@ be stored. If no output directory is provided, the symbols will be downloaded in
 </thead>
 <tbody>
 <tr>
-<td><code>latitude</code></td>
+<td><code>latitude &lt;float&gt;</code></td>
 <td>Latitude in decimal degrees. [required]</td>
 </tr>
 <tr>
-<td><code>longitude</code></td>
+<td><code>longitude &lt;float&gt;</code></td>
 <td>Longitude in decimal degrees (put <code>--</code> before negative values). [required]</td>
 </tr>
 </tbody>
@@ -7760,11 +7782,11 @@ be stored. If no output directory is provided, the symbols will be downloaded in
 </thead>
 <tbody>
 <tr>
-<td><code>filename</code></td>
+<td><code>filename &lt;file&gt;</code></td>
 <td>GPX file with the route to replay. [required]</td>
 </tr>
 <tr>
-<td><code>timing_randomness_range</code></td>
+<td><code>timing_randomness_range &lt;int&gt;</code></td>
 <td>Random jitter, in milliseconds (+/-), added to each wait between points (0 for none). [required]</td>
 </tr>
 </tbody>
@@ -7805,7 +7827,7 @@ be stored. If no output directory is provided, the symbols will be downloaded in
 </thead>
 <tbody>
 <tr>
-<td><code>test_types...</code></td>
+<td><code>test_types... &lt;list[str]&gt;</code></td>
 <td>One or more audit types to run (see <code>supported-audit-types</code>). [required]</td>
 </tr>
 </tbody>
@@ -7944,7 +7966,7 @@ be stored. If no output directory is provided, the symbols will be downloaded in
 </thead>
 <tbody>
 <tr>
-<td><code>attributes...</code></td>
+<td><code>attributes... &lt;list[str]&gt;</code></td>
 <td>Attribute names to read (default: Label, Identifier, Value).</td>
 </tr>
 </tbody>
@@ -8006,11 +8028,11 @@ be stored. If no output directory is provided, the symbols will be downloaded in
 </thead>
 <tbody>
 <tr>
-<td><code>setting</code></td>
+<td><code>setting &lt;str&gt;</code></td>
 <td>Setting key to change (see the <code>show</code> command). [required]</td>
 </tr>
 <tr>
-<td><code>value</code></td>
+<td><code>value &lt;str&gt;</code></td>
 <td>New value as a Python literal (e.g. True, False, 0.5). [required]</td>
 </tr>
 </tbody>
@@ -8129,7 +8151,7 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>project_or_ipa_or_bundle_id</code></td>
+<td><code>project_or_ipa_or_bundle_id &lt;str&gt;</code></td>
 <td>Path to .xcodeproj/.ipa or an installed app bundle identifier [required]</td>
 </tr>
 </tbody>
@@ -8160,11 +8182,11 @@ This will:
 <td>Automatically launch the app after attaching. [default: no-launch]</td>
 </tr>
 <tr>
-<td><code>-b, --break &lt;str&gt;</code></td>
+<td><code>-b, --break &lt;list[str]&gt;</code></td>
 <td>Add multiple startup breakpoints</td>
 </tr>
 <tr>
-<td><code>-c, --command &lt;str&gt;</code></td>
+<td><code>-c, --command &lt;list[str]&gt;</code></td>
 <td>Additional commands to run at startup</td>
 </tr>
 </tbody>
@@ -8207,7 +8229,7 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>hostname</code></td>
+<td><code>hostname &lt;str&gt;</code></td>
 <td>Name to claim the device under (shown to other tools). [required]</td>
 </tr>
 </tbody>
@@ -8257,7 +8279,7 @@ This will:
 <p>Needs iOS 17+ and the Developer Disk Image mounted (<code>pymobiledevice3 mounter auto-mount</code>). The required tunnel is set up automatically.</p>
 <h2 id="core-device-list-directory"><code>core-device list-directory</code><a class="headerlink" href="#core-device-list-directory" title="Permanent link">&para;</a></h2>
 <p>List the contents of a directory in a file domain, as JSON.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-68-1" name="__codelineno-68-1" href="#__codelineno-68-1"></a>pymobiledevice3 developer core-device list-directory [OPTIONS] {domain}:&lt;appDataContainer|appGroupDataContainer|temporary|systemCrashLogs&gt; {path}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-68-1" name="__codelineno-68-1" href="#__codelineno-68-1"></a>pymobiledevice3 developer core-device list-directory [OPTIONS] {domain} {path}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8269,11 +8291,11 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>domain:&lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
+<td><code>domain &lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
 <td>File domain: an app's data container, an app group container (both need --identifier), the temporary directory or the system crash logs. [required]</td>
 </tr>
 <tr>
-<td><code>path</code></td>
+<td><code>path &lt;str&gt;</code></td>
 <td>Path relative to the domain's root. [required]</td>
 </tr>
 </tbody>
@@ -8300,7 +8322,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-read-file"><code>core-device read-file</code><a class="headerlink" href="#core-device-read-file" title="Permanent link">&para;</a></h2>
 <p>Read a file from a file domain to stdout or --output.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-69-1" name="__codelineno-69-1" href="#__codelineno-69-1"></a>pymobiledevice3 developer core-device read-file [OPTIONS] {domain}:&lt;appDataContainer|appGroupDataContainer|temporary|systemCrashLogs&gt; {path}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-69-1" name="__codelineno-69-1" href="#__codelineno-69-1"></a>pymobiledevice3 developer core-device read-file [OPTIONS] {domain} {path}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8312,11 +8334,11 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>domain:&lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
+<td><code>domain &lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
 <td>File domain: an app's data container, an app group container (both need --identifier), the temporary directory or the system crash logs. [required]</td>
 </tr>
 <tr>
-<td><code>path</code></td>
+<td><code>path &lt;str&gt;</code></td>
 <td>Path relative to the domain's root. [required]</td>
 </tr>
 </tbody>
@@ -8347,7 +8369,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-propose-empty-file"><code>core-device propose-empty-file</code><a class="headerlink" href="#core-device-propose-empty-file" title="Permanent link">&para;</a></h2>
 <p>Create an empty file in a file domain with custom permissions, owner and timestamps.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-70-1" name="__codelineno-70-1" href="#__codelineno-70-1"></a>pymobiledevice3 developer core-device propose-empty-file [OPTIONS] {domain}:&lt;appDataContainer|appGroupDataContainer|temporary|systemCrashLogs&gt; {path}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-70-1" name="__codelineno-70-1" href="#__codelineno-70-1"></a>pymobiledevice3 developer core-device propose-empty-file [OPTIONS] {domain} {path}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8359,11 +8381,11 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>domain:&lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
+<td><code>domain &lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
 <td>File domain: an app's data container, an app group container (both need --identifier), the temporary directory or the system crash logs. [required]</td>
 </tr>
 <tr>
-<td><code>path</code></td>
+<td><code>path &lt;str&gt;</code></td>
 <td>Path relative to the domain's root. [required]</td>
 </tr>
 </tbody>
@@ -8410,7 +8432,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-create-directory"><code>core-device create-directory</code><a class="headerlink" href="#core-device-create-directory" title="Permanent link">&para;</a></h2>
 <p>Create a directory at the given domain/path.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-71-1" name="__codelineno-71-1" href="#__codelineno-71-1"></a>pymobiledevice3 developer core-device create-directory [OPTIONS] {domain}:&lt;appDataContainer|appGroupDataContainer|temporary|systemCrashLogs&gt; {path}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-71-1" name="__codelineno-71-1" href="#__codelineno-71-1"></a>pymobiledevice3 developer core-device create-directory [OPTIONS] {domain} {path}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8422,11 +8444,11 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>domain:&lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
+<td><code>domain &lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
 <td>File domain: an app's data container, an app group container (both need --identifier), the temporary directory or the system crash logs. [required]</td>
 </tr>
 <tr>
-<td><code>path</code></td>
+<td><code>path &lt;str&gt;</code></td>
 <td>Path relative to the domain's root. [required]</td>
 </tr>
 </tbody>
@@ -8453,7 +8475,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-remove-directory"><code>core-device remove-directory</code><a class="headerlink" href="#core-device-remove-directory" title="Permanent link">&para;</a></h2>
 <p>Remove an empty directory at the given domain/path.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-72-1" name="__codelineno-72-1" href="#__codelineno-72-1"></a>pymobiledevice3 developer core-device remove-directory [OPTIONS] {domain}:&lt;appDataContainer|appGroupDataContainer|temporary|systemCrashLogs&gt; {path}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-72-1" name="__codelineno-72-1" href="#__codelineno-72-1"></a>pymobiledevice3 developer core-device remove-directory [OPTIONS] {domain} {path}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8465,11 +8487,11 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>domain:&lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
+<td><code>domain &lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
 <td>File domain: an app's data container, an app group container (both need --identifier), the temporary directory or the system crash logs. [required]</td>
 </tr>
 <tr>
-<td><code>path</code></td>
+<td><code>path &lt;str&gt;</code></td>
 <td>Path relative to the domain's root. [required]</td>
 </tr>
 </tbody>
@@ -8496,7 +8518,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-remove-file"><code>core-device remove-file</code><a class="headerlink" href="#core-device-remove-file" title="Permanent link">&para;</a></h2>
 <p>Remove a file or symbolic link at the given domain/path.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-73-1" name="__codelineno-73-1" href="#__codelineno-73-1"></a>pymobiledevice3 developer core-device remove-file [OPTIONS] {domain}:&lt;appDataContainer|appGroupDataContainer|temporary|systemCrashLogs&gt; {path}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-73-1" name="__codelineno-73-1" href="#__codelineno-73-1"></a>pymobiledevice3 developer core-device remove-file [OPTIONS] {domain} {path}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8508,11 +8530,11 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>domain:&lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
+<td><code>domain &lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
 <td>File domain: an app's data container, an app group container (both need --identifier), the temporary directory or the system crash logs. [required]</td>
 </tr>
 <tr>
-<td><code>path</code></td>
+<td><code>path &lt;str&gt;</code></td>
 <td>Path relative to the domain's root. [required]</td>
 </tr>
 </tbody>
@@ -8539,7 +8561,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-rename"><code>core-device rename</code><a class="headerlink" href="#core-device-rename" title="Permanent link">&para;</a></h2>
 <p>Rename or move an item within a domain.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-74-1" name="__codelineno-74-1" href="#__codelineno-74-1"></a>pymobiledevice3 developer core-device rename [OPTIONS] {domain}:&lt;appDataContainer|appGroupDataContainer|temporary|systemCrashLogs&gt; {old_path} {new_path}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-74-1" name="__codelineno-74-1" href="#__codelineno-74-1"></a>pymobiledevice3 developer core-device rename [OPTIONS] {domain} {old_path} {new_path}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8551,15 +8573,15 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>domain:&lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
+<td><code>domain &lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
 <td>File domain: an app's data container, an app group container (both need --identifier), the temporary directory or the system crash logs. [required]</td>
 </tr>
 <tr>
-<td><code>old_path</code></td>
+<td><code>old_path &lt;str&gt;</code></td>
 <td>Current path, relative to the domain's root. [required]</td>
 </tr>
 <tr>
-<td><code>new_path</code></td>
+<td><code>new_path &lt;str&gt;</code></td>
 <td>New path, relative to the domain's root. [required]</td>
 </tr>
 </tbody>
@@ -8586,7 +8608,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-create-symlink"><code>core-device create-symlink</code><a class="headerlink" href="#core-device-create-symlink" title="Permanent link">&para;</a></h2>
 <p>Create a symbolic link at the given domain/path.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-75-1" name="__codelineno-75-1" href="#__codelineno-75-1"></a>pymobiledevice3 developer core-device create-symlink [OPTIONS] {domain}:&lt;appDataContainer|appGroupDataContainer|temporary|systemCrashLogs&gt; {path} {target}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-75-1" name="__codelineno-75-1" href="#__codelineno-75-1"></a>pymobiledevice3 developer core-device create-symlink [OPTIONS] {domain} {path} {target}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8598,15 +8620,15 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>domain:&lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
+<td><code>domain &lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
 <td>File domain: an app's data container, an app group container (both need --identifier), the temporary directory or the system crash logs. [required]</td>
 </tr>
 <tr>
-<td><code>path</code></td>
+<td><code>path &lt;str&gt;</code></td>
 <td>Path relative to the domain's root. [required]</td>
 </tr>
 <tr>
-<td><code>target</code></td>
+<td><code>target &lt;str&gt;</code></td>
 <td>What the link points to; stored as given [required]</td>
 </tr>
 </tbody>
@@ -8633,7 +8655,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-stat"><code>core-device stat</code><a class="headerlink" href="#core-device-stat" title="Permanent link">&para;</a></h2>
 <p>Show the attributes of an item at the given domain/path.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-76-1" name="__codelineno-76-1" href="#__codelineno-76-1"></a>pymobiledevice3 developer core-device stat [OPTIONS] {domain}:&lt;appDataContainer|appGroupDataContainer|temporary|systemCrashLogs&gt; {path}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-76-1" name="__codelineno-76-1" href="#__codelineno-76-1"></a>pymobiledevice3 developer core-device stat [OPTIONS] {domain} {path}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8645,11 +8667,11 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>domain:&lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
+<td><code>domain &lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
 <td>File domain: an app's data container, an app group container (both need --identifier), the temporary directory or the system crash logs. [required]</td>
 </tr>
 <tr>
-<td><code>path</code></td>
+<td><code>path &lt;str&gt;</code></td>
 <td>Path relative to the domain's root. [required]</td>
 </tr>
 </tbody>
@@ -8680,7 +8702,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-write-file"><code>core-device write-file</code><a class="headerlink" href="#core-device-write-file" title="Permanent link">&para;</a></h2>
 <p>Create or replace a file at the given domain/path with a local file's contents.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-77-1" name="__codelineno-77-1" href="#__codelineno-77-1"></a>pymobiledevice3 developer core-device write-file [OPTIONS] {domain}:&lt;appDataContainer|appGroupDataContainer|temporary|systemCrashLogs&gt; {path} {local_file}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-77-1" name="__codelineno-77-1" href="#__codelineno-77-1"></a>pymobiledevice3 developer core-device write-file [OPTIONS] {domain} {path} {local_file}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8692,15 +8714,15 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>domain:&lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
+<td><code>domain &lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
 <td>File domain: an app's data container, an app group container (both need --identifier), the temporary directory or the system crash logs. [required]</td>
 </tr>
 <tr>
-<td><code>path</code></td>
+<td><code>path &lt;str&gt;</code></td>
 <td>Path relative to the domain's root. [required]</td>
 </tr>
 <tr>
-<td><code>local_file</code></td>
+<td><code>local_file &lt;file&gt;</code></td>
 <td>Local file to upload. [required]</td>
 </tr>
 </tbody>
@@ -8727,7 +8749,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-watch"><code>core-device watch</code><a class="headerlink" href="#core-device-watch" title="Permanent link">&para;</a></h2>
 <p>Print file changes under a domain as they happen, one JSON record per change, until Ctrl+C (iOS 27+).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-78-1" name="__codelineno-78-1" href="#__codelineno-78-1"></a>pymobiledevice3 developer core-device watch [OPTIONS] {domain}:&lt;appDataContainer|appGroupDataContainer|temporary|systemCrashLogs&gt; [paths]...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-78-1" name="__codelineno-78-1" href="#__codelineno-78-1"></a>pymobiledevice3 developer core-device watch [OPTIONS] {domain} [paths]...
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8739,11 +8761,11 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>domain:&lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
+<td><code>domain &lt;appDataContainer\|appGroupDataContainer\|temporary\|systemCrashLogs&gt;</code></td>
 <td>File domain: an app's data container, an app group container (both need --identifier), the temporary directory or the system crash logs. [required]</td>
 </tr>
 <tr>
-<td><code>paths...</code></td>
+<td><code>paths... &lt;list[str]&gt;</code></td>
 <td>Paths to watch, relative to the domain's root (default: all of it)</td>
 </tr>
 </tbody>
@@ -8782,11 +8804,11 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_identifier</code></td>
+<td><code>bundle_identifier &lt;str&gt;</code></td>
 <td>Bundle identifier of the app to launch. [required]</td>
 </tr>
 <tr>
-<td><code>argument...</code></td>
+<td><code>argument... &lt;list[str]&gt;</code></td>
 <td>Arguments to pass to the app</td>
 </tr>
 </tbody>
@@ -8813,7 +8835,7 @@ This will:
 <td>Start the process suspended, waiting for a debugger to attach. [default: no-suspended]</td>
 </tr>
 <tr>
-<td><code>--env &lt;str&gt;</code></td>
+<td><code>--env &lt;list[str]&gt;</code></td>
 <td>Environment variable to pass to process given as key=value (can be specified multiple times)</td>
 </tr>
 <tr>
@@ -8857,7 +8879,7 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_identifier</code></td>
+<td><code>bundle_identifier &lt;str&gt;</code></td>
 <td>Bundle identifier of the app to uninstall. [required]</td>
 </tr>
 </tbody>
@@ -8892,11 +8914,11 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>pid</code></td>
+<td><code>pid &lt;int&gt;</code></td>
 <td>Process ID (see <code>list-processes</code>). [required]</td>
 </tr>
 <tr>
-<td><code>signal</code></td>
+<td><code>signal &lt;int&gt;</code></td>
 <td>Signal number to send (e.g. 9 for SIGKILL, 15 for SIGTERM). [required]</td>
 </tr>
 </tbody>
@@ -8957,9 +8979,29 @@ This will:
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
+<h2 id="core-device-monitor-display-info"><code>core-device monitor-display-info</code><a class="headerlink" href="#core-device-monitor-display-info" title="Permanent link">&para;</a></h2>
+<p>Print the device's display information as one NDJSON line every time a display changes.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-85-1" name="__codelineno-85-1" href="#__codelineno-85-1"></a>pymobiledevice3 developer core-device monitor-display-info [OPTIONS]
+</code></pre></div>
+<p><strong>Options:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--native</code></td>
+<td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
+</tr>
+</tbody>
+</table>
+<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-query-mobilegestalt"><code>core-device query-mobilegestalt</code><a class="headerlink" href="#core-device-query-mobilegestalt" title="Permanent link">&para;</a></h2>
 <p>Query MobileGestalt (the device's hardware/software property store) for the given keys.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-85-1" name="__codelineno-85-1" href="#__codelineno-85-1"></a>pymobiledevice3 developer core-device query-mobilegestalt [OPTIONS] {key}...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-86-1" name="__codelineno-86-1" href="#__codelineno-86-1"></a>pymobiledevice3 developer core-device query-mobilegestalt [OPTIONS] {key}...
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -8971,7 +9013,7 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>key...</code></td>
+<td><code>key... &lt;list[str]&gt;</code></td>
 <td>One or more MobileGestalt keys (e.g. ProductType). [required]</td>
 </tr>
 </tbody>
@@ -8994,7 +9036,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-get-lockstate"><code>core-device get-lockstate</code><a class="headerlink" href="#core-device-get-lockstate" title="Permanent link">&para;</a></h2>
 <p>Print the device's lock state as JSON.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-86-1" name="__codelineno-86-1" href="#__codelineno-86-1"></a>pymobiledevice3 developer core-device get-lockstate [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-87-1" name="__codelineno-87-1" href="#__codelineno-87-1"></a>pymobiledevice3 developer core-device get-lockstate [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -9014,7 +9056,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-paste"><code>core-device paste</code><a class="headerlink" href="#core-device-paste" title="Permanent link">&para;</a></h2>
 <p>Paste device pasteboard contents to stdout (text by default, --raw for the full snapshot).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-87-1" name="__codelineno-87-1" href="#__codelineno-87-1"></a>pymobiledevice3 developer core-device paste [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-88-1" name="__codelineno-88-1" href="#__codelineno-88-1"></a>pymobiledevice3 developer core-device paste [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -9042,7 +9084,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-copy"><code>core-device copy</code><a class="headerlink" href="#core-device-copy" title="Permanent link">&para;</a></h2>
 <p>Copy text onto the device pasteboard (UTF-8). Reads from stdin if no argument is given.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-88-1" name="__codelineno-88-1" href="#__codelineno-88-1"></a>pymobiledevice3 developer core-device copy [OPTIONS] [text]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-89-1" name="__codelineno-89-1" href="#__codelineno-89-1"></a>pymobiledevice3 developer core-device copy [OPTIONS] [text]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9054,7 +9096,7 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>text</code></td>
+<td><code>text &lt;str&gt;</code></td>
 <td>Text to copy. If omitted, read UTF-8 from stdin.</td>
 </tr>
 </tbody>
@@ -9081,7 +9123,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-rotate"><code>core-device rotate</code><a class="headerlink" href="#core-device-rotate" title="Permanent link">&para;</a></h2>
 <p>Rotate the device 90 degrees. Four consecutive 'left' calls cycle a full turn.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-89-1" name="__codelineno-89-1" href="#__codelineno-89-1"></a>pymobiledevice3 developer core-device rotate [OPTIONS] [direction]:&lt;left|right&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-90-1" name="__codelineno-90-1" href="#__codelineno-90-1"></a>pymobiledevice3 developer core-device rotate [OPTIONS] [direction]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9093,7 +9135,7 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>direction:&lt;left\|right&gt;</code></td>
+<td><code>direction &lt;left\|right&gt;</code></td>
 <td>Rotate 90 degrees: 'left' = CCW, 'right' = CW. [default: left]</td>
 </tr>
 </tbody>
@@ -9116,7 +9158,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-user-interface-style"><code>core-device user-interface-style</code><a class="headerlink" href="#core-device-user-interface-style" title="Permanent link">&para;</a></h2>
 <p>Print the user-interface style (dark/light mode); pass dark/light to change it.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-90-1" name="__codelineno-90-1" href="#__codelineno-90-1"></a>pymobiledevice3 developer core-device user-interface-style [OPTIONS] [style]:&lt;dark|light&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-91-1" name="__codelineno-91-1" href="#__codelineno-91-1"></a>pymobiledevice3 developer core-device user-interface-style [OPTIONS] [style]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9128,7 +9170,7 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>style:&lt;dark\|light&gt;</code></td>
+<td><code>style &lt;dark\|light&gt;</code></td>
 <td>Style to switch to; omit to print the current one.</td>
 </tr>
 </tbody>
@@ -9151,7 +9193,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-list-apps"><code>core-device list-apps</code><a class="headerlink" href="#core-device-list-apps" title="Permanent link">&para;</a></h2>
 <p>List installed applications as JSON.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-91-1" name="__codelineno-91-1" href="#__codelineno-91-1"></a>pymobiledevice3 developer core-device list-apps [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-92-1" name="__codelineno-92-1" href="#__codelineno-92-1"></a>pymobiledevice3 developer core-device list-apps [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -9171,7 +9213,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-fetch-app-icon"><code>core-device fetch-app-icon</code><a class="headerlink" href="#core-device-fetch-app-icon" title="Permanent link">&para;</a></h2>
 <p>Save an application's icon as a PNG file (com.apple.coredevice.iconservice).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-92-1" name="__codelineno-92-1" href="#__codelineno-92-1"></a>pymobiledevice3 developer core-device fetch-app-icon [OPTIONS] {bundle_identifier} {output}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-93-1" name="__codelineno-93-1" href="#__codelineno-93-1"></a>pymobiledevice3 developer core-device fetch-app-icon [OPTIONS] {bundle_identifier} {output}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9183,11 +9225,11 @@ This will:
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_identifier</code></td>
+<td><code>bundle_identifier &lt;str&gt;</code></td>
 <td>Bundle identifier of the app. [required]</td>
 </tr>
 <tr>
-<td><code>output</code></td>
+<td><code>output &lt;path&gt;</code></td>
 <td>Local PNG file to write. [required]</td>
 </tr>
 </tbody>
@@ -9226,7 +9268,7 @@ This will:
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-stream-processes"><code>core-device stream-processes</code><a class="headerlink" href="#core-device-stream-processes" title="Permanent link">&para;</a></h2>
 <p>Fetch the running process list through the streaming API and print it as JSON.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-93-1" name="__codelineno-93-1" href="#__codelineno-93-1"></a>pymobiledevice3 developer core-device stream-processes [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-94-1" name="__codelineno-94-1" href="#__codelineno-94-1"></a>pymobiledevice3 developer core-device stream-processes [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -9248,7 +9290,7 @@ This will:
 <p>Generate a sysdiagnose archive on the device and download it (can take several minutes).</p>
 <p>The archive is downloaded over usbmux when usbmuxd lists the device (much faster), and through the
 RSD tunnel otherwise.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-94-1" name="__codelineno-94-1" href="#__codelineno-94-1"></a>pymobiledevice3 developer core-device sysdiagnose [OPTIONS] {output}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-95-1" name="__codelineno-95-1" href="#__codelineno-95-1"></a>pymobiledevice3 developer core-device sysdiagnose [OPTIONS] {output}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9260,7 +9302,7 @@ RSD tunnel otherwise.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>output</code></td>
+<td><code>output &lt;path&gt;</code></td>
 <td>Existing directory to save the archive into, or a file path to write it to. [required]</td>
 </tr>
 </tbody>
@@ -9285,7 +9327,7 @@ RSD tunnel otherwise.</p>
 <p>Capture content from the device's screen (com.apple.coredevice.screencaptureservice).</p>
 <h2 id="core-device-screen-capture-screenshot"><code>core-device screen-capture screenshot</code><a class="headerlink" href="#core-device-screen-capture-screenshot" title="Permanent link">&para;</a></h2>
 <p>Capture a PNG screenshot of the device's screen.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-95-1" name="__codelineno-95-1" href="#__codelineno-95-1"></a>pymobiledevice3 developer core-device screen-capture screenshot [OPTIONS] {output}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-96-1" name="__codelineno-96-1" href="#__codelineno-96-1"></a>pymobiledevice3 developer core-device screen-capture screenshot [OPTIONS] {output}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9297,7 +9339,7 @@ RSD tunnel otherwise.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>output</code></td>
+<td><code>output &lt;path&gt;</code></td>
 <td>Local PNG file to write. [required]</td>
 </tr>
 </tbody>
@@ -9326,7 +9368,7 @@ RSD tunnel otherwise.</p>
 <p>Send HID button events (com.apple.coredevice.hid.indigo).</p>
 <h2 id="core-device-hid-button"><code>core-device hid button</code><a class="headerlink" href="#core-device-hid-button" title="Permanent link">&para;</a></h2>
 <p>Press a named iOS hardware button (home / lock / volume-up / etc.).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-96-1" name="__codelineno-96-1" href="#__codelineno-96-1"></a>pymobiledevice3 developer core-device hid button [OPTIONS] {name}:&lt;home|lock|volume-up|volume-down|mute|siri&gt; [state]:&lt;press|down|up|canceled&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-97-1" name="__codelineno-97-1" href="#__codelineno-97-1"></a>pymobiledevice3 developer core-device hid button [OPTIONS] {name} [state]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9338,11 +9380,11 @@ RSD tunnel otherwise.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>name:&lt;home\|lock\|volume-up\|volume-down\|mute\|siri&gt;</code></td>
+<td><code>name &lt;home\|lock\|volume-up\|volume-down\|mute\|siri&gt;</code></td>
 <td>Named hardware button (home, lock, volume-up, ...) [required]</td>
 </tr>
 <tr>
-<td><code>state:&lt;press\|down\|up\|canceled&gt;</code></td>
+<td><code>state &lt;press\|down\|up\|canceled&gt;</code></td>
 <td>press = send down+up; otherwise send a single state event [default: press]</td>
 </tr>
 </tbody>
@@ -9365,7 +9407,7 @@ RSD tunnel otherwise.</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-hid-raw-button"><code>core-device hid raw-button</code><a class="headerlink" href="#core-device-hid-raw-button" title="Permanent link">&para;</a></h2>
 <p>Send a HID button event by raw usage page/code (for buttons not in the named list).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-97-1" name="__codelineno-97-1" href="#__codelineno-97-1"></a>pymobiledevice3 developer core-device hid raw-button [OPTIONS] {usage_page} {usage_code} [state]:&lt;press|down|up|canceled&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-98-1" name="__codelineno-98-1" href="#__codelineno-98-1"></a>pymobiledevice3 developer core-device hid raw-button [OPTIONS] {usage_page} {usage_code} [state]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9377,15 +9419,15 @@ RSD tunnel otherwise.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>usage_page</code></td>
+<td><code>usage_page &lt;str&gt;</code></td>
 <td>HID usage page (decimal or 0xHEX), e.g. 0x0C for Consumer [required]</td>
 </tr>
 <tr>
-<td><code>usage_code</code></td>
+<td><code>usage_code &lt;str&gt;</code></td>
 <td>HID usage code (decimal or 0xHEX) [required]</td>
 </tr>
 <tr>
-<td><code>state:&lt;press\|down\|up\|canceled&gt;</code></td>
+<td><code>state &lt;press\|down\|up\|canceled&gt;</code></td>
 <td>press = send down+up; otherwise send a single state event [default: press]</td>
 </tr>
 </tbody>
@@ -9410,7 +9452,7 @@ RSD tunnel otherwise.</p>
 <p>Send touch, gesture and keyboard input to the device (com.apple.coredevice.hid.universalhidservice).</p>
 <h2 id="core-device-universal-hid-service-list-connected"><code>core-device universal-hid-service list-connected</code><a class="headerlink" href="#core-device-universal-hid-service-list-connected" title="Permanent link">&para;</a></h2>
 <p>List currently connected virtual HID services.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-98-1" name="__codelineno-98-1" href="#__codelineno-98-1"></a>pymobiledevice3 developer core-device universal-hid-service list-connected [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-99-1" name="__codelineno-99-1" href="#__codelineno-99-1"></a>pymobiledevice3 developer core-device universal-hid-service list-connected [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -9434,7 +9476,7 @@ RSD tunnel otherwise.</p>
 (mainTouchscreen, true digitizer) or 1281 (touchscreenGesture, trackpad-like
 pointer). Report bytes are surface-specific — capture devicectl traffic with
 misc/remotexpc_sniffer.py to learn the layout.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-99-1" name="__codelineno-99-1" href="#__codelineno-99-1"></a>pymobiledevice3 developer core-device universal-hid-service send-report [OPTIONS] {service_id} {report_hex}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-100-1" name="__codelineno-100-1" href="#__codelineno-100-1"></a>pymobiledevice3 developer core-device universal-hid-service send-report [OPTIONS] {service_id} {report_hex}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9446,11 +9488,11 @@ misc/remotexpc_sniffer.py to learn the layout.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>service_id</code></td>
+<td><code>service_id &lt;str&gt;</code></td>
 <td>Target _ServiceID (from list-connected; decimal or 0xHEX) [required]</td>
 </tr>
 <tr>
-<td><code>report_hex</code></td>
+<td><code>report_hex &lt;str&gt;</code></td>
 <td>Raw HID report bytes as hex (first byte is the report ID) [required]</td>
 </tr>
 </tbody>
@@ -9477,7 +9519,7 @@ misc/remotexpc_sniffer.py to learn the layout.</p>
 coordinate-system comment at the top of this section, or
 <code>developer core-device get-display-info</code> for pixel dimensions.
 Auto-opens a media stream so the touch reaches UIKit.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-100-1" name="__codelineno-100-1" href="#__codelineno-100-1"></a>pymobiledevice3 developer core-device universal-hid-service tap [OPTIONS] {x} {y}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-101-1" name="__codelineno-101-1" href="#__codelineno-101-1"></a>pymobiledevice3 developer core-device universal-hid-service tap [OPTIONS] {x} {y}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9489,11 +9531,11 @@ Auto-opens a media stream so the touch reaches UIKit.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>x</code></td>
+<td><code>x &lt;int&gt;</code></td>
 <td>X (0..65535, 0=left, 65535=right) [required]</td>
 </tr>
 <tr>
-<td><code>y</code></td>
+<td><code>y &lt;int&gt;</code></td>
 <td>Y (0..65535, 0=top, 65535=bottom) [required]</td>
 </tr>
 </tbody>
@@ -9513,7 +9555,7 @@ Auto-opens a media stream so the touch reaches UIKit.</p>
 </tr>
 <tr>
 <td><code>--touch-service-id &lt;str&gt;</code></td>
-<td>mainTouchscreen _ServiceID [default: 257]</td>
+<td>Touchscreen _ServiceID (default: the touchscreen of the display in use, e.g. a foldable's lit panel)</td>
 </tr>
 </tbody>
 </table>
@@ -9523,7 +9565,7 @@ Auto-opens a media stream so the touch reaches UIKit.</p>
 <p>X/Y are 0..65535 normalised across the device's screen. Use
 <code>developer core-device get-display-info</code> to look up the device's
 pixel dimensions if you need to convert from pixel coordinates.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-101-1" name="__codelineno-101-1" href="#__codelineno-101-1"></a>pymobiledevice3 developer core-device universal-hid-service drag [OPTIONS] {x1} {y1} {x2} {y2}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-102-1" name="__codelineno-102-1" href="#__codelineno-102-1"></a>pymobiledevice3 developer core-device universal-hid-service drag [OPTIONS] {x1} {y1} {x2} {y2}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9535,19 +9577,19 @@ pixel dimensions if you need to convert from pixel coordinates.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>x1</code></td>
+<td><code>x1 &lt;int&gt;</code></td>
 <td>Start X (0..65535, screen-normalised) [required]</td>
 </tr>
 <tr>
-<td><code>y1</code></td>
+<td><code>y1 &lt;int&gt;</code></td>
 <td>Start Y (0..65535, screen-normalised) [required]</td>
 </tr>
 <tr>
-<td><code>x2</code></td>
+<td><code>x2 &lt;int&gt;</code></td>
 <td>End X (0..65535) [required]</td>
 </tr>
 <tr>
-<td><code>y2</code></td>
+<td><code>y2 &lt;int&gt;</code></td>
 <td>End Y (0..65535) [required]</td>
 </tr>
 </tbody>
@@ -9575,14 +9617,14 @@ pixel dimensions if you need to convert from pixel coordinates.</p>
 </tr>
 <tr>
 <td><code>--touch-service-id &lt;str&gt;</code></td>
-<td>mainTouchscreen _ServiceID [default: 257]</td>
+<td>Touchscreen _ServiceID (default: the touchscreen of the display in use, e.g. a foldable's lit panel)</td>
 </tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-universal-hid-service-multi-tap"><code>core-device universal-hid-service multi-tap</code><a class="headerlink" href="#core-device-universal-hid-service-multi-tap" title="Permanent link">&para;</a></h2>
 <p>Tap with several fingers at once — e.g. <code>multi-tap -- 25000 32768 40000 32768</code> is a two-finger tap.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-102-1" name="__codelineno-102-1" href="#__codelineno-102-1"></a>pymobiledevice3 developer core-device universal-hid-service multi-tap [OPTIONS] {coordinates}...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-103-1" name="__codelineno-103-1" href="#__codelineno-103-1"></a>pymobiledevice3 developer core-device universal-hid-service multi-tap [OPTIONS] {coordinates}...
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9594,7 +9636,7 @@ pixel dimensions if you need to convert from pixel coordinates.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>coordinates...</code></td>
+<td><code>coordinates... &lt;list[int]&gt;</code></td>
 <td>X Y per finger (1..5 fingers, 0..65535 each) [required]</td>
 </tr>
 </tbody>
@@ -9618,7 +9660,7 @@ pixel dimensions if you need to convert from pixel coordinates.</p>
 </tr>
 <tr>
 <td><code>--touch-service-id &lt;str&gt;</code></td>
-<td>mainTouchscreen _ServiceID [default: 257]</td>
+<td>Touchscreen _ServiceID (default: the touchscreen of the display in use, e.g. a foldable's lit panel)</td>
 </tr>
 </tbody>
 </table>
@@ -9629,7 +9671,7 @@ pixel dimensions if you need to convert from pixel coordinates.</p>
 multi-finger swipe. E.g. zoom in around the center::</p>
 <div class="highlight"><pre><span></span><code>multi-drag -- 28000 32768 12000 32768  37536 32768 53536 32768
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-103-1" name="__codelineno-103-1" href="#__codelineno-103-1"></a>pymobiledevice3 developer core-device universal-hid-service multi-drag [OPTIONS] {coordinates}...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-104-1" name="__codelineno-104-1" href="#__codelineno-104-1"></a>pymobiledevice3 developer core-device universal-hid-service multi-drag [OPTIONS] {coordinates}...
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9641,7 +9683,7 @@ multi-finger swipe. E.g. zoom in around the center::</p>
 </thead>
 <tbody>
 <tr>
-<td><code>coordinates...</code></td>
+<td><code>coordinates... &lt;list[int]&gt;</code></td>
 <td>X1 Y1 X2 Y2 (start, end) per finger (1..5 fingers, 0..65535 each) [required]</td>
 </tr>
 </tbody>
@@ -9669,14 +9711,14 @@ multi-finger swipe. E.g. zoom in around the center::</p>
 </tr>
 <tr>
 <td><code>--touch-service-id &lt;str&gt;</code></td>
-<td>mainTouchscreen _ServiceID [default: 257]</td>
+<td>Touchscreen _ServiceID (default: the touchscreen of the display in use, e.g. a foldable's lit panel)</td>
 </tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-universal-hid-service-swipe"><code>core-device universal-hid-service swipe</code><a class="headerlink" href="#core-device-universal-hid-service-swipe" title="Permanent link">&para;</a></h2>
 <p>Pure pointer-motion gesture — moves the cursor without a contact event.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-104-1" name="__codelineno-104-1" href="#__codelineno-104-1"></a>pymobiledevice3 developer core-device universal-hid-service swipe [OPTIONS] {x1} {y1} {x2} {y2}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-105-1" name="__codelineno-105-1" href="#__codelineno-105-1"></a>pymobiledevice3 developer core-device universal-hid-service swipe [OPTIONS] {x1} {y1} {x2} {y2}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9688,19 +9730,19 @@ multi-finger swipe. E.g. zoom in around the center::</p>
 </thead>
 <tbody>
 <tr>
-<td><code>x1</code></td>
+<td><code>x1 &lt;int&gt;</code></td>
 <td>Start X of the pointer path (gesture-surface units, Int32) [required]</td>
 </tr>
 <tr>
-<td><code>y1</code></td>
+<td><code>y1 &lt;int&gt;</code></td>
 <td>Start Y of the pointer path (gesture-surface units, Int32) [required]</td>
 </tr>
 <tr>
-<td><code>x2</code></td>
+<td><code>x2 &lt;int&gt;</code></td>
 <td>End X of the pointer path (gesture-surface units, Int32) [required]</td>
 </tr>
 <tr>
-<td><code>y2</code></td>
+<td><code>y2 &lt;int&gt;</code></td>
 <td>End Y of the pointer path (gesture-surface units, Int32) [required]</td>
 </tr>
 </tbody>
@@ -9748,7 +9790,7 @@ sleep SECONDS
 <div class="highlight"><pre><span></span><code>printf 'tap 30000 40000\nsleep 0.3\ndrag 30000 8000 30000 60000\n' | \
     pymobiledevice3 developer core-device universal-hid-service session
 </code></pre></div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-105-1" name="__codelineno-105-1" href="#__codelineno-105-1"></a>pymobiledevice3 developer core-device universal-hid-service session [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-106-1" name="__codelineno-106-1" href="#__codelineno-106-1"></a>pymobiledevice3 developer core-device universal-hid-service session [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -9773,7 +9815,7 @@ sleep SECONDS
 </tr>
 <tr>
 <td><code>--touch-service-id &lt;str&gt;</code></td>
-<td>mainTouchscreen _ServiceID (for <code>tap</code>/<code>drag</code>) [default: 257]</td>
+<td>Touchscreen _ServiceID (default: the touchscreen of the display in use, e.g. a foldable's lit panel) (for <code>tap</code>/<code>drag</code>)</td>
 </tr>
 </tbody>
 </table>
@@ -9784,7 +9826,7 @@ sleep SECONDS
 virtual keyboard surface, then emits one <code>down</code>/<code>up</code> HID Keyboard
 report pair per character. Capital letters and shifted symbols
 synthesise the matching Left-Shift bit in the bitmap.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-106-1" name="__codelineno-106-1" href="#__codelineno-106-1"></a>pymobiledevice3 developer core-device universal-hid-service type [OPTIONS] {text}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-107-1" name="__codelineno-107-1" href="#__codelineno-107-1"></a>pymobiledevice3 developer core-device universal-hid-service type [OPTIONS] {text}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9796,7 +9838,7 @@ synthesise the matching Left-Shift bit in the bitmap.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>text</code></td>
+<td><code>text &lt;str&gt;</code></td>
 <td>Text to type (printable ASCII; a newline presses Return and a tab presses Tab) [required]</td>
 </tr>
 </tbody>
@@ -9827,7 +9869,7 @@ synthesise the matching Left-Shift bit in the bitmap.</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-universal-hid-service-key"><code>core-device universal-hid-service key</code><a class="headerlink" href="#core-device-universal-hid-service-key" title="Permanent link">&para;</a></h2>
 <p>Press a named key <code>COUNT</code> times on the device via the same virtual keyboard as <code>type</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-107-1" name="__codelineno-107-1" href="#__codelineno-107-1"></a>pymobiledevice3 developer core-device universal-hid-service key [OPTIONS] {name}:&lt;backspace|enter|escape|tab|left|right|up|down&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-108-1" name="__codelineno-108-1" href="#__codelineno-108-1"></a>pymobiledevice3 developer core-device universal-hid-service key [OPTIONS] {name}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9839,7 +9881,7 @@ synthesise the matching Left-Shift bit in the bitmap.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>name:&lt;backspace\|enter\|escape\|tab\|left\|right\|up\|down&gt;</code></td>
+<td><code>name &lt;backspace\|enter\|escape\|tab\|left\|right\|up\|down&gt;</code></td>
 <td>Named key (backspace, enter, left, ...) [required]</td>
 </tr>
 </tbody>
@@ -9876,7 +9918,7 @@ synthesise the matching Left-Shift bit in the bitmap.</p>
 <p>Stream and mirror the device's screen and audio (com.apple.coredevice.displayservice).</p>
 <h2 id="core-device-display-get-media-support-info"><code>core-device display get-media-support-info</code><a class="headerlink" href="#core-device-display-get-media-support-info" title="Permanent link">&para;</a></h2>
 <p>Return the device's supported media-stream features and AVC framework version.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-108-1" name="__codelineno-108-1" href="#__codelineno-108-1"></a>pymobiledevice3 developer core-device display get-media-support-info [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-109-1" name="__codelineno-109-1" href="#__codelineno-109-1"></a>pymobiledevice3 developer core-device display get-media-support-info [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -9896,7 +9938,7 @@ synthesise the matching Left-Shift bit in the bitmap.</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
 <h2 id="core-device-display-get-media-stream-server-status"><code>core-device display get-media-stream-server-status</code><a class="headerlink" href="#core-device-display-get-media-stream-server-status" title="Permanent link">&para;</a></h2>
 <p>Return the media-stream server's running state and active sessions.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-109-1" name="__codelineno-109-1" href="#__codelineno-109-1"></a>pymobiledevice3 developer core-device display get-media-stream-server-status [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-110-1" name="__codelineno-110-1" href="#__codelineno-110-1"></a>pymobiledevice3 developer core-device display get-media-stream-server-status [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -9918,7 +9960,7 @@ synthesise the matching Left-Shift bit in the bitmap.</p>
 <p>Capture raw RTP/HEVC packets from a display into a file (iOS 27+).</p>
 <p>Each packet is written as <code>[4-byte BE length][packet bytes]</code>. Use
 <code>misc/rtp_dump.py</code> to depacketize into an Annex-B <code>.h265</code> bitstream.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-110-1" name="__codelineno-110-1" href="#__codelineno-110-1"></a>pymobiledevice3 developer core-device display start-video-stream [OPTIONS] {output}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-111-1" name="__codelineno-111-1" href="#__codelineno-111-1"></a>pymobiledevice3 developer core-device display start-video-stream [OPTIONS] {output}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9930,7 +9972,7 @@ synthesise the matching Left-Shift bit in the bitmap.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>output</code></td>
+<td><code>output &lt;path&gt;</code></td>
 <td>Write received RTP packet bytes to this file [required]</td>
 </tr>
 </tbody>
@@ -9950,7 +9992,7 @@ synthesise the matching Left-Shift bit in the bitmap.</p>
 </tr>
 <tr>
 <td><code>--display-id &lt;int&gt;</code></td>
-<td>Display to stream (1 = the main display). [default: 1]</td>
+<td>displayId to stream (see <code>get-display-info</code>). Default: the built-in display in use -- on a foldable, the lit panel.</td>
 </tr>
 <tr>
 <td><code>--duration &lt;float&gt;</code></td>
@@ -9969,7 +10011,7 @@ synthesise the matching Left-Shift bit in the bitmap.</p>
 device advertises <code>RxPayloadType=101</code> and <code>AudioStreamMode=8</code> —
 inspect the captured payloads to identify the codec before building
 browser playback.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-111-1" name="__codelineno-111-1" href="#__codelineno-111-1"></a>pymobiledevice3 developer core-device display start-audio-stream [OPTIONS] {output}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-112-1" name="__codelineno-112-1" href="#__codelineno-112-1"></a>pymobiledevice3 developer core-device display start-audio-stream [OPTIONS] {output}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -9981,7 +10023,7 @@ browser playback.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>output</code></td>
+<td><code>output &lt;path&gt;</code></td>
 <td>Write received RTP packet bytes to this file [required]</td>
 </tr>
 </tbody>
@@ -10020,7 +10062,7 @@ browser playback.</p>
 HEVC support — recent versions enable it by default if the OS supports it).
 Pass <code>--https</code> when connecting from another LAN host (browsers gate
 WebCodecs on a secure context; only loopback origins bypass that).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-112-1" name="__codelineno-112-1" href="#__codelineno-112-1"></a>pymobiledevice3 developer core-device display serve-web [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-113-1" name="__codelineno-113-1" href="#__codelineno-113-1"></a>pymobiledevice3 developer core-device display serve-web [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -10037,7 +10079,7 @@ WebCodecs on a secure context; only loopback origins bypass that).</p>
 </tr>
 <tr>
 <td><code>--display-id &lt;int&gt;</code></td>
-<td>Display to stream (1 = the main display). [default: 1]</td>
+<td>displayId to stream (see <code>get-display-info</code>). Default: the built-in display in use -- on a foldable, the lit panel.</td>
 </tr>
 <tr>
 <td><code>--bind &lt;str&gt;</code></td>
@@ -10097,7 +10139,7 @@ touch events on the device.</p>
 <p>Audio: pass <code>--audio</code> to decode the device's AAC-ELD audio
 stream and play it through the host Mac's speakers (RFB has no
 audio of its own, so the playback is host-local).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-113-1" name="__codelineno-113-1" href="#__codelineno-113-1"></a>pymobiledevice3 developer core-device display serve-vnc [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-114-1" name="__codelineno-114-1" href="#__codelineno-114-1"></a>pymobiledevice3 developer core-device display serve-vnc [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -10114,7 +10156,7 @@ audio of its own, so the playback is host-local).</p>
 </tr>
 <tr>
 <td><code>--display-id &lt;int&gt;</code></td>
-<td>Display to stream (1 = the main display). [default: 1]</td>
+<td>displayId to stream (see <code>get-display-info</code>). Default: the built-in display in use -- on a foldable, the lit panel.</td>
 </tr>
 <tr>
 <td><code>--bind &lt;str&gt;</code></td>
@@ -10155,7 +10197,7 @@ audio of its own, so the playback is host-local).</p>
 <p>Simulate the device's location (com.apple.coredevice.locationservice).</p>
 <h2 id="core-device-location-available-scenarios"><code>core-device location available-scenarios</code><a class="headerlink" href="#core-device-location-available-scenarios" title="Permanent link">&para;</a></h2>
 <p>List the device's built-in simulation scenarios.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-114-1" name="__codelineno-114-1" href="#__codelineno-114-1"></a>pymobiledevice3 developer core-device location available-scenarios [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-115-1" name="__codelineno-115-1" href="#__codelineno-115-1"></a>pymobiledevice3 developer core-device location available-scenarios [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -10178,7 +10220,7 @@ audio of its own, so the playback is host-local).</p>
 <p>WebDriverAgent must already be installed on the device. Start its runner with --xctrunner, or have it running already; with --xctrunner it is stopped when the command ends.</p>
 <h2 id="wda-launch"><code>wda launch</code><a class="headerlink" href="#wda-launch" title="Permanent link">&para;</a></h2>
 <p>Launch an app by starting a WDA session and print the session id.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-115-1" name="__codelineno-115-1" href="#__codelineno-115-1"></a>pymobiledevice3 developer wda launch [OPTIONS] {bundle_id}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-116-1" name="__codelineno-116-1" href="#__codelineno-116-1"></a>pymobiledevice3 developer wda launch [OPTIONS] {bundle_id}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -10190,7 +10232,7 @@ audio of its own, so the playback is host-local).</p>
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_id</code></td>
+<td><code>bundle_id &lt;str&gt;</code></td>
 <td>Bundle identifier of the app to launch. [required]</td>
 </tr>
 </tbody>
@@ -10225,7 +10267,7 @@ audio of its own, so the playback is host-local).</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wda-tap"><code>wda tap</code><a class="headerlink" href="#wda-tap" title="Permanent link">&para;</a></h2>
 <p>Tap an element (typically a button) using a WDA selector.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-116-1" name="__codelineno-116-1" href="#__codelineno-116-1"></a>pymobiledevice3 developer wda tap [OPTIONS] {selector}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-117-1" name="__codelineno-117-1" href="#__codelineno-117-1"></a>pymobiledevice3 developer wda tap [OPTIONS] {selector}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -10237,7 +10279,7 @@ audio of its own, so the playback is host-local).</p>
 </thead>
 <tbody>
 <tr>
-<td><code>selector</code></td>
+<td><code>selector &lt;str&gt;</code></td>
 <td>Element to tap, matched using the --using strategy. [required]</td>
 </tr>
 </tbody>
@@ -10284,7 +10326,7 @@ audio of its own, so the playback is host-local).</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wda-press"><code>wda press</code><a class="headerlink" href="#wda-press" title="Permanent link">&para;</a></h2>
 <p>Press one or more device buttons (e.g. home, volumeup, volumedown, lock).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-117-1" name="__codelineno-117-1" href="#__codelineno-117-1"></a>pymobiledevice3 developer wda press [OPTIONS] {names}...
+<div class="highlight"><pre><span></span><code><a id="__codelineno-118-1" name="__codelineno-118-1" href="#__codelineno-118-1"></a>pymobiledevice3 developer wda press [OPTIONS] {names}...
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -10296,7 +10338,7 @@ audio of its own, so the playback is host-local).</p>
 </thead>
 <tbody>
 <tr>
-<td><code>names...</code></td>
+<td><code>names... &lt;list[str]&gt;</code></td>
 <td>One or more device buttons to press in order (e.g. home lock volumeup). [required]</td>
 </tr>
 </tbody>
@@ -10335,7 +10377,7 @@ audio of its own, so the playback is host-local).</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wda-unlock"><code>wda unlock</code><a class="headerlink" href="#wda-unlock" title="Permanent link">&para;</a></h2>
 <p>Unlock the device through WDA's unlock endpoint.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-118-1" name="__codelineno-118-1" href="#__codelineno-118-1"></a>pymobiledevice3 developer wda unlock [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-119-1" name="__codelineno-119-1" href="#__codelineno-119-1"></a>pymobiledevice3 developer wda unlock [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -10371,7 +10413,7 @@ audio of its own, so the playback is host-local).</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wda-list-items"><code>wda list-items</code><a class="headerlink" href="#wda-list-items" title="Permanent link">&para;</a></h2>
 <p>Show tappable WDA elements (use with 'tap' selectors).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-119-1" name="__codelineno-119-1" href="#__codelineno-119-1"></a>pymobiledevice3 developer wda list-items [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-120-1" name="__codelineno-120-1" href="#__codelineno-120-1"></a>pymobiledevice3 developer wda list-items [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -10411,7 +10453,7 @@ audio of its own, so the playback is host-local).</p>
 <td>Filter by a clickable type allowlist + visible/enabled.</td>
 </tr>
 <tr>
-<td><code>--types &lt;str&gt;</code></td>
+<td><code>--types &lt;list[str]&gt;</code></td>
 <td>Comma-separated element type allowlist (e.g. Icon,Button,Cell).</td>
 </tr>
 <tr>
@@ -10423,7 +10465,7 @@ audio of its own, so the playback is host-local).</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wda-screenshot"><code>wda screenshot</code><a class="headerlink" href="#wda-screenshot" title="Permanent link">&para;</a></h2>
 <p>Take a screenshot via WDA and save it as PNG.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-120-1" name="__codelineno-120-1" href="#__codelineno-120-1"></a>pymobiledevice3 developer wda screenshot [OPTIONS] {out}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-121-1" name="__codelineno-121-1" href="#__codelineno-121-1"></a>pymobiledevice3 developer wda screenshot [OPTIONS] {out}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -10435,7 +10477,7 @@ audio of its own, so the playback is host-local).</p>
 </thead>
 <tbody>
 <tr>
-<td><code>out</code></td>
+<td><code>out &lt;path&gt;</code></td>
 <td>Local file to write the PNG screenshot to. [required]</td>
 </tr>
 </tbody>
@@ -10474,7 +10516,7 @@ audio of its own, so the playback is host-local).</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wda-status"><code>wda status</code><a class="headerlink" href="#wda-status" title="Permanent link">&para;</a></h2>
 <p>Show the WDA server status as JSON (useful to check that WDA is reachable).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-121-1" name="__codelineno-121-1" href="#__codelineno-121-1"></a>pymobiledevice3 developer wda status [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-122-1" name="__codelineno-122-1" href="#__codelineno-122-1"></a>pymobiledevice3 developer wda status [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -10506,7 +10548,7 @@ audio of its own, so the playback is host-local).</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wda-type"><code>wda type</code><a class="headerlink" href="#wda-type" title="Permanent link">&para;</a></h2>
 <p>Type text into the focused element.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-122-1" name="__codelineno-122-1" href="#__codelineno-122-1"></a>pymobiledevice3 developer wda type [OPTIONS] {text}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-123-1" name="__codelineno-123-1" href="#__codelineno-123-1"></a>pymobiledevice3 developer wda type [OPTIONS] {text}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -10518,7 +10560,7 @@ audio of its own, so the playback is host-local).</p>
 </thead>
 <tbody>
 <tr>
-<td><code>text</code></td>
+<td><code>text &lt;str&gt;</code></td>
 <td>Text to type into the focused element. [required]</td>
 </tr>
 </tbody>
@@ -10561,7 +10603,7 @@ audio of its own, so the playback is host-local).</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wda-swipe"><code>wda swipe</code><a class="headerlink" href="#wda-swipe" title="Permanent link">&para;</a></h2>
 <p>Swipe from one coordinate to another.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-123-1" name="__codelineno-123-1" href="#__codelineno-123-1"></a>pymobiledevice3 developer wda swipe [OPTIONS] {start_x} {start_y} {end_x} {end_y}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-124-1" name="__codelineno-124-1" href="#__codelineno-124-1"></a>pymobiledevice3 developer wda swipe [OPTIONS] {start_x} {start_y} {end_x} {end_y}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -10573,19 +10615,19 @@ audio of its own, so the playback is host-local).</p>
 </thead>
 <tbody>
 <tr>
-<td><code>start_x</code></td>
+<td><code>start_x &lt;int&gt;</code></td>
 <td>Start X coordinate, in screen points. [required]</td>
 </tr>
 <tr>
-<td><code>start_y</code></td>
+<td><code>start_y &lt;int&gt;</code></td>
 <td>Start Y coordinate, in screen points. [required]</td>
 </tr>
 <tr>
-<td><code>end_x</code></td>
+<td><code>end_x &lt;int&gt;</code></td>
 <td>End X coordinate, in screen points. [required]</td>
 </tr>
 <tr>
-<td><code>end_y</code></td>
+<td><code>end_y &lt;int&gt;</code></td>
 <td>End Y coordinate, in screen points. [required]</td>
 </tr>
 </tbody>
@@ -10632,7 +10674,7 @@ audio of its own, so the playback is host-local).</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wda-window-size"><code>wda window-size</code><a class="headerlink" href="#wda-window-size" title="Permanent link">&para;</a></h2>
 <p>Show window size (screen dimensions).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-124-1" name="__codelineno-124-1" href="#__codelineno-124-1"></a>pymobiledevice3 developer wda window-size [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-125-1" name="__codelineno-125-1" href="#__codelineno-125-1"></a>pymobiledevice3 developer wda window-size [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>

@@ -3051,7 +3051,7 @@ supervision identity (supervised devices) it is installed silently.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>profiles...</code></td>
+<td><code>profiles... &lt;list[Path]&gt;</code></td>
 <td>Configuration profile files (.mobileconfig). [required]</td>
 </tr>
 </tbody>
@@ -3090,7 +3090,7 @@ supervision identity (supervised devices) it is installed silently.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>config</code></td>
+<td><code>config &lt;path&gt;</code></td>
 <td>Cloud configuration plist to apply; omit to print the current one.</td>
 </tr>
 </tbody>
@@ -3153,7 +3153,7 @@ supervision identity (supervised devices) it is installed silently.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>profiles...</code></td>
+<td><code>profiles... &lt;list[Path]&gt;</code></td>
 <td>Configuration profile files (.mobileconfig). [required]</td>
 </tr>
 </tbody>
@@ -3188,7 +3188,7 @@ supervision identity (supervised devices) it is installed silently.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>name</code></td>
+<td><code>name &lt;str&gt;</code></td>
 <td>Profile identifier, as listed under ProfileMetadata by <code>profile list</code>. [required]</td>
 </tr>
 </tbody>
@@ -3211,7 +3211,7 @@ supervision identity (supervised devices) it is installed silently.</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="set-wifi-power"><code>set-wifi-power</code><a class="headerlink" href="#set-wifi-power" title="Permanent link">&para;</a></h2>
 <p>Turn the device's Wi-Fi radio on or off (defaults to off).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pymobiledevice3 profile set-wifi-power [OPTIONS] [state]:&lt;on|off&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pymobiledevice3 profile set-wifi-power [OPTIONS] [state]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3223,7 +3223,7 @@ supervision identity (supervised devices) it is installed silently.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>state:&lt;on\|off&gt;</code></td>
+<td><code>state &lt;on\|off&gt;</code></td>
 <td>Turn Wi-Fi on or off. [default: off]</td>
 </tr>
 </tbody>
@@ -3289,11 +3289,11 @@ or Reset &gt; Erase All Content and Settings). There is no confirmation.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>keybag</code></td>
+<td><code>keybag &lt;file&gt;</code></td>
 <td>File to write the new identity (PEM private key + certificate) to. [required]</td>
 </tr>
 <tr>
-<td><code>organization</code></td>
+<td><code>organization &lt;str&gt;</code></td>
 <td>Organization name for the certificate's Common Name. [required]</td>
 </tr>
 </tbody>
@@ -3314,7 +3314,7 @@ supervised cloud configuration that registers the supervision identity.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>organization</code></td>
+<td><code>organization &lt;str&gt;</code></td>
 <td>Organization name shown on the device as the supervisor. [required]</td>
 </tr>
 </tbody>
@@ -3353,15 +3353,15 @@ supervised cloud configuration that registers the supervision identity.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>encryption_type</code></td>
+<td><code>encryption_type &lt;str&gt;</code></td>
 <td>Network security type (e.g. WPA, WEP, None). [required]</td>
 </tr>
 <tr>
-<td><code>ssid</code></td>
+<td><code>ssid &lt;str&gt;</code></td>
 <td>Network name (SSID). [required]</td>
 </tr>
 <tr>
-<td><code>password</code></td>
+<td><code>password &lt;str&gt;</code></td>
 <td>Network password. [required]</td>
 </tr>
 </tbody>
@@ -3400,12 +3400,12 @@ supervised cloud configuration that registers the supervision identity.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>server</code></td>
+<td><code>server &lt;str&gt;</code></td>
 <td>Proxy server host name or address. [required]</td>
 </tr>
 <tr>
-<td><code>port</code></td>
-<td>Proxy server port. [required]</td>
+<td><code>port &lt;int range&gt;</code></td>
+<td>Proxy server port. [1&lt;=x&lt;=65535; required]</td>
 </tr>
 </tbody>
 </table>
@@ -3492,7 +3492,7 @@ supervised cloud configuration that registers the supervision identity.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>output</code></td>
+<td><code>output &lt;file&gt;</code></td>
 <td>File to write the raw unlock token to. [required]</td>
 </tr>
 </tbody>
@@ -3533,7 +3533,7 @@ supervised cloud configuration that registers the supervision identity.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>token</code></td>
+<td><code>token &lt;file&gt;</code></td>
 <td>Unlock token saved by request-unlock-token. [required]</td>
 </tr>
 </tbody>
@@ -3623,7 +3623,7 @@ PasswordProtected.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>image</code></td>
+<td><code>image &lt;file&gt;</code></td>
 <td>JPEG or PNG image. [required]</td>
 </tr>
 </tbody>

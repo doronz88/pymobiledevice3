@@ -3095,7 +3095,7 @@ to boot it back normally.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>service_name</code></td>
+<td><code>service_name &lt;str&gt;</code></td>
 <td>Lockdown service name (e.g. com.apple.mobile.diagnostics_relay). [required]</td>
 </tr>
 </tbody>
@@ -3130,7 +3130,7 @@ to boot it back normally.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>service_name</code></td>
+<td><code>service_name &lt;str&gt;</code></td>
 <td>Developer service name (e.g. com.apple.instruments.remoteserver). [required]</td>
 </tr>
 </tbody>
@@ -3185,11 +3185,11 @@ to boot it back normally.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>domain</code></td>
+<td><code>domain &lt;str&gt;</code></td>
 <td>Value domain (e.g. com.apple.mobile.battery); omit for the global domain.</td>
 </tr>
 <tr>
-<td><code>key</code></td>
+<td><code>key &lt;str&gt;</code></td>
 <td>Key to read; omit to read the whole domain.</td>
 </tr>
 </tbody>
@@ -3226,15 +3226,15 @@ strings, e.g. "'My iPhone'".</p>
 </thead>
 <tbody>
 <tr>
-<td><code>value</code></td>
+<td><code>value &lt;str&gt;</code></td>
 <td>New value as a Python literal (e.g. True, 42, 'text'). [required]</td>
 </tr>
 <tr>
-<td><code>domain</code></td>
+<td><code>domain &lt;str&gt;</code></td>
 <td>Value domain; omit for the global domain.</td>
 </tr>
 <tr>
-<td><code>key</code></td>
+<td><code>key &lt;str&gt;</code></td>
 <td>Key to set.</td>
 </tr>
 </tbody>
@@ -3269,11 +3269,11 @@ strings, e.g. "'My iPhone'".</p>
 </thead>
 <tbody>
 <tr>
-<td><code>domain</code></td>
+<td><code>domain &lt;str&gt;</code></td>
 <td>Value domain. [required]</td>
 </tr>
 <tr>
-<td><code>key</code></td>
+<td><code>key &lt;str&gt;</code></td>
 <td>Key to remove. [required]</td>
 </tr>
 </tbody>
@@ -3309,7 +3309,7 @@ strings, e.g. "'My iPhone'".</p>
 </thead>
 <tbody>
 <tr>
-<td><code>host_id</code></td>
+<td><code>host_id &lt;str&gt;</code></td>
 <td>HostID of the pairing to remove; omit to remove this host's pairing.</td>
 </tr>
 </tbody>
@@ -3364,7 +3364,7 @@ strings, e.g. "'My iPhone'".</p>
 </thead>
 <tbody>
 <tr>
-<td><code>keybag</code></td>
+<td><code>keybag &lt;file&gt;</code></td>
 <td>PEM file with the supervisor's private key and certificate (see <code>profile create-keybag</code>). [required]</td>
 </tr>
 </tbody>
@@ -3399,7 +3399,7 @@ strings, e.g. "'My iPhone'".</p>
 </thead>
 <tbody>
 <tr>
-<td><code>output</code></td>
+<td><code>output &lt;path&gt;</code></td>
 <td>File to write the pair record (plist) to. [required]</td>
 </tr>
 </tbody>
@@ -3474,7 +3474,7 @@ strings, e.g. "'My iPhone'".</p>
 </thead>
 <tbody>
 <tr>
-<td><code>language</code></td>
+<td><code>language &lt;str&gt;</code></td>
 <td>Language code to set (e.g. en); omit to only print it.</td>
 </tr>
 </tbody>
@@ -3509,7 +3509,7 @@ strings, e.g. "'My iPhone'".</p>
 </thead>
 <tbody>
 <tr>
-<td><code>locale</code></td>
+<td><code>locale &lt;str&gt;</code></td>
 <td>Locale to set (e.g. en_US); omit to only print it.</td>
 </tr>
 </tbody>
@@ -3544,7 +3544,7 @@ strings, e.g. "'My iPhone'".</p>
 </thead>
 <tbody>
 <tr>
-<td><code>new_name</code></td>
+<td><code>new_name &lt;str&gt;</code></td>
 <td>New device name; omit to print the current one.</td>
 </tr>
 </tbody>
@@ -3567,7 +3567,7 @@ strings, e.g. "'My iPhone'".</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wifi-connections"><code>wifi-connections</code><a class="headerlink" href="#wifi-connections" title="Permanent link">&para;</a></h2>
 <p>Show or set whether this host may connect to the device over Wi-Fi (EnableWifiConnections).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>pymobiledevice3 lockdown wifi-connections [OPTIONS] [state]:&lt;on|off&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>pymobiledevice3 lockdown wifi-connections [OPTIONS] [state]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3579,7 +3579,7 @@ strings, e.g. "'My iPhone'".</p>
 </thead>
 <tbody>
 <tr>
-<td><code>state:&lt;on\|off&gt;</code></td>
+<td><code>state &lt;on\|off&gt;</code></td>
 <td>Turn it on or off; omit to print the current state.</td>
 </tr>
 </tbody>
@@ -3667,7 +3667,7 @@ interaction.</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="assistive-touch"><code>assistive-touch</code><a class="headerlink" href="#assistive-touch" title="Permanent link">&para;</a></h2>
 <p>Show or set whether the AssistiveTouch button is shown on screen.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>pymobiledevice3 lockdown assistive-touch [OPTIONS] [state]:&lt;on|off&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>pymobiledevice3 lockdown assistive-touch [OPTIONS] [state]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3679,7 +3679,7 @@ interaction.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>state:&lt;on\|off&gt;</code></td>
+<td><code>state &lt;on\|off&gt;</code></td>
 <td>Show or hide it; omit to print the current state.</td>
 </tr>
 </tbody>
@@ -3702,7 +3702,7 @@ interaction.</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="auto-answer"><code>auto-answer</code><a class="headerlink" href="#auto-answer" title="Permanent link">&para;</a></h2>
 <p>Set whether incoming calls are answered automatically (Accessibility &gt; Call Audio Routing).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>pymobiledevice3 lockdown auto-answer [OPTIONS] {state}:&lt;on|off&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>pymobiledevice3 lockdown auto-answer [OPTIONS] {state}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3714,7 +3714,7 @@ interaction.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>state:&lt;on\|off&gt;</code></td>
+<td><code>state &lt;on\|off&gt;</code></td>
 <td>Turn auto-answer on or off. [required]</td>
 </tr>
 </tbody>

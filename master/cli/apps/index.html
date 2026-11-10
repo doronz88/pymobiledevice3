@@ -2863,7 +2863,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_identifiers...</code></td>
+<td><code>bundle_identifiers... &lt;list[str]&gt;</code></td>
 <td>One or more bundle identifiers. [required]</td>
 </tr>
 </tbody>
@@ -2902,7 +2902,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_id</code></td>
+<td><code>bundle_id &lt;str&gt;</code></td>
 <td>Bundle identifier of the app (e.g. com.apple.mobilesafari). [required]</td>
 </tr>
 </tbody>
@@ -2937,7 +2937,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>package</code></td>
+<td><code>package &lt;path&gt;</code></td>
 <td>App to install: an .ipa file, an .app directory, or an .ipcc carrier bundle. [required]</td>
 </tr>
 </tbody>
@@ -2980,7 +2980,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_id</code></td>
+<td><code>bundle_id &lt;str&gt;</code></td>
 <td>Bundle identifier of the app (e.g. com.apple.mobilesafari). [required]</td>
 </tr>
 </tbody>
@@ -3003,7 +3003,7 @@
 <td>Expose only the app's Documents folder instead of its whole container. [default: no-documents]</td>
 </tr>
 <tr>
-<td><code>--tool &lt;str&gt;</code></td>
+<td><code>--tool &lt;list[str]&gt;</code></td>
 <td>also offer this host tool as a command inside the shell, e.g. --tool jq (repeatable)</td>
 </tr>
 </tbody>
@@ -3023,11 +3023,11 @@
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_id</code></td>
+<td><code>bundle_id &lt;str&gt;</code></td>
 <td>Bundle identifier of the app (e.g. com.apple.mobilesafari). [required]</td>
 </tr>
 <tr>
-<td><code>path</code></td>
+<td><code>path &lt;str&gt;</code></td>
 <td>AFC path to serve as the volume root (default: /) [default: /]</td>
 </tr>
 </tbody>
@@ -3082,15 +3082,15 @@
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_id</code></td>
+<td><code>bundle_id &lt;str&gt;</code></td>
 <td>Bundle identifier of the app (e.g. com.apple.mobilesafari). [required]</td>
 </tr>
 <tr>
-<td><code>remote_file</code></td>
+<td><code>remote_file &lt;str&gt;</code></td>
 <td>File or directory inside the app container. [required]</td>
 </tr>
 <tr>
-<td><code>local_file</code></td>
+<td><code>local_file &lt;path&gt;</code></td>
 <td>Local destination path. [required]</td>
 </tr>
 </tbody>
@@ -3129,15 +3129,15 @@
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_id</code></td>
+<td><code>bundle_id &lt;str&gt;</code></td>
 <td>Bundle identifier of the app (e.g. com.apple.mobilesafari). [required]</td>
 </tr>
 <tr>
-<td><code>local_file</code></td>
+<td><code>local_file &lt;path&gt;</code></td>
 <td>Local file or directory to upload. [required]</td>
 </tr>
 <tr>
-<td><code>remote_file</code></td>
+<td><code>remote_file &lt;str&gt;</code></td>
 <td>Destination inside the app container (may be a directory). [required]</td>
 </tr>
 </tbody>
@@ -3176,11 +3176,11 @@
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_id</code></td>
+<td><code>bundle_id &lt;str&gt;</code></td>
 <td>Bundle identifier of the app (e.g. com.apple.mobilesafari). [required]</td>
 </tr>
 <tr>
-<td><code>remote_file</code></td>
+<td><code>remote_file &lt;str&gt;</code></td>
 <td>File or directory inside the app container. [required]</td>
 </tr>
 </tbody>
@@ -3219,7 +3219,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>bundle_id</code></td>
+<td><code>bundle_id &lt;str&gt;</code></td>
 <td>Bundle identifier of the app (e.g. com.apple.mobilesafari). [required]</td>
 </tr>
 </tbody>

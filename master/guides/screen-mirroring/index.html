@@ -755,6 +755,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#devices-with-several-displays" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Devices with several displays
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#camera-and-microphone" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2701,6 +2712,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#devices-with-several-displays" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Devices with several displays
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#camera-and-microphone" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2847,6 +2869,20 @@ Sharing. This viewer is macOS-only because it decodes the video on the host with
 <li><code>--bind 0.0.0.0 --password 'CHOOSE_ONE'</code> makes it reachable from other machines, with the same
   warning as above.</li>
 </ul>
+<h2 id="devices-with-several-displays">Devices with several displays<a class="headerlink" href="#devices-with-several-displays" title="Permanent link">&para;</a></h2>
+<p>On a device with more than one built-in display, such as a foldable iPhone, both viewers show the
+display in use, and touches go to that display. Both follow the device as it is folded or unfolded,
+switching to the other display by themselves, and show an unfolded device in landscape when it is
+held that way. <code>serve-vnc</code> resizes the VNC client's screen for that, which needs a client supporting
+the DesktopSize extension (TigerVNC, noVNC, ...); other clients are disconnected and have to
+reconnect.</p>
+<p>To show one display regardless, pass its <code>displayId</code> from <code>get-display-info</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>get-display-info
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>display<span class="w"> </span>serve-web<span class="w"> </span>--display-id<span class="w"> </span><span class="m">2</span>
+</code></pre></div>
+<p><code>monitor-display-info</code> prints the display information again each time it changes. The touch commands
+of <code>universal-hid-service</code> (<code>tap</code>, <code>drag</code>, ...) also act on the display in use; <code>--touch-service-id</code>
+picks another display's touchscreen, as listed by <code>universal-hid-service list-connected</code>.</p>
 <h2 id="camera-and-microphone">Camera and microphone<a class="headerlink" href="#camera-and-microphone" title="Permanent link">&para;</a></h2>
 <p>iOS won't start a mirroring session while a foreground app is using the camera or microphone; Xcode
 has the same restriction. If <strong>Camera</strong>, <strong>Voice Memos</strong> or a similar app is in front, the command
@@ -2855,12 +2891,12 @@ those apps can't use the sensors and record silence or black video, so stop mirr
 recording with them.</p>
 <h2 id="raw-stream-capture">Raw stream capture<a class="headerlink" href="#raw-stream-capture" title="Permanent link">&para;</a></h2>
 <p>For analysis or archiving, the stream can be saved as it arrives:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Capture 10 seconds of the raw RTP/HEVC packets</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>display<span class="w"> </span>start-video-stream<span class="w"> </span>/tmp/cap.rtp<span class="w"> </span>--duration<span class="w"> </span><span class="m">10</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># In a source checkout: convert to an .h265 file that ffplay or VLC can play</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>misc/rtp_dump.py<span class="w"> </span>/tmp/cap.rtp<span class="w"> </span>/tmp/cap.h265
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>ffplay<span class="w"> </span>-framerate<span class="w"> </span><span class="m">60</span><span class="w"> </span>/tmp/cap.h265
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Capture 10 seconds of the raw RTP/HEVC packets</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>display<span class="w"> </span>start-video-stream<span class="w"> </span>/tmp/cap.rtp<span class="w"> </span>--duration<span class="w"> </span><span class="m">10</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># In a source checkout: convert to an .h265 file that ffplay or VLC can play</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>misc/rtp_dump.py<span class="w"> </span>/tmp/cap.rtp<span class="w"> </span>/tmp/cap.h265
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>ffplay<span class="w"> </span>-framerate<span class="w"> </span><span class="m">60</span><span class="w"> </span>/tmp/cap.h265
 </code></pre></div>
 <p><code>start-audio-stream</code> does the same for the device's sound.</p>
 
