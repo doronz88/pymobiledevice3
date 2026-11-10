@@ -37,6 +37,7 @@ __all__ = [
     "IncorrectModeError",
     "InspectorEvaluateError",
     "InternalError",
+    "InvalidBackupError",
     "InvalidConnectionError",
     "InvalidHostIDError",
     "InvalidServiceError",
@@ -668,6 +669,10 @@ class MobileActivationException(PyMobileDevice3Exception):
 
 class NotEnoughDiskSpaceError(PyMobileDevice3Exception):
     """This computer does not have enough disk space for the operation."""
+
+
+class InvalidBackupError(PyMobileDevice3Exception):
+    """The device found the backup on this computer invalid, for example missing files its manifest lists."""
 
 
 class DeprecationError(PyMobileDevice3Exception):

@@ -299,6 +299,25 @@ Run with `-vv` to also see the figure the host reported for `DLMessageGetFreeDis
 the number the device compared against, and it comes from `statvfs` on the backup directory (on
 macOS, raised to the purgeable-aware capacity Finder uses).
 
+### "Manifest references files not in backup" (`InvalidBackupError`, MBErrorDomain/205)
+
+When a backup finishes transferring, the device lists the backup directory on this computer and
+checks it against the new `Manifest.db`. If a file the manifest lists is not there, it fails the
+backup with `MBErrorDomain/205` — after the progress bar reached 100%. The device uses the same
+code for other contradictions in the backup directory (an unknown `SnapshotState` in
+`Status.plist`, a missing file encryption key, a password that does not match the manifest), and
+the message carries its wording.
+
+A backup directory that is already incomplete when the backup starts does not cause this: the
+device runs the same check before an incremental backup and, when it fails, quietly makes a
+full backup instead. The error means files went missing by the time the backup *finished* —
+something removed or changed them while it was running (a sync or cleanup tool, another backup
+into the same directory, a script that moves payload files away).
+
+Run the backup again and leave the directory alone until it finishes: the device sends
+everything that is missing. If it keeps failing, pass `--full` or back up into an empty
+directory.
+
 ## Still stuck?
 
 - Re-run with `-vv` and read the debug logs.
