@@ -24,7 +24,6 @@ from pymobiledevice3.remote.core_device.display_service import DisplayService
 from pymobiledevice3.remote.core_device.file_service import Domain, DomainName, FileServiceService
 from pymobiledevice3.remote.core_device.hid_service import (
     ASCII_TO_HID,
-    DIGITIZER_SURFACE_MAIN_TOUCHSCREEN,
     DIGITIZER_SURFACE_TOUCHSCREEN_GESTURE,
     HID_BUTTON_STATE_CANCELED,
     HID_BUTTON_STATE_DOWN,
@@ -391,6 +390,15 @@ async def core_device_get_display_info(service_provider: RSDServiceProviderDep) 
         print_json(await app_service.get_display_info())
 
 
+@cli.command("monitor-display-info")
+@async_command
+async def core_device_monitor_display_info(service_provider: RSDServiceProviderDep) -> None:
+    """Print the device's display information as one NDJSON line every time a display changes."""
+    async with DeviceInfoService(service_provider) as service:
+        async for update in service.display_info_updates():
+            print_json_line(update)
+
+
 @cli.command("query-mobilegestalt")
 @async_command
 async def core_device_query_mobilegestalt(
@@ -614,6 +622,18 @@ cli.add_typer(hid_cli)
 def _parse_int_auto(value: str) -> int:
     """Parse an int that may be decimal, ``0xHEX``, ``0o755``, ``0b1010``, etc."""
     return int(value, 0)
+
+
+TOUCH_SERVICE_ID_HELP = (
+    "Touchscreen _ServiceID (default: the touchscreen of the display in use, e.g. a foldable's lit panel)"
+)
+
+
+async def _touch_service_id(service: UniversalHIDServiceService, value: Optional[str]) -> int:
+    """``--touch-service-id`` if given, else the touchscreen of the display in use."""
+    if value is not None:
+        return _parse_int_auto(value)
+    return await service.active_touchscreen_service_id()
 
 
 class ButtonState(str, Enum):
@@ -842,9 +862,9 @@ async def core_device_universal_hid_service_tap(
     x: Annotated[int, typer.Argument(help="X (0..65535, 0=left, 65535=right)")],
     y: Annotated[int, typer.Argument(help="Y (0..65535, 0=top, 65535=bottom)")],
     touch_service_id: Annotated[
-        str,
-        typer.Option("--touch-service-id", help="mainTouchscreen _ServiceID"),
-    ] = str(DIGITIZER_SURFACE_MAIN_TOUCHSCREEN),
+        Optional[str],
+        typer.Option("--touch-service-id", help=TOUCH_SERVICE_ID_HELP),
+    ] = None,
 ) -> None:
     """Tap at (X, Y) — one mainTouchscreen CONTACT + RELEASE pair.
 
@@ -854,7 +874,7 @@ async def core_device_universal_hid_service_tap(
     Auto-opens a media stream so the touch reaches UIKit.
     """
     async with touch_session(service_provider) as service:
-        await _do_tap(service, x, y, tsid=_parse_int_auto(touch_service_id))
+        await _do_tap(service, x, y, tsid=await _touch_service_id(service, touch_service_id))
 
 
 @universal_hid_service_cli.command("drag")
@@ -868,9 +888,9 @@ async def core_device_universal_hid_service_drag(
     steps: Annotated[int, typer.Option("--steps", help="Interpolated frames")] = 30,
     duration: Annotated[float, typer.Option("--duration", help="Drag time, seconds")] = 0.6,
     touch_service_id: Annotated[
-        str,
-        typer.Option("--touch-service-id", help="mainTouchscreen _ServiceID"),
-    ] = str(DIGITIZER_SURFACE_MAIN_TOUCHSCREEN),
+        Optional[str],
+        typer.Option("--touch-service-id", help=TOUCH_SERVICE_ID_HELP),
+    ] = None,
 ) -> None:
     """Drag from (X1, Y1) to (X2, Y2) — streaming CONTACT reports, then RELEASE.
 
@@ -879,7 +899,9 @@ async def core_device_universal_hid_service_drag(
     pixel dimensions if you need to convert from pixel coordinates.
     """
     async with touch_session(service_provider) as service:
-        await _do_drag(service, x1, y1, x2, y2, steps, duration, tsid=_parse_int_auto(touch_service_id))
+        await _do_drag(
+            service, x1, y1, x2, y2, steps, duration, tsid=await _touch_service_id(service, touch_service_id)
+        )
 
 
 def _group_coordinates(values: list[int], size: int) -> list[tuple[int, ...]]:
@@ -898,14 +920,14 @@ async def core_device_universal_hid_service_multi_tap(
     coordinates: Annotated[list[int], typer.Argument(help="X Y per finger (1..5 fingers, 0..65535 each)")],
     hold: Annotated[float, typer.Option("--hold", help="Seconds the fingers stay down")] = 0.05,
     touch_service_id: Annotated[
-        str,
-        typer.Option("--touch-service-id", help="mainTouchscreen _ServiceID"),
-    ] = str(DIGITIZER_SURFACE_MAIN_TOUCHSCREEN),
+        Optional[str],
+        typer.Option("--touch-service-id", help=TOUCH_SERVICE_ID_HELP),
+    ] = None,
 ) -> None:
     """Tap with several fingers at once — e.g. ``multi-tap -- 25000 32768 40000 32768`` is a two-finger tap."""
     positions = cast(list[tuple[int, int]], _group_coordinates(coordinates, 2))
     async with touch_session(service_provider) as service:
-        await service.multi_tap(positions, service_id=_parse_int_auto(touch_service_id), hold=hold)
+        await service.multi_tap(positions, service_id=await _touch_service_id(service, touch_service_id), hold=hold)
 
 
 @universal_hid_service_cli.command("multi-drag")
@@ -918,9 +940,9 @@ async def core_device_universal_hid_service_multi_drag(
     steps: Annotated[int, typer.Option("--steps", help="Interpolated frames")] = 30,
     duration: Annotated[float, typer.Option("--duration", help="Drag time, seconds")] = 0.6,
     touch_service_id: Annotated[
-        str,
-        typer.Option("--touch-service-id", help="mainTouchscreen _ServiceID"),
-    ] = str(DIGITIZER_SURFACE_MAIN_TOUCHSCREEN),
+        Optional[str],
+        typer.Option("--touch-service-id", help=TOUCH_SERVICE_ID_HELP),
+    ] = None,
 ) -> None:
     """Drag several fingers together, each from its (X1, Y1) to its (X2, Y2).
 
@@ -931,7 +953,8 @@ async def core_device_universal_hid_service_multi_drag(
     """
     paths = cast(list[tuple[int, int, int, int]], _group_coordinates(coordinates, 4))
     async with touch_session(service_provider) as service:
-        await service.multi_drag(paths, steps=steps, duration=duration, service_id=_parse_int_auto(touch_service_id))
+        tsid = await _touch_service_id(service, touch_service_id)
+        await service.multi_drag(paths, steps=steps, duration=duration, service_id=tsid)
 
 
 @universal_hid_service_cli.command("swipe")
@@ -967,9 +990,9 @@ async def core_device_universal_hid_service_session(
         typer.Option("--gesture-service-id", help="Gesture surface _ServiceID (for `move`/`swipe`)"),
     ] = str(DIGITIZER_SURFACE_TOUCHSCREEN_GESTURE),
     touch_service_id: Annotated[
-        str,
-        typer.Option("--touch-service-id", help="mainTouchscreen _ServiceID (for `tap`/`drag`)"),
-    ] = str(DIGITIZER_SURFACE_MAIN_TOUCHSCREEN),
+        Optional[str],
+        typer.Option("--touch-service-id", help=TOUCH_SERVICE_ID_HELP + " (for `tap`/`drag`)"),
+    ] = None,
 ) -> None:
     """Run a sequence of gestures inside ONE auth-gated media stream.
 
@@ -990,9 +1013,9 @@ async def core_device_universal_hid_service_session(
             pymobiledevice3 developer core-device universal-hid-service session
     """
     gsid = _parse_int_auto(gesture_service_id)
-    tsid = _parse_int_auto(touch_service_id)
     lines = (script.read_text() if script else sys.stdin.read()).splitlines()
     async with touch_session(service_provider) as service:
+        tsid = await _touch_service_id(service, touch_service_id)
         for lineno, raw in enumerate(lines, 1):
             line = raw.split("#", 1)[0].strip()
             if not line:
@@ -1121,6 +1144,11 @@ async def core_device_universal_hid_service_key(
 # ---------------------------------------------------------------------------
 # Display service — com.apple.coredevice.displayservice
 # ---------------------------------------------------------------------------
+DISPLAY_ID_HELP = (
+    "displayId to stream (see `get-display-info`). Default: the built-in display in use -- "
+    "on a foldable, the lit panel."
+)
+
 display_cli = InjectingTyper(
     name="display",
     help="Stream and mirror the device's screen and audio (com.apple.coredevice.displayservice).",
@@ -1150,7 +1178,7 @@ async def core_device_display_get_media_stream_server_status(service_provider: R
 async def core_device_display_start_video_stream(
     service_provider: RSDServiceProviderDep,
     output: Annotated[Path, typer.Argument(help="Write received RTP packet bytes to this file")],
-    display_id: Annotated[int, typer.Option("--display-id", help="Display to stream (1 = the main display).")] = 1,
+    display_id: Annotated[Optional[int], typer.Option("--display-id", help=DISPLAY_ID_HELP)] = None,
     duration: Annotated[float, typer.Option("--duration", help="Seconds to capture")] = 5.0,
     receiver_port: Annotated[
         int, typer.Option("--port", help="Local UDP port to receive the stream on (0 = any free port).")
@@ -1199,7 +1227,7 @@ async def core_device_display_start_audio_stream(
 @async_command
 async def core_device_display_serve_web(
     service_provider: RSDServiceProviderDep,
-    display_id: Annotated[int, typer.Option("--display-id", help="Display to stream (1 = the main display).")] = 1,
+    display_id: Annotated[Optional[int], typer.Option("--display-id", help=DISPLAY_ID_HELP)] = None,
     bind: Annotated[
         str,
         typer.Option(
@@ -1345,7 +1373,7 @@ async def core_device_display_serve_web(
 @async_command
 async def core_device_display_serve_vnc(
     service_provider: RSDServiceProviderDep,
-    display_id: Annotated[int, typer.Option("--display-id", help="Display to stream (1 = the main display).")] = 1,
+    display_id: Annotated[Optional[int], typer.Option("--display-id", help=DISPLAY_ID_HELP)] = None,
     bind: Annotated[
         str,
         typer.Option(
