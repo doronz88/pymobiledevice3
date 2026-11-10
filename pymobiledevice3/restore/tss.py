@@ -50,6 +50,25 @@ TSS_CONTROLLER_ACTION_URL = "http://gs.apple.com/TSS/controller?action=2"
 
 TSS_CLIENT_VERSION_STRING = "libauthinstall-1104.0.9"
 
+# Build identity properties Apple's host copies into the AP ticket request whenever the identity carries them
+# (MobileDevice's `_AMAuthInstallBundlePopulateManifestProperties`), on top of the ones listed where this is used
+AP_MANIFEST_PROPERTIES = (
+    "Ap,CurrentOSSecurityVersion",
+    "Ap,EnableGroundhog",
+    "Ap,EngineeringUseOnlyUnit",
+    "Ap,EphemeralDataMode",
+    "Ap,InternalUseOnlySW",
+    "Ap,InternalUseOnlyUnit",
+    "Ap,MinimumOSSecurityVersion",
+    "Ap,RestoreSecurityOverrides0",
+    "Ap,RestoreSecurityOverrides1",
+    "Ap,RestoreSecurityOverrides2",
+    "Ap,RestoreSecurityOverrides3",
+    "Ap,SoftwareUpdateDeviceID",
+    "Ap,UniqueTagList",
+    "x86,OSLongVersion",
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -574,6 +593,7 @@ class TSSRequest:
             "AllowNeRDBoot",
             "Ap,ProductMarketingVersion",
             "Ap,Timestamp",
+            *AP_MANIFEST_PROPERTIES,
         )
         for k in keys_to_copy:
             if k in parameters:
