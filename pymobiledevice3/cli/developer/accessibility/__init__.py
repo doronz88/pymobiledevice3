@@ -1,8 +1,11 @@
+import asyncio
 import logging
+from contextlib import AsyncExitStack
 from enum import Enum
 from typing import Annotated, Any, Optional
 
 import typer
+from packaging.version import Version
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import (
@@ -14,9 +17,54 @@ from pymobiledevice3.cli.cli_common import (
     print_json_line,
 )
 from pymobiledevice3.cli.developer.accessibility import settings
+from pymobiledevice3.exceptions import PyMobileDevice3Exception
+from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.rsd_tunnel import PreferredRsdTunnel
 from pymobiledevice3.services.accessibilityaudit import AccessibilityAudit, Direction
+from pymobiledevice3.services.notification_proxy import RemoteNotificationProxyService
 
 logger = logging.getLogger(__name__)
+
+
+#: SpringBoard keeps this notification's state at 1 while the device is locked
+LOCKSTATE_NOTIFICATION = "com.apple.springboard.lockstate"
+#: From here the notification proxy can read a notification's state
+NOTIFICATION_STATE_MIN_VERSION = Version("27.2")
+
+
+async def _is_device_locked(service_provider: LockdownServiceProvider) -> Optional[bool]:
+    """
+    Whether SpringBoard reports the device locked; None where that cannot be read.
+
+    The state is only readable over RemoteXPC, so a lockdown connection opens a tunnel for it.
+    """
+    try:
+        if Version(service_provider.product_version) < NOTIFICATION_STATE_MIN_VERSION:
+            return None
+        return await asyncio.wait_for(_read_lock_state(service_provider), timeout=15.0)
+    except (PyMobileDevice3Exception, asyncio.TimeoutError, OSError):
+        return None
+
+
+async def _read_lock_state(service_provider: LockdownServiceProvider) -> bool:
+    async with AsyncExitStack() as stack:
+        if isinstance(service_provider, RemoteServiceDiscoveryService):
+            rsd = service_provider
+        else:
+            rsd = await stack.enter_async_context(PreferredRsdTunnel(serial=service_provider.udid, autopair=False))
+        service = await stack.enter_async_context(RemoteNotificationProxyService(rsd))
+        return bool(await service.notify_get_state(LOCKSTATE_NOTIFICATION))
+
+
+async def _no_focus_reason(service_provider: LockdownServiceProvider) -> str:
+    """Explain why the device reported no focused element: it does not while it is locked."""
+    locked = await _is_device_locked(service_provider)
+    if locked:
+        return "The device is locked, so it reports no accessibility elements; unlock it and try again."
+    if locked is None:
+        return "The device reported no focused element; make sure it is unlocked and showing an app."
+    return "The device reported no focused element."
 
 
 class FocusDirection(str, Enum):
@@ -100,7 +148,7 @@ async def accessibility_list_items(service_provider: ServiceProviderDep) -> None
                 elements.append(element.to_dict())
         except TimeoutError:
             # A locked device accepts the focus moves but reports no element
-            logger.error("The device reported no focused element; make sure it is unlocked and showing an app.")
+            logger.error(await _no_focus_reason(service_provider))
             raise typer.Exit(1) from None
     print_json(elements)
 
