@@ -11,6 +11,7 @@ from pymobiledevice3.cli.cli_common import ServiceProviderDep, async_command, pr
 from pymobiledevice3.exceptions import (
     AlreadyMountedError,
     DeveloperDiskImageNotFoundError,
+    NoSuchBuildIdentityError,
     NotMountedError,
     UnsupportedCommandError,
 )
@@ -253,6 +254,13 @@ async def mounter_auto_mount(
         raise typer.Exit(1) from e
     except DeveloperDiskImageNotFoundError as e:
         logger.error("Unable to find the correct DeveloperDiskImage")
+        raise typer.Exit(1) from e
+    except NoSuchBuildIdentityError as e:
+        # Only the PersonalizedDMG is matched by board; the cryptex fits any device
+        logger.error(
+            f"{e} The personalized-dmg image does not support this device; "
+            "use the cryptex one instead (`--image cryptex`, the default from iOS 27)."
+        )
         raise typer.Exit(1) from e
     except PermissionError as e:
         logger.error(

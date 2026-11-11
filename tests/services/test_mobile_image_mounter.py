@@ -5,7 +5,7 @@ from typing import Any, Optional, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import NotMountedError, RSDRequiredError
+from pymobiledevice3.exceptions import NoSuchBuildIdentityError, NotMountedError, RSDRequiredError
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -16,6 +16,7 @@ from pymobiledevice3.services.mobile_image_mounter import (
     MobileImageMounterService,
     PersonalizedDdi,
     PersonalizedImageMounter,
+    request_personalization_manifest,
 )
 
 
@@ -386,3 +387,18 @@ def test_auto_mount_accepts_an_xcode_directory(tmp_path: Path) -> None:
     # Parsing converts the option the way an invocation would (a file-only type raises BadParameter).
     context = command.make_context("auto-mount", ["--xcode", str(tmp_path)])
     assert str(context.params["xcode"]) == str(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_personalization_reports_a_device_the_manifest_does_not_list() -> None:
+    # The PersonalizedDMG manifest ends with the Cryptex1 identity, which has no board or chip ID.
+    # A device newer than the image matches no identity and reached it, raising KeyError('ApBoardID')
+    build_manifest = {
+        "BuildIdentities": [
+            {"ApBoardID": "0x04", "ApChipID": "0x8130", "Manifest": {}},
+            {"Cryptex1,ChipID": "0xFF10", "Manifest": {}},
+        ]
+    }
+
+    with pytest.raises(NoSuchBuildIdentityError, match="board 12, chip 33104"):
+        await request_personalization_manifest(build_manifest, {"BoardId": 12, "ChipID": 0x8150}, 1, b"")
