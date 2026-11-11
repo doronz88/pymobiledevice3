@@ -95,8 +95,13 @@ async def accessibility_list_items(service_provider: ServiceProviderDep) -> None
     """List the accessibility elements of the foreground app by moving the inspector focus through them."""
     elements: list[dict[str, Any]] = []
     async with AccessibilityAudit(service_provider) as service:
-        async for element in service.iter_elements():
-            elements.append(element.to_dict())
+        try:
+            async for element in service.iter_elements():
+                elements.append(element.to_dict())
+        except TimeoutError:
+            # A locked device accepts the focus moves but reports no element
+            logger.error("The device reported no focused element; make sure it is unlocked and showing an app.")
+            raise typer.Exit(1) from None
     print_json(elements)
 
 
