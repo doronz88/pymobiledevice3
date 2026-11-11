@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from pymobiledevice3.remote.core_device import hid_service
+from pymobiledevice3.remote.core_device import device_info, hid_service
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService, display_rotation, select_display
 from pymobiledevice3.remote.core_device.screen_stream import ScreenStreamServer, _SubState
 from pymobiledevice3.remote.core_device.vnc_server import (
@@ -72,6 +72,34 @@ def test_select_display_follows_a_fold():
 def test_select_display_ignores_active_external_displays():
     info = {"displays": [{"displayId": 1, "primary": True}, {"displayId": 4, "external": True, "active": True}]}
     assert select_display(info)["displayId"] == 1
+
+
+def test_select_display_falls_back_to_the_backlight():
+    # Seen right after mounting the 27B52 DDI: ``backlightState`` per display, no ``active``.
+    info = json.loads(json.dumps(UNFOLDED))
+    for display, backlight in zip(info["displays"], ("off", "inactiveOn", "off")):
+        del display["active"]
+        display["backlightState"] = backlight
+    assert select_display(info)["displayId"] == 2
+
+
+def test_select_display_warns_when_the_ddi_reports_no_display_in_use(monkeypatch, caplog):
+    # The 27A5228h DDI's reply carries neither ``active`` nor ``backlightState``.
+    monkeypatch.setattr(device_info, "_warned_no_display_in_use", False)
+    info = json.loads(json.dumps(UNFOLDED))
+    for display in info["displays"]:
+        del display["active"]
+    with caplog.at_level("WARNING"):
+        assert select_display(info)["displayId"] == 1
+        assert select_display(info)["displayId"] == 1
+    assert len([r for r in caplog.records if "DeveloperDiskImage" in r.message]) == 1
+
+
+def test_select_display_does_not_warn_for_a_single_built_in_display(monkeypatch, caplog):
+    monkeypatch.setattr(device_info, "_warned_no_display_in_use", False)
+    with caplog.at_level("WARNING"):
+        assert select_display({"displays": [{"displayId": 1, "primary": True}]})["displayId"] == 1
+    assert not caplog.records
 
 
 def test_select_display_honours_a_pinned_id():
