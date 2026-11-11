@@ -10,6 +10,7 @@ from pymobiledevice3.cli import mounter
 from pymobiledevice3.exceptions import (
     AlreadyMountedError,
     DeveloperDiskImageNotFoundError,
+    NoSuchBuildIdentityError,
     StartServiceError,
     UnsupportedCommandError,
 )
@@ -34,8 +35,9 @@ def _auto_mount_raising(monkeypatch: pytest.MonkeyPatch, error: BaseException) -
         PermissionError(13, "Permission denied", "/Applications/Xcode.app/.../DeviceSupport/15.8"),
         DeveloperDiskImageNotFoundError(),
         URLError("no route"),
+        NoSuchBuildIdentityError("no entry for this device"),
     ],
-    ids=["unwritable-xcode-path", "no-image-for-version", "download-failed"],
+    ids=["unwritable-xcode-path", "no-image-for-version", "download-failed", "device-not-in-image-manifest"],
 )
 def test_auto_mount_exits_nonzero_when_it_could_not_mount(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
     # Regression (#1985): these were only logged, so scripts saw exit status 0 for a failed mount
@@ -108,3 +110,15 @@ async def test_developer_service_failure_hints_an_existing_mounter_command(
     assert hinted
     registered = {command.name for command in mounter.cli.registered_commands}
     assert set(hinted) <= registered
+
+
+def test_auto_mount_points_at_the_cryptex_when_the_personalized_dmg_lacks_the_device(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _auto_mount_raising(monkeypatch, NoSuchBuildIdentityError("no entry for this device"))
+
+    with caplog.at_level(logging.ERROR), pytest.raises(typer.Exit):
+        mounter.mounter_auto_mount(service_provider=LOCKDOWN, image=PersonalizedDdi.PERSONALIZED_DMG)
+
+    assert "no entry for this device" in caplog.text
+    assert "--image cryptex" in caplog.text
