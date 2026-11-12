@@ -8432,8 +8432,9 @@ class CryptexdService(RemoteService):
         :param restore_dir: an unpacked DDI ``Restore`` directory; defaults to the cached download
             from the DeveloperDiskImage repository, so no Xcode installation is required.
         :returns: the installed cryptex, as reported back by `copy_installed`.
-        :raises AlreadyMountedError: if the DDI cryptex is already installed, or the image mounter
-            already has a Personalized image mounted.
+        :raises AlreadyMountedError: if a Personalized image is already mounted, be it the DDI
+            cryptex or one the image mounter mounted. A DDI cryptex that is installed but no
+            longer mounted is replaced instead.
         :raises CryptexdError: if the daemon rejected the image.
         :raises TSSError: if Apple refused to sign the personalization request.
         :raises DeviceFeatureNotSupportedError: below `DDI_CRYPTEX_MIN_VERSION`.
@@ -8441,12 +8442,22 @@ class CryptexdService(RemoteService):
         # Before asking Apple to sign anything the device cannot mount
         require_ddi_cryptex_support(self.rsd.product_version, self.rsd.udid)
         already_installed = await self._installed_ddi()
-        if already_installed is not None:
+        mounted = await self._ddi_mounted_by_image_mounter()
+        if already_installed is not None and mounted:
             raise AlreadyMountedError(
                 f"The {already_installed.identifier} {already_installed.version} cryptex is already installed."
             )
-        if await self._ddi_mounted_by_image_mounter():
+        if mounted:
             raise AlreadyMountedError("A Personalized developer disk image is already mounted by the image mounter.")
+        if already_installed is not None:
+            # The image mounter can unmount a cryptex's image (`mounter umount-personalized`) while
+            # cryptexd keeps the cryptex installed: nothing is at /System/Developer, yet installing
+            # over it fails with EEXIST. Observed on iPhone19,4 27.2.1.
+            logger.warning(
+                f"The {already_installed.identifier} {already_installed.version} cryptex is installed but its "
+                "image is not mounted; uninstalling it to install it again"
+            )
+            await self.uninstall(already_installed.identifier)
 
         assets = load_cryptex1_assets(restore_dir)
         request = TSSRequest()
@@ -8472,10 +8483,11 @@ class CryptexdService(RemoteService):
         return ddi
 
     async def _ddi_mounted_by_image_mounter(self) -> bool:
-        """Whether the image mounter has a Personalized image mounted at ``/System/Developer``.
+        """Whether the image mounter reports a Personalized image mounted at ``/System/Developer``.
 
-        Such an image is not a cryptex, so `copy_installed` does not report it, yet it holds the
-        mount path the DDI cryptex needs: installing over it fails with
+        It reports the DDI cryptex while that is mounted, and also an image it mounted itself. The
+        latter is not a cryptex, so `copy_installed` does not report it, yet it holds the mount
+        path the DDI cryptex needs: installing over it fails with
         ``mkdir custom mount path: /System/Developer [17: File exists]``.
         """
         async with PersonalizedImageMounter(lockdown=self.rsd) as mounter:
@@ -8832,12 +8844,12 @@ Returns:
 
 Raises:
 
-| Type                             | Description                                                                                             |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `AlreadyMountedError`            | if the DDI cryptex is already installed, or the image mounter already has a Personalized image mounted. |
-| `CryptexdError`                  | if the daemon rejected the image.                                                                       |
-| `TSSError`                       | if Apple refused to sign the personalization request.                                                   |
-| `DeviceFeatureNotSupportedError` | below DDI_CRYPTEX_MIN_VERSION.                                                                          |
+| Type                             | Description                                                                                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AlreadyMountedError`            | if a Personalized image is already mounted, be it the DDI cryptex or one the image mounter mounted. A DDI cryptex that is installed but no longer mounted is replaced instead. |
+| `CryptexdError`                  | if the daemon rejected the image.                                                                                                                                              |
+| `TSSError`                       | if Apple refused to sign the personalization request.                                                                                                                          |
+| `DeviceFeatureNotSupportedError` | below DDI_CRYPTEX_MIN_VERSION.                                                                                                                                                 |
 
 Source code in `pymobiledevice3/services/cryptexd.py`
 
@@ -8854,8 +8866,9 @@ async def auto_install_ddi(self, restore_dir: Optional[Path] = None) -> Installe
     :param restore_dir: an unpacked DDI ``Restore`` directory; defaults to the cached download
         from the DeveloperDiskImage repository, so no Xcode installation is required.
     :returns: the installed cryptex, as reported back by `copy_installed`.
-    :raises AlreadyMountedError: if the DDI cryptex is already installed, or the image mounter
-        already has a Personalized image mounted.
+    :raises AlreadyMountedError: if a Personalized image is already mounted, be it the DDI
+        cryptex or one the image mounter mounted. A DDI cryptex that is installed but no
+        longer mounted is replaced instead.
     :raises CryptexdError: if the daemon rejected the image.
     :raises TSSError: if Apple refused to sign the personalization request.
     :raises DeviceFeatureNotSupportedError: below `DDI_CRYPTEX_MIN_VERSION`.
@@ -8863,12 +8876,22 @@ async def auto_install_ddi(self, restore_dir: Optional[Path] = None) -> Installe
     # Before asking Apple to sign anything the device cannot mount
     require_ddi_cryptex_support(self.rsd.product_version, self.rsd.udid)
     already_installed = await self._installed_ddi()
-    if already_installed is not None:
+    mounted = await self._ddi_mounted_by_image_mounter()
+    if already_installed is not None and mounted:
         raise AlreadyMountedError(
             f"The {already_installed.identifier} {already_installed.version} cryptex is already installed."
         )
-    if await self._ddi_mounted_by_image_mounter():
+    if mounted:
         raise AlreadyMountedError("A Personalized developer disk image is already mounted by the image mounter.")
+    if already_installed is not None:
+        # The image mounter can unmount a cryptex's image (`mounter umount-personalized`) while
+        # cryptexd keeps the cryptex installed: nothing is at /System/Developer, yet installing
+        # over it fails with EEXIST. Observed on iPhone19,4 27.2.1.
+        logger.warning(
+            f"The {already_installed.identifier} {already_installed.version} cryptex is installed but its "
+            "image is not mounted; uninstalling it to install it again"
+        )
+        await self.uninstall(already_installed.identifier)
 
     assets = load_cryptex1_assets(restore_dir)
     request = TSSRequest()
