@@ -326,6 +326,8 @@ pymobiledevice3 amfi trust-app-signer PROFILE_UUID
 
 On iOS 17+, `--image cryptex|personalized-dmg` overrides that choice. For example, a device whose cryptexd cannot install the cryptex (`syslog live -m cryptexd` shows `staging failed`) can still mount the `PersonalizedDMG` with `mounter auto-mount --image personalized-dmg`, as long as the DDI's build manifest lists its board.
 
+An image that is already mounted is left alone. `mounter auto-mount --replace` removes it first, whichever way it was mounted, e.g. to swap an older Xcode's image for the current one.
+
 Newer devices (e.g. the iPhone 18 series) only work with the Cryptex1 DDI
 
 Every `PersonalizedDMG` build identity is tied to one chip/board pair, so it can only be personalized for the devices listed in the DDI's build manifest -- and even Xcode 27.1's DDI stops at `iPhone18,5`. A device outside that list gets no ticket for it (see [`NoSuchBuildIdentityError`](https://doronz88.github.io/pymobiledevice3/latest/guides/troubleshooting/#could-not-find-the-manifest-for-board-and-chip-nosuchbuildidentityerror)). The Cryptex1 identity names no device at all, so its ticket request is valid for any device and Apple's signing server decides. This is also how Xcode supports these devices, which run iOS 27 or later, where `auto-mount` installs the cryptex (as does `cryptex auto-install`).

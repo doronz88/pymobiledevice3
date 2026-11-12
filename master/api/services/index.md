@@ -8493,6 +8493,18 @@ class CryptexdService(RemoteService):
         async with PersonalizedImageMounter(lockdown=self.rsd) as mounter:
             return await mounter.is_image_mounted(PersonalizedImageMounter.IMAGE_TYPE)
 
+    async def uninstall_ddi(self) -> Optional[InstalledCryptex]:
+        """
+        Uninstall the DeveloperDiskImage cryptex, if one is installed.
+
+        :returns: the cryptex that was uninstalled, or ``None`` if none was installed.
+        :raises CryptexdError: if removal failed.
+        """
+        installed = await self._installed_ddi()
+        if installed is not None:
+            await self.uninstall(installed.identifier)
+        return installed
+
     async def _installed_ddi(self) -> Optional[InstalledCryptex]:
         """Return the installed DeveloperDiskImage cryptex, or ``None`` if there is none."""
         installed = await self.copy_installed()
@@ -8915,6 +8927,42 @@ async def auto_install_ddi(self, restore_dir: Optional[Path] = None) -> Installe
     if ddi is None:
         raise CryptexdError(f"install reported success but {DDI_CRYPTEX_IDENTIFIER} is not installed")
     return ddi
+```
+
+### uninstall_ddi
+
+```
+uninstall_ddi() -> Optional[InstalledCryptex]
+```
+
+Uninstall the DeveloperDiskImage cryptex, if one is installed.
+
+Returns:
+
+| Type                         | Description                                                      |
+| ---------------------------- | ---------------------------------------------------------------- |
+| `Optional[InstalledCryptex]` | the cryptex that was uninstalled, or None if none was installed. |
+
+Raises:
+
+| Type            | Description        |
+| --------------- | ------------------ |
+| `CryptexdError` | if removal failed. |
+
+Source code in `pymobiledevice3/services/cryptexd.py`
+
+```
+async def uninstall_ddi(self) -> Optional[InstalledCryptex]:
+    """
+    Uninstall the DeveloperDiskImage cryptex, if one is installed.
+
+    :returns: the cryptex that was uninstalled, or ``None`` if none was installed.
+    :raises CryptexdError: if removal failed.
+    """
+    installed = await self._installed_ddi()
+    if installed is not None:
+        await self.uninstall(installed.identifier)
+    return installed
 ```
 
 ### read_personalization_identifiers

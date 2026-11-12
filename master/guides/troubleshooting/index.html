@@ -3442,9 +3442,7 @@ which ones the device offers depends on that image. The error says which case ap
   older Xcode on the same host. The Xcode 26 images, for instance, lack
   <code>com.apple.coredevice.screencaptureservice</code> and <code>com.apple.coredevice.hid.universalhidservice</code>,
   which the Xcode 27 ones add. Replace it with the one this release expects; no Xcode is needed:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>pymobiledevice3<span class="w"> </span>cryptex<span class="w"> </span>uninstall<span class="w"> </span>com.apple.MobileAsset.DDI<span class="w">   </span><span class="c1"># if `cryptex list` shows it</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>pymobiledevice3<span class="w"> </span>mounter<span class="w"> </span>umount-personalized<span class="w">                   </span><span class="c1"># otherwise</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>pymobiledevice3<span class="w"> </span>mounter<span class="w"> </span>auto-mount
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>pymobiledevice3<span class="w"> </span>mounter<span class="w"> </span>auto-mount<span class="w"> </span>--replace
 </code></pre></div>
 <p>An older Xcode left running may mount its own image again when it sees the device.</p>
 </li>
@@ -3453,9 +3451,12 @@ which ones the device offers depends on that image. The error says which case ap
 <p>Nothing to fix: the image is already there and developer services can use it, so
 <code>mounter auto-mount</code> reports this at info level and exits 0, so scripts can run it unconditionally.
 It exits non-zero only when no image could be mounted. To replace it — for
-example with a newer DDI — remove it first. Which command applies depends on how it was mounted:
-<code>cryptex list</code> shows <code>com.apple.MobileAsset.DDI</code> only when it was installed as a cryptex (by
-<code>auto-mount</code> from iOS 27, <code>cryptex auto-install</code>, or Xcode):</p>
+example with a newer DDI — run <code>pymobiledevice3 mounter auto-mount --replace</code>, which removes
+whatever is mounted and mounts the right image. It cuts off anything using the mounted image's
+services.</p>
+<p>To only remove it, which command applies depends on how it was mounted: <code>cryptex list</code> shows
+<code>com.apple.MobileAsset.DDI</code> only when it was installed as a cryptex (by <code>auto-mount</code> from iOS 27,
+<code>cryptex auto-install</code>, or Xcode):</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pymobiledevice3<span class="w"> </span>cryptex<span class="w"> </span>uninstall<span class="w"> </span>com.apple.MobileAsset.DDI<span class="w">   </span><span class="c1"># installed as a cryptex</span>
 <a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>pymobiledevice3<span class="w"> </span>mounter<span class="w"> </span>umount-personalized<span class="w">                   </span><span class="c1"># mounted by the image mounter</span>
 <a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>pymobiledevice3<span class="w"> </span>mounter<span class="w"> </span>umount-developer<span class="w">                      </span><span class="c1"># iOS &lt; 17</span>
