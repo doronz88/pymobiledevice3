@@ -42,7 +42,7 @@ dependencies = [
     "daemonize",
     "pykdebugparser>=1.10.0",
     "rich>=13.0.0",
-    "ansilogs>=1.1.0",
+    "ansilogs>=1.2.0",
     "requests",
     "packaging",
     "typing_extensions>=4.1.0",
