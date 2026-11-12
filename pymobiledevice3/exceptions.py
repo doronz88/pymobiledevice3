@@ -578,10 +578,7 @@ class DeveloperDiskImageServiceError(InvalidServiceError):
         identifier: Optional[str],
         product_version: str,
     ) -> None:
-        replace = (
-            "`pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI` (if `pymobiledevice3 cryptex list` "
-            "shows it) or `pymobiledevice3 mounter umount-personalized`, and then `pymobiledevice3 mounter auto-mount`"
-        )
+        replace = "`pymobiledevice3 mounter auto-mount --replace`"
         message = f"The device does not offer the {service_name} service, which its DeveloperDiskImage provides, and "
         if last_build is not None:
             # A newer DDI dropped the service: there is nothing to mount that brings it back

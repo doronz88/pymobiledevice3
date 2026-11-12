@@ -1,18 +1,26 @@
 import asyncio
+import plistlib
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import NoSuchBuildIdentityError, NotMountedError, RSDRequiredError
+from pymobiledevice3.exceptions import (
+    AlreadyMountedError,
+    NoSuchBuildIdentityError,
+    NotMountedError,
+    RSDRequiredError,
+    UnsupportedCommandError,
+)
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.service_connection import ServiceConnection
-from pymobiledevice3.services import mobile_image_mounter
+from pymobiledevice3.services import cryptexd, mobile_image_mounter
 from pymobiledevice3.services.cryptexd import DDI_CRYPTEX_IDENTIFIER, CryptexdService, InstalledCryptex
 from pymobiledevice3.services.mobile_image_mounter import (
+    DeveloperDiskImageMounter,
     MobileImageMounterService,
     PersonalizedDdi,
     PersonalizedImageMounter,
@@ -117,9 +125,42 @@ def test_uses_cryptex_image_never_over_plain_lockdown() -> None:
 class _AutoMountCalls:
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self.calls: list[str] = []
+        #: what is on the device before auto_mount runs
+        self.mounted = False
+        self.cryptex_installed = False
+        #: whether the PersonalizedDMG's build manifest lists the device
+        self.personalized_dmg_fits = True
+        manifest = plistlib.dumps({"BuildIdentities": [{"ApBoardID": "0x0E", "ApChipID": "0x8150"}]})
+        build_manifest = cast(Path, SimpleNamespace(read_bytes=lambda: manifest))
+
+        async def query_personalization_identifiers(mounter: Any, image_type: Optional[str] = None) -> dict[str, Any]:
+            return {"BoardId": 0x0E if self.personalized_dmg_fits else 0x0F, "ChipID": 0x8150}
 
         async def raise_if_cannot_mount(mounter: Any) -> None:
             self.calls.append("precheck")
+
+        async def is_image_mounted(mounter: Any, image_type: str) -> bool:
+            return self.mounted
+
+        async def umount(mounter: Any) -> None:
+            self.calls.append("umount")
+            self.mounted = False
+
+        async def uninstall_ddi(cryptexd: Any) -> Optional[InstalledCryptex]:
+            if not self.cryptex_installed:
+                return None
+            # Uninstalling the cryptex takes its image off /System/Developer too
+            self.calls.append("uninstall-cryptex")
+            self.cryptex_installed = self.mounted = False
+            return InstalledCryptex(DDI_CRYPTEX_IDENTIFIER, "1")
+
+        def fetch_cryptex_ddi() -> Path:
+            self.calls.append("download-cryptex")
+            return Path()
+
+        def fetch_personalized_ddi() -> tuple[Path, Path, Path]:
+            self.calls.append("download-personalized")
+            return Path(), build_manifest, Path()
 
         async def auto_install_ddi(cryptexd: Any, restore_dir: Any = None) -> InstalledCryptex:
             self.calls.append("cryptex")
@@ -138,8 +179,15 @@ class _AutoMountCalls:
         monkeypatch.setattr(PersonalizedImageMounter, "raise_if_cannot_mount", raise_if_cannot_mount)
         monkeypatch.setattr(PersonalizedImageMounter, "mount", mount)
         monkeypatch.setattr(PersonalizedImageMounter, "close", close)
+        monkeypatch.setattr(PersonalizedImageMounter, "is_image_mounted", is_image_mounted)
+        monkeypatch.setattr(PersonalizedImageMounter, "umount", umount)
+        monkeypatch.setattr(
+            PersonalizedImageMounter, "query_personalization_identifiers", query_personalization_identifiers
+        )
         monkeypatch.setattr(CryptexdService, "auto_install_ddi", auto_install_ddi)
-        monkeypatch.setattr(mobile_image_mounter, "fetch_personalized_ddi", lambda: (Path(), Path(), Path()))
+        monkeypatch.setattr(CryptexdService, "uninstall_ddi", uninstall_ddi)
+        monkeypatch.setattr(cryptexd, "fetch_cryptex_ddi", fetch_cryptex_ddi)
+        monkeypatch.setattr(mobile_image_mounter, "fetch_personalized_ddi", fetch_personalized_ddi)
 
 
 @pytest.mark.asyncio
@@ -158,7 +206,7 @@ async def test_auto_mount_falls_back_to_the_personalized_ddi(monkeypatch: pytest
 
     await mobile_image_mounter.auto_mount(_rsd(["ReadIdentifiers"]))
 
-    assert recorder.calls == ["personalized"]
+    assert recorder.calls == ["download-personalized", "personalized"]
 
 
 UDID = "00008030-000215140A9A802E"
@@ -197,7 +245,7 @@ async def test_auto_mount_keeps_the_personalized_ddi_over_usb_below_the_cutoff(
 
     await mobile_image_mounter.auto_mount(_usb_lockdown(version))
 
-    assert recorder.calls == ["personalized"]
+    assert recorder.calls == ["download-personalized", "personalized"]
 
 
 @pytest.mark.asyncio
@@ -211,7 +259,7 @@ async def test_auto_mount_can_force_the_personalized_dmg_from_the_cutoff(
 
     await mobile_image_mounter.auto_mount(lockdown, image=PersonalizedDdi.PERSONALIZED_DMG)
 
-    assert recorder.calls == ["personalized"]
+    assert recorder.calls == ["download-personalized", "personalized"]
 
 
 @pytest.mark.asyncio
@@ -254,7 +302,135 @@ async def test_auto_mount_over_rsd_below_the_cutoff_mounts_the_personalized_ddi(
 
     await mobile_image_mounter.auto_mount(_rsd(["CryptexInstall"], os_version="26.0.1"))
 
-    assert recorder.calls == ["personalized"]
+    assert recorder.calls == ["download-personalized", "personalized"]
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_replaces_a_cryptex_ddi(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Issue #2197: an Xcode 26 DDI was installed, and replacing it took picking between two removal
+    # commands before mounting again. The image is downloaded first, so a failed download costs nothing.
+    recorder = _AutoMountCalls(monkeypatch)
+    recorder.mounted = recorder.cryptex_installed = True
+
+    await mobile_image_mounter.auto_mount(_rsd(["CryptexInstall"]), replace=True)
+
+    assert recorder.calls == ["download-cryptex", "uninstall-cryptex", "precheck", "cryptex"]
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_replaces_a_ddi_mounted_by_the_image_mounter(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A PersonalizedDMG is no cryptex: cryptexd has nothing to uninstall, the image mounter unmounts it
+    recorder = _AutoMountCalls(monkeypatch)
+    recorder.mounted = True
+
+    await mobile_image_mounter.auto_mount(_rsd(["CryptexInstall"]), replace=True)
+
+    assert recorder.calls == ["download-cryptex", "umount", "precheck", "cryptex"]
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_replace_without_a_mounted_ddi_just_mounts(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorder = _AutoMountCalls(monkeypatch)
+
+    await mobile_image_mounter.auto_mount(_rsd(["CryptexInstall"]), replace=True)
+
+    assert recorder.calls == ["download-cryptex", "precheck", "cryptex"]
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_replaces_the_personalized_dmg_over_usb(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Below DDI_CRYPTEX_MIN_VERSION the DDI cannot be a cryptex, so no tunnel is needed to remove it
+    recorder = _AutoMountCalls(monkeypatch)
+    recorder.mounted = True
+
+    await mobile_image_mounter.auto_mount(_usb_lockdown("26.0.1"), replace=True)
+
+    assert recorder.calls == ["download-personalized", "umount", "personalized"]
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_replace_keeps_the_mounted_ddi_when_the_new_one_does_not_fit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Observed on iPhone19,4 27.2.1: `--replace --image personalized-dmg` uninstalled the cryptex
+    # and only then found the PersonalizedDMG does not list the device, leaving it with no DDI
+    recorder = _AutoMountCalls(monkeypatch)
+    recorder.mounted = recorder.cryptex_installed = True
+    recorder.personalized_dmg_fits = False
+
+    with pytest.raises(NoSuchBuildIdentityError):
+        await mobile_image_mounter.auto_mount(
+            _rsd(["CryptexInstall"]), image=PersonalizedDdi.PERSONALIZED_DMG, replace=True
+        )
+
+    assert recorder.calls == ["download-personalized"]
+    assert recorder.mounted and recorder.cryptex_installed
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_replace_requires_rsd_where_the_ddi_may_be_a_cryptex(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Only cryptexd can tell and remove a DDI cryptex. Unmounting its image over the image mounter
+    # would leave the cryptex installed, so nothing is removed before the tunnel is there.
+    recorder = _AutoMountCalls(monkeypatch)
+    recorder.mounted = recorder.cryptex_installed = True
+
+    with pytest.raises(RSDRequiredError):
+        await mobile_image_mounter.auto_mount(_usb_lockdown("26.4"), replace=True)
+
+    assert recorder.calls == ["download-personalized"]
+    assert recorder.mounted
+
+
+class _DeveloperMounterCalls:
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, mounted: bool) -> None:
+        self.calls: list[str] = []
+
+        async def connect(mounter: Any) -> None: ...
+
+        async def close(mounter: Any) -> None: ...
+
+        async def is_image_mounted(mounter: Any, image_type: str) -> bool:
+            return mounted
+
+        async def umount(mounter: Any) -> None:
+            self.calls.append("umount")
+
+        async def mount(mounter: Any, image: Path, signature: Path) -> None:
+            self.calls.append("mount")
+
+        def download(version: str, image_path: Path, signature: Path) -> None:
+            self.calls.append("download")
+
+        monkeypatch.setattr(DeveloperDiskImageMounter, "connect", connect)
+        monkeypatch.setattr(DeveloperDiskImageMounter, "close", close)
+        monkeypatch.setattr(DeveloperDiskImageMounter, "is_image_mounted", is_image_mounted)
+        monkeypatch.setattr(DeveloperDiskImageMounter, "umount", umount)
+        monkeypatch.setattr(DeveloperDiskImageMounter, "mount", mount)
+        monkeypatch.setattr(mobile_image_mounter, "_download_developer_disk_image", download)
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_developer_replaces_a_mounted_image(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    recorder = _DeveloperMounterCalls(monkeypatch, mounted=True)
+
+    await mobile_image_mounter.auto_mount(_usb_lockdown("16.7"), xcode=str(tmp_path), replace=True)
+
+    # downloaded before the mounted image goes
+    assert recorder.calls == ["download", "umount", "mount"]
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_developer_leaves_a_mounted_image_without_replace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    recorder = _DeveloperMounterCalls(monkeypatch, mounted=True)
+
+    with pytest.raises(AlreadyMountedError):
+        await mobile_image_mounter.auto_mount(_usb_lockdown("16.7"), xcode=str(tmp_path))
+
+    assert recorder.calls == []
 
 
 class _SerialMounter:
@@ -337,6 +513,23 @@ async def test_auto_mount_developer_releases_the_mounter(tmp_path: Path) -> None
     assert all(connection.closed for connection in device.connections)
     async with MobileImageMounterService(lockdown=lockdown) as mounter:
         assert await asyncio.wait_for(mounter.is_image_mounted("Developer"), 5)
+
+
+@pytest.mark.asyncio
+async def test_auto_mount_developer_cannot_replace_before_ios_14(tmp_path: Path) -> None:
+    # UnmountImage appeared in iOS 14: the mounted image stays, and the caller is told why
+    device = _SerialMounter()
+    device.mounted = True
+
+    with pytest.raises(UnsupportedCommandError):
+        await asyncio.wait_for(
+            mobile_image_mounter.auto_mount_developer(
+                cast(LockdownServiceProvider, device), xcode=str(_xcode_with_image(tmp_path, "13.3")), replace=True
+            ),
+            5,
+        )
+
+    assert device.mounted
 
 
 @pytest.mark.asyncio

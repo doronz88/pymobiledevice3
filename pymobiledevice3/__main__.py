@@ -56,7 +56,8 @@ from pymobiledevice3.exceptions import (
 )
 from pymobiledevice3.lockdown import retry_create_using_usbmux
 
-ansilogs.install(logging.INFO)
+# Messages name the commands to run in `backticks`: make them stand out from the sentence
+ansilogs.install(logging.INFO, highlight_code=True)
 
 logging.getLogger("quic").setLevel(logging.CRITICAL + 1)
 logging.getLogger("asyncio").setLevel(logging.CRITICAL + 1)

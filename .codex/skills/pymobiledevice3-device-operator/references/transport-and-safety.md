@@ -44,7 +44,9 @@ is required for DVT only below iOS 17), while `developer core-device` always nee
    and iOS 26.4+, the first to install the DDI as a cryptex). All cache the download under `~/.pymobiledevice3` — `$XDG_DATA_HOME/pymobiledevice3`
    on new Linux installs — and end up mounted at `/System/Developer`. Both refuse while a DDI
    is already present; remove it with `cryptex uninstall com.apple.MobileAsset.DDI` or
-   `mounter umount-personalized`, depending on which front-end mounted it.
+   `mounter umount-personalized`, depending on which front-end mounted it. `mounter auto-mount
+   --replace` does both steps (remove, then mount the right image); it cuts off whatever is using
+   the mounted image's services, so use it only when the user asked to replace the image.
 3. A CoreDevice transport path. On iOS 17.4+ this needs **no setup**: a no-root tunnel is
    established automatically when the command runs — the in-process userspace tunnel.
    iOS 17.0-17.3 devices (which predate

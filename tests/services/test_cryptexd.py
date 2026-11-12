@@ -447,6 +447,25 @@ async def test_auto_install_ddi_replaces_an_installed_cryptex_that_is_not_mounte
 
 
 @pytest.mark.asyncio
+async def test_uninstall_ddi_removes_the_installed_cryptex() -> None:
+    service, sent = _service(_INSTALLED_DDI_REPLY)
+
+    removed = await service.uninstall_ddi()
+
+    assert removed is not None
+    assert removed.identifier == DDI_CRYPTEX_IDENTIFIER
+    assert [request["routine"] for request in sent] == ["copy-installed", "uninstall"]
+
+
+@pytest.mark.asyncio
+async def test_uninstall_ddi_does_nothing_without_one() -> None:
+    service, sent = _service({"error": 0, "argv": {"remote-cryptex-array": []}})
+
+    assert await service.uninstall_ddi() is None
+    assert [request["routine"] for request in sent] == ["copy-installed"]
+
+
+@pytest.mark.asyncio
 async def test_auto_install_ddi_refuses_an_image_mounted_by_the_image_mounter(monkeypatch) -> None:
     # Regression: a PersonalizedDMG mounted through the image mounter is invisible to
     # copy-installed, so the install went ahead and failed after the TSS round-trip with

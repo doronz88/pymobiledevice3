@@ -376,6 +376,9 @@ whose cryptexd cannot install the cryptex (`syslog live -m cryptexd` shows `stag
 can still mount the `PersonalizedDMG` with `mounter auto-mount --image personalized-dmg`,
 as long as the DDI's build manifest lists its board.
 
+An image that is already mounted is left alone. `mounter auto-mount --replace` removes it first,
+whichever way it was mounted, e.g. to swap an older Xcode's image for the current one.
+
 !!! note "Newer devices (e.g. the iPhone 18 series) only work with the Cryptex1 DDI"
 
     Every `PersonalizedDMG` build identity is tied to one chip/board pair, so it can only be
