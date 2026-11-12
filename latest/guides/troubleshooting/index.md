@@ -129,16 +129,16 @@ The `com.apple.coredevice.*` services (`developer core-device`: screenshots, HID
 - **"the mounted one (...) does not include it"** — an older image is mounted, for example by an older Xcode on the same host. The Xcode 26 images, for instance, lack `com.apple.coredevice.screencaptureservice` and `com.apple.coredevice.hid.universalhidservice`, which the Xcode 27 ones add. Replace it with the one this release expects; no Xcode is needed:
 
   ```
-  pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI   # if `cryptex list` shows it
-  pymobiledevice3 mounter umount-personalized                   # otherwise
-  pymobiledevice3 mounter auto-mount
+  pymobiledevice3 mounter auto-mount --replace
   ```
 
   An older Xcode left running may mount its own image again when it sees the device.
 
 ### "DeveloperDiskImage already mounted" (`AlreadyMountedError`)
 
-Nothing to fix: the image is already there and developer services can use it, so `mounter auto-mount` reports this at info level and exits 0, so scripts can run it unconditionally. It exits non-zero only when no image could be mounted. To replace it — for example with a newer DDI — remove it first. Which command applies depends on how it was mounted: `cryptex list` shows `com.apple.MobileAsset.DDI` only when it was installed as a cryptex (by `auto-mount` from iOS 27, `cryptex auto-install`, or Xcode):
+Nothing to fix: the image is already there and developer services can use it, so `mounter auto-mount` reports this at info level and exits 0, so scripts can run it unconditionally. It exits non-zero only when no image could be mounted. To replace it — for example with a newer DDI — run `pymobiledevice3 mounter auto-mount --replace`, which removes whatever is mounted and mounts the right image. It cuts off anything using the mounted image's services.
+
+To only remove it, which command applies depends on how it was mounted: `cryptex list` shows `com.apple.MobileAsset.DDI` only when it was installed as a cryptex (by `auto-mount` from iOS 27, `cryptex auto-install`, or Xcode):
 
 ```
 pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI   # installed as a cryptex

@@ -3375,6 +3375,8 @@ the DeveloperDiskImage (DDI), an Apple-signed image that adds developer services
 whose cryptexd cannot install the cryptex (<code>syslog live -m cryptexd</code> shows <code>staging failed</code>)
 can still mount the <code>PersonalizedDMG</code> with <code>mounter auto-mount --image personalized-dmg</code>,
 as long as the DDI's build manifest lists its board.</p>
+<p>An image that is already mounted is left alone. <code>mounter auto-mount --replace</code> removes it first,
+whichever way it was mounted, e.g. to swap an older Xcode's image for the current one.</p>
 <div class="admonition note">
 <p class="admonition-title">Newer devices (e.g. the iPhone 18 series) only work with the Cryptex1 DDI</p>
 <p>Every <code>PersonalizedDMG</code> build identity is tied to one chip/board pair, so it can only be

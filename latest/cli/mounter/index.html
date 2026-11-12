@@ -3072,7 +3072,8 @@ Most users want <code>auto-mount</code> instead.</p>
 iOS 17+ images are personalized for the device through Apple's signing server
 (needs Internet). Requires Developer Mode.</p>
 <p>Exits non-zero when no image could be mounted. An image that is already mounted is what was
-asked for, so that succeeds -- scripts can run this unconditionally before developer commands.</p>
+asked for, so that succeeds -- scripts can run this unconditionally before developer commands.
+<code>--replace</code> removes it and mounts the right one instead.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pymobiledevice3 mounter auto-mount [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
@@ -3099,6 +3100,10 @@ asked for, so that succeeds -- scripts can run this unconditionally before devel
 <tr>
 <td><code>--image &lt;cryptex\|personalized-dmg&gt;</code></td>
 <td>iOS 17+ only: force this DeveloperDiskImage instead of choosing one by iOS version (cryptex from iOS 27, personalized-dmg below it)</td>
+</tr>
+<tr>
+<td><code>--replace</code></td>
+<td>Replace a DeveloperDiskImage that is already mounted, e.g. an older one that lacks a service, instead of leaving it. Cuts off whatever is using its services.</td>
 </tr>
 </tbody>
 </table>

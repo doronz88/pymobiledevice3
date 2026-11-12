@@ -512,6 +512,8 @@ pymobiledevice3 amfi trust-app-signer PROFILE_UUID
 
 On iOS 17+, `--image cryptex|personalized-dmg` overrides that choice. For example, a device whose cryptexd cannot install the cryptex (`syslog live -m cryptexd` shows `staging failed`) can still mount the `PersonalizedDMG` with `mounter auto-mount --image personalized-dmg`, as long as the DDI's build manifest lists its board.
 
+An image that is already mounted is left alone. `mounter auto-mount --replace` removes it first, whichever way it was mounted, e.g. to swap an older Xcode's image for the current one.
+
 Newer devices (e.g. the iPhone 18 series) only work with the Cryptex1 DDI
 
 Every `PersonalizedDMG` build identity is tied to one chip/board pair, so it can only be personalized for the devices listed in the DDI's build manifest -- and even Xcode 27.1's DDI stops at `iPhone18,5`. A device outside that list gets no ticket for it (see [`NoSuchBuildIdentityError`](https://doronz88.github.io/pymobiledevice3/latest/guides/troubleshooting/#could-not-find-the-manifest-for-board-and-chip-nosuchbuildidentityerror)). The Cryptex1 identity names no device at all, so its ticket request is valid for any device and Apple's signing server decides. This is also how Xcode supports these devices, which run iOS 27 or later, where `auto-mount` installs the cryptex (as does `cryptex auto-install`).
@@ -1905,16 +1907,16 @@ The `com.apple.coredevice.*` services (`developer core-device`: screenshots, HID
 - **"the mounted one (...) does not include it"** — an older image is mounted, for example by an older Xcode on the same host. The Xcode 26 images, for instance, lack `com.apple.coredevice.screencaptureservice` and `com.apple.coredevice.hid.universalhidservice`, which the Xcode 27 ones add. Replace it with the one this release expects; no Xcode is needed:
 
   ```
-  pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI   # if `cryptex list` shows it
-  pymobiledevice3 mounter umount-personalized                   # otherwise
-  pymobiledevice3 mounter auto-mount
+  pymobiledevice3 mounter auto-mount --replace
   ```
 
   An older Xcode left running may mount its own image again when it sees the device.
 
 ### "DeveloperDiskImage already mounted" (`AlreadyMountedError`)
 
-Nothing to fix: the image is already there and developer services can use it, so `mounter auto-mount` reports this at info level and exits 0, so scripts can run it unconditionally. It exits non-zero only when no image could be mounted. To replace it — for example with a newer DDI — remove it first. Which command applies depends on how it was mounted: `cryptex list` shows `com.apple.MobileAsset.DDI` only when it was installed as a cryptex (by `auto-mount` from iOS 27, `cryptex auto-install`, or Xcode):
+Nothing to fix: the image is already there and developer services can use it, so `mounter auto-mount` reports this at info level and exits 0, so scripts can run it unconditionally. It exits non-zero only when no image could be mounted. To replace it — for example with a newer DDI — run `pymobiledevice3 mounter auto-mount --replace`, which removes whatever is mounted and mounts the right image. It cuts off anything using the mounted image's services.
+
+To only remove it, which command applies depends on how it was mounted: `cryptex list` shows `com.apple.MobileAsset.DDI` only when it was installed as a cryptex (by `auto-mount` from iOS 27, `cryptex auto-install`, or Xcode):
 
 ```
 pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI   # installed as a cryptex
@@ -14922,6 +14924,18 @@ class CryptexdService(RemoteService):
         async with PersonalizedImageMounter(lockdown=self.rsd) as mounter:
             return await mounter.is_image_mounted(PersonalizedImageMounter.IMAGE_TYPE)
 
+    async def uninstall_ddi(self) -> Optional[InstalledCryptex]:
+        """
+        Uninstall the DeveloperDiskImage cryptex, if one is installed.
+
+        :returns: the cryptex that was uninstalled, or ``None`` if none was installed.
+        :raises CryptexdError: if removal failed.
+        """
+        installed = await self._installed_ddi()
+        if installed is not None:
+            await self.uninstall(installed.identifier)
+        return installed
+
     async def _installed_ddi(self) -> Optional[InstalledCryptex]:
         """Return the installed DeveloperDiskImage cryptex, or ``None`` if there is none."""
         installed = await self.copy_installed()
@@ -15344,6 +15358,42 @@ async def auto_install_ddi(self, restore_dir: Optional[Path] = None) -> Installe
     if ddi is None:
         raise CryptexdError(f"install reported success but {DDI_CRYPTEX_IDENTIFIER} is not installed")
     return ddi
+```
+
+### uninstall_ddi
+
+```
+uninstall_ddi() -> Optional[InstalledCryptex]
+```
+
+Uninstall the DeveloperDiskImage cryptex, if one is installed.
+
+Returns:
+
+| Type                         | Description                                                      |
+| ---------------------------- | ---------------------------------------------------------------- |
+| `Optional[InstalledCryptex]` | the cryptex that was uninstalled, or None if none was installed. |
+
+Raises:
+
+| Type            | Description        |
+| --------------- | ------------------ |
+| `CryptexdError` | if removal failed. |
+
+Source code in `pymobiledevice3/services/cryptexd.py`
+
+```
+async def uninstall_ddi(self) -> Optional[InstalledCryptex]:
+    """
+    Uninstall the DeveloperDiskImage cryptex, if one is installed.
+
+    :returns: the cryptex that was uninstalled, or ``None`` if none was installed.
+    :raises CryptexdError: if removal failed.
+    """
+    installed = await self._installed_ddi()
+    if installed is not None:
+        await self.uninstall(installed.identifier)
+    return installed
 ```
 
 ### read_personalization_identifiers
