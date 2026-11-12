@@ -120,6 +120,22 @@ The single most common error. A developer service was requested but the device c
 
 1. On **iOS 17+**, developer commands also need a tunnel — but you normally don't need to do anything: the CLI establishes a no-root userspace tunnel in-process automatically (you'll see a *"Trying again over a no-root userspace tunnel"* message, which is normal). The exception is iOS 17.0-17.3 on Linux/Windows, which needs a running `tunneld` (see [below](#unable-to-connect-to-tunneld-tunneldconnectionerror)). See [iOS 17+ tunnels](https://doronz88.github.io/pymobiledevice3/latest/guides/ios17-tunnels/index.md) for the full picture.
 
+### "does not offer the ... service, which its DeveloperDiskImage provides" (`DeveloperDiskImageServiceError`)
+
+The `com.apple.coredevice.*` services (`developer core-device`: screenshots, HID input, apps, files, ...) are not part of iOS: daemons inside the mounted DeveloperDiskImage provide them, so which ones the device offers depends on that image. The error says which case applies:
+
+- **"none is mounted"** — mount one with `pymobiledevice3 mounter auto-mount`. The image is unmounted by every reboot, including the one an iOS update ends with.
+
+- **"the mounted one (...) does not include it"** — an older image is mounted, for example by an older Xcode on the same host. The Xcode 26 images, for instance, lack `com.apple.coredevice.screencaptureservice` and `com.apple.coredevice.hid.universalhidservice`, which the Xcode 27 ones add. Replace it with the one this release expects; no Xcode is needed:
+
+  ```
+  pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI   # if `cryptex list` shows it
+  pymobiledevice3 mounter umount-personalized                   # otherwise
+  pymobiledevice3 mounter auto-mount
+  ```
+
+  An older Xcode left running may mount its own image again when it sees the device.
+
 ### "DeveloperDiskImage already mounted" (`AlreadyMountedError`)
 
 Nothing to fix: the image is already there and developer services can use it, so `mounter auto-mount` reports this at info level and exits 0, so scripts can run it unconditionally. It exits non-zero only when no image could be mounted. To replace it — for example with a newer DDI — remove it first. Which command applies depends on how it was mounted: `cryptex list` shows `com.apple.MobileAsset.DDI` only when it was installed as a cryptex (by `auto-mount` from iOS 27, `cryptex auto-install`, or Xcode):
