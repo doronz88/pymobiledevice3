@@ -185,9 +185,7 @@ which ones the device offers depends on that image. The error says which case ap
   which the Xcode 27 ones add. Replace it with the one this release expects; no Xcode is needed:
 
     ```shell
-    pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI   # if `cryptex list` shows it
-    pymobiledevice3 mounter umount-personalized                   # otherwise
-    pymobiledevice3 mounter auto-mount
+    pymobiledevice3 mounter auto-mount --replace
     ```
 
     An older Xcode left running may mount its own image again when it sees the device.
@@ -197,9 +195,13 @@ which ones the device offers depends on that image. The error says which case ap
 Nothing to fix: the image is already there and developer services can use it, so
 `mounter auto-mount` reports this at info level and exits 0, so scripts can run it unconditionally.
 It exits non-zero only when no image could be mounted. To replace it — for
-example with a newer DDI — remove it first. Which command applies depends on how it was mounted:
-`cryptex list` shows `com.apple.MobileAsset.DDI` only when it was installed as a cryptex (by
-`auto-mount` from iOS 27, `cryptex auto-install`, or Xcode):
+example with a newer DDI — run `pymobiledevice3 mounter auto-mount --replace`, which removes
+whatever is mounted and mounts the right image. It cuts off anything using the mounted image's
+services.
+
+To only remove it, which command applies depends on how it was mounted: `cryptex list` shows
+`com.apple.MobileAsset.DDI` only when it was installed as a cryptex (by `auto-mount` from iOS 27,
+`cryptex auto-install`, or Xcode):
 
 ```shell
 pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI   # installed as a cryptex
