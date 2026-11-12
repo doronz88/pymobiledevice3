@@ -80,6 +80,7 @@ from pymobiledevice3.remote.core_device.hid_service import (
 )
 from pymobiledevice3.remote.core_device.pasteboard_service import PasteboardContent, PasteboardMonitor
 from pymobiledevice3.remote.core_device.screen_stream import UdpMediaTransport, depacketize_hevc, open_media_receiver
+from pymobiledevice3.remote.remote_service import require_service
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
 logger = logging.getLogger(__name__)
@@ -1806,6 +1807,7 @@ class VncStreamServer:
     # ----- top-level orchestration ------------------------------------------
     async def serve(self) -> None:
         require_video_stream_support(self._rsd)
+        await require_service(self._rsd, DisplayService.SERVICE_NAME)
         loop = asyncio.get_running_loop()
         self._loop = loop
         # 1) Pick the display: the pinned one, or the built-in display in use.

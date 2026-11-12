@@ -171,6 +171,27 @@ it yet. In order:
    [below](#unable-to-connect-to-tunneld-tunneldconnectionerror)). See
    [iOS 17+ tunnels](ios17-tunnels.md) for the full picture.
 
+### "does not offer the ... service, which its DeveloperDiskImage provides" (`DeveloperDiskImageServiceError`)
+
+The `com.apple.coredevice.*` services (`developer core-device`: screenshots, HID input, apps,
+files, ...) are not part of iOS: daemons inside the mounted DeveloperDiskImage provide them, so
+which ones the device offers depends on that image. The error says which case applies:
+
+- **"none is mounted"** — mount one with `pymobiledevice3 mounter auto-mount`. The image is
+  unmounted by every reboot, including the one an iOS update ends with.
+- **"the mounted one (...) does not include it"** — an older image is mounted, for example by an
+  older Xcode on the same host. The Xcode 26 images, for instance, lack
+  `com.apple.coredevice.screencaptureservice` and `com.apple.coredevice.hid.universalhidservice`,
+  which the Xcode 27 ones add. Replace it with the one this release expects; no Xcode is needed:
+
+    ```shell
+    pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI   # if `cryptex list` shows it
+    pymobiledevice3 mounter umount-personalized                   # otherwise
+    pymobiledevice3 mounter auto-mount
+    ```
+
+    An older Xcode left running may mount its own image again when it sees the device.
+
 ### "DeveloperDiskImage already mounted" (`AlreadyMountedError`)
 
 Nothing to fix: the image is already there and developer services can use it, so

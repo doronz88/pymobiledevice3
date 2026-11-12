@@ -66,6 +66,7 @@ from pymobiledevice3.remote.core_device.pasteboard_service import (
     data_item,
     read_pasteboard,
 )
+from pymobiledevice3.remote.remote_service import require_service
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.power_assertion import PowerAssertionService
 from pymobiledevice3.tunneld.api import get_tunneld_device_by_udid
@@ -3156,6 +3157,9 @@ class ScreenStreamServer:
         # Checked up front: the eager start below swallows every other failure, which on an older
         # device would serve a viewer that stays black
         require_video_stream_support(self._rsd)
+        # Likewise: without the display service (no DeveloperDiskImage mounted, or one too old)
+        # there is nothing to retry into
+        await require_service(self._rsd, DisplayService.SERVICE_NAME)
         await self._resolve_display()
         # Preflight the device-side stream before binding the HTTP server. If
         # the camera or microphone is in use there is nothing to serve, so fail

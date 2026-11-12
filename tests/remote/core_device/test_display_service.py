@@ -1,11 +1,12 @@
 import asyncio
 import socket
 import struct
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 import pytest
 
-from pymobiledevice3.exceptions import CoreDeviceError, DeviceVersionNotSupportedError
+from pymobiledevice3.exceptions import CoreDeviceError, DeviceVersionNotSupportedError, InvalidServiceError
+from pymobiledevice3.remote.core_device.device_info import DeviceInfoService
 from pymobiledevice3.remote.core_device.display_service import (
     MEDIA_IN_USE_ERROR_CODE,
     DisplayService,
@@ -37,12 +38,11 @@ class FakeConnection:
         self.closed = True
 
 
-def _make_rsd(os_version: str = "26.0") -> RemoteServiceDiscoveryService:
+def _make_rsd(os_version: str = "26.0", services: Optional[dict[str, Any]] = None) -> RemoteServiceDiscoveryService:
     rsd = RemoteServiceDiscoveryService(("127.0.0.1", 0))
-    rsd.peer_info = {
-        "Properties": {"OSVersion": os_version},
-        "Services": {DISPLAY_SERVICE: {"Port": "1024", "Properties": {"Features": [STOP_FEATURE]}}},
-    }
+    if services is None:
+        services = {DISPLAY_SERVICE: {"Port": "1024", "Properties": {"Features": [STOP_FEATURE]}}}
+    rsd.peer_info = {"Properties": {"OSVersion": os_version}, "Services": services}
     rsd.udid = "udid"
     return rsd
 
@@ -154,4 +154,26 @@ async def test_serve_vnc_refuses_devices_before_ios_27(monkeypatch: pytest.Monke
     monkeypatch.setattr(DisplayService, "connect", _never_called)
     server = VncStreamServer(_make_rsd("26.5.2"), port=0)
     with pytest.raises(DeviceVersionNotSupportedError):
+        await server.serve()
+
+
+@pytest.mark.asyncio
+async def test_serve_web_refuses_a_device_without_the_display_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    # No DDI mounted (or one too old): the eager start swallowed the failure three times over,
+    # each with a traceback, and then served a viewer that could only stay black
+    monkeypatch.setattr(ScreenStreamServer, "_resolve_display", _never_called)
+    monkeypatch.setattr(ScreenStreamServer, "_eager_stream_start", _never_called)
+    rsd = _make_rsd("27.2.1", services={})
+    server = ScreenStreamServer(rsd, http_port=0)
+    with pytest.raises(InvalidServiceError, match=DISPLAY_SERVICE):
+        await server.serve()
+
+
+@pytest.mark.asyncio
+async def test_serve_vnc_refuses_a_device_without_the_display_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(DisplayService, "connect", _never_called)
+    monkeypatch.setattr(DeviceInfoService, "connect", _never_called)
+    rsd = _make_rsd("27.2.1", services={})
+    server = VncStreamServer(rsd, port=0)
+    with pytest.raises(InvalidServiceError, match=DISPLAY_SERVICE):
         await server.serve()
