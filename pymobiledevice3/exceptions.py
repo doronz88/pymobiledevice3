@@ -564,6 +564,62 @@ class InvalidServiceError(LockdownError):
     """The device does not offer the requested service."""
 
 
+class DeveloperDiskImageServiceError(InvalidServiceError):
+    """The device does not offer a service that its DeveloperDiskImage provides."""
+
+    def __init__(
+        self,
+        service_name: str,
+        mounted_build: Optional[str],
+        mounted_includes_service: Optional[bool],
+        first_build: str,
+        last_build: Optional[str],
+        expected_build: str,
+        identifier: Optional[str],
+        product_version: str,
+    ) -> None:
+        replace = (
+            "`pymobiledevice3 cryptex uninstall com.apple.MobileAsset.DDI` (if `pymobiledevice3 cryptex list` "
+            "shows it) or `pymobiledevice3 mounter umount-personalized`, and then `pymobiledevice3 mounter auto-mount`"
+        )
+        message = f"The device does not offer the {service_name} service, which its DeveloperDiskImage provides, and "
+        if last_build is not None:
+            # A newer DDI dropped the service: there is nothing to mount that brings it back
+            mounted = "none is mounted" if mounted_build is None else f"the mounted one is {mounted_build or 'unknown'}"
+            message += (
+                f"{mounted}. DeveloperDiskImages include this service from {first_build} to {last_build} only, so "
+                f"the {expected_build} one that pymobiledevice3 mounts does not."
+            )
+        elif mounted_build is None:
+            message += "none is mounted. Mount one with `pymobiledevice3 mounter auto-mount`."
+        elif mounted_includes_service:
+            message += (
+                f"the mounted one ({mounted_build}) includes it: either iOS {product_version} does not offer this "
+                f"service on this device, or the image's daemons failed to load. To rule out the latter, mount it "
+                f"again: {replace}."
+            )
+        else:
+            lacks = "does not include it" if mounted_includes_service is False else "may not include it"
+            message += (
+                f"the mounted one ({mounted_build or 'of an unknown build'}) {lacks}: DeveloperDiskImages include "
+                f"this service from {first_build} on. Replace it with the {expected_build} one: {replace}."
+            )
+        super().__init__(message, identifier, product_version)
+        #: the service the device does not offer
+        self.service_name = service_name
+        #: build id of the mounted DeveloperDiskImage: ``None`` when none is mounted, ``""`` when the
+        #: device does not report the build of the one that is
+        self.mounted_build = mounted_build
+        #: whether the mounted DeveloperDiskImage provides the service; ``None`` when that cannot be told
+        self.mounted_includes_service = mounted_includes_service
+        #: build id of the first known DeveloperDiskImage that provides the service
+        self.first_build = first_build
+        #: build id of the last known DeveloperDiskImage that provides the service, when a newer one dropped it
+        self.last_build = last_build
+        #: build id of the DeveloperDiskImage this release mounts
+        self.expected_build = expected_build
+
+
 class DeviceFeatureNotSupportedError(LockdownError):
     """The device does not support a feature this operation needs."""
 

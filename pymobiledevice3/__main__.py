@@ -47,6 +47,7 @@ from pymobiledevice3.exceptions import (
     ConnectionFailedError,
     ConnectionFailedToUsbmuxdError,
     ConnectionTerminatedError,
+    DeveloperDiskImageServiceError,
     DeviceNotFoundError,
     InvalidServiceError,
     NoDeviceConnectedError,
@@ -344,6 +345,10 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
         # The device may be back by the next attempt (after a disconnect it may still be re-enumerating
         # while other devices are attached); usbmuxd itself being down is another matter.
         reconnectable = not isinstance(e, ConnectionFailedToUsbmuxdError)
+    except DeveloperDiskImageServiceError as e:
+        # Raised over a live RSD connection with the cause already worked out: no tunnel to retry
+        # over, and nothing INVALID_SERVICE_MESSAGE's checklist could add.
+        _report(e)
     except (InvalidServiceError, RSDRequiredError) as e:
         reason = ""
         # Both exceptions carry the device's product version (no extra device round-trip needed).
