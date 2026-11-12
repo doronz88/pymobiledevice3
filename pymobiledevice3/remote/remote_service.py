@@ -15,6 +15,61 @@ from pymobiledevice3.services.mobile_image_mounter import LATEST_DDI_BUILD_ID, P
 DDI_MOUNT_PATH = "/System/Developer"
 
 
+async def _mounted_ddi_build(rsd: RemoteServiceDiscoveryService) -> Optional[str]:
+    """Build id of the mounted DeveloperDiskImage: ``None`` if none is mounted, ``""`` if unreported."""
+    async with PersonalizedImageMounter(lockdown=rsd) as mounter:
+        images = await mounter.copy_devices()
+    for image in images:
+        if image.get("MountPath") == DDI_MOUNT_PATH:
+            version_info: dict[str, Any] = image.get("PersonalizedImageVersionInfo") or {}
+            return str(version_info.get("ProductBuildVersion") or "")
+    return None
+
+
+async def _explain_missing_service(
+    rsd: RemoteServiceDiscoveryService, service_name: str, error: InvalidServiceError
+) -> InvalidServiceError:
+    """Turn the error for a service the device does not offer into one that says why, where that is known."""
+    if service_name not in DDI_SERVICES:
+        return error
+    first_build, last_build = DDI_SERVICES[service_name]
+    try:
+        mounted_build = await _mounted_ddi_build(rsd)
+    except (PyMobileDevice3Exception, OSError):
+        # Could not tell what is mounted: the plain error is still true
+        return error
+    return DeveloperDiskImageServiceError(
+        service_name,
+        mounted_build,
+        ddi_includes(service_name, mounted_build) if mounted_build else None,
+        first_build,
+        last_build,
+        LATEST_DDI_BUILD_ID,
+        rsd.udid,
+        rsd.product_version,
+    )
+
+
+async def require_service(rsd: RemoteServiceDiscoveryService, service_name: str) -> None:
+    """
+    Verify the device offers a service, without connecting to it.
+
+    For a caller that would otherwise find out late, or swallow the failure: raises what
+    `RemoteService.connect` would.
+
+    :raises DeveloperDiskImageServiceError: if the device does not offer the service and it is
+        one its DeveloperDiskImage provides; says which DDI, if any, is mounted.
+    :raises InvalidServiceError: if the device does not offer the service.
+    """
+    try:
+        rsd.get_service_port(service_name)
+    except InvalidServiceError as e:
+        explained = await _explain_missing_service(rsd, service_name, e)
+        if explained is e:
+            raise
+        raise explained from e
+
+
 class RemoteService:
     def __init__(self, rsd: RemoteServiceDiscoveryService, service_name: str):
         self.service_name = service_name
@@ -43,35 +98,11 @@ class RemoteService:
         try:
             self._service = self.rsd.start_remote_service(self.service_name)
         except InvalidServiceError as e:
-            if self.service_name not in DDI_SERVICES:
+            explained = await _explain_missing_service(self.rsd, self.service_name, e)
+            if explained is e:
                 raise
-            first_build, last_build = DDI_SERVICES[self.service_name]
-            try:
-                mounted_build = await self._mounted_ddi_build()
-            except (PyMobileDevice3Exception, OSError):
-                # Could not tell what is mounted: the plain error is still true
-                raise e from None
-            raise DeveloperDiskImageServiceError(
-                self.service_name,
-                mounted_build,
-                ddi_includes(self.service_name, mounted_build) if mounted_build else None,
-                first_build,
-                last_build,
-                LATEST_DDI_BUILD_ID,
-                self.rsd.udid,
-                self.rsd.product_version,
-            ) from e
+            raise explained from e
         await self._service.connect()
-
-    async def _mounted_ddi_build(self) -> Optional[str]:
-        """Build id of the mounted DeveloperDiskImage: ``None`` if none is mounted, ``""`` if unreported."""
-        async with PersonalizedImageMounter(lockdown=self.rsd) as mounter:
-            images = await mounter.copy_devices()
-        for image in images:
-            if image.get("MountPath") == DDI_MOUNT_PATH:
-                version_info: dict[str, Any] = image.get("PersonalizedImageVersionInfo") or {}
-                return str(version_info.get("ProductBuildVersion") or "")
-        return None
 
     async def __aenter__(self):
         await self.connect()

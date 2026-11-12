@@ -8,7 +8,7 @@ from pymobiledevice3.exceptions import (
     InvalidServiceError,
 )
 from pymobiledevice3.remote import ddi_services, remote_service
-from pymobiledevice3.remote.remote_service import RemoteService
+from pymobiledevice3.remote.remote_service import RemoteService, require_service
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.mobile_image_mounter import LATEST_DDI_BUILD_ID
 
@@ -19,8 +19,11 @@ class FakeRsd:
     udid = "00008030-000215140A9A802E"
     product_version = "27.2.1"
 
-    def start_remote_service(self, name: str) -> Any:
+    def get_service_port(self, name: str) -> int:
         raise InvalidServiceError(f"The device does not offer the {name} service.", self.udid, self.product_version)
+
+    def start_remote_service(self, name: str) -> Any:
+        self.get_service_port(name)
 
 
 def _mounted_images(monkeypatch: pytest.MonkeyPatch, images: list[dict[str, Any]]) -> None:
@@ -184,3 +187,22 @@ async def test_a_failed_ddi_lookup_keeps_the_original_error(monkeypatch: pytest.
         await _connect()
 
     assert not isinstance(e.value, DeveloperDiskImageServiceError)
+
+
+@pytest.mark.asyncio
+async def test_require_service_explains_a_missing_ddi_service_without_connecting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mounted_images(monkeypatch, [])
+
+    with pytest.raises(DeveloperDiskImageServiceError, match="none is mounted"):
+        await require_service(cast(RemoteServiceDiscoveryService, FakeRsd()), SCREEN_CAPTURE)
+
+
+@pytest.mark.asyncio
+async def test_require_service_passes_a_service_the_device_offers() -> None:
+    class OfferingRsd(FakeRsd):
+        def get_service_port(self, name: str) -> int:
+            return 1024
+
+    await require_service(cast(RemoteServiceDiscoveryService, OfferingRsd()), SCREEN_CAPTURE)

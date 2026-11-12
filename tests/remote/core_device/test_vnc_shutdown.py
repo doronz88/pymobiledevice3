@@ -11,7 +11,7 @@ from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscove
 
 def _rsd() -> RemoteServiceDiscoveryService:
     rsd = RemoteServiceDiscoveryService(("127.0.0.1", 0))
-    rsd.peer_info = {"Properties": {"OSVersion": "27.0"}, "Services": {}}
+    rsd.peer_info = {"Properties": {"OSVersion": "27.0"}, "Services": {DisplayService.SERVICE_NAME: {"Port": "1024"}}}
     return rsd
 
 
