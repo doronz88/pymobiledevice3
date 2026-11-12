@@ -26,12 +26,8 @@ from pymobiledevice3.services.mobile_image_mounter import (
 
 logger = logging.getLogger(__name__)
 
-#: How to remove an iOS 17+ DeveloperDiskImage. Which one applies depends on the front-end that put
-#: it there: `cryptex list` shows the DDI only when it was installed as a cryptex.
-PERSONALIZED_DDI_REMOVAL_HINT = (
-    "remove it first with `cryptex uninstall com.apple.MobileAsset.DDI` (if `cryptex list` shows it) "
-    "or `mounter umount-personalized`"
-)
+#: How to replace a mounted DeveloperDiskImage, whichever front-end put it there
+DDI_REPLACE_HINT = "run `pymobiledevice3 mounter auto-mount --replace`"
 
 
 def catch_errors(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -226,6 +222,14 @@ async def mounter_auto_mount(
             "(cryptex from iOS 27, personalized-dmg below it)",
         ),
     ] = None,
+    replace: Annotated[
+        bool,
+        typer.Option(
+            "--replace",
+            help="Replace a DeveloperDiskImage that is already mounted, e.g. an older one that lacks a "
+            "service, instead of leaving it. Cuts off whatever is using its services.",
+        ),
+    ] = False,
 ) -> None:
     """Download (if needed) and mount the right DeveloperDiskImage for the device.
 
@@ -235,20 +239,25 @@ async def mounter_auto_mount(
 
     Exits non-zero when no image could be mounted. An image that is already mounted is what was
     asked for, so that succeeds -- scripts can run this unconditionally before developer commands.
+    `--replace` removes it and mounts the right one instead.
     """
     if image is not None and not uses_personalized_image(service_provider):
         logger.error(f"--image {image.value} needs iOS 17 or later")
         raise typer.Exit(1)
     try:
         await auto_mount(
-            service_provider, xcode=str(xcode) if xcode is not None else None, version=version, image=image
+            service_provider,
+            xcode=str(xcode) if xcode is not None else None,
+            version=version,
+            image=image,
+            replace=replace,
         )
         logger.info("DeveloperDiskImage mounted successfully")
     except AlreadyMountedError:
-        if uses_personalized_image(service_provider):
-            logger.info(f"DeveloperDiskImage already mounted; to replace it, {PERSONALIZED_DDI_REMOVAL_HINT}")
-        else:
-            logger.info("DeveloperDiskImage already mounted; to replace it, run `mounter umount-developer` first")
+        logger.info(f"DeveloperDiskImage already mounted; to replace it, {DDI_REPLACE_HINT}")
+    except UnsupportedCommandError as e:
+        logger.error("This iOS version cannot unmount a DeveloperDiskImage; restart the device to remove it")
+        raise typer.Exit(1) from e
     except URLError as e:
         logger.error("failed to query DeveloperDiskImage versions")
         raise typer.Exit(1) from e

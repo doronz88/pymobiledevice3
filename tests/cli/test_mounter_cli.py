@@ -81,6 +81,44 @@ def test_auto_mount_forwards_a_forced_image(monkeypatch: pytest.MonkeyPatch) -> 
     assert forwarded == [PersonalizedDdi.PERSONALIZED_DMG]
 
 
+@pytest.mark.parametrize("replace", [False, True])
+def test_auto_mount_forwards_replace(monkeypatch: pytest.MonkeyPatch, replace: bool) -> None:
+    forwarded: list[Any] = []
+
+    async def auto_mount(*_args: Any, replace: bool = False, **_kwargs: Any) -> None:
+        forwarded.append(replace)
+
+    monkeypatch.setattr(mounter, "auto_mount", auto_mount)
+
+    mounter.mounter_auto_mount(service_provider=LOCKDOWN, replace=replace)
+
+    assert forwarded == [replace]
+
+
+def test_auto_mount_names_the_command_that_replaces_a_mounted_image(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Issue #2197: the hint was two removal commands to choose from, and then mounting again
+    _auto_mount_raising(monkeypatch, AlreadyMountedError())
+
+    with caplog.at_level(logging.INFO):
+        mounter.mounter_auto_mount(service_provider=LOCKDOWN)
+
+    assert "`pymobiledevice3 mounter auto-mount --replace`" in caplog.text
+
+
+def test_auto_mount_replace_reports_an_ios_that_cannot_unmount(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _auto_mount_raising(monkeypatch, UnsupportedCommandError())
+
+    with caplog.at_level(logging.ERROR), pytest.raises(typer.Exit) as exc_info:
+        mounter.mounter_auto_mount(service_provider=LOCKDOWN, replace=True)
+
+    assert exc_info.value.exit_code == 1
+    assert "restart the device" in caplog.text
+
+
 def test_auto_mount_refuses_a_forced_image_below_ios_17(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mounter, "uses_personalized_image", lambda _lockdown: False)
 

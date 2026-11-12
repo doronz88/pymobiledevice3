@@ -82,8 +82,7 @@ async def test_a_missing_ddi_service_names_the_mounted_ddi_that_lacks_it(monkeyp
     assert e.value.last_build is None
     assert "(17E5179g) does not include it: DeveloperDiskImages include this service from 27A5194q on" in str(e.value)
     assert LATEST_DDI_BUILD_ID in str(e.value)
-    assert "cryptex uninstall com.apple.MobileAsset.DDI" in str(e.value)
-    assert "mounter umount-personalized" in str(e.value)
+    assert "`pymobiledevice3 mounter auto-mount --replace`" in str(e.value)
 
 
 @pytest.mark.asyncio

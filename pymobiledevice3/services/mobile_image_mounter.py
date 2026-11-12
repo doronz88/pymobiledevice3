@@ -1,3 +1,4 @@
+import contextlib
 import enum
 import hashlib
 import logging
@@ -467,6 +468,30 @@ class PersonalizedImageMounter(MobileImageMounterService):
         )
 
 
+def select_build_identity(
+    build_manifest: dict[str, Any], personalization_identifiers: dict[str, Any]
+) -> dict[str, Any]:
+    """
+    Return the build identity in ``build_manifest`` that matches the device's board and chip IDs.
+
+    :param build_manifest: Parsed ``BuildManifest.plist`` contents.
+    :param personalization_identifiers: Device identifiers, as reported by
+        `MobileImageMounterService.query_personalization_identifiers`.
+    :raises NoSuchBuildIdentityError: If no build identity matches the device's board and chip IDs.
+    """
+    board_id = personalization_identifiers["BoardId"]
+    chip_id = personalization_identifiers["ChipID"]
+    for build_identity in build_manifest["BuildIdentities"]:
+        # The Cryptex1 identity fits any device, so it has no board or chip ID to match
+        if "ApBoardID" not in build_identity or "ApChipID" not in build_identity:
+            continue
+        if int(build_identity["ApBoardID"], 0) == board_id and int(build_identity["ApChipID"], 0) == chip_id:
+            return build_identity
+    raise NoSuchBuildIdentityError(
+        f"The image's build manifest has no entry for this device (board {board_id}, chip {chip_id})."
+    )
+
+
 async def request_personalization_manifest(
     build_manifest: dict[str, Any],
     personalization_identifiers: dict[str, Any],
@@ -500,19 +525,7 @@ async def request_personalization_manifest(
     board_id = personalization_identifiers["BoardId"]
     chip_id = personalization_identifiers["ChipID"]
 
-    build_identity = None
-    for tmp_build_identity in build_manifest["BuildIdentities"]:
-        # The Cryptex1 identity fits any device, so it has no board or chip ID to match
-        if "ApBoardID" not in tmp_build_identity or "ApChipID" not in tmp_build_identity:
-            continue
-        if int(tmp_build_identity["ApBoardID"], 0) == board_id and int(tmp_build_identity["ApChipID"], 0) == chip_id:
-            build_identity = tmp_build_identity
-            break
-    else:
-        raise NoSuchBuildIdentityError(
-            f"The image's build manifest has no entry for this device (board {board_id}, chip {chip_id})."
-        )
-    manifest = build_identity["Manifest"]
+    manifest = select_build_identity(build_manifest, personalization_identifiers)["Manifest"]
 
     parameters: dict[str, Any] = {
         "ApProductionMode": True,
@@ -568,7 +581,10 @@ async def request_personalization_manifest(
 
 
 async def auto_mount_developer(
-    lockdown: LockdownServiceProvider, xcode: Optional[str] = None, version: Optional[str] = None
+    lockdown: LockdownServiceProvider,
+    xcode: Optional[str] = None,
+    version: Optional[str] = None,
+    replace: bool = False,
 ) -> None:
     """
     Auto-detect, downloading if needed, and mount the classic Developer Disk Image.
@@ -583,7 +599,11 @@ async def auto_mount_developer(
         home folder for one it does not (an installed Xcode is not ours to write into).
     :param version: iOS version (``major.minor``) to select the image for. Defaults to the device's
         product version.
-    :raises AlreadyMountedError: If a Developer image is already mounted.
+    :param replace: Unmount a Developer image that is already mounted, once the one to mount is
+        available locally, instead of raising `AlreadyMountedError`.
+    :raises AlreadyMountedError: If a Developer image is already mounted and `replace` is not set.
+    :raises UnsupportedCommandError: If `replace` is set and the device cannot unmount an image
+        (below iOS 14).
     :raises DeveloperDiskImageNotFoundError: If no matching image is available in the repository.
     """
     if version is None:
@@ -599,10 +619,14 @@ async def auto_mount_developer(
     signature = image_path.with_name(f"{image_path.name}.signature")
 
     async with DeveloperDiskImageMounter(lockdown=lockdown) as image_mounter:
-        if await image_mounter.is_image_mounted("Developer"):
+        mounted = await image_mounter.is_image_mounted("Developer")
+        if mounted and not replace:
             raise AlreadyMountedError()
         if not image_path.exists():
             _download_developer_disk_image(version, image_path, signature)
+        if mounted:
+            await image_mounter.umount()
+            logger.info("Unmounted the mounted DeveloperDiskImage")
         await image_mounter.mount(image_path, signature)
 
 
@@ -677,7 +701,38 @@ def uses_cryptex_image(lockdown: LockdownServiceProvider) -> bool:
     return True
 
 
-async def auto_mount_personalized(lockdown: LockdownServiceProvider, image: Optional[PersonalizedDdi] = None) -> None:
+async def remove_personalized_ddi(lockdown: LockdownServiceProvider) -> None:
+    """
+    Remove the iOS 17+ Developer Disk Image, whichever way it was put on the device.
+
+    A DDI installed as a cryptex is uninstalled over ``cryptexd``: the image mounter can unmount
+    its image, but that leaves the cryptex installed. One the image mounter mounted is unmounted.
+    Does nothing when there is none.
+
+    :param lockdown: Lockdown service provider for the target device.
+    :raises RSDRequiredError: without an RSD tunnel on an iOS that can hold the DDI as a cryptex
+        (`DDI_CRYPTEX_MIN_VERSION` and later), since only ``cryptexd`` can tell and remove it.
+    """
+    # Imported here: cryptexd imports this module for `LATEST_DDI_BUILD_ID`
+    from pymobiledevice3.services.cryptexd import DDI_CRYPTEX_MIN_VERSION, CryptexdService
+
+    if Version(lockdown.product_version) >= DDI_CRYPTEX_MIN_VERSION:
+        if not isinstance(lockdown, RemoteServiceDiscoveryService):
+            raise RSDRequiredError(lockdown.udid, lockdown.product_version)
+        # Without cryptexd there is none to have installed one
+        with contextlib.suppress(InvalidServiceError):
+            uninstalled = await CryptexdService(lockdown).uninstall_ddi()
+            if uninstalled is not None:
+                logger.info(f"Uninstalled the {uninstalled.identifier} {uninstalled.version} cryptex")
+    async with PersonalizedImageMounter(lockdown=lockdown) as mounter:
+        if await mounter.is_image_mounted(PersonalizedImageMounter.IMAGE_TYPE):
+            await mounter.umount()
+            logger.info("Unmounted the mounted DeveloperDiskImage")
+
+
+async def auto_mount_personalized(
+    lockdown: LockdownServiceProvider, image: Optional[PersonalizedDdi] = None, replace: bool = False
+) -> None:
     """
     Download (if needed) and mount the Personalized Developer Disk Image.
 
@@ -691,7 +746,12 @@ async def auto_mount_personalized(lockdown: LockdownServiceProvider, image: Opti
 
     :param lockdown: Lockdown service provider for the target device.
     :param image: forces this image instead of choosing one by iOS version.
-    :raises RSDRequiredError: when the cryptex is to be installed without an RSD tunnel.
+    :param replace: remove a DDI that is already there (see `remove_personalized_ddi`), once the
+        one to mount is available locally and known to fit the device, instead of raising
+        `AlreadyMountedError`.
+    :raises AlreadyMountedError: if a DDI is already there and `replace` is not set.
+    :raises RSDRequiredError: when the cryptex is to be installed, or may have to be removed,
+        without an RSD tunnel.
     """
     if image is None:
         if not isinstance(lockdown, RemoteServiceDiscoveryService) and (
@@ -703,14 +763,26 @@ async def auto_mount_personalized(lockdown: LockdownServiceProvider, image: Opti
         raise RSDRequiredError(lockdown.udid, lockdown.product_version)
 
     if image == PersonalizedDdi.CRYPTEX:
-        from pymobiledevice3.services.cryptexd import CryptexdService
+        from pymobiledevice3.services.cryptexd import CryptexdService, fetch_cryptex_ddi
 
+        if replace:
+            # Downloaded before the mounted image goes, so a failed download costs nothing
+            fetch_cryptex_ddi()
+            await remove_personalized_ddi(lockdown)
         async with PersonalizedImageMounter(lockdown=lockdown) as mounter:
             await mounter.raise_if_cannot_mount()
         await CryptexdService(cast(RemoteServiceDiscoveryService, lockdown)).auto_install_ddi()
         return
 
     dmg, build_manifest, trustcache = fetch_personalized_ddi()
+    if replace:
+        # Checked before the mounted image goes: an image that does not list this device would
+        # otherwise fail to mount only after it, leaving the device with none
+        async with PersonalizedImageMounter(lockdown=lockdown) as mounter:
+            select_build_identity(
+                plistlib.loads(build_manifest.read_bytes()), await mounter.query_personalization_identifiers()
+            )
+        await remove_personalized_ddi(lockdown)
     async with PersonalizedImageMounter(lockdown=lockdown) as mounter:
         await mounter.mount(dmg, build_manifest, trustcache)
 
@@ -739,6 +811,7 @@ async def auto_mount(
     xcode: Optional[str] = None,
     version: Optional[str] = None,
     image: Optional[PersonalizedDdi] = None,
+    replace: bool = False,
 ) -> None:
     """
     Auto-mount the appropriate Developer Disk Image for the device's iOS version.
@@ -751,11 +824,13 @@ async def auto_mount(
     :param xcode: Path to the Xcode app bundle, forwarded to `auto_mount_developer`.
     :param version: iOS version override, forwarded to `auto_mount_developer`.
     :param image: forces this iOS 17+ image, forwarded to `auto_mount_personalized`.
+    :param replace: replace a Developer Disk Image that is already mounted instead of raising
+        `AlreadyMountedError`. Whatever uses the mounted image's services is cut off.
     :raises ValueError: if `image` is given for a device below iOS 17.0.
     """
     if uses_personalized_image(lockdown):
-        await auto_mount_personalized(lockdown, image=image)
+        await auto_mount_personalized(lockdown, image=image, replace=replace)
     elif image is not None:
         raise ValueError(f"{image.value} is an iOS {PERSONALIZED_IMAGE_MIN_VERSION}+ image")
     else:
-        await auto_mount_developer(lockdown, xcode=xcode, version=version)
+        await auto_mount_developer(lockdown, xcode=xcode, version=version, replace=replace)
