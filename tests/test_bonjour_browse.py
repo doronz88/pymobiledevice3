@@ -193,8 +193,10 @@ async def test_answers_arriving_on_a_skipped_interface_are_ignored(mdns, monkeyp
     assert [instance.addresses for instance in instances] == [[]]
 
 
-async def test_a_quiet_browse_asks_again(mdns, monkeypatch):
-    # One multicast query is easily lost on Wi-Fi; a device that missed it must get another chance.
+@pytest.mark.parametrize(("requery", "expected_sends"), [(False, 1), (True, 3)])
+async def test_a_browse_asks_again_only_when_asked_to(mdns, monkeypatch, requery, expected_sends):
+    # One multicast query is easily lost on Wi-Fi, so a caller may ask for repeats; every other browse
+    # keeps sending a single query.
     sends: list[Any] = []
 
     class _RecordingTransport(_FakeTransport):
@@ -208,10 +210,11 @@ async def test_a_quiet_browse_asks_again(mdns, monkeypatch):
     monkeypatch.setattr(bonjour, "_open_mdns_sockets", open_mdns_sockets)
     monkeypatch.setattr(bonjour, "BROWSE_REQUERY_DELAYS", (0.02, 0.04, 10.0))
 
-    await browse_service(SERVICE, timeout=0.1)
+    async for _ in iter_browse_service(SERVICE, timeout=0.1, requery=requery):
+        pass
 
-    # the first query plus one per delay inside the window
-    assert len(sends) == 3
+    # with requery: the first query plus one per delay inside the window
+    assert len(sends) == expected_sends
     assert len(set(sends)) == 1
 
 
