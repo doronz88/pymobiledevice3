@@ -17,7 +17,6 @@ from typer_injector import InjectingTyper
 from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, ServiceInstance, browse_remotepairing_manual_pairing
 from pymobiledevice3.cli.cli_common import (
     OSUTILS,
-    UDID_ENV_VAR,
     USBMUX_ENV_VARS,
     USBMUX_OPTION_HELP,
     RSDServiceProviderDep,
@@ -25,6 +24,7 @@ from pymobiledevice3.cli.cli_common import (
     default_transport_preference,
     print_json,
     prompt_device_list,
+    prompt_selection,
     sudo_required,
     user_requested_colored_output,
 )
@@ -512,7 +512,9 @@ async def cli_pair(
     ] = None,
     udid: Annotated[
         Optional[str],
-        typer.Option(envvar=UDID_ENV_VAR, help="Only pair with the device advertising this identifier."),
+        # Not PYMOBILEDEVICE3_UDID: that names the device every other command targets by its UDID,
+        # which is never a manual-pairing identifier, so honoring it here would find no device.
+        typer.Option(help="Only pair with the device advertising this identifier."),
     ] = None,
 ) -> None:
     """Pair over the network with a device offering manual pairing (e.g. Apple TV).
@@ -531,7 +533,12 @@ async def cli_pair(
         else:
             logger.error("No devices were found during bonjour browse")
         raise typer.Exit(1)
-    device = devices[0] if len(devices) == 1 else prompt_device_list(devices)
+    if len(devices) == 1:
+        device = devices[0]
+    else:
+        device = prompt_selection(
+            devices, "Choose device", hint="Pass --udid to choose a device by its identifier non-interactively."
+        )
 
     for address in device.addresses:
         service = RemotePairingManualPairingService(device.identifier, address, device.port)

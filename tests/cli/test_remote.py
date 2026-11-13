@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import pytest
 import typer
+from typer.testing import CliRunner
 
 from pymobiledevice3.cli import remote
 from pymobiledevice3.exceptions import NoDeviceConnectedError, NotPairedError, RemotePairingCompletedError
@@ -267,7 +268,6 @@ async def test_pair_reports_completion_instead_of_raising(monkeypatch, caplog):
 
     monkeypatch.setattr(remote, "start_tunnel", object())
     monkeypatch.setattr(remote, "browse_remotepairing_manual_pairing", browse)
-    monkeypatch.setattr(remote, "prompt_device_list", lambda devices: devices[0])
     monkeypatch.setattr(remote, "RemotePairingManualPairingService", lambda *args: _PairedService())
 
     # `cli_pair` is the sync wrapper Typer registers; `__wrapped__` is the coroutine underneath.
@@ -288,8 +288,11 @@ def _manual_pairing_answer(name: str, identifier: str, *ips: str) -> SimpleNames
     )
 
 
-def _install_pair_fakes(monkeypatch, answers, unreachable=()):
-    """Fake browse and pairing service; returns the (identifier, address) of every open attempt."""
+def _install_pair_fakes(monkeypatch, answers, unreachable=(), prompts=False):
+    """Fake browse and pairing service; returns the (identifier, address) of every open attempt.
+
+    Choosing between devices fails the test unless `prompts` leaves the real prompt in place.
+    """
     attempts: list[tuple[str, str]] = []
 
     class _Service:
@@ -313,12 +316,13 @@ def _install_pair_fakes(monkeypatch, answers, unreachable=()):
     async def browse():
         return answers
 
-    def no_prompt(devices):
+    def no_prompt(devices, *args, **kwargs):
         raise AssertionError(f"prompted for {devices}")
 
     monkeypatch.setattr(remote, "start_tunnel", object())
     monkeypatch.setattr(remote, "browse_remotepairing_manual_pairing", browse)
-    monkeypatch.setattr(remote, "prompt_device_list", no_prompt)
+    if not prompts:
+        monkeypatch.setattr(remote, "prompt_selection", no_prompt)
     monkeypatch.setattr(remote, "RemotePairingManualPairingService", _Service)
     return attempts
 
@@ -375,6 +379,36 @@ async def test_pair_udid_without_match_exits(monkeypatch):
 
     with pytest.raises(typer.Exit):
         await cast(Any, remote.cli_pair).__wrapped__(name=None, udid=_TV_ID)
+    assert attempts == []
+
+
+def test_pair_ignores_the_udid_environment_variable(monkeypatch):
+    # PYMOBILEDEVICE3_UDID names the device every other command targets, by its UDID. A manual-pairing
+    # identifier is never one, so honoring the variable would hide the Apple TV from whoever exports it.
+    answers = [_manual_pairing_answer("Main Bedroom", _TV_ID, "192.168.0.138")]
+    attempts = _install_pair_fakes(monkeypatch, answers)
+
+    result = CliRunner().invoke(remote.cli, ["pair"], env={"PYMOBILEDEVICE3_UDID": "00008110-001234567890801E"})
+
+    assert result.exit_code == 0, result.output
+    assert attempts == [(_TV_ID, "192.168.0.138")]
+
+
+def test_pair_between_several_devices_hints_the_option_it_has(monkeypatch, capsys):
+    # Without a terminal the prompt fails with a hint, which named an environment variable
+    # `remote pair` does not read.
+    answers = [
+        _manual_pairing_answer("Living Room", "OTHER-ID", "192.168.0.20"),
+        _manual_pairing_answer("Main Bedroom", _TV_ID, "192.168.0.138"),
+    ]
+    attempts = _install_pair_fakes(monkeypatch, answers, prompts=True)
+
+    with pytest.raises(typer.Exit):
+        remote.cli_pair(name=None, udid=None)
+
+    hint = capsys.readouterr().err
+    assert "--udid" in hint
+    assert "PYMOBILEDEVICE3_UDID" not in hint
     assert attempts == []
 
 
