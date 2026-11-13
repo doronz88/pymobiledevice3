@@ -128,6 +128,7 @@ CLI_GROUPS = {
     "usbmux": "usbmux",
     "webinspector": "webinspector",
     "idam": "idam",
+    "valeria": "valeria",
     "version": "version",
 }
 
