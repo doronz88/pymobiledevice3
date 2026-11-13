@@ -15,6 +15,7 @@ from pymobiledevice3.bonjour import (
     QTYPE_PTR,
     QTYPE_SRV,
     QTYPE_TXT,
+    REMOTEPAIRING_SERVICE_NAME,
     MDNSResponder,
     _build_rr,
     _DatagramProtocol,
@@ -22,6 +23,7 @@ from pymobiledevice3.bonjour import (
     _encode_txt,
     browse_service,
     encode_name,
+    iter_browse_remotepairing,
     iter_browse_service,
 )
 
@@ -189,3 +191,51 @@ async def test_answers_arriving_on_a_skipped_interface_are_ignored(mdns, monkeyp
     instances = await browse_service(SERVICE, timeout=0.05, skip_interfaces=("utun",))
 
     assert [instance.addresses for instance in instances] == [[]]
+
+
+@pytest.mark.parametrize(("requery", "expected_sends"), [(False, 1), (True, 3)])
+async def test_a_browse_asks_again_only_when_asked_to(mdns, monkeypatch, requery, expected_sends):
+    # One multicast query is easily lost on Wi-Fi, so a caller may ask for repeats; every other browse
+    # keeps sending a single query.
+    sends: list[Any] = []
+
+    class _RecordingTransport(_FakeTransport):
+        def sendto(self, data: bytes, addr: Any) -> None:
+            sends.append(data)
+
+    async def open_mdns_sockets():
+        queue: asyncio.Queue[tuple[bytes, Any]] = asyncio.Queue()
+        return [(_RecordingTransport(queue, 0), SimpleNamespace(family=socket.AF_INET))], queue
+
+    monkeypatch.setattr(bonjour, "_open_mdns_sockets", open_mdns_sockets)
+    monkeypatch.setattr(bonjour, "BROWSE_REQUERY_DELAYS", (0.02, 0.04, 10.0))
+
+    async for _ in iter_browse_service(SERVICE, timeout=0.1, requery=requery):
+        pass
+
+    # with requery: the first query plus one per delay inside the window
+    assert len(sends) == expected_sends
+    assert len(set(sends)) == 1
+
+
+REMOTEPAIRING_INSTANCE = "9466B801._remotepairing._tcp.local."
+
+
+async def test_remotepairing_answers_wait_for_their_txt_record(mdns):
+    # The authTag in the TXT record is what identifies a RemotePairing device: an answer yielded
+    # before it arrived would never be matched to its pair record.
+    without_txt = MDNSResponder._build_message(
+        [_build_rr(REMOTEPAIRING_SERVICE_NAME, QTYPE_PTR, encode_name(REMOTEPAIRING_INSTANCE), 120, False)],
+        [
+            _build_rr(REMOTEPAIRING_INSTANCE, QTYPE_SRV, _encode_srv(0, 0, 49152, "tv.local."), 120, True),
+            _build_rr("tv.local.", QTYPE_A, socket.inet_aton("192.0.2.1"), 120, True),
+        ],
+    )
+    txt = MDNSResponder._build_message(
+        [], [_build_rr(REMOTEPAIRING_INSTANCE, QTYPE_TXT, _encode_txt({"authTag": "T"}), 120, True)]
+    )
+    mdns.packets = [without_txt, txt]
+
+    answers = [answer async for answer in iter_browse_remotepairing(timeout=0.05)]
+
+    assert [answer.properties for answer in answers] == [{"authTag": "T"}]

@@ -1660,12 +1660,14 @@ async def get_remote_pairing_tunnel_services(
     bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT,
     udid: Optional[str] = None,
     excluded_identifiers: Collection[str] = (),
+    requery: bool = False,
 ) -> list[RemotePairingTunnelService]:
     """Connect to the paired devices advertising RemotePairing over bonjour.
 
     Each answer is matched to its pair record by ``authTag`` before anything is sent, so only devices
     we are paired with are contacted, each with its own record. ``udid`` narrows the result to one
-    device; ``excluded_identifiers`` skips devices the caller already serves.
+    device; ``excluded_identifiers`` skips devices the caller already serves. ``requery`` makes the
+    browse ask again within the window (see :func:`~pymobiledevice3.bonjour.iter_browse_service`).
     """
     alt_irks: dict[str, bytes] = {}
     for identifier, path, pair_record in iter_remote_pair_records_by_identifier():
@@ -1689,7 +1691,7 @@ async def get_remote_pairing_tunnel_services(
 
     result: list[RemotePairingTunnelService] = []
     # Asking for one device stops at it; listing them all still takes the whole window.
-    answers = iter_browse_remotepairing(timeout=bonjour_timeout)
+    answers = iter_browse_remotepairing(timeout=bonjour_timeout, requery=requery)
     try:
         async for answer in answers:
             identifier = _match_remote_pair_record(answer, alt_irks)

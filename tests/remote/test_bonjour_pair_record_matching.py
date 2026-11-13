@@ -56,6 +56,7 @@ def remotepairing(monkeypatch, tmp_path):
         unreachable: set[str] = dataclasses.field(default_factory=set)
         attempts: list[tuple[str, str, int]] = dataclasses.field(default_factory=list)
         browses: int = 0
+        requeries: list[bool] = dataclasses.field(default_factory=list)
 
     state = State()
 
@@ -63,8 +64,9 @@ def remotepairing(monkeypatch, tmp_path):
         for identifier, record in state.records.items():
             yield identifier, tmp_path / f"remote_{identifier}.plist", record
 
-    def browse(timeout):
+    def browse(timeout, requery=False):
         state.browses += 1
+        state.requeries.append(requery)
 
         async def _iter():
             for answer in state.answers:
@@ -119,6 +121,24 @@ async def test_every_reachable_address_of_a_matched_device_is_returned(remotepai
     remotepairing.unreachable = {"10.0.0.1"}
 
     assert await get_remote_pairing_tunnel_services() == [("MINE", "10.0.0.2")]
+
+
+async def test_listing_keeps_every_answer_of_a_device(remotepairing):
+    # A device can answer again later (another interface, a new address); listings and tunneld need
+    # every address they see, so a listing reads the whole window.
+    remotepairing.records = {"MINE": {PEER_ALT_IRK_KEY: ALT_IRK}}
+    remotepairing.answers = [_answer(ALT_IRK), _answer(ALT_IRK, addresses=("10.0.0.9",))]
+
+    assert await get_remote_pairing_tunnel_services() == [("MINE", "10.0.0.1"), ("MINE", "10.0.0.9")]
+
+
+async def test_requery_is_off_unless_asked_for(remotepairing):
+    remotepairing.records = {"MINE": {PEER_ALT_IRK_KEY: ALT_IRK}}
+
+    await get_remote_pairing_tunnel_services()
+    await get_remote_pairing_tunnel_services(requery=True)
+
+    assert remotepairing.requeries == [False, True]
 
 
 async def test_record_without_alt_irk_is_skipped_with_a_single_warning(remotepairing, caplog):

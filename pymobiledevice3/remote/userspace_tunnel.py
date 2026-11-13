@@ -57,6 +57,7 @@ from pymobiledevice3.exceptions import (
 )
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
+from pymobiledevice3.pair_records import iter_remote_pair_records_by_identifier
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.utils import get_asyncio_loop
 
@@ -749,6 +750,54 @@ async def _create_no_root_tunnel_provider(serial: Optional[str], autopair: bool,
     return services[0], None
 
 
+#: Bonjour window for an explicit Wi-Fi lookup. The browse re-queries within it and stops as soon as
+#: the asked-for device answered; without one (and with several pair records) it runs the window.
+WIFI_BONJOUR_TIMEOUT = 5.0
+
+
+async def _create_wifi_tunnel_provider(serial: Optional[str]) -> tunnel_service.RemotePairingTunnelService:
+    """Connect to the paired device ``serial`` names, advertising RemotePairing over Wi-Fi.
+
+    Only for an explicit Wi-Fi request (``--wifi``): a usbmux miss never browses the network.
+    ``serial`` is the pairing identifier ``remote pair`` stored the record under. The device UDID
+    cannot be used: neither the record nor the pairing handshake carries it, so finding a device by
+    UDID would mean bringing up a tunnel to every paired device. Without ``serial`` the only pair
+    record is used, or else the one paired device that answers.
+    """
+    record_identifiers = sorted({identifier for identifier, _, _ in iter_remote_pair_records_by_identifier()})
+    if serial is not None and serial not in record_identifiers:
+        known = ", ".join(record_identifiers) or "none; pair one with `pymobiledevice3 remote pair`"
+        raise UserspaceTunnelUnavailableError(
+            f"--wifi takes the pairing identifier of a RemotePairing record, not a device UDID; {serial} is "
+            f"not one. Known pairing identifiers: {known}."
+        )
+    if serial is None and len(record_identifiers) == 1:
+        serial = record_identifiers[0]
+    services = await tunnel_service.get_remote_pairing_tunnel_services(
+        bonjour_timeout=WIFI_BONJOUR_TIMEOUT, udid=serial, requery=True
+    )
+    # A device reachable at several addresses yields one service per address; keep the first.
+    providers: list[tunnel_service.RemotePairingTunnelService] = []
+    for service in services:
+        if any(provider.remote_identifier == service.remote_identifier for provider in providers):
+            await service.close()
+        else:
+            providers.append(service)
+    if not providers:
+        raise UserspaceTunnelUnavailableError(
+            "No paired device answered over Wi-Fi (RemotePairing over bonjour). Check that the device is "
+            "awake and on the same network, and that it was paired with `pymobiledevice3 remote pair`."
+        )
+    if len(providers) > 1:
+        identifiers = ", ".join(provider.remote_identifier for provider in providers)
+        for provider in providers:
+            await provider.close()
+        raise UserspaceTunnelUnavailableError(
+            f"Several paired devices answered over Wi-Fi ({identifiers}); choose one with --udid <pairing identifier>."
+        )
+    return providers[0]
+
+
 class UserspaceRsdTunnel:
     """A no-root, in-process iOS 17+ RSD tunnel and its connected RSD, as one closeable handle.
 
@@ -790,14 +839,23 @@ class UserspaceRsdTunnel:
     The tunnel provider is selected like ``remote start-tunnel`` but restricted to the root-free
     paths (see :func:`_create_no_root_tunnel_provider`): CoreDeviceTunnelProxy over lockdown on
     iOS 17.4+, falling back to RemotePairing over bonjour on iOS 17.0-17.3 / Wi-Fi.
+
+    ``wifi=True`` skips usbmux and reaches a network-paired device over Wi-Fi (RemotePairing over
+    bonjour; see :func:`_create_wifi_tunnel_provider`) — the route for a device with no USB
+    connection, such as an Apple TV. ``serial`` is then the pairing identifier, not the UDID.
     """
 
     def __init__(
-        self, serial: Optional[str] = None, autopair: bool = True, remotepairing_fallback: bool = True
+        self,
+        serial: Optional[str] = None,
+        autopair: bool = True,
+        remotepairing_fallback: bool = True,
+        wifi: bool = False,
     ) -> None:
         self.serial = serial
         self.autopair = autopair
         self.remotepairing_fallback = remotepairing_fallback
+        self.wifi = wifi
         self.rsd: Optional[RemoteServiceDiscoveryService] = None
         self.tun: Optional[UserspaceTun] = None
         self._exit_stack: Optional[AsyncExitStack] = None
@@ -824,19 +882,46 @@ class UserspaceRsdTunnel:
         # fails). Select the userspace tun via the factory flag — no class is monkeypatched;
         # RemotePairingTunnel.start_tunnel() consults create_tun_device().
         tunnel_service.USE_USERSPACE_TUNNEL = True
+        try:
+            if self.wifi:
+                stack, rsd, tunnel_result = await self._establish_over_wifi()
+            else:
+                provider, lockdown = await _create_no_root_tunnel_provider(
+                    self.serial, self.autopair, self.remotepairing_fallback
+                )
+                stack, rsd, tunnel_result = await self._establish(provider, lockdown)
+        except BaseException:
+            tunnel_service.USE_USERSPACE_TUNNEL = False
+            raise
+
+        self._exit_stack = stack
+        self.rsd = rsd
+        _active_tunnel = self
+        USERSPACE_ACTIVE = True
+        self._transport_watcher = asyncio.create_task(
+            self._watch_transport_closed(tunnel_result.client),
+            name=f"userspace-tunnel-transport-watcher-{tunnel_result.address}",
+        )
+        logger.debug("userspace RSD established (no root): %s rsd_port=%s", tunnel_result.address, tunnel_result.port)
+        return rsd
+
+    async def _establish(
+        self, provider: tunnel_service.StartTcpTunnel, lockdown: Optional[Any]
+    ) -> tuple[AsyncExitStack, RemoteServiceDiscoveryService, tunnel_service.TunnelResult]:
+        """Bring the tunnel up through ``provider`` and connect its RSD. Takes ownership of
+        ``provider`` and ``lockdown`` (closed on failure, or by the returned stack)."""
         # Every resource is registered on one AsyncExitStack so aclose() unwinds them in LIFO
         # order; a failure mid-setup unwinds whatever was already acquired.
         stack = AsyncExitStack()
         try:
-            provider, lockdown = await _create_no_root_tunnel_provider(
-                self.serial, self.autopair, self.remotepairing_fallback
-            )
-            stack.push_async_callback(provider.close)
+            # Both providers (CoreDeviceTunnelProxy, RemotePairingTunnelService) have close(); the
+            # StartTcpTunnel base they share does not declare it.
+            stack.push_async_callback(cast(Any, provider).close)
             if lockdown is not None:
                 stack.push_async_callback(lockdown.close)
             tunnel_result = await stack.enter_async_context(provider.start_tcp_tunnel())
             # In the userspace path create_tun_device() always builds a UserspaceTun (the factory
-            # flag is set above), so the loosely-typed client.tun is narrowed here.
+            # flag is set by the caller), so the loosely-typed client.tun is narrowed here.
             self.tun = cast(UserspaceTun, tunnel_result.client.tun)
             self.tun.set_peer(tunnel_result.address)
             dial_plane = await stack.enter_async_context(UserspaceDialPlane(self.tun, tunnel_result.address))
@@ -851,20 +936,16 @@ class UserspaceRsdTunnel:
             await rsd.connect()
         except BaseException:
             await stack.aclose()
-            tunnel_service.USE_USERSPACE_TUNNEL = False
             self.tun = None
             raise
+        return stack, rsd, tunnel_result
 
-        self._exit_stack = stack
-        self.rsd = rsd
-        _active_tunnel = self
-        USERSPACE_ACTIVE = True
-        self._transport_watcher = asyncio.create_task(
-            self._watch_transport_closed(tunnel_result.client),
-            name=f"userspace-tunnel-transport-watcher-{tunnel_result.address}",
-        )
-        logger.debug("userspace RSD established (no root): %s rsd_port=%s", tunnel_result.address, tunnel_result.port)
-        return rsd
+    async def _establish_over_wifi(
+        self,
+    ) -> tuple[AsyncExitStack, RemoteServiceDiscoveryService, tunnel_service.TunnelResult]:
+        """Establish over Wi-Fi with the device whose pairing identifier ``serial`` is."""
+        provider = await _create_wifi_tunnel_provider(self.serial)
+        return await self._establish(provider, None)
 
     async def _watch_transport_closed(self, client: tunnel_service.RemotePairingTunnel) -> None:
         """Tear the tunnel down when its outer transport dies (e.g. the USB cable is pulled:
@@ -971,7 +1052,7 @@ _cli_tunnel: Optional[UserspaceRsdTunnel] = None
 
 
 async def establish_userspace_rsd(
-    serial: Optional[str] = None, autopair: bool = True, remotepairing_fallback: bool = True
+    serial: Optional[str] = None, autopair: bool = True, remotepairing_fallback: bool = True, wifi: bool = False
 ) -> RemoteServiceDiscoveryService:
     """CLI convenience: establish a userspace tunnel, keep it alive, and return its connected RSD.
 
@@ -981,7 +1062,8 @@ async def establish_userspace_rsd(
 
     ``remotepairing_fallback=False`` makes a pre-17.4 device (no CoreDeviceProxy) raise
     :class:`UserspaceTunnelUnavailableError` instead of attempting RemotePairing, so the caller can
-    route such devices elsewhere (the CLI uses this to fall back to ``tunneld``).
+    route such devices elsewhere (the CLI uses this to fall back to ``tunneld``). ``wifi=True``
+    reaches the device over Wi-Fi instead of USB (see :class:`UserspaceRsdTunnel`).
     """
     global _cli_tunnel
     # In-process retry (the CLI re-runs main() with the userspace env var set after an
@@ -993,7 +1075,9 @@ async def establish_userspace_rsd(
         and (serial is None or serial in (_cli_tunnel.serial, _cli_tunnel.rsd.udid))
     ):
         return _cli_tunnel.rsd
-    tunnel = UserspaceRsdTunnel(serial=serial, autopair=autopair, remotepairing_fallback=remotepairing_fallback)
+    tunnel = UserspaceRsdTunnel(
+        serial=serial, autopair=autopair, remotepairing_fallback=remotepairing_fallback, wifi=wifi
+    )
     try:
         rsd = await tunnel.aopen()
     except PyMobileDevice3Exception:

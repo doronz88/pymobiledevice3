@@ -36,6 +36,7 @@ from pymobiledevice3.cli.cli_common import (
     TUNNEL_ENV_VAR,
     UDID_ENV_VAR,
     USERSPACE_ENV_VAR,
+    WIFI_ENV_VAR,
     _cli_udid,
     default_transport_preference,
     isatty,
@@ -362,6 +363,7 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
             and ("--tunnel" not in sys.argv)
             and ("--userspace" not in sys.argv)
             and ("--native" not in sys.argv)
+            and ("--wifi" not in sys.argv)
             and product_version_needs_tunnel(product_version)
         ):
             reason = "it is a developer command on an iOS 17+ device"
@@ -375,6 +377,7 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
             and not os.getenv(USERSPACE_ENV_VAR)
             and not os.getenv(TUNNEL_ENV_VAR)
             and not os.getenv(NATIVE_ENV_VAR)
+            and not os.getenv(WIFI_ENV_VAR)
             and not os.getenv(FORCE_TUNNEL_ENV_VAR)
         ):
             preferred = {

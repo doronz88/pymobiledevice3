@@ -13,12 +13,16 @@ Read this file when the request touches transport selection, iOS 17+ developer s
   no `start-tunnel`, no `tunneld`. This is the preferred path for agents.
 - `--userspace` forces the userspace tunnel explicitly (`PYMOBILEDEVICE3_USERSPACE=1` is
   equivalent).
+- `--wifi` builds that userspace tunnel over Wi-Fi (RemotePairing over bonjour) for a device
+  paired with `remote pair` and not attached by USB, e.g. an Apple TV (`PYMOBILEDEVICE3_WIFI=1`
+  is equivalent). `--udid` takes its pairing identifier, not its UDID. Never implicit.
 - `--native` (**macOS only, opt-in**) forces the no-root native tunnel that piggybacks
   Apple's `remoted` (`PYMOBILEDEVICE3_NATIVE=1` is equivalent): no `sudo`, no entitlement, no Xcode,
   faster host->device and lower latency than the userspace stack. It shares a single device-side RSD
   connection with `remoted`, so the two evict each other: expect intermittent resets, and it can
   leave Xcode/`devicectl` without the device. Don't use it while the user is working in Xcode.
-- `--rsd`, `--tunnel`, `--userspace`, and `--native` are mutually exclusive.
+- `--rsd`, `--tunnel`, `--userspace`, and `--native` are mutually exclusive. `--wifi` may be
+  combined only with `--userspace`.
 - `--rsd HOST PORT` is for a specific RemoteServiceDiscovery endpoint.
 - `--tunnel ''` or `--tunnel <UDID>` targets a device already exposed by `tunneld`.
 - With multiple devices attached, always pass `--udid <UDID>` (or set

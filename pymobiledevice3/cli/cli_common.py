@@ -34,7 +34,12 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.remotexpc import rsd_handshake_uuid
-from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, TunneldAddress, get_tunneld_devices
+from pymobiledevice3.tunneld.api import (
+    TUNNELD_DEFAULT_ADDRESS,
+    TunneldAddress,
+    get_tunneld_device_by_udid,
+    get_tunneld_devices,
+)
 from pymobiledevice3.utils import ask_prompt, cancel_on_sigint, get_asyncio_loop, hexdump
 
 UDID_ENV_VAR = "PYMOBILEDEVICE3_UDID"
@@ -45,6 +50,8 @@ TUNNEL_ENV_VAR = "PYMOBILEDEVICE3_TUNNEL"
 USERSPACE_ENV_VAR = "PYMOBILEDEVICE3_USERSPACE"
 # macOS only: piggyback Apple's remoted tunnel via remotepairingd (no root, no Xcode).
 NATIVE_ENV_VAR = "PYMOBILEDEVICE3_NATIVE"
+# Build the no-root userspace tunnel over Wi-Fi (RemotePairing over bonjour) instead of USB.
+WIFI_ENV_VAR = "PYMOBILEDEVICE3_WIFI"
 # Overrides which transport the automatic fallback prefers — both the required-RSD default and the
 # `__main__` retry. One of "native" (built-in default on macOS), "userspace" (built-in default
 # elsewhere), or "tunneld".
@@ -374,6 +381,12 @@ async def _tunneld(udid: Optional[str] = None) -> Optional[RemoteServiceDiscover
         return
 
     udid, tunneld_address, bridge = _parse_tunnel_spec(udid)
+    if udid != "":
+        # tunneld keys a Wi-Fi tunnel by its pairing identifier, while the RSD reports the device
+        # UDID: accept the key tunneld lists before matching the UDIDs of every tunnel.
+        by_key = await get_tunneld_device_by_udid(udid, tunneld_address, bridge=bridge)
+        if by_key is not None:
+            return by_key
     rsds = await get_tunneld_devices(tunneld_address, bridge=bridge)
     if len(rsds) == 0:
         raise NoDeviceConnectedError()
@@ -528,6 +541,20 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),
         ] = False,
+        wifi: Annotated[
+            bool,
+            typer.Option(
+                "--wifi",
+                envvar=WIFI_ENV_VAR,
+                help=dedent("""\
+                    Build the no-root userspace tunnel over Wi-Fi instead of USB, for a device paired over the
+                    network with `remote pair` (e.g. an Apple TV). Found over bonjour; --udid takes the pairing
+                    identifier `remote pair` stored the record under, not the device UDID (optional with a
+                    single pair record). Implies --userspace; mutually exclusive with --rsd/--tunnel/--native.
+                """),
+                rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
+            ),
+        ] = False,
         native: Annotated[
             bool,
             typer.Option(
@@ -554,6 +581,15 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
         explicit_tunnel_sources = sum([rsd is not None, tunnel is not None, userspace, native])
         if explicit_tunnel_sources > 1:
             ctx.fail("Illegal usage: --rsd, --tunnel, --userspace and --native are mutually exclusive.")
+        if wifi and (rsd is not None or tunnel is not None or native):
+            ctx.fail("Illegal usage: --wifi is mutually exclusive with --rsd, --tunnel and --native.")
+
+        if wifi:
+            # Explicit Wi-Fi: no usbmux lookup (a device that is only on the network has none), so the
+            # target comes straight from --udid / the env var: its pairing identifier.
+            from pymobiledevice3.remote import userspace_tunnel
+
+            return cli_loop.run_until_complete(userspace_tunnel.establish_userspace_rsd(serial=_cli_udid(), wifi=True))
 
         if native:
             serial = _resolve_target_serial(_cli_udid())
