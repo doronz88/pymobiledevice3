@@ -40,6 +40,7 @@ Set a variable for the current shell session like this:
 | `PYMOBILEDEVICE3_DEFAULT_FALLBACK` | `native`, `userspace` or `tunneld` | Which transport the **automatic** selection prefers, both for commands that require an RSD and for the retry the CLI performs when a command turns out to need a tunnel. Built-in default: `userspace`. An unrecognized value logs a warning and is ignored. |
 | `PYMOBILEDEVICE3_NATIVE` | `1` | Same as `--native`: piggyback Apple's `remoted` tunnel via `remotepairingd`. macOS only, no root, opt-in (see [Native remoted tunnel](network-stacks.md#native-remoted-tunnel-macos-only)). |
 | `PYMOBILEDEVICE3_USERSPACE` | `1` | Same as `--userspace`: force the in-process pure-Python userspace tunnel. |
+| `PYMOBILEDEVICE3_WIFI` | `1` | Same as `--wifi`: build the userspace tunnel over Wi-Fi (RemotePairing over bonjour) for a device paired with `remote pair`, e.g. an Apple TV. |
 | `PYMOBILEDEVICE3_TUNNEL` | `UDID`, `UDID:PORT` or `UDID@HOST[:PORT]` | Same as `--tunnel`: take the tunnel from a running `tunneld`; the `@HOST` form bridges through a remote tunneld's `WS /connect`. An empty UDID picks the only tunnel, or prompts. |
 
 `--rsd`, `--tunnel`, `--userspace` and `--native` are mutually exclusive, so set at most one of

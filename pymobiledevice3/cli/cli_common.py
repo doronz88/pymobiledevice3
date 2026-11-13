@@ -50,6 +50,8 @@ TUNNEL_ENV_VAR = "PYMOBILEDEVICE3_TUNNEL"
 USERSPACE_ENV_VAR = "PYMOBILEDEVICE3_USERSPACE"
 # macOS only: piggyback Apple's remoted tunnel via remotepairingd (no root, no Xcode).
 NATIVE_ENV_VAR = "PYMOBILEDEVICE3_NATIVE"
+# Build the no-root userspace tunnel over Wi-Fi (RemotePairing over bonjour) instead of USB.
+WIFI_ENV_VAR = "PYMOBILEDEVICE3_WIFI"
 # Overrides which transport the automatic fallback prefers — both the required-RSD default and the
 # `__main__` retry. One of "native" (built-in default on macOS), "userspace" (built-in default
 # elsewhere), or "tunneld".
@@ -539,6 +541,20 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),
         ] = False,
+        wifi: Annotated[
+            bool,
+            typer.Option(
+                "--wifi",
+                envvar=WIFI_ENV_VAR,
+                help=dedent("""\
+                    Build the no-root userspace tunnel over Wi-Fi instead of USB, for a device paired over the
+                    network with `remote pair` (e.g. an Apple TV). Found over bonjour; --udid takes the device
+                    UDID or the pairing identifier. Implies --userspace; mutually exclusive with
+                    --rsd/--tunnel/--native.
+                """),
+                rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
+            ),
+        ] = False,
         native: Annotated[
             bool,
             typer.Option(
@@ -565,6 +581,15 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
         explicit_tunnel_sources = sum([rsd is not None, tunnel is not None, userspace, native])
         if explicit_tunnel_sources > 1:
             ctx.fail("Illegal usage: --rsd, --tunnel, --userspace and --native are mutually exclusive.")
+        if wifi and (rsd is not None or tunnel is not None or native):
+            ctx.fail("Illegal usage: --wifi is mutually exclusive with --rsd, --tunnel and --native.")
+
+        if wifi:
+            # Explicit Wi-Fi: no usbmux lookup (a device that is only on the network has none), so the
+            # target comes straight from --udid / the env var, either its UDID or its pairing identifier.
+            from pymobiledevice3.remote import userspace_tunnel
+
+            return cli_loop.run_until_complete(userspace_tunnel.establish_userspace_rsd(serial=_cli_udid(), wifi=True))
 
         if native:
             serial = _resolve_target_serial(_cli_udid())

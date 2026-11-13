@@ -52,6 +52,37 @@ def test_mutually_exclusive_rsd_tunnel_renders_usage_error():
     assert "Traceback" not in result.output
 
 
+def test_wifi_conflicts_with_an_explicit_tunnel():
+    result = CliRunner().invoke(__main__.app, ["developer", "dvt", "ls", "/", "--wifi", "--tunnel", "x"])
+
+    assert result.exit_code == 2
+    assert "--wifi is mutually exclusive" in ANSI_ESCAPE.sub("", result.output)
+
+
+def test_wifi_builds_the_userspace_tunnel_over_wifi_for_the_named_device(monkeypatch):
+    # No usbmux lookup either: a device that is only on the network has none.
+    from pymobiledevice3.remote import userspace_tunnel
+
+    calls = []
+
+    async def establish_userspace_rsd(**kwargs):
+        calls.append(kwargs)
+        return "rsd"
+
+    def no_usbmux(serial):
+        raise AssertionError("--wifi must not resolve the target through usbmux")
+
+    monkeypatch.setattr(userspace_tunnel, "establish_userspace_rsd", establish_userspace_rsd)
+    monkeypatch.setattr(cli_common, "_resolve_target_serial", no_usbmux)
+    monkeypatch.setattr(sys, "argv", ["pymobiledevice3", "--udid", "TV-UDID"])
+    rsd_dependency = cli_common.make_rsd_dependency(allow_none=True)
+
+    rsd = rsd_dependency(ctx=None, rsd=None, tunnel=None, userspace=False, wifi=True, native=False)
+
+    assert rsd == "rsd"
+    assert calls == [{"serial": "TV-UDID", "wifi": True}]
+
+
 def test_cli_from_python_m_with_invalid_option():
     result = subprocess.run(
         [sys.executable, "-m", "pymobiledevice3", "--definitely-invalid"],
