@@ -66,7 +66,8 @@ Guidance for AI coding agents and automation contributors working in this reposi
   `PYMOBILEDEVICE3_USERSPACE=1` is the env-var equivalent.
 - `--wifi` builds the userspace tunnel over Wi-Fi (RemotePairing over bonjour) for a
   device paired with `remote pair` that has no USB connection, e.g. an Apple TV
-  (`PYMOBILEDEVICE3_WIFI=1`). Opt-in only: a usbmux miss never browses the network.
+  (`PYMOBILEDEVICE3_WIFI=1`). `--udid` takes the pairing identifier, not the UDID.
+  Opt-in only: a usbmux miss never browses the network.
 - `--native` (**macOS only**, opt-in) reaches the tunnel by piggybacking Apple's
   own `remoted` tunnel via the `remotepairingd` service — **no `sudo`/root, no
   entitlement, no Xcode**. It rides the kernel-routable tunnel (faster
@@ -82,7 +83,8 @@ Guidance for AI coding agents and automation contributors working in this reposi
   transport the automatic selection prefers (both the required-RSD default and
   the retry the CLI performs when a command turns out to need a tunnel). Built-in
   default: `userspace`. `=tunneld` opts out of the no-root default entirely.
-- `--rsd`, `--tunnel`, `--userspace` and `--native` are mutually exclusive.
+- `--rsd`, `--tunnel`, `--userspace` and `--native` are mutually exclusive. `--wifi`
+  may be combined only with `--userspace`.
 
 ## Testing Expectations
 

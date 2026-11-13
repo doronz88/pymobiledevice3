@@ -291,11 +291,13 @@ Requirements:
 - **Over Wi-Fi only, with `--wifi`** (or `PYMOBILEDEVICE3_WIFI=1`): a device paired over the
   network with `pymobiledevice3 remote pair` — an Apple TV, or any device without a cable — is
   reached through RemotePairing, discovered over bonjour, with no USB and no root. `--udid` takes
-  its UDID or the pairing identifier `remote pair` stored the record under. It is never tried
-  implicitly: a device `usbmuxd` cannot see still fails at once without `--wifi`.
+  the pairing identifier `remote pair` stored the record under (the `remote_<id>.plist` file
+  name), not the device UDID, which is unknown until a tunnel is up; with a single pair record it
+  can be left out. It is never tried implicitly: a device `usbmuxd` cannot see still fails at once
+  without `--wifi`.
 
   ```shell
-  pymobiledevice3 developer dvt screenshot --wifi --udid <UDID> screen.png
+  pymobiledevice3 developer dvt screenshot --wifi --udid <PAIRING-ID> screen.png
   ```
 
 What works over the userspace tunnel: the host-initiated developer services (`dvt`, `fetch-symbols`,

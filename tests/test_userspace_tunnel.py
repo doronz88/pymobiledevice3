@@ -619,8 +619,8 @@ def wifi_lookup(monkeypatch):
         for identifier in state.records:
             yield identifier, None, {}
 
-    async def get_remote_pairing_tunnel_services(bonjour_timeout=None, udid=None, **kwargs):
-        state.asked.append(udid)
+    async def get_remote_pairing_tunnel_services(bonjour_timeout=None, udid=None, requery=False, **kwargs):
+        state.asked.append((udid, requery))
         return [service for service in state.found if udid is None or service.remote_identifier == udid]
 
     monkeypatch.setattr(userspace_tunnel, "iter_remote_pair_records_by_identifier", iter_records)
@@ -634,38 +634,42 @@ async def test_wifi_with_a_pairing_identifier_asks_bonjour_for_that_device(wifi_
     wifi_lookup.records = ["PAIRING-ID", "OTHER"]
     wifi_lookup.found = [_FakeRemotePairing("PAIRING-ID"), _FakeRemotePairing("OTHER")]
 
-    providers = await userspace_tunnel._create_wifi_tunnel_providers("PAIRING-ID")
+    provider = await userspace_tunnel._create_wifi_tunnel_provider("PAIRING-ID")
 
-    assert wifi_lookup.asked == ["PAIRING-ID"]
-    assert [provider.remote_identifier for provider in providers] == ["PAIRING-ID"]
+    # the explicit Wi-Fi path is the one browse that re-queries
+    assert wifi_lookup.asked == [("PAIRING-ID", True)]
+    assert provider.remote_identifier == "PAIRING-ID"
 
 
-async def test_wifi_with_a_device_udid_returns_every_paired_device(wifi_lookup):
-    # A UDID names no record: only each device's RSD can confirm it, so all are candidates.
+async def test_wifi_refuses_a_device_udid_without_browsing(wifi_lookup):
+    # A UDID names no record and only a device's RSD reports it: finding it would mean a tunnel to
+    # every paired device, so it is refused and the known pairing identifiers are listed instead.
     wifi_lookup.records = ["PAIRING-ID", "OTHER"]
-    wifi_lookup.found = [_FakeRemotePairing("PAIRING-ID"), _FakeRemotePairing("OTHER")]
 
-    providers = await userspace_tunnel._create_wifi_tunnel_providers("DEVICE-UDID")
-
-    assert wifi_lookup.asked == [None]
-    assert [provider.remote_identifier for provider in providers] == ["PAIRING-ID", "OTHER"]
+    with pytest.raises(UserspaceTunnelUnavailableError, match="OTHER, PAIRING-ID"):
+        await userspace_tunnel._create_wifi_tunnel_provider("DEVICE-UDID")
+    assert wifi_lookup.asked == []
 
 
-async def test_wifi_keeps_one_service_per_device(wifi_lookup):
-    # A device answering on two addresses is connected twice; the extra connection is closed.
-    first, second = _FakeRemotePairing("PAIRING-ID"), _FakeRemotePairing("PAIRING-ID")
+async def test_wifi_without_a_serial_uses_the_only_pair_record(wifi_lookup):
+    # One record narrows the browse to it, so the lookup stops at its first answer.
     wifi_lookup.records = ["PAIRING-ID"]
-    wifi_lookup.found = [first, second]
+    wifi_lookup.found = [_FakeRemotePairing("PAIRING-ID")]
 
-    assert await userspace_tunnel._create_wifi_tunnel_providers(None) == [first]
-    assert second.closed and not first.closed
+    provider = await userspace_tunnel._create_wifi_tunnel_provider(None)
+
+    assert wifi_lookup.asked == [("PAIRING-ID", True)]
+    assert provider.remote_identifier == "PAIRING-ID"
 
 
-async def test_wifi_with_no_answer_is_unavailable(wifi_lookup):
-    wifi_lookup.records = ["PAIRING-ID"]
+async def test_wifi_without_a_serial_takes_the_one_device_that_answers(wifi_lookup):
+    wifi_lookup.records = ["A", "B"]
+    wifi_lookup.found = [_FakeRemotePairing("B")]
 
-    with pytest.raises(UserspaceTunnelUnavailableError):
-        await userspace_tunnel._create_wifi_tunnel_providers("PAIRING-ID")
+    provider = await userspace_tunnel._create_wifi_tunnel_provider(None)
+
+    assert wifi_lookup.asked == [(None, True)]
+    assert provider.remote_identifier == "B"
 
 
 async def test_wifi_without_a_serial_refuses_to_guess_between_devices(wifi_lookup):
@@ -674,68 +678,44 @@ async def test_wifi_without_a_serial_refuses_to_guess_between_devices(wifi_looku
     wifi_lookup.found = found
 
     with pytest.raises(UserspaceTunnelUnavailableError, match="--udid"):
-        await userspace_tunnel._create_wifi_tunnel_providers(None)
+        await userspace_tunnel._create_wifi_tunnel_provider(None)
     assert all(service.closed for service in found)
 
 
-def _fake_establish(udids: dict[str, str], established: list[str]):
-    """Stand in for UserspaceRsdTunnel._establish: each provider's RSD reports udids[identifier]."""
+async def test_wifi_keeps_one_service_per_device(wifi_lookup):
+    # A device answering on two addresses is connected twice; the extra connection is closed.
+    first, second = _FakeRemotePairing("PAIRING-ID"), _FakeRemotePairing("PAIRING-ID")
+    wifi_lookup.records = ["PAIRING-ID"]
+    wifi_lookup.found = [first, second]
+
+    assert await userspace_tunnel._create_wifi_tunnel_provider(None) is first
+    assert second.closed and not first.closed
+
+
+async def test_wifi_with_no_answer_is_unavailable(wifi_lookup):
+    wifi_lookup.records = ["PAIRING-ID"]
+
+    with pytest.raises(UserspaceTunnelUnavailableError):
+        await userspace_tunnel._create_wifi_tunnel_provider("PAIRING-ID")
+
+
+async def test_wifi_establishes_through_the_named_device_without_usbmux(wifi_lookup, mock_tunnel_provider, monkeypatch):
+    device = _FakeRemotePairing("PAIRING-ID")
+    wifi_lookup.records = ["PAIRING-ID", "OTHER"]
+    wifi_lookup.found = [device, _FakeRemotePairing("OTHER")]
+    tunnel = userspace_tunnel.UserspaceRsdTunnel(serial="PAIRING-ID", wifi=True)
+    established: list[Any] = []
 
     async def establish(provider, lockdown):
-        established.append(provider.remote_identifier)
-        rsd = type("Rsd", (), {"udid": udids[provider.remote_identifier]})()
-        return AsyncExitStack(), rsd, provider.remote_identifier
+        established.append((provider, lockdown))
+        return AsyncExitStack(), "rsd", "result"
 
-    return establish
-
-
-async def test_wifi_udid_is_matched_against_each_candidates_rsd(wifi_lookup, monkeypatch):
-    other, mine = _FakeRemotePairing("OTHER"), _FakeRemotePairing("MINE")
-    wifi_lookup.records = ["OTHER", "MINE"]
-    wifi_lookup.found = [other, mine]
-    tunnel = userspace_tunnel.UserspaceRsdTunnel(serial="MY-UDID", wifi=True)
-    established: list[str] = []
-    monkeypatch.setattr(tunnel, "_establish", _fake_establish({"OTHER": "OTHER-UDID", "MINE": "MY-UDID"}, established))
+    monkeypatch.setattr(tunnel, "_establish", establish)
 
     _, rsd, _ = await tunnel._establish_over_wifi()
 
-    assert rsd.udid == "MY-UDID"
-    assert established == ["OTHER", "MINE"]
-
-
-async def test_wifi_stops_at_the_matching_device_and_closes_the_rest(wifi_lookup, monkeypatch):
-    mine, other = _FakeRemotePairing("MINE"), _FakeRemotePairing("OTHER")
-    wifi_lookup.records = ["MINE", "OTHER"]
-    wifi_lookup.found = [mine, other]
-    tunnel = userspace_tunnel.UserspaceRsdTunnel(serial="MY-UDID", wifi=True)
-    established: list[str] = []
-    monkeypatch.setattr(tunnel, "_establish", _fake_establish({"MINE": "MY-UDID", "OTHER": "OTHER-UDID"}, established))
-
-    await tunnel._establish_over_wifi()
-
-    assert established == ["MINE"]
-    assert other.closed
-
-
-async def test_wifi_udid_answered_by_no_device_is_not_found(wifi_lookup, monkeypatch):
-    wifi_lookup.records = ["OTHER"]
-    wifi_lookup.found = [_FakeRemotePairing("OTHER")]
-    tunnel = userspace_tunnel.UserspaceRsdTunnel(serial="MY-UDID", wifi=True)
-    monkeypatch.setattr(tunnel, "_establish", _fake_establish({"OTHER": "OTHER-UDID"}, []))
-
-    with pytest.raises(DeviceNotFoundError) as exc_info:
-        await tunnel._establish_over_wifi()
-    assert exc_info.value.udid == "MY-UDID"
-
-
-async def test_wifi_never_touches_usbmux(wifi_lookup, mock_tunnel_provider, monkeypatch):
-    wifi_lookup.records = ["PAIRING-ID"]
-    wifi_lookup.found = [_FakeRemotePairing("PAIRING-ID")]
-    tunnel = userspace_tunnel.UserspaceRsdTunnel(serial="PAIRING-ID", wifi=True)
-    monkeypatch.setattr(tunnel, "_establish", _fake_establish({"PAIRING-ID": "UDID"}, []))
-
-    await tunnel._establish_over_wifi()
-
+    assert rsd == "rsd"
+    assert established == [(device, None)]
     mock_tunnel_provider.create_using_usbmux.assert_not_called()
 
 

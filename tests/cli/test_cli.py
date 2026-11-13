@@ -74,13 +74,13 @@ def test_wifi_builds_the_userspace_tunnel_over_wifi_for_the_named_device(monkeyp
 
     monkeypatch.setattr(userspace_tunnel, "establish_userspace_rsd", establish_userspace_rsd)
     monkeypatch.setattr(cli_common, "_resolve_target_serial", no_usbmux)
-    monkeypatch.setattr(sys, "argv", ["pymobiledevice3", "--udid", "TV-UDID"])
+    monkeypatch.setattr(sys, "argv", ["pymobiledevice3", "--udid", "PAIRING-ID"])
     rsd_dependency = cli_common.make_rsd_dependency(allow_none=True)
 
     rsd = rsd_dependency(ctx=None, rsd=None, tunnel=None, userspace=False, wifi=True, native=False)
 
     assert rsd == "rsd"
-    assert calls == [{"serial": "TV-UDID", "wifi": True}]
+    assert calls == [{"serial": "PAIRING-ID", "wifi": True}]
 
 
 def test_cli_from_python_m_with_invalid_option():

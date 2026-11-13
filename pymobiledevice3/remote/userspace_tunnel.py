@@ -51,7 +51,6 @@ from pmd_pytcp.stack.link import LinkApi
 
 import pymobiledevice3.remote.tunnel_service as tunnel_service
 from pymobiledevice3.exceptions import (
-    DeviceNotFoundError,
     InvalidServiceError,
     PyMobileDevice3Exception,
     UserspaceTunnelUnavailableError,
@@ -752,23 +751,31 @@ async def _create_no_root_tunnel_provider(serial: Optional[str], autopair: bool,
 
 
 #: Bonjour window for an explicit Wi-Fi lookup. The browse re-queries within it and stops as soon as
-#: the asked-for device (or, without one, every paired device) answered, so the window is only sat
-#: out when a paired device is away.
+#: the asked-for device answered; without one (and with several pair records) it runs the window.
 WIFI_BONJOUR_TIMEOUT = 5.0
 
 
-async def _create_wifi_tunnel_providers(serial: Optional[str]) -> list[tunnel_service.RemotePairingTunnelService]:
-    """Connect to the paired devices advertising RemotePairing over Wi-Fi, one service per device.
+async def _create_wifi_tunnel_provider(serial: Optional[str]) -> tunnel_service.RemotePairingTunnelService:
+    """Connect to the paired device ``serial`` names, advertising RemotePairing over Wi-Fi.
 
     Only for an explicit Wi-Fi request (``--wifi``): a usbmux miss never browses the network.
-    ``serial`` may name the RemotePairing record (the pairing identifier ``remote pair`` stored it
-    under) or the device UDID. A pairing identifier narrows the browse to that device. A UDID is not
-    known before the tunnel is up, so every paired device found is returned and the caller checks
-    each one's RSD. Without ``serial`` exactly one paired device must answer.
+    ``serial`` is the pairing identifier ``remote pair`` stored the record under. The device UDID
+    cannot be used: neither the record nor the pairing handshake carries it, so finding a device by
+    UDID would mean bringing up a tunnel to every paired device. Without ``serial`` the only pair
+    record is used, or else the one paired device that answers.
     """
-    record_identifiers = {identifier for identifier, _, _ in iter_remote_pair_records_by_identifier()}
-    named = serial if serial in record_identifiers else None
-    services = await tunnel_service.get_remote_pairing_tunnel_services(bonjour_timeout=WIFI_BONJOUR_TIMEOUT, udid=named)
+    record_identifiers = sorted({identifier for identifier, _, _ in iter_remote_pair_records_by_identifier()})
+    if serial is not None and serial not in record_identifiers:
+        known = ", ".join(record_identifiers) or "none; pair one with `pymobiledevice3 remote pair`"
+        raise UserspaceTunnelUnavailableError(
+            f"--wifi takes the pairing identifier of a RemotePairing record, not a device UDID; {serial} is "
+            f"not one. Known pairing identifiers: {known}."
+        )
+    if serial is None and len(record_identifiers) == 1:
+        serial = record_identifiers[0]
+    services = await tunnel_service.get_remote_pairing_tunnel_services(
+        bonjour_timeout=WIFI_BONJOUR_TIMEOUT, udid=serial, requery=True
+    )
     # A device reachable at several addresses yields one service per address; keep the first.
     providers: list[tunnel_service.RemotePairingTunnelService] = []
     for service in services:
@@ -781,14 +788,14 @@ async def _create_wifi_tunnel_providers(serial: Optional[str]) -> list[tunnel_se
             "No paired device answered over Wi-Fi (RemotePairing over bonjour). Check that the device is "
             "awake and on the same network, and that it was paired with `pymobiledevice3 remote pair`."
         )
-    if serial is None and len(providers) > 1:
+    if len(providers) > 1:
         identifiers = ", ".join(provider.remote_identifier for provider in providers)
         for provider in providers:
             await provider.close()
         raise UserspaceTunnelUnavailableError(
-            f"Several paired devices answered over Wi-Fi ({identifiers}); choose one with --udid."
+            f"Several paired devices answered over Wi-Fi ({identifiers}); choose one with --udid <pairing identifier>."
         )
-    return providers
+    return providers[0]
 
 
 class UserspaceRsdTunnel:
@@ -834,8 +841,8 @@ class UserspaceRsdTunnel:
     iOS 17.4+, falling back to RemotePairing over bonjour on iOS 17.0-17.3 / Wi-Fi.
 
     ``wifi=True`` skips usbmux and reaches a network-paired device over Wi-Fi (RemotePairing over
-    bonjour; see :func:`_create_wifi_tunnel_providers`) — the route for a device with no USB
-    connection, such as an Apple TV. ``serial`` may then be the pairing identifier or the UDID.
+    bonjour; see :func:`_create_wifi_tunnel_provider`) — the route for a device with no USB
+    connection, such as an Apple TV. ``serial`` is then the pairing identifier, not the UDID.
     """
 
     def __init__(
@@ -936,27 +943,9 @@ class UserspaceRsdTunnel:
     async def _establish_over_wifi(
         self,
     ) -> tuple[AsyncExitStack, RemoteServiceDiscoveryService, tunnel_service.TunnelResult]:
-        """Establish over Wi-Fi with the device ``serial`` names, trying each paired device found
-        when ``serial`` is a UDID (only the RSD reports it)."""
-        pending = await _create_wifi_tunnel_providers(self.serial)
-        try:
-            while pending:
-                provider = pending.pop(0)
-                stack, rsd, tunnel_result = await self._establish(provider, None)
-                if self.serial is None or self.serial in (provider.remote_identifier, rsd.udid):
-                    return stack, rsd, tunnel_result
-                logger.debug(
-                    "Wi-Fi device %s is %s, not %s; trying the next", provider.remote_identifier, rsd.udid, self.serial
-                )
-                await stack.aclose()
-                self.tun = None
-        finally:
-            for provider in pending:
-                with suppress(Exception):
-                    await provider.close()
-        raise DeviceNotFoundError(
-            self.serial, f"Device not found: no paired device answering over Wi-Fi is {self.serial}"
-        )
+        """Establish over Wi-Fi with the device whose pairing identifier ``serial`` is."""
+        provider = await _create_wifi_tunnel_provider(self.serial)
+        return await self._establish(provider, None)
 
     async def _watch_transport_closed(self, client: tunnel_service.RemotePairingTunnel) -> None:
         """Tear the tunnel down when its outer transport dies (e.g. the USB cable is pulled:

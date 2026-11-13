@@ -548,9 +548,9 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
                 envvar=WIFI_ENV_VAR,
                 help=dedent("""\
                     Build the no-root userspace tunnel over Wi-Fi instead of USB, for a device paired over the
-                    network with `remote pair` (e.g. an Apple TV). Found over bonjour; --udid takes the device
-                    UDID or the pairing identifier. Implies --userspace; mutually exclusive with
-                    --rsd/--tunnel/--native.
+                    network with `remote pair` (e.g. an Apple TV). Found over bonjour; --udid takes the pairing
+                    identifier `remote pair` stored the record under, not the device UDID (optional with a
+                    single pair record). Implies --userspace; mutually exclusive with --rsd/--tunnel/--native.
                 """),
                 rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
             ),
@@ -586,7 +586,7 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
 
         if wifi:
             # Explicit Wi-Fi: no usbmux lookup (a device that is only on the network has none), so the
-            # target comes straight from --udid / the env var, either its UDID or its pairing identifier.
+            # target comes straight from --udid / the env var: its pairing identifier.
             from pymobiledevice3.remote import userspace_tunnel
 
             return cli_loop.run_until_complete(userspace_tunnel.establish_userspace_rsd(serial=_cli_udid(), wifi=True))
