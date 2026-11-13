@@ -1679,7 +1679,9 @@ async def get_remote_pairing_tunnel_services(
         return []
 
     result: list[RemotePairingTunnelService] = []
-    # Asking for one device stops at it; listing them all still takes the whole window.
+    connected: set[str] = set()
+    # The browse stops once every device we are paired with (or the one asked for) is connected;
+    # otherwise it runs for the whole window.
     answers = iter_browse_remotepairing(timeout=bonjour_timeout)
     try:
         async for answer in answers:
@@ -1693,11 +1695,12 @@ async def get_remote_pairing_tunnel_services(
                             identifier, address.full_ip, answer.port
                         )
                     )
+                    connected.add(identifier)
                 except (ConnectionTerminatedError, asyncio.IncompleteReadError, asyncio.TimeoutError, OSError) as e:
                     logger.debug(
                         "Skipping remote pairing service %s@%s:%s: %r", identifier, address.full_ip, answer.port, e
                     )
-            if udid is not None and result:
+            if connected >= alt_irks.keys():
                 break
     finally:
         await answers.aclose()

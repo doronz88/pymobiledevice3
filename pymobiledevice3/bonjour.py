@@ -384,6 +384,10 @@ def _warn_if_multicast_blocked(transports: list[tuple[asyncio.DatagramTransport,
 
 # ---------------- Public API ----------------
 
+#: Seconds after the first query at which a browse asks again (RFC 6762 section 5.2: at least one second
+#: apart, then doubling). One multicast query is easily lost on Wi-Fi, and a sleeping device can miss it.
+BROWSE_REQUERY_DELAYS: tuple[float, ...] = (1.0, 3.0)
+
 
 @dataclass
 class _BrowseState:
@@ -458,16 +462,25 @@ async def _browse_receive_loop(
             existing.append(Address(ip=ip_str, iface=iface))
 
     try:
-        state.sent = await _send_query_all(
-            transports, build_query(service_type, QTYPE_PTR, unicast=False), skip_interfaces
-        )
+        query = build_query(service_type, QTYPE_PTR, unicast=False)
+        state.sent = await _send_query_all(transports, query, skip_interfaces)
         loop = asyncio.get_running_loop()
-        end = loop.time() + timeout
-        while loop.time() < end:
-            try:
-                data, pkt_addr = await asyncio.wait_for(queue.get(), timeout=end - loop.time())
-            except asyncio.TimeoutError:
+        start = loop.time()
+        end = start + timeout
+        requery_at = [start + delay for delay in BROWSE_REQUERY_DELAYS if delay < timeout]
+        while True:
+            now = loop.time()
+            if now >= end:
                 break
+            if requery_at and now >= requery_at[0]:
+                requery_at.pop(0)
+                state.sent += await _send_query_all(transports, query, skip_interfaces)
+                continue
+            deadline = min(end, requery_at[0]) if requery_at else end
+            try:
+                data, pkt_addr = await asyncio.wait_for(queue.get(), timeout=deadline - now)
+            except asyncio.TimeoutError:
+                continue
             for rr in parse_mdns_message(data):
                 t = rr.get("type")
                 if t == QTYPE_PTR and rr.get("name") == service_type:
@@ -504,8 +517,13 @@ async def browse_service(
     return instances
 
 
-async def iter_browse_service(service_type: str, timeout: float = 4.0) -> AsyncGenerator[ServiceInstance, None]:
+async def iter_browse_service(
+    service_type: str, timeout: float = 4.0, require_properties: bool = False
+) -> AsyncGenerator[ServiceInstance, None]:
     """Yield :class:`ServiceInstance` objects as they become complete (PTR + SRV + address).
+
+    ``require_properties`` also waits for the TXT record, for consumers that identify the device by
+    it: an instance is yielded once, so one yielded before its TXT arrived would never be usable.
 
     Consumers looking for a specific device can stop early (``async for`` + ``break``)
     to avoid waiting the full *timeout*. Use :func:`browse_service` to collect all
@@ -521,7 +539,7 @@ async def iter_browse_service(service_type: str, timeout: float = 4.0) -> AsyncG
     async for state in _browse_receive_loop(service_type, timeout=timeout):
         for instance in _assemble_instances(state):
             key = (instance.instance, instance.port)
-            if key not in yielded and instance.addresses:
+            if key not in yielded and instance.addresses and (instance.properties or not require_properties):
                 yielded.add(key)
                 yield instance
 
@@ -551,8 +569,11 @@ async def browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list
 
 
 def iter_browse_remotepairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> AsyncGenerator[ServiceInstance, None]:
-    """Return an async iterator over RemotePairing service instances, yielded as they become complete."""
-    return iter_browse_service(REMOTEPAIRING_SERVICE_NAME, timeout=timeout)
+    """Return an async iterator over RemotePairing service instances, yielded as they become complete.
+
+    Each instance carries its TXT properties: the ``authTag`` there is what identifies the device.
+    """
+    return iter_browse_service(REMOTEPAIRING_SERVICE_NAME, timeout=timeout, require_properties=True)
 
 
 async def browse_remotepairing_manual_pairing(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[ServiceInstance]:

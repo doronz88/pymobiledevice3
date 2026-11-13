@@ -121,6 +121,16 @@ async def test_every_reachable_address_of_a_matched_device_is_returned(remotepai
     assert await get_remote_pairing_tunnel_services() == [("MINE", "10.0.0.2")]
 
 
+async def test_listing_stops_once_every_paired_device_is_connected(remotepairing):
+    # A browse without udid used to sit out the whole window even when the only paired device had
+    # already answered; the answer after it must not even be read.
+    remotepairing.records = {"MINE": {PEER_ALT_IRK_KEY: ALT_IRK}}
+    remotepairing.answers = [_answer(ALT_IRK), _answer(ALT_IRK, addresses=("10.0.0.9",))]
+
+    assert await get_remote_pairing_tunnel_services() == [("MINE", "10.0.0.1")]
+    assert remotepairing.attempts == [("MINE", "10.0.0.1", 49152)]
+
+
 async def test_record_without_alt_irk_is_skipped_with_a_single_warning(remotepairing, caplog):
     remotepairing.records = {"STALE": {"private_key": b"\x00" * 32}}
     remotepairing.answers = [_answer(ALT_IRK)]
