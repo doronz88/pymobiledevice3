@@ -34,7 +34,12 @@ from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.remote.remotexpc import rsd_handshake_uuid
-from pymobiledevice3.tunneld.api import TUNNELD_DEFAULT_ADDRESS, TunneldAddress, get_tunneld_devices
+from pymobiledevice3.tunneld.api import (
+    TUNNELD_DEFAULT_ADDRESS,
+    TunneldAddress,
+    get_tunneld_device_by_udid,
+    get_tunneld_devices,
+)
 from pymobiledevice3.utils import ask_prompt, cancel_on_sigint, get_asyncio_loop, hexdump
 
 UDID_ENV_VAR = "PYMOBILEDEVICE3_UDID"
@@ -374,6 +379,12 @@ async def _tunneld(udid: Optional[str] = None) -> Optional[RemoteServiceDiscover
         return
 
     udid, tunneld_address, bridge = _parse_tunnel_spec(udid)
+    if udid != "":
+        # tunneld keys a Wi-Fi tunnel by its pairing identifier, while the RSD reports the device
+        # UDID: accept the key tunneld lists before matching the UDIDs of every tunnel.
+        by_key = await get_tunneld_device_by_udid(udid, tunneld_address, bridge=bridge)
+        if by_key is not None:
+            return by_key
     rsds = await get_tunneld_devices(tunneld_address, bridge=bridge)
     if len(rsds) == 0:
         raise NoDeviceConnectedError()

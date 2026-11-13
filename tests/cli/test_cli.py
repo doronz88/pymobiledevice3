@@ -411,7 +411,11 @@ def test_tunneld_device_not_found_names_the_tunneld_instance(monkeypatch):
     async def fake_get_tunneld_devices(address, bridge=None):
         return [_FakeRsd()]
 
+    async def no_tunnel_under_that_key(udid, address, bridge=None):
+        return None
+
     monkeypatch.setattr(cli_common, "get_tunneld_devices", fake_get_tunneld_devices)
+    monkeypatch.setattr(cli_common, "get_tunneld_device_by_udid", no_tunnel_under_that_key)
 
     # A private loop, not asyncio.run: its cleanup unsets the main-thread event loop and breaks
     # later sync tests on Python 3.9 (see _patch_isolated_asyncio_run above).
@@ -424,6 +428,30 @@ def test_tunneld_device_not_found_names_the_tunneld_instance(monkeypatch):
 
     assert exc_info.value.udid == "TARGET-UDID"
     assert str(exc_info.value) == ("Device not found: tunneld (127.0.0.1:1234) serves no tunnel for udid TARGET-UDID")
+
+
+def test_tunneld_finds_a_wifi_tunnel_by_its_pairing_identifier(monkeypatch):
+    """tunneld keys a Wi-Fi tunnel by the pairing identifier, while its RSD reports the device UDID."""
+    import asyncio
+
+    asked = []
+
+    async def get_tunneld_device_by_udid(udid, address, bridge=None):
+        asked.append(udid)
+        return "rsd-under-key" if udid == "PAIRING-ID" else None
+
+    async def every_tunnel(address, bridge=None):
+        raise AssertionError("a tunnel found by its key needs no listing")
+
+    monkeypatch.setattr(cli_common, "get_tunneld_device_by_udid", get_tunneld_device_by_udid)
+    monkeypatch.setattr(cli_common, "get_tunneld_devices", every_tunnel)
+
+    loop = asyncio.new_event_loop()
+    try:
+        assert loop.run_until_complete(cli_common._tunneld("PAIRING-ID")) == "rsd-under-key"
+    finally:
+        loop.close()
+    assert asked == ["PAIRING-ID"]
 
 
 def test_native_tunnel_device_not_found_is_reconnectable(monkeypatch):
