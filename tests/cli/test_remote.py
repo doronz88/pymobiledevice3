@@ -249,6 +249,9 @@ async def test_pair_reports_completion_instead_of_raising(monkeypatch, caplog):
         async def __aexit__(self, *exc_info):
             return None
 
+        async def open_stream(self):
+            return None
+
         async def connect(self, autopair=True):
             # what RemotePairingProtocol.connect() raises once the pair record is saved
             raise RemotePairingCompletedError()
@@ -269,9 +272,110 @@ async def test_pair_reports_completion_instead_of_raising(monkeypatch, caplog):
 
     # `cli_pair` is the sync wrapper Typer registers; `__wrapped__` is the coroutine underneath.
     with caplog.at_level(logging.INFO, logger=remote.logger.name):
-        await cast(Any, remote.cli_pair).__wrapped__(name=None)
+        await cast(Any, remote.cli_pair).__wrapped__(name=None, udid=None)
 
     assert "Pairing completed" in caplog.text
+
+
+_TV_ID = "0E5E5D3E-F712-48A3-97FB-C8C962299C8E"
+
+
+def _manual_pairing_answer(name: str, identifier: str, *ips: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        properties={"name": name, "identifier": identifier},
+        addresses=[SimpleNamespace(full_ip=ip) for ip in ips],
+        port=58884,
+    )
+
+
+def _install_pair_fakes(monkeypatch, answers, unreachable=()):
+    """Fake browse and pairing service; returns the (identifier, address) of every open attempt."""
+    attempts: list[tuple[str, str]] = []
+
+    class _Service:
+        def __init__(self, identifier, hostname, port):
+            self.identifier, self.hostname = identifier, hostname
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return None
+
+        async def open_stream(self):
+            attempts.append((self.identifier, self.hostname))
+            if self.hostname in unreachable:
+                raise OSError("unreachable")
+
+        async def connect(self, autopair=True):
+            raise RemotePairingCompletedError()
+
+    async def browse():
+        return answers
+
+    def no_prompt(devices):
+        raise AssertionError(f"prompted for {devices}")
+
+    monkeypatch.setattr(remote, "start_tunnel", object())
+    monkeypatch.setattr(remote, "browse_remotepairing_manual_pairing", browse)
+    monkeypatch.setattr(remote, "prompt_device_list", no_prompt)
+    monkeypatch.setattr(remote, "RemotePairingManualPairingService", _Service)
+    return attempts
+
+
+@pytest.mark.asyncio
+async def test_pair_groups_addresses_of_one_device_without_prompt(monkeypatch):
+    # An Apple TV answers once per address (IPv6 link-local and IPv4) under one identifier.
+    answers = [_manual_pairing_answer("Main Bedroom", _TV_ID, "fe80::f6:d18e:bab1:6093%en0", "192.168.0.138")]
+    attempts = _install_pair_fakes(monkeypatch, answers)
+
+    await cast(Any, remote.cli_pair).__wrapped__(name=None, udid=None)
+
+    # one candidate, so no prompt; the routable IPv4 address is tried first
+    assert attempts == [(_TV_ID, "192.168.0.138")]
+
+
+@pytest.mark.asyncio
+async def test_pair_falls_back_to_next_address_when_unreachable(monkeypatch):
+    answers = [_manual_pairing_answer("Main Bedroom", _TV_ID, "fe80::1%en0", "192.168.0.138")]
+    attempts = _install_pair_fakes(monkeypatch, answers, unreachable={"192.168.0.138"})
+
+    await cast(Any, remote.cli_pair).__wrapped__(name=None, udid=None)
+
+    assert attempts == [(_TV_ID, "192.168.0.138"), (_TV_ID, "fe80::1%en0")]
+
+
+@pytest.mark.asyncio
+async def test_pair_fails_when_no_address_is_reachable(monkeypatch):
+    answers = [_manual_pairing_answer("Main Bedroom", _TV_ID, "192.168.0.138")]
+    _install_pair_fakes(monkeypatch, answers, unreachable={"192.168.0.138"})
+
+    with pytest.raises(typer.Exit):
+        await cast(Any, remote.cli_pair).__wrapped__(name=None, udid=None)
+
+
+@pytest.mark.asyncio
+async def test_pair_udid_selects_by_identifier(monkeypatch):
+    answers = [
+        _manual_pairing_answer("Living Room", "OTHER-ID", "192.168.0.20"),
+        _manual_pairing_answer("Main Bedroom", _TV_ID, "fe80::1%en0"),
+        _manual_pairing_answer("Main Bedroom", _TV_ID, "192.168.0.138"),
+    ]
+    attempts = _install_pair_fakes(monkeypatch, answers)
+
+    await cast(Any, remote.cli_pair).__wrapped__(name=None, udid=_TV_ID)
+
+    assert attempts == [(_TV_ID, "192.168.0.138")]
+
+
+@pytest.mark.asyncio
+async def test_pair_udid_without_match_exits(monkeypatch):
+    answers = [_manual_pairing_answer("Living Room", "OTHER-ID", "192.168.0.20")]
+    attempts = _install_pair_fakes(monkeypatch, answers)
+
+    with pytest.raises(typer.Exit):
+        await cast(Any, remote.cli_pair).__wrapped__(name=None, udid=_TV_ID)
+    assert attempts == []
 
 
 def test_delete_pair_without_record_raises_not_paired(monkeypatch, tmp_path: Path) -> None:

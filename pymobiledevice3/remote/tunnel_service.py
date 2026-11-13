@@ -1389,9 +1389,18 @@ class RemotePairingTunnelService(RemotePairingProtocol):
 
 
 class RemotePairingManualPairingService(RemotePairingTunnelService):
-    async def connect(self, autopair: bool = True) -> None:
+    async def open_stream(self) -> None:
+        """Open the TCP connection to the pairing port; `connect()` reuses it.
+
+        Callers that know several addresses for a device open each in turn and fall back on the
+        `OSError`/`asyncio.TimeoutError` this raises, before any pairing exchange has started.
+        """
         fut = asyncio.open_connection(self.hostname, self.port)
         self._reader, self._writer = await asyncio.wait_for(fut, timeout=TIMEOUT)
+
+    async def connect(self, autopair: bool = True) -> None:
+        if self._writer is None:
+            await self.open_stream()
         await RemotePairingProtocol.connect(self, autopair=autopair)
 
 

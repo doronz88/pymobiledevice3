@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import ipaddress
 import logging
 import platform
 import sys
@@ -13,9 +14,10 @@ from typing import Annotated, Any, Callable, Optional, TextIO, Union
 import typer
 from typer_injector import InjectingTyper
 
-from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, browse_remotepairing_manual_pairing
+from pymobiledevice3.bonjour import DEFAULT_BONJOUR_TIMEOUT, ServiceInstance, browse_remotepairing_manual_pairing
 from pymobiledevice3.cli.cli_common import (
     OSUTILS,
+    UDID_ENV_VAR,
     USBMUX_ENV_VARS,
     USBMUX_OPTION_HELP,
     RSDServiceProviderDep,
@@ -456,10 +458,49 @@ async def cli_start_tunnel(
 
 @dataclasses.dataclass
 class RemotePairingManualPairingDevice:
-    ip: str
-    port: int
     device_name: str
     identifier: str
+    port: int
+    addresses: list[str]  # every address the device advertised, most likely reachable first
+
+
+def _is_link_local(address: str) -> bool:
+    """Whether an advertised address is link-local (``fe80::…%iface``, ``169.254.x.x``)."""
+    try:
+        return ipaddress.ip_address(address.split("%", 1)[0]).is_link_local
+    except ValueError:
+        return False
+
+
+def _group_manual_pairing_devices(
+    answers: list[ServiceInstance], name: Optional[str], udid: Optional[str]
+) -> list[RemotePairingManualPairingDevice]:
+    """One candidate per advertised identifier, even when a device advertises several addresses.
+
+    A device on both IPv4 and IPv6 answers once per address under the same identifier; listing each
+    would offer the same device twice. Routable addresses come before link-local ones (which need the
+    right scope to work), keeping the advertised order otherwise.
+    """
+    devices: dict[str, RemotePairingManualPairingDevice] = {}
+    for answer in answers:
+        device_name = answer.properties["name"]
+        identifier = answer.properties["identifier"]
+        if name is not None and device_name != name:
+            continue
+        if udid is not None and identifier != udid:
+            continue
+        device = devices.setdefault(
+            identifier,
+            RemotePairingManualPairingDevice(
+                device_name=device_name, identifier=identifier, port=answer.port, addresses=[]
+            ),
+        )
+        for address in answer.addresses:
+            if address.full_ip not in device.addresses:
+                device.addresses.append(address.full_ip)
+    for device in devices.values():
+        device.addresses.sort(key=_is_link_local)  # stable: advertised order within each group
+    return list(devices.values())
 
 
 @cli.command("pair")
@@ -468,6 +509,10 @@ async def cli_pair(
     name: Annotated[
         Optional[str],
         typer.Option(help="Only pair with the device advertising this name."),
+    ] = None,
+    udid: Annotated[
+        Optional[str],
+        typer.Option(envvar=UDID_ENV_VAR, help="Only pair with the device advertising this identifier."),
     ] = None,
 ) -> None:
     """Pair over the network with a device offering manual pairing (e.g. Apple TV).
@@ -479,35 +524,32 @@ async def cli_pair(
     if start_tunnel is None:
         raise NotImplementedError("failed to start the tunnel on your platform")
 
-    devices: list[RemotePairingManualPairingDevice] = []
-    for answer in await browse_remotepairing_manual_pairing():
-        current_device_name = answer.properties["name"]
-
-        if name is not None and current_device_name != name:
-            continue
-
-        for address in answer.addresses:
-            devices.append(
-                RemotePairingManualPairingDevice(
-                    ip=address.full_ip,
-                    port=answer.port,
-                    device_name=current_device_name,
-                    identifier=answer.properties["identifier"],
-                )
-            )
-
-    if len(devices) > 0:
-        device = prompt_device_list(devices)
-    else:
-        logger.error("No devices were found during bonjour browse")
+    devices = _group_manual_pairing_devices(await browse_remotepairing_manual_pairing(), name, udid)
+    if len(devices) == 0:
+        if udid is not None:
+            logger.error("No device advertising identifier %s was found during bonjour browse", udid)
+        else:
+            logger.error("No devices were found during bonjour browse")
         raise typer.Exit(1)
+    device = devices[0] if len(devices) == 1 else prompt_device_list(devices)
 
-    async with RemotePairingManualPairingService(device.identifier, device.ip, device.port) as service:
+    for address in device.addresses:
+        service = RemotePairingManualPairingService(device.identifier, address, device.port)
         try:
-            await service.connect(autopair=True)
-        except RemotePairingCompletedError:
-            # The device closes the connection once pairing is done, and the pairing record is already saved.
-            logger.info("Pairing completed")
+            await service.open_stream()
+        except (OSError, asyncio.TimeoutError) as e:
+            # Only the TCP connect falls back to the next address; nothing was exchanged yet.
+            logger.warning("Could not reach %s at %s:%d: %r", device.device_name, address, device.port, e)
+            continue
+        async with service:
+            try:
+                await service.connect(autopair=True)
+            except RemotePairingCompletedError:
+                # The device closes the connection once pairing is done, and the pairing record is already saved.
+                logger.info("Pairing completed")
+        return
+    logger.error("Could not reach %s at any advertised address", device.device_name)
+    raise typer.Exit(1)
 
 
 @cli.command("pair-host")
