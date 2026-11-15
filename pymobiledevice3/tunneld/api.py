@@ -188,11 +188,14 @@ async def get_tunneld_device_by_udid(
         the device, or ``None`` if ``tunneld`` reports no tunnel for the UDID.
     :raises TunneldConnectionError: if the ``tunneld`` instance cannot be reached.
     """
-    tunnels = _list_tunnels(tunneld_address)
+    tunnels = await get_tunneld_tunnels(tunneld_address)
     if udid not in tunnels:
         return None
     rsds = await _create_rsds_from_tunnels({udid: tunnels[udid]}, tunneld_address, bridge)
-    return rsds[0]
+    # every tunnel listed under the key may have failed to connect
+    for rsd in rsds[1:]:
+        await rsd.close()
+    return rsds[0] if rsds else None
 
 
 # A half-open listener on tunneld's port would otherwise block the caller forever.

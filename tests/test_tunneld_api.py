@@ -9,8 +9,9 @@ import pytest
 
 from pymobiledevice3.exceptions import DeviceNotFoundError
 from pymobiledevice3.remote.remotexpc import HTTP2_MAGIC
+from pymobiledevice3.tunneld import api as tunneld_api
 from pymobiledevice3.tunneld import server as tunneld_server
-from pymobiledevice3.tunneld.api import _create_rsds_from_tunnels
+from pymobiledevice3.tunneld.api import _create_rsds_from_tunnels, get_tunneld_device_by_udid
 
 
 @pytest.mark.asyncio
@@ -32,6 +33,32 @@ async def test_create_rsds_skips_a_tunnel_that_resets_the_handshake():
 
 
 @pytest.mark.asyncio
+async def test_device_by_udid_lists_tunneld_off_the_event_loop(monkeypatch):
+    # The listing is a blocking HTTP request: it must not stall the event loop.
+    import threading
+
+    listed_on = []
+
+    def list_tunnels(address):
+        listed_on.append(threading.current_thread())
+        return {}
+
+    monkeypatch.setattr(tunneld_api, "_list_tunnels", list_tunnels)
+
+    assert await get_tunneld_device_by_udid("UDID") is None
+    assert listed_on and listed_on[0] is not threading.main_thread()
+
+
+async def test_device_by_udid_returns_none_when_no_tunnel_under_the_key_connects(monkeypatch):
+    async def nothing_connects(tunnels, address, bridge=None):
+        return []
+
+    monkeypatch.setattr(tunneld_api, "_list_tunnels", lambda address: {"UDID": [{}]})
+    monkeypatch.setattr(tunneld_api, "_create_rsds_from_tunnels", nothing_connects)
+
+    assert await get_tunneld_device_by_udid("UDID") is None
+
+
 async def test_start_tunnel_falls_back_to_wifi_for_a_device_not_on_usb(monkeypatch):
     """Without a connection_type, /start-tunnel tries usbmux first; a device usbmux does not list
     must fall through to the other connection types instead of failing the request."""
