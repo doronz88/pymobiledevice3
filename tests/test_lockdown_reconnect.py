@@ -4,7 +4,7 @@ from typing import Any, Optional, cast
 import pytest
 
 from pymobiledevice3.exceptions import ConnectionTerminatedError, InvalidConnectionError, LockdownError
-from pymobiledevice3.lockdown import LockdownClient
+from pymobiledevice3.lockdown import LockdownClient, RemoteLockdownClient
 from pymobiledevice3.service_connection import ServiceConnection
 
 DROP = "drop"
@@ -83,3 +83,16 @@ async def test_request_retries_on_a_fresh_connection_after_a_drop() -> None:
     assert client.paired
     assert dropped.requests == ["GetValue"]
     assert fresh.requests == ["StartSession", "GetValue", "GetValue"]
+
+
+@pytest.mark.asyncio
+async def test_remote_lockdown_reports_a_dropped_connection_instead_of_reconnecting() -> None:
+    # Only RemoteServiceDiscoveryService can open a RemoteXPC lockdown connection, so a drop cannot be
+    # recovered from here; it must surface as the disconnect it is, not as a NotImplementedError.
+    dropped = FakeService(DROP)
+    client = RemoteLockdownClient(cast(ServiceConnection, dropped), host_id="host")
+
+    with pytest.raises(ConnectionTerminatedError, match="RSD"):
+        await client._request("GetValue")
+
+    assert dropped.requests == ["GetValue"]

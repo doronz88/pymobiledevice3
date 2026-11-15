@@ -886,8 +886,6 @@ class LockdownClient(ABC, LockdownServiceProvider):
         :return: The processed response received from the service.
         :raises ConnectionResetError: If the connection is reset during the operation.
         :raises ConnectionTerminatedError: If the connection is terminated unexpectedly.
-        :raises RuntimeError: If a runtime error occurs, that is not related to a
-            different event loop.
         :raises InvalidConnectionError: If the connection is deemed invalid during
             verification.
         :raises LockdownError: If a lockdown-specific error occurs during verification.
@@ -899,10 +897,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         try:
             try:
                 response = await self.service.send_recv_plist(message)
-            except (ConnectionResetError, ConnectionTerminatedError, RuntimeError) as e:
-                # ServiceConnection streams are loop-bound; reconnect if this client was created in another loop.
-                if isinstance(e, RuntimeError) and "different event loop" not in str(e):
-                    raise
+            except (ConnectionResetError, ConnectionTerminatedError):
                 if self._reestablishing_connection:
                     raise
                 await self.areestablish_connection()
@@ -1257,6 +1252,20 @@ class RemoteLockdownClient(LockdownClient):
         """
         raise NotImplementedError(
             "RemoteXPC service connections should only be created using RemoteServiceDiscoveryService"
+        )
+
+    async def areestablish_connection(self) -> None:
+        """Report the dropped connection: a RemoteXPC lockdown connection cannot be reopened from here.
+
+        Only RemoteServiceDiscoveryService can open one, and it needs the tunnel, which is usually what
+        went away.
+
+        :raises ConnectionTerminatedError: always.
+        """
+        await self.close()
+        raise ConnectionTerminatedError(
+            "The lockdown connection over RSD was closed by the device or its tunnel went down. "
+            "Reconnect to the device and try again."
         )
 
     async def _handle_autopair(self, *args: Any, **kwargs: Any):
