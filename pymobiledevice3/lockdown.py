@@ -1259,6 +1259,20 @@ class RemoteLockdownClient(LockdownClient):
             "RemoteXPC service connections should only be created using RemoteServiceDiscoveryService"
         )
 
+    async def areestablish_connection(self) -> None:
+        """Report the dropped connection: a RemoteXPC lockdown connection cannot be reopened from here.
+
+        Only RemoteServiceDiscoveryService can open one, and it needs the tunnel, which is usually what
+        went away.
+
+        :raises ConnectionTerminatedError: always.
+        """
+        await self.close()
+        raise ConnectionTerminatedError(
+            "The lockdown connection over RSD was closed by the device or its tunnel went down. "
+            "Reconnect to the device and try again."
+        )
+
     async def _handle_autopair(self, *args: Any, **kwargs: Any):
         # The RemoteXPC version of lockdown doesn't support pairing operations
         """Internal helper for handle autopair.
