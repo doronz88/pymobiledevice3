@@ -476,11 +476,17 @@ class RemotePairingQuicTunnel(RemotePairingTunnel, QuicConnectionProtocol):
         self._keep_alive_task = asyncio.create_task(self.keep_alive_task())
 
     async def stop_tunnel(self) -> None:
-        assert self._keep_alive_task is not None
-        self._keep_alive_task.cancel()
-        with suppress(CancelledError):
-            await self._keep_alive_task
-        await super().stop_tunnel()
+        try:
+            # None for a tunnel that is stopped before it finished starting.
+            if self._keep_alive_task is not None:
+                self._keep_alive_task.cancel()
+                # The task may have already ended with the error that took the connection down (a
+                # ping left unanswered by a device that vanished); it must not keep the tun device
+                # open.
+                with suppress(CancelledError, Exception):
+                    await self._keep_alive_task
+        finally:
+            await super().stop_tunnel()
 
     def quic_event_received(self, event: QuicEvent) -> None:
         if isinstance(event, ConnectionTerminated):
@@ -741,6 +747,7 @@ class RemotePairingProtocol(StartTcpTunnel):
         port = parameters["port"]
 
         self.logger.debug(f"Connecting to {host}:{port}")
+        established = False
         try:
             async with aioquic_connect(
                 host,
@@ -752,12 +759,15 @@ class RemotePairingProtocol(StartTcpTunnel):
                 client = cast(RemotePairingQuicTunnel, client)
                 await client.wait_connected()
                 handshake_response = await client.request_tunnel_establish()
-                await client.start_tunnel(
-                    handshake_response["clientParameters"]["address"],
-                    handshake_response["clientParameters"]["mtu"],
-                    interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
-                )
                 try:
+                    # Inside the try: a start that is cancelled midway has already created the tun
+                    # device.
+                    await client.start_tunnel(
+                        handshake_response["clientParameters"]["address"],
+                        handshake_response["clientParameters"]["mtu"],
+                        interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
+                    )
+                    established = True
                     yield TunnelResult(
                         client.tun.name,
                         handshake_response["serverAddress"],
@@ -769,6 +779,9 @@ class RemotePairingProtocol(StartTcpTunnel):
                 finally:
                     await client.stop_tunnel()
         except ConnectionError as e:
+            if established:
+                # A tunnel that was up and then dropped is a disconnect, not a missing protocol.
+                raise
             raise QuicProtocolNotSupportedError(
                 "iOS 18.2+ removed QUIC tunnel support. Use a TCP tunnel instead (requires Python 3.13+)."
             ) from e
