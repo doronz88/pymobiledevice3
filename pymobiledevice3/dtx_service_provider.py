@@ -160,7 +160,7 @@ class DtxServiceProvider:
             if self.REGISTER_SERVICES:
                 dtx.register_services(*self.REGISTER_SERVICES)
             self._dtx = dtx
-        except Exception:
+        except BaseException:
             await dtx.aclose()
             raise
 

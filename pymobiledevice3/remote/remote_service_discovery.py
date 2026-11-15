@@ -249,7 +249,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
                     )
 
             self.all_values = self.lockdown.all_values if self.lockdown is not None else {}
-        except Exception:
+        except BaseException:
             await self.close()
             raise
 

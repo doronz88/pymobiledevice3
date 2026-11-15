@@ -1392,7 +1392,7 @@ async def create_using_usbmux(
         )
         await lockdown_client._initialize()
         await lockdown_client._handle_autopair(autopair, pair_timeout)
-    except Exception:
+    except BaseException:
         await service.close()
         raise
     else:
@@ -1485,7 +1485,7 @@ async def create_using_tcp(
             hostname=hostname,
             keep_alive=keep_alive,
         )
-    except Exception:
+    except BaseException:
         await service.close()
         raise
 
@@ -1531,7 +1531,7 @@ async def create_using_remote(
             autopair=autopair,
             port=port,
         )
-    except Exception:
+    except BaseException:
         await service.close()
         raise
 

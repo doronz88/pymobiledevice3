@@ -821,7 +821,7 @@ class RemotePairingProtocol(StartTcpTunnel):
                 handshake_response["clientParameters"]["mtu"],
                 interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
             )
-        except Exception:
+        except BaseException:
             with suppress(Exception):
                 await tunnel.stop_tunnel()
             raise
@@ -1340,7 +1340,7 @@ class RemotePairingTunnelService(RemotePairingProtocol):
             if not await self._validate_pairing():
                 raise ConnectionTerminatedError()
             self._init_client_server_main_encryption_keys()
-        except Exception:
+        except BaseException:
             await self.close()
             raise
 
@@ -1475,7 +1475,7 @@ class CoreDeviceTunnelProxy(StartTcpTunnel):
                 handshake_response["clientParameters"]["mtu"],
                 interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
             )
-        except Exception:
+        except BaseException:
             with suppress(Exception):
                 await tunnel.stop_tunnel()
             raise
@@ -1505,7 +1505,7 @@ async def create_core_device_tunnel_service_using_rsd(
         await service.close()
         service = CoreDeviceTunnelService(rsd)
         await service.connect(autopair=autopair)
-    except Exception:
+    except BaseException:
         await service.close()
         raise
     return service
@@ -1517,7 +1517,7 @@ async def create_core_device_tunnel_service_using_remotepairing(
     service = RemotePairingTunnelService(remote_identifier, hostname, port)
     try:
         await service.connect(autopair=autopair)
-    except Exception:
+    except BaseException:
         await service.close()
         raise
     return service
