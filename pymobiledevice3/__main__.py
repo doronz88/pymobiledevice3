@@ -33,6 +33,7 @@ from pymobiledevice3.cli.cli_common import (
     FORCE_TUNNEL_ENV_VAR,
     NATIVE_ENV_VAR,
     RECONNECT_ANY_ENV_VAR,
+    REMOTEPAIRING_ENV_VAR,
     TUNNEL_ENV_VAR,
     UDID_ENV_VAR,
     USERSPACE_ENV_VAR,
@@ -330,6 +331,16 @@ def _report(error: PyMobileDevice3Exception) -> None:
         logger.info("Run again with -v for the full traceback (include it when reporting an issue)")
 
 
+#: Values Typer reads as true for a boolean option's environment variable (click's BoolParamType).
+_TRUE_ENV_VALUES = frozenset({"1", "true", "t", "yes", "y", "on"})
+
+
+def _remotepairing_requested() -> bool:
+    """Whether the command runs with --remotepairing: on argv, or through its env var read the way Typer reads
+    it for the option, so ``PYMOBILEDEVICE3_REMOTEPAIRING=0`` means off."""
+    return "--remotepairing" in sys.argv or os.getenv(REMOTEPAIRING_ENV_VAR, "").strip().lower() in _TRUE_ENV_VALUES
+
+
 def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
     """
     Invoke the command line interface once. Returns (exit_code, reconnectable) - reconnectable is
@@ -362,6 +373,7 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
             and ("--tunnel" not in sys.argv)
             and ("--userspace" not in sys.argv)
             and ("--native" not in sys.argv)
+            and not _remotepairing_requested()
             and product_version_needs_tunnel(product_version)
         ):
             reason = "it is a developer command on an iOS 17+ device"
@@ -375,6 +387,7 @@ def invoke_cli_with_error_handling() -> tuple[ExitCode, bool]:
             and not os.getenv(USERSPACE_ENV_VAR)
             and not os.getenv(TUNNEL_ENV_VAR)
             and not os.getenv(NATIVE_ENV_VAR)
+            and not _remotepairing_requested()
             and not os.getenv(FORCE_TUNNEL_ENV_VAR)
         ):
             preferred = {
@@ -444,6 +457,14 @@ def main() -> ExitCode:
             return exit_code
         try:
             logger.info("Waiting for the device to be available again")
+            if _remotepairing_requested():
+                # A --remotepairing device may never appear on usbmux (an Apple TV): wait for it over bonjour,
+                # and leave the target as given (the device UDID names no RemotePairing record).
+                from pymobiledevice3.remote import userspace_tunnel
+
+                asyncio.run(userspace_tunnel.wait_for_remotepairing_device(_cli_udid()))
+                logger.info("Device connected")
+                continue
             # Wait for the device the command targeted, not just any device. The target is the
             # explicit --udid / env value, or whichever device the command's dependency resolved
             # to (auto-pick or interactive prompt). RECONNECT_ANY_ENV_VAR opts out: accept the

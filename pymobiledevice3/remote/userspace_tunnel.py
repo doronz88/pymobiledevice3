@@ -51,13 +51,20 @@ from pmd_pytcp.socket import socket as pytcp_socket
 from pmd_pytcp.stack.link import LinkApi
 
 import pymobiledevice3.remote.tunnel_service as tunnel_service
+from pymobiledevice3.common import get_home_folder
 from pymobiledevice3.exceptions import (
+    DeviceNotFoundError,
     InvalidServiceError,
     PyMobileDevice3Exception,
     UserspaceTunnelUnavailableError,
 )
 from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux
 from pymobiledevice3.osu.os_utils import get_os_utils
+from pymobiledevice3.pair_records import (
+    get_local_pairing_record,
+    get_remote_pairing_record_filename,
+    iter_remote_paired_identifiers,
+)
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.utils import get_asyncio_loop
 
@@ -756,7 +763,9 @@ async def _create_no_root_tunnel_provider(
     # could then be a different phone than the command targeted, while the rest are built and never
     # closed. Naming it also lets the browse stop at the first match instead of running to the
     # bonjour timeout.
-    services = await tunnel_service.get_remote_pairing_tunnel_services(udid=serial or lockdown.udid)
+    services = await tunnel_service.get_remote_pairing_tunnel_services(
+        udid=serial or lockdown.udid, first_address_only=True
+    )
     if not services:
         raise UserspaceTunnelUnavailableError(
             "No-root userspace tunnel unavailable: the device exposes no CoreDeviceProxy lockdown "
@@ -765,6 +774,85 @@ async def _create_no_root_tunnel_provider(
             "`pymobiledevice3 remote tunneld`."
         )
     return TunnelProvider(services[0])
+
+
+#: Bonjour window for an explicit RemotePairing lookup. The browse stops at the named device's first answer,
+#: so the window is only sat out when the device is away.
+REMOTEPAIRING_BONJOUR_TIMEOUT = 5.0
+
+
+def _resolve_remotepairing_record(serial: Optional[str]) -> str:
+    """The RemotePairing record ``--remotepairing`` targets, checked before anything is sent.
+
+    ``serial`` is the identifier the record is stored under (``remote_<id>.plist``): the pairing
+    identifier for a device paired over the network with ``remote pair``, the UDID for one paired
+    over USB. It may be left out when there is a single record.
+    """
+    record_identifiers = sorted(set(iter_remote_paired_identifiers()))
+    if not record_identifiers:
+        raise UserspaceTunnelUnavailableError(
+            "--remotepairing found no RemotePairing record; pair the device first with `pymobiledevice3 remote pair`."
+        )
+    if serial is None and len(record_identifiers) == 1:
+        serial = record_identifiers[0]
+    if serial not in record_identifiers:
+        known = ", ".join(record_identifiers)
+        reason = (
+            "several RemotePairing records exist, so --remotepairing needs --udid to name one"
+            if serial is None
+            else f"no RemotePairing record is stored under {serial} (remote_<id>.plist)"
+        )
+        raise UserspaceTunnelUnavailableError(f"{reason}. Known record identifiers: {known}.")
+    record = get_local_pairing_record(get_remote_pairing_record_filename(serial), get_home_folder())
+    if record is None or tunnel_service.PEER_ALT_IRK_KEY not in record:
+        # Without the altIRK the device's bonjour answers cannot be matched to the record.
+        raise UserspaceTunnelUnavailableError(
+            f"The RemotePairing record of {serial} predates altIRK recording, so --remotepairing cannot find the "
+            "device over bonjour; delete the record and pair again (promptless over USB: "
+            "`pymobiledevice3 lockdown remotepairing --pair`)."
+        )
+    return serial
+
+
+async def _connect_remotepairing_record(record: str) -> Optional[tunnel_service.RemotePairingTunnelService]:
+    """Connect to the device of RemotePairing record ``record`` over the network, or ``None`` if it did not
+    answer within :data:`REMOTEPAIRING_BONJOUR_TIMEOUT`. Only that device is contacted, at one address."""
+    services = await tunnel_service.get_remote_pairing_tunnel_services(
+        bonjour_timeout=REMOTEPAIRING_BONJOUR_TIMEOUT, udid=record, first_address_only=True
+    )
+    return services[0] if services else None
+
+
+async def _create_remotepairing_tunnel_provider(serial: Optional[str]) -> TunnelProvider:
+    """Connect to the paired device ``serial`` names (see :func:`_resolve_remotepairing_record`), found
+    advertising RemotePairing over bonjour.
+
+    Only for an explicit request (``--remotepairing``): a usbmux miss never browses the network. A device
+    that does not answer raises :class:`DeviceNotFoundError`, which ``--reconnect`` waits out; a missing or
+    unusable record raises :class:`UserspaceTunnelUnavailableError` at once.
+    """
+    record = _resolve_remotepairing_record(serial)
+    service = await _connect_remotepairing_record(record)
+    if service is None:
+        raise DeviceNotFoundError(
+            record,
+            f"{record} did not answer over RemotePairing (bonjour). Check that the device is awake and on the "
+            "same network.",
+        )
+    return TunnelProvider(service)
+
+
+async def wait_for_remotepairing_device(serial: Optional[str]) -> str:
+    """Wait until the device ``serial`` names (see :func:`_resolve_remotepairing_record`) answers over
+    RemotePairing and return its record identifier: the ``--reconnect`` wait for ``--remotepairing``, where
+    usbmux never sees the device. A ``serial`` that names no usable record raises at once instead of waiting."""
+    record = _resolve_remotepairing_record(serial)
+    while True:
+        service = await _connect_remotepairing_record(record)
+        if service is not None:
+            await service.close()
+            return record
+        logger.debug("%s has not answered over RemotePairing yet; browsing again", record)
 
 
 class UserspaceRsdTunnel:
@@ -816,6 +904,10 @@ class UserspaceRsdTunnel:
     lockdown on teardown. With ``provider_factory`` set, ``autopair`` and ``remotepairing_fallback``
     are ignored and ``serial`` no longer selects the device: the factory alone decides which device
     the tunnel reaches.
+
+    ``remotepairing=True`` skips usbmux and reaches a network-paired device through RemotePairing, found
+    over bonjour (see :func:`_create_remotepairing_tunnel_provider`) — the route for a device with no USB
+    connection, such as an Apple TV. ``serial`` then names the RemotePairing record.
     """
 
     def __init__(
@@ -824,11 +916,13 @@ class UserspaceRsdTunnel:
         autopair: bool = True,
         remotepairing_fallback: bool = True,
         provider_factory: Optional[TunnelProviderFactory] = None,
+        remotepairing: bool = False,
     ) -> None:
         self.provider_factory = provider_factory
         self.serial = serial
         self.autopair = autopair
         self.remotepairing_fallback = remotepairing_fallback
+        self.remotepairing = remotepairing
         self.rsd: Optional[RemoteServiceDiscoveryService] = None
         self.tun: Optional[UserspaceTun] = None
         self._exit_stack: Optional[AsyncExitStack] = None
@@ -861,6 +955,8 @@ class UserspaceRsdTunnel:
         try:
             if self.provider_factory is not None:
                 provider = await self.provider_factory()
+            elif self.remotepairing:
+                provider = await _create_remotepairing_tunnel_provider(self.serial)
             else:
                 provider = await _create_no_root_tunnel_provider(
                     self.serial, self.autopair, self.remotepairing_fallback
@@ -1005,7 +1101,10 @@ _cli_tunnel: Optional[UserspaceRsdTunnel] = None
 
 
 async def establish_userspace_rsd(
-    serial: Optional[str] = None, autopair: bool = True, remotepairing_fallback: bool = True
+    serial: Optional[str] = None,
+    autopair: bool = True,
+    remotepairing_fallback: bool = True,
+    remotepairing: bool = False,
 ) -> RemoteServiceDiscoveryService:
     """CLI convenience: establish a userspace tunnel, keep it alive, and return its connected RSD.
 
@@ -1015,7 +1114,8 @@ async def establish_userspace_rsd(
 
     ``remotepairing_fallback=False`` makes a pre-17.4 device (no CoreDeviceProxy) raise
     :class:`UserspaceTunnelUnavailableError` instead of attempting RemotePairing, so the caller can
-    route such devices elsewhere (the CLI uses this to fall back to ``tunneld``).
+    route such devices elsewhere (the CLI uses this to fall back to ``tunneld``). ``remotepairing=True``
+    reaches the device through RemotePairing over the network instead of USB (see :class:`UserspaceRsdTunnel`).
     """
     global _cli_tunnel
     # In-process retry (the CLI re-runs main() with the userspace env var set after an
@@ -1027,7 +1127,9 @@ async def establish_userspace_rsd(
         and (serial is None or serial in (_cli_tunnel.serial, _cli_tunnel.rsd.udid))
     ):
         return _cli_tunnel.rsd
-    tunnel = UserspaceRsdTunnel(serial=serial, autopair=autopair, remotepairing_fallback=remotepairing_fallback)
+    tunnel = UserspaceRsdTunnel(
+        serial=serial, autopair=autopair, remotepairing_fallback=remotepairing_fallback, remotepairing=remotepairing
+    )
     try:
         rsd = await tunnel.aopen()
     except PyMobileDevice3Exception:

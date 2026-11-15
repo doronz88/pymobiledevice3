@@ -1694,12 +1694,15 @@ async def get_remote_pairing_tunnel_services(
     bonjour_timeout: float = DEFAULT_BONJOUR_TIMEOUT,
     udid: Optional[str] = None,
     excluded_identifiers: Collection[str] = (),
+    first_address_only: bool = False,
 ) -> list[RemotePairingTunnelService]:
     """Connect to the paired devices advertising RemotePairing over bonjour.
 
     Each answer is matched to its pair record by ``authTag`` before anything is sent, so only devices
     we are paired with are contacted, each with its own record. ``udid`` narrows the result to one
-    device; ``excluded_identifiers`` skips devices the caller already serves.
+    device; ``excluded_identifiers`` skips devices the caller already serves. A device is connected
+    at every address it advertises (tunneld keeps a tunnel per address), unless
+    ``first_address_only`` stops at the first one that connects, for a caller that needs just one.
     """
     alt_irks: dict[str, bytes] = {}
     for identifier, path, pair_record in iter_remote_pair_records_by_identifier():
@@ -1740,6 +1743,9 @@ async def get_remote_pairing_tunnel_services(
                     logger.debug(
                         "Skipping remote pairing service %s@%s:%s: %r", identifier, address.full_ip, answer.port, e
                     )
+                    continue
+                if first_address_only:
+                    break
             if udid is not None and result:
                 break
     finally:
