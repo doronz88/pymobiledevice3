@@ -1088,10 +1088,22 @@ class DiagnosticsService(LockdownService):
 
         Convenience wrapper that queries the IORegistry entry of class ``IOPMPowerSource``.
 
+        Newer iOS versions no longer publish ``Temperature`` on that entry. When it is missing, it is filled in
+        from the ``BatteryData`` of the ``AppleSmartBatteryPack`` entry (the first pack on multi-pack devices),
+        which reports it in the same unit (hundredths of a degree Celsius).
+
         :returns: The IORegistry data for the power-source entry, or ``None`` if it is absent.
         :raises PyMobileDevice3Exception: If the underlying IORegistry request did not complete successfully.
         """
-        return await self.ioregistry(ioclass="IOPMPowerSource")
+        info = await self.ioregistry(ioclass="IOPMPowerSource")
+        if info is None or "Temperature" in info:
+            return info
+        pack: dict[str, Any] = await self.ioregistry(ioclass="AppleSmartBatteryPack") or {}
+        battery_data: dict[str, Any] = pack.get("BatteryData") or {}
+        temperature = battery_data.get("Temperature")
+        if temperature is not None:
+            info["Temperature"] = temperature
+        return info
 
     async def get_wifi(self) -> Optional[dict[str, Any]]:
         """
