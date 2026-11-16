@@ -104,7 +104,7 @@ async def create_using_usbmux(
         )
         await lockdown_client._initialize()
         await lockdown_client._handle_autopair(autopair, pair_timeout)
-    except Exception:
+    except BaseException:
         await service.close()
         raise
     else:
@@ -2617,7 +2617,7 @@ class RemoteServiceDiscoveryService(LockdownServiceProvider):
                     )
 
             self.all_values = self.lockdown.all_values if self.lockdown is not None else {}
-        except Exception:
+        except BaseException:
             await self.close()
             raise
 
@@ -2999,7 +2999,7 @@ async def connect(self) -> None:
                 )
 
         self.all_values = self.lockdown.all_values if self.lockdown is not None else {}
-    except Exception:
+    except BaseException:
         await self.close()
         raise
 ```
