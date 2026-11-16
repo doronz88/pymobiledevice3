@@ -34,12 +34,15 @@ from pymobiledevice3.exceptions import (
     ConnectionFailedToUsbmuxdError,
     ConnectionTerminatedError,
     DeviceNotFoundError,
+    FatalPairingError,
     GetProhibitedError,
     IncorrectModeError,
     InvalidServiceError,
     LockdownError,
     MuxException,
+    NotPairedError,
     PairingError,
+    PasswordRequiredError,
     QuicProtocolNotSupportedError,
     StreamClosedError,
 )
@@ -436,6 +439,10 @@ class TunneldCore:
                                 mux_device.serial, usbmux_address=self.usbmux_address
                             ) as lockdown:
                                 service = await CoreDeviceTunnelProxy.create(lockdown)
+                        except PasswordRequiredError:
+                            # usbmuxd reports nothing when the device is unlocked, so look again
+                            rescan.set()
+                            continue
                         except (
                             MuxException,
                             InvalidServiceError,
@@ -446,6 +453,10 @@ class TunneldCore:
                             LockdownError,
                             IncorrectModeError,
                             SSLEOFError,
+                            # a device that is not trusted (yet) must not end the monitor
+                            PairingError,
+                            NotPairedError,
+                            FatalPairingError,
                         ):
                             if service is not None:
                                 await service.close()
@@ -581,21 +592,25 @@ class TunneldCore:
                 # notify something went wrong
                 queue.put_nowait(None)
 
-            if tun is not None and not bailed_out:
-                logger.info(f"Disconnected from tunnel --rsd {tun.address} {tun.port}")
-                await tun.client.stop_tunnel()
+            # Each teardown step runs whatever the previous one did: a stale entry keeps the device
+            # listed and stops the monitors from ever tunnelling it again.
+            try:
+                try:
+                    if tun is not None and not bailed_out:
+                        logger.info(f"Disconnected from tunnel --rsd {tun.address} {tun.port}")
+                        await tun.client.stop_tunnel()
+                finally:
+                    with suppress(OSError):
+                        await protocol_handler.close()
+            finally:
+                if entry is not None and self.tunnel_tasks.get(task_identifier) is entry:
+                    # unless cancel() or clear() removed it just now (and maybe registered a new one)
+                    self.tunnel_tasks.pop(task_identifier)
 
-            with suppress(OSError):
-                await protocol_handler.close()
-
-            if entry is not None and self.tunnel_tasks.get(task_identifier) is entry:
-                # unless cancel() or clear() removed it just now (and maybe registered a new one)
-                self.tunnel_tasks.pop(task_identifier)
-
-            if self._usbmux_rescan is not None:
-                # only now that this entry is unregistered: another connection to the same device
-                # may take over (#2052)
-                self._usbmux_rescan.set()
+                if self._usbmux_rescan is not None:
+                    # only now that this entry is unregistered: another connection to the same device
+                    # may take over (#2052)
+                    self._usbmux_rescan.set()
 
     @asyncio_print_traceback
     async def handle_new_potential_usb_cdc_ncm_interface_task(self, ip: str) -> None:
@@ -665,7 +680,8 @@ class TunneldCore:
         """close all tasks"""
         for task in self.tasks + [tunnel_task.task for tunnel_task in self.tunnel_tasks.values()]:
             task.cancel()
-            with suppress(asyncio.CancelledError):
+            # a task that already ended with an error must not keep the rest from being stopped
+            with suppress(asyncio.CancelledError, Exception):
                 await task
 
     def get_tunnels_ips(self) -> dict[str, list[str]]:

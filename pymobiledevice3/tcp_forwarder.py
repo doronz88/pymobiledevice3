@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from abc import abstractmethod
+from contextlib import suppress
 from typing import Optional
 
 from pymobiledevice3 import usbmux
@@ -43,12 +44,15 @@ class TcpForwarderBase:
         finally:
             self.logger.info("Closing everything")
             self.server.close()
-            await self.server.wait_closed()
+            # End the forwarded connections before waiting for the server: since Python 3.12.1
+            # Server.wait_closed() waits for every accepted connection, and those are only closed
+            # once their handler task has ended.
             tasks = list(self._connection_tasks)
             for task in tasks:
                 task.cancel()
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
+            await self.server.wait_closed()
 
     @abstractmethod
     async def _establish_remote_connection(self) -> ServiceConnection:
@@ -68,10 +72,16 @@ class TcpForwarderBase:
     async def _handle_server_connection(self, local_reader: asyncio.StreamReader, local_writer: asyncio.StreamWriter):
         """accept the connection from local machine and attempt to connect at remote"""
         peer = str(local_writer.get_extra_info("peername"))
+        if self.stopped.is_set():
+            # Accepted just before stop(), which found no handler to cancel yet: nothing else ends
+            # this connection, and start() is waiting for it.
+            local_writer.close()
+            return
         task = asyncio.current_task()
         if task is not None:
             self._connection_tasks.add(task)
         remote_connection: Optional[ServiceConnection] = None
+        pipes: set[asyncio.Task[None]] = set()
         try:
             try:
                 remote_connection = await self._establish_remote_connection()
@@ -86,10 +96,8 @@ class TcpForwarderBase:
             remote_to_client = asyncio.create_task(
                 self._pipe(remote_connection.reader, local_writer, peer, "remote->client")
             )
-            done, pending = await asyncio.wait(
-                {client_to_remote, remote_to_client},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            pipes = {client_to_remote, remote_to_client}
+            done, pending = await asyncio.wait(pipes, return_when=asyncio.FIRST_COMPLETED)
             for p in pending:
                 p.cancel()
             if pending:
@@ -99,14 +107,23 @@ class TcpForwarderBase:
                 if exc is not None and not isinstance(exc, ConnectionResetError):
                     self.logger.debug("connection %s ended with %r", peer, exc)
         finally:
-            if remote_connection is not None:
-                await remote_connection.close()
-            local_writer.close()
-            await local_writer.wait_closed()
-            if remote_connection is not None:
-                self.logger.info("connection %s was closed", peer)
-            if task is not None:
-                self._connection_tasks.discard(task)
+            try:
+                # A cancelled handler never reached the cancellation above.
+                for pipe in pipes:
+                    pipe.cancel()
+                if pipes:
+                    await asyncio.gather(*pipes, return_exceptions=True)
+                if remote_connection is not None:
+                    await remote_connection.close()
+            finally:
+                local_writer.close()
+                # wait_closed() re-raises the error that ended the connection (e.g. a client reset).
+                with suppress(Exception):
+                    await local_writer.wait_closed()
+                if remote_connection is not None:
+                    self.logger.info("connection %s was closed", peer)
+                if task is not None:
+                    self._connection_tasks.discard(task)
 
     def stop(self):
         """stop forwarding"""

@@ -7,7 +7,14 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from bytestruct import TruncatedDataError, UnexpectedConstantError
 
-from pymobiledevice3.exceptions import ConnectionTerminatedError, MuxException
+from pymobiledevice3.exceptions import (
+    ConnectionTerminatedError,
+    FatalPairingError,
+    MuxException,
+    NotPairedError,
+    PasswordRequiredError,
+    UserDeniedPairingError,
+)
 from pymobiledevice3.tunneld import server as tunneld_server
 
 
@@ -87,8 +94,20 @@ async def test_monitor_usbmux_task_reconnects_after_a_malformed_usbmux_reply(mon
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("error", [TruncatedDataError("short reply"), UnexpectedConstantError("bad magic")])
-async def test_monitor_usbmux_task_skips_a_device_whose_lockdown_reply_is_malformed(monkeypatch, error):
+@pytest.mark.parametrize(
+    "error",
+    [
+        TruncatedDataError("short reply"),
+        UnexpectedConstantError("bad magic"),
+        # a locked device, one whose user declined to trust the host, and one that is not paired
+        PasswordRequiredError("locked"),
+        UserDeniedPairingError(),
+        NotPairedError(),
+        # a device that rejects the stored pair record
+        FatalPairingError(),
+    ],
+)
+async def test_monitor_usbmux_task_skips_a_device_it_cannot_open_lockdown_on(monkeypatch, error):
     receives = 0
 
     async def fake_receive() -> None:
@@ -112,6 +131,39 @@ async def test_monitor_usbmux_task_skips_a_device_whose_lockdown_reply_is_malfor
     await core.monitor_usbmux_task()
     assert receives == 2
     assert core.tunnel_tasks == {}
+
+
+@pytest.mark.asyncio
+async def test_monitor_usbmux_task_retries_a_locked_device_without_a_usbmux_event(monkeypatch):
+    # Unlocking a device is not reported by usbmuxd, so nothing but the monitor itself can prompt
+    # another look at a device it skipped for being locked.
+    monkeypatch.setattr(tunneld_server, "USBMUX_INTERVAL", 0)
+    attempts = 0
+
+    async def fake_receive() -> None:
+        if attempts == 0:
+            # the device attaching
+            return
+        await asyncio.Event().wait()
+
+    mux = _FakeMux(fake_receive)
+    mux.devices = [Mock(serial="device", connection_type="USB")]
+
+    async def fake_create_mux(usbmux_address=None):
+        return mux
+
+    async def fake_create_using_usbmux(serial, usbmux_address=None):
+        nonlocal attempts
+        attempts += 1
+        if attempts >= 2:
+            raise asyncio.CancelledError()
+        raise PasswordRequiredError("locked")
+
+    monkeypatch.setattr(tunneld_server.usbmux, "create_mux", fake_create_mux)
+    monkeypatch.setattr(tunneld_server, "create_using_usbmux", fake_create_using_usbmux)
+    core = tunneld_server.TunneldCore(wifi_monitor=False, usb_monitor=False, usbmux_monitor=True, mobdev2_monitor=False)
+    await asyncio.wait_for(core.monitor_usbmux_task(), timeout=5)
+    assert attempts == 2
 
 
 @pytest.mark.asyncio
@@ -764,3 +816,50 @@ async def test_usb_ncm_task_leaves_the_entry_of_a_task_that_replaced_it(monkeypa
 
     assert core.tunnel_tasks == {"fe80::1": replacement}
     replacement.task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_start_tunnel_task_unregisters_a_tunnel_that_failed_to_stop(monkeypatch):
+    # A teardown error must not leave the entry behind: the monitors skip a device that still has one,
+    # so it would never be tunnelled again.
+    @asynccontextmanager
+    async def fake_start_tunnel(protocol_handler, protocol=None):
+        client = Mock(wait_closed=AsyncMock(), stop_tunnel=AsyncMock(side_effect=ConnectionError("no reply")))
+        yield Mock(client=client, address="fd00::1", port=1)
+
+    monkeypatch.setattr(tunneld_server, "start_tunnel", fake_start_tunnel)
+    core = tunneld_server.TunneldCore(
+        wifi_monitor=False, usb_monitor=False, usbmux_monitor=False, mobdev2_monitor=False
+    )
+    protocol_handler = Mock(remote_identifier="DEVICE", close=AsyncMock())
+    task = asyncio.create_task(core.start_tunnel_task("usbmux-DEVICE-USB", protocol_handler))
+    core.tunnel_tasks["usbmux-DEVICE-USB"] = tunneld_server.TunnelTask(task=task, udid="DEVICE")
+
+    with pytest.raises(ConnectionError):
+        await task
+
+    protocol_handler.close.assert_awaited_once_with()
+    assert "usbmux-DEVICE-USB" not in core.tunnel_tasks
+    assert not core.tunnel_exists_for_udid("DEVICE")
+
+
+@pytest.mark.asyncio
+async def test_close_stops_every_task_after_one_already_failed():
+    async def failed() -> None:
+        raise RuntimeError("monitor died")
+
+    core = tunneld_server.TunneldCore(
+        wifi_monitor=False, usb_monitor=False, usbmux_monitor=False, mobdev2_monitor=False
+    )
+
+    async def idle() -> None:
+        await asyncio.Event().wait()
+
+    dead = asyncio.create_task(failed())
+    alive = asyncio.create_task(idle())
+    await asyncio.wait({dead})
+    core.tasks = [dead, alive]
+
+    await core.close()
+
+    assert alive.cancelled()

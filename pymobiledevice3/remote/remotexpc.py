@@ -268,7 +268,7 @@ class RemoteXPCConnection:
             raise RemoteXPCHandshakeTimeoutError(
                 f"The service at {self.address[0]}:{self.address[1]} did not answer the RemoteXPC handshake."
             ) from e
-        except Exception:
+        except BaseException:
             await self.close()
             raise
 

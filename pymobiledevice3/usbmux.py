@@ -211,7 +211,7 @@ class MuxConnection:
         except (ConnectionRefusedError, FileNotFoundError) as e:
             sock.close()
             raise ConnectionFailedToUsbmuxdError() from e
-        except Exception:
+        except BaseException:
             sock.close()
             raise
         return sock
