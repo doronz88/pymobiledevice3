@@ -313,6 +313,33 @@ To establish this tunnel programmatically, use the `UserspaceRsdTunnel` handle â
 protocol-layers guide, listed there alongside the other ways to obtain an RSD. The in-process-only
 limitation above applies equally to the Python API.
 
+#### Reaching a device at a known address
+
+Bonjour only finds a network-paired device on the same local network. To reach one at an address you
+already know, for example over a VPN, give `UserspaceRsdTunnel` a `provider_factory` that connects to
+it, and raise the connect timeout for the slower link:
+
+```python
+from pymobiledevice3.remote.tunnel_service import create_core_device_tunnel_service_using_remotepairing
+from pymobiledevice3.remote.userspace_tunnel import TunnelProvider, UserspaceRsdTunnel
+
+
+async def provider() -> TunnelProvider:
+    service = await create_core_device_tunnel_service_using_remotepairing(
+        udid, "10.0.0.5", 49152, autopair=False, connect_timeout=10
+    )
+    return TunnelProvider(service)
+
+
+async with UserspaceRsdTunnel(provider_factory=provider) as rsd:
+    ...
+```
+
+The device must already be paired for the network (`pymobiledevice3 lockdown remotepairing --pair` over
+USB), and its RemotePairing port is the one bonjour advertises on the local network (`49152` is common,
+not guaranteed). With `provider_factory` set, `serial`, `autopair` and `remotepairing_fallback` are
+ignored.
+
 ## Use tunnel details in commands
 
 ```shell

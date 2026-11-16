@@ -633,6 +633,10 @@ class StartTcpTunnel(ABC):
     def start_tcp_tunnel(self) -> AbstractAsyncContextManager[TunnelResult]:
         pass
 
+    @abstractmethod
+    async def close(self) -> None:
+        pass
+
 
 class RemotePairingProtocol(StartTcpTunnel):
     WIRE_PROTOCOL_VERSION = 19
@@ -1304,17 +1308,26 @@ class CoreDeviceTunnelService(RemotePairingProtocol, RemoteService):
 
 
 class RemotePairingTunnelService(RemotePairingProtocol):
-    def __init__(self, remote_identifier: str, hostname: str, port: int) -> None:
+    def __init__(
+        self, remote_identifier: str, hostname: str, port: int, connect_timeout: Optional[float] = None
+    ) -> None:
+        """``connect_timeout`` bounds opening the TCP connection, in seconds (``TIMEOUT`` when ``None``).
+        Raise it for a device reached over a slower link than the local network, such as a VPN."""
         RemotePairingProtocol.__init__(self)
         self._remote_identifier = remote_identifier
         self.hostname = hostname
         self.port = port
+        self.connect_timeout = connect_timeout
         self._reader: Optional[StreamReader] = None
         self._writer: Optional[StreamWriter] = None
 
     @property
     def remote_identifier(self) -> str:
         return self._remote_identifier
+
+    @property
+    def _connect_timeout(self) -> float:
+        return TIMEOUT if self.connect_timeout is None else self.connect_timeout
 
     @property
     def reader(self) -> StreamReader:
@@ -1339,7 +1352,7 @@ class RemotePairingTunnelService(RemotePairingProtocol):
     async def connect(self, autopair: bool = True) -> None:
         connect_task = asyncio.create_task(asyncio.open_connection(self.hostname, self.port))
         try:
-            self._reader, self._writer = await asyncio.wait_for(connect_task, timeout=TIMEOUT)
+            self._reader, self._writer = await asyncio.wait_for(connect_task, timeout=self._connect_timeout)
         except BaseException:
             if not connect_task.done():
                 connect_task.cancel()
@@ -1409,7 +1422,7 @@ class RemotePairingManualPairingService(RemotePairingTunnelService):
         `OSError`/`asyncio.TimeoutError` this raises, before any pairing exchange has started.
         """
         fut = asyncio.open_connection(self.hostname, self.port)
-        self._reader, self._writer = await asyncio.wait_for(fut, timeout=TIMEOUT)
+        self._reader, self._writer = await asyncio.wait_for(fut, timeout=self._connect_timeout)
 
     async def connect(self, autopair: bool = True) -> None:
         if self._writer is None:
@@ -1525,9 +1538,13 @@ async def create_core_device_tunnel_service_using_rsd(
 
 
 async def create_core_device_tunnel_service_using_remotepairing(
-    remote_identifier: str, hostname: str, port: int, autopair: bool = True
+    remote_identifier: str,
+    hostname: str,
+    port: int,
+    autopair: bool = True,
+    connect_timeout: Optional[float] = None,
 ) -> RemotePairingTunnelService:
-    service = RemotePairingTunnelService(remote_identifier, hostname, port)
+    service = RemotePairingTunnelService(remote_identifier, hostname, port, connect_timeout=connect_timeout)
     try:
         await service.connect(autopair=autopair)
     except BaseException:
@@ -1537,9 +1554,13 @@ async def create_core_device_tunnel_service_using_remotepairing(
 
 
 async def create_core_device_service_using_remotepairing_manual_pairing(
-    remote_identifier: str, hostname: str, port: int, autopair: bool = True
+    remote_identifier: str,
+    hostname: str,
+    port: int,
+    autopair: bool = True,
+    connect_timeout: Optional[float] = None,
 ) -> RemotePairingTunnelService:
-    service = RemotePairingManualPairingService(remote_identifier, hostname, port)
+    service = RemotePairingManualPairingService(remote_identifier, hostname, port, connect_timeout=connect_timeout)
     await service.connect(autopair=autopair)
     return service
 
