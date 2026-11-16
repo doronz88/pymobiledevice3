@@ -598,11 +598,18 @@ async def core_device_screen_capture_screenshot(
     service_provider: RSDServiceProviderDep,
     output: Annotated[Path, typer.Argument(help="Local PNG file to write.")],
     display_unique_id: Annotated[
-        Optional[str], typer.Option("--display-unique-id", help="Display to capture (default: the primary display).")
+        Optional[str],
+        typer.Option(
+            "--display-unique-id",
+            help="uniqueId of the display to capture (see `get-display-info`). Default: the built-in display "
+            "in use -- on a foldable, the lit panel.",
+        ),
     ] = None,
 ) -> None:
     """Capture a PNG screenshot of the device's screen."""
     async with ScreenCaptureService(service_provider) as service:
+        if display_unique_id is None:
+            display_unique_id = await service.active_display_unique_id()
         response = await service.capture_screenshot(display_unique_id=display_unique_id)
     output.write_bytes(response["image"])
     logger.info(f"Screenshot saved to: {output}")

@@ -18,6 +18,13 @@ Requires Developer Mode (`amfi enable-developer-mode`), plus a mounted DDI on iO
 (`mounter auto-mount`). WDA-based UI automation has its own screenshot:
 `developer wda screenshot`.
 
+`dvt screenshot` captures the main screen only. On an unfolded foldable that is the dark cover
+panel (a black image); capture the lit panel with (iOS 17+, mounted DDI):
+
+```shell
+uvx --from . pymobiledevice3 developer core-device screen-capture screenshot ./screen.png
+```
+
 ## Search The Device Syslog
 
 ```shell
