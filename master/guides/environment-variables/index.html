@@ -2810,6 +2810,11 @@ Each one is a default: where a matching command-line option exists, the option a
 <td>Same as <code>--userspace</code>: force the in-process pure-Python userspace tunnel.</td>
 </tr>
 <tr>
+<td><code>PYMOBILEDEVICE3_REMOTEPAIRING</code></td>
+<td><code>1</code></td>
+<td>Same as <code>--remotepairing</code>: build the userspace tunnel over RemotePairing, found over bonjour, for a device paired with <code>remote pair</code>, e.g. an Apple TV. <code>PYMOBILEDEVICE3_UDID</code> then holds the identifier the RemotePairing record is stored under (<code>remote_&lt;id&gt;.plist</code>).</td>
+</tr>
+<tr>
 <td><code>PYMOBILEDEVICE3_TUNNEL</code></td>
 <td><code>UDID</code>, <code>UDID:PORT</code> or <code>UDID@HOST[:PORT]</code></td>
 <td>Same as <code>--tunnel</code>: take the tunnel from a running <code>tunneld</code>; the <code>@HOST</code> form bridges through a remote tunneld's <code>WS /connect</code>. An empty UDID picks the only tunnel, or prompts.</td>
@@ -2817,7 +2822,8 @@ Each one is a default: where a matching command-line option exists, the option a
 </tbody>
 </table>
 <p><code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code> and <code>--native</code> are mutually exclusive, so set at most one of
-their variables. See <a href="../ios17-tunnels/">iOS 17+ tunnels</a> for when each transport applies, and
+their variables; <code>--remotepairing</code> may be combined only with <code>--userspace</code>. See
+<a href="../ios17-tunnels/">iOS 17+ tunnels</a> for when each transport applies, and
 <a href="../network-stacks/">Understanding the network stacks</a> for how they differ.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># prefer the macOS native tunnel for this shell</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">PYMOBILEDEVICE3_DEFAULT_FALLBACK</span><span class="o">=</span>native

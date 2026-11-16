@@ -201,6 +201,11 @@ Requirements:
 
 - Nothing to install: the `pmd-pytcp` network stack behind it is a regular dependency.
 - **iOS 17.4+ over USB** (through the CoreDeviceProxy lockdown service), or **iOS 17.0-17.3 on Wi-Fi** (through RemotePairing, discovered over bonjour).
+- **Over the network only, with `--remotepairing`** (or `PYMOBILEDEVICE3_REMOTEPAIRING=1`): a device paired over the network with `pymobiledevice3 remote pair` — an Apple TV on Wi-Fi or Ethernet, or any device without a cable — is reached through RemotePairing, discovered over bonjour, with no USB and no root. `--udid` names the identifier the RemotePairing record is stored under (`remote_<id>.plist`): the pairing identifier for a record made by `remote pair`, the UDID for one made over USB. With a single record it can be left out; with several it is required, and only the named device is contacted. It is never tried implicitly: a device `usbmuxd` cannot see still fails at once without `--remotepairing`.
+
+```
+pymobiledevice3 developer dvt screenshot --remotepairing --udid <RECORD-ID> screen.png
+```
 
 What works over the userspace tunnel: the host-initiated developer services (`dvt`, `fetch-symbols`, `core-device …`), and the device-initiated AV/HID paths — `display serve-web`, `display serve-vnc`, `display start-video-stream` / `start-audio-stream`, and the HID gesture commands.
 
