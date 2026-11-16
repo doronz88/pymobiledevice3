@@ -3411,7 +3411,7 @@ plus a mounted DDI on iOS &lt; 17 (<a href="#developer-mode-and-ddi">above</a>).
 <a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a><span class="c1"># Clear simulated location</span>
 <a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>simulate-location<span class="w"> </span>clear
 <a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a>
-<a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="c1"># Take a screenshot</span>
+<a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="c1"># Take a screenshot of the main screen (an unfolded foldable: use `core-device screen-capture screenshot`)</span>
 <a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>screenshot<span class="w"> </span>/path/to/screen.png
 <a id="__codelineno-19-18" name="__codelineno-19-18" href="#__codelineno-19-18"></a>
 <a id="__codelineno-19-19" name="__codelineno-19-19" href="#__codelineno-19-19"></a><span class="c1"># Detailed process list</span>
@@ -3550,7 +3550,7 @@ per boot with:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>pymobiledevice3<span class="w"> </span>mounter<span class="w"> </span>auto-mount
 </code></pre></div>
 </div>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># Take a screenshot (PNG)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="c1"># Take a screenshot (PNG) of the display in use -- on a foldable, the lit panel</span>
 <a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>core-device<span class="w"> </span>screen-capture<span class="w"> </span>screenshot<span class="w"> </span>/path/to/screen.png
 <a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>
 <a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="c1"># Fetch an application's icon (PNG). Size is given in points; pixel size is size * scale</span>
