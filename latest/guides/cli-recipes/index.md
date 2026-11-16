@@ -354,7 +354,7 @@ pymobiledevice3 developer dvt simulate-location play route.gpx 500
 # Clear simulated location
 pymobiledevice3 developer dvt simulate-location clear
 
-# Take a screenshot
+# Take a screenshot of the main screen (an unfolded foldable: use `core-device screen-capture screenshot`)
 pymobiledevice3 developer dvt screenshot /path/to/screen.png
 
 # Detailed process list
@@ -497,7 +497,7 @@ pymobiledevice3 mounter auto-mount
 ```
 
 ```
-# Take a screenshot (PNG)
+# Take a screenshot (PNG) of the display in use -- on a foldable, the lit panel
 pymobiledevice3 developer core-device screen-capture screenshot /path/to/screen.png
 
 # Fetch an application's icon (PNG). Size is given in points; pixel size is size * scale

@@ -6306,7 +6306,9 @@
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="dvt-screenshot"><code>dvt screenshot</code><a class="headerlink" href="#dvt-screenshot" title="Permanent link">&para;</a></h2>
-<p>Take a screenshot of the device screen and save it as PNG.</p>
+<p>Take a screenshot of the device's main screen and save it as PNG.</p>
+<p>On a foldable the main screen is the cover panel, which captures black while the device is
+unfolded: use <code>developer core-device screen-capture screenshot</code> there.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>pymobiledevice3 developer dvt screenshot [OPTIONS] {out}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
@@ -9359,7 +9361,7 @@ RSD tunnel otherwise.</p>
 </tr>
 <tr>
 <td><code>--display-unique-id &lt;str&gt;</code></td>
-<td>Display to capture (default: the primary display).</td>
+<td>uniqueId of the display to capture (see <code>get-display-info</code>). Default: the built-in display in use -- on a foldable, the lit panel.</td>
 </tr>
 </tbody>
 </table>
