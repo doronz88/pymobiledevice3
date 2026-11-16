@@ -1060,6 +1060,11 @@ Requirements:
 
 - Nothing to install: the `pmd-pytcp` network stack behind it is a regular dependency.
 - **iOS 17.4+ over USB** (through the CoreDeviceProxy lockdown service), or **iOS 17.0-17.3 on Wi-Fi** (through RemotePairing, discovered over bonjour).
+- **Over the network only, with `--remotepairing`** (or `PYMOBILEDEVICE3_REMOTEPAIRING=1`): a device paired over the network with `pymobiledevice3 remote pair` — an Apple TV on Wi-Fi or Ethernet, or any device without a cable — is reached through RemotePairing, discovered over bonjour, with no USB and no root. `--udid` names the identifier the RemotePairing record is stored under (`remote_<id>.plist`): the pairing identifier for a record made by `remote pair`, the UDID for one made over USB. With a single record it can be left out; with several it is required, and only the named device is contacted. It is never tried implicitly: a device `usbmuxd` cannot see still fails at once without `--remotepairing`.
+
+```
+pymobiledevice3 developer dvt screenshot --remotepairing --udid <RECORD-ID> screen.png
+```
 
 What works over the userspace tunnel: the host-initiated developer services (`dvt`, `fetch-symbols`, `core-device …`), and the device-initiated AV/HID paths — `display serve-web`, `display serve-vnc`, `display start-video-stream` / `start-audio-stream`, and the HID gesture commands.
 
@@ -1074,6 +1079,28 @@ Because the tunnel is rebuilt per invocation (no persistent daemon), expect a li
 ### From Python
 
 To establish this tunnel programmatically, use the `UserspaceRsdTunnel` handle — see the [`UserspaceRsdTunnel` example](https://doronz88.github.io/pymobiledevice3/latest/internals/idevice-protocol-layers/#remotexpc) in the protocol-layers guide, listed there alongside the other ways to obtain an RSD. The in-process-only limitation above applies equally to the Python API.
+
+#### Reaching a device at a known address
+
+Bonjour only finds a network-paired device on the same local network. To reach one at an address you already know, for example over a VPN, give `UserspaceRsdTunnel` a `provider_factory` that connects to it, and raise the connect timeout for the slower link:
+
+```
+from pymobiledevice3.remote.tunnel_service import create_core_device_tunnel_service_using_remotepairing
+from pymobiledevice3.remote.userspace_tunnel import TunnelProvider, UserspaceRsdTunnel
+
+
+async def provider() -> TunnelProvider:
+    service = await create_core_device_tunnel_service_using_remotepairing(
+        udid, "10.0.0.5", 49152, autopair=False, connect_timeout=10
+    )
+    return TunnelProvider(service)
+
+
+async with UserspaceRsdTunnel(provider_factory=provider) as rsd:
+    ...
+```
+
+The device must already be paired for the network (`pymobiledevice3 lockdown remotepairing --pair` over USB), and its RemotePairing port is the one bonjour advertises on the local network (`49152` is common, not guaranteed). With `provider_factory` set, `serial`, `autopair` and `remotepairing_fallback` are ignored.
 
 ## Use tunnel details in commands
 
@@ -1129,14 +1156,15 @@ $env:PYMOBILEDEVICE3_UDID = "00008110-001234567890801E"
 
 ## Transport (iOS 17+ tunnels)
 
-| Variable                           | Value                                     | Effect                                                                                                                                                                                                                                                       |
-| ---------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PYMOBILEDEVICE3_DEFAULT_FALLBACK` | `native`, `userspace` or `tunneld`        | Which transport the **automatic** selection prefers, both for commands that require an RSD and for the retry the CLI performs when a command turns out to need a tunnel. Built-in default: `userspace`. An unrecognized value logs a warning and is ignored. |
-| `PYMOBILEDEVICE3_NATIVE`           | `1`                                       | Same as `--native`: piggyback Apple's `remoted` tunnel via `remotepairingd`. macOS only, no root, opt-in (see [Native remoted tunnel](https://doronz88.github.io/pymobiledevice3/latest/guides/network-stacks/#native-remoted-tunnel-macos-only)).           |
-| `PYMOBILEDEVICE3_USERSPACE`        | `1`                                       | Same as `--userspace`: force the in-process pure-Python userspace tunnel.                                                                                                                                                                                    |
-| `PYMOBILEDEVICE3_TUNNEL`           | `UDID`, `UDID:PORT` or `UDID@HOST[:PORT]` | Same as `--tunnel`: take the tunnel from a running `tunneld`; the `@HOST` form bridges through a remote tunneld's `WS /connect`. An empty UDID picks the only tunnel, or prompts.                                                                            |
+| Variable                           | Value                                     | Effect                                                                                                                                                                                                                                                                   |
+| ---------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PYMOBILEDEVICE3_DEFAULT_FALLBACK` | `native`, `userspace` or `tunneld`        | Which transport the **automatic** selection prefers, both for commands that require an RSD and for the retry the CLI performs when a command turns out to need a tunnel. Built-in default: `userspace`. An unrecognized value logs a warning and is ignored.             |
+| `PYMOBILEDEVICE3_NATIVE`           | `1`                                       | Same as `--native`: piggyback Apple's `remoted` tunnel via `remotepairingd`. macOS only, no root, opt-in (see [Native remoted tunnel](https://doronz88.github.io/pymobiledevice3/latest/guides/network-stacks/#native-remoted-tunnel-macos-only)).                       |
+| `PYMOBILEDEVICE3_USERSPACE`        | `1`                                       | Same as `--userspace`: force the in-process pure-Python userspace tunnel.                                                                                                                                                                                                |
+| `PYMOBILEDEVICE3_REMOTEPAIRING`    | `1`                                       | Same as `--remotepairing`: build the userspace tunnel over RemotePairing, found over bonjour, for a device paired with `remote pair`, e.g. an Apple TV. `PYMOBILEDEVICE3_UDID` then holds the identifier the RemotePairing record is stored under (`remote_<id>.plist`). |
+| `PYMOBILEDEVICE3_TUNNEL`           | `UDID`, `UDID:PORT` or `UDID@HOST[:PORT]` | Same as `--tunnel`: take the tunnel from a running `tunneld`; the `@HOST` form bridges through a remote tunneld's `WS /connect`. An empty UDID picks the only tunnel, or prompts.                                                                                        |
 
-`--rsd`, `--tunnel`, `--userspace` and `--native` are mutually exclusive, so set at most one of their variables. See [iOS 17+ tunnels](https://doronz88.github.io/pymobiledevice3/latest/guides/ios17-tunnels/index.md) for when each transport applies, and [Understanding the network stacks](https://doronz88.github.io/pymobiledevice3/latest/guides/network-stacks/index.md) for how they differ.
+`--rsd`, `--tunnel`, `--userspace` and `--native` are mutually exclusive, so set at most one of their variables; `--remotepairing` may be combined only with `--userspace`. See [iOS 17+ tunnels](https://doronz88.github.io/pymobiledevice3/latest/guides/ios17-tunnels/index.md) for when each transport applies, and [Understanding the network stacks](https://doronz88.github.io/pymobiledevice3/latest/guides/network-stacks/index.md) for how they differ.
 
 ```
 # prefer the macOS native tunnel for this shell
@@ -5941,6 +5969,10 @@ Host-initiated developer services all work. Device-initiated inbound UDP (the AV
 
 The tunnel provider is selected like `remote start-tunnel` but restricted to the root-free paths (see :func:`_create_no_root_tunnel_provider`): CoreDeviceTunnelProxy over lockdown on iOS 17.4+, falling back to RemotePairing over bonjour on iOS 17.0-17.3 / Wi-Fi.
 
+`provider_factory` replaces that selection: an async callable returning a :class:`TunnelProvider`, for a device the caller reaches itself (e.g. a :class:`~pymobiledevice3.remote.tunnel_service.RemotePairingTunnelService` connected to a known address over a VPN, where bonjour does not reach). The tunnel closes the provider's service and lockdown on teardown. With `provider_factory` set, `autopair` and `remotepairing_fallback` are ignored and `serial` no longer selects the device: the factory alone decides which device the tunnel reaches.
+
+`remotepairing=True` skips usbmux and reaches a network-paired device through RemotePairing, found over bonjour (see :func:`_create_remotepairing_tunnel_provider`) — the route for a device with no USB connection, such as an Apple TV. `serial` then names the RemotePairing record.
+
 Source code in `pymobiledevice3/remote/userspace_tunnel.py`
 
 ```
@@ -5985,14 +6017,33 @@ class UserspaceRsdTunnel:
     The tunnel provider is selected like ``remote start-tunnel`` but restricted to the root-free
     paths (see :func:`_create_no_root_tunnel_provider`): CoreDeviceTunnelProxy over lockdown on
     iOS 17.4+, falling back to RemotePairing over bonjour on iOS 17.0-17.3 / Wi-Fi.
+
+    ``provider_factory`` replaces that selection: an async callable returning a
+    :class:`TunnelProvider`, for a device the caller reaches itself (e.g. a
+    :class:`~pymobiledevice3.remote.tunnel_service.RemotePairingTunnelService` connected to a known
+    address over a VPN, where bonjour does not reach). The tunnel closes the provider's service and
+    lockdown on teardown. With ``provider_factory`` set, ``autopair`` and ``remotepairing_fallback``
+    are ignored and ``serial`` no longer selects the device: the factory alone decides which device
+    the tunnel reaches.
+
+    ``remotepairing=True`` skips usbmux and reaches a network-paired device through RemotePairing, found
+    over bonjour (see :func:`_create_remotepairing_tunnel_provider`) — the route for a device with no USB
+    connection, such as an Apple TV. ``serial`` then names the RemotePairing record.
     """
 
     def __init__(
-        self, serial: Optional[str] = None, autopair: bool = True, remotepairing_fallback: bool = True
+        self,
+        serial: Optional[str] = None,
+        autopair: bool = True,
+        remotepairing_fallback: bool = True,
+        provider_factory: Optional[TunnelProviderFactory] = None,
+        remotepairing: bool = False,
     ) -> None:
+        self.provider_factory = provider_factory
         self.serial = serial
         self.autopair = autopair
         self.remotepairing_fallback = remotepairing_fallback
+        self.remotepairing = remotepairing
         self.rsd: Optional[RemoteServiceDiscoveryService] = None
         self.tun: Optional[UserspaceTun] = None
         self._exit_stack: Optional[AsyncExitStack] = None
@@ -6023,13 +6074,18 @@ class UserspaceRsdTunnel:
         # order; a failure mid-setup unwinds whatever was already acquired.
         stack = AsyncExitStack()
         try:
-            provider, lockdown = await _create_no_root_tunnel_provider(
-                self.serial, self.autopair, self.remotepairing_fallback
-            )
-            stack.push_async_callback(provider.close)
-            if lockdown is not None:
-                stack.push_async_callback(lockdown.close)
-            tunnel_result = await stack.enter_async_context(provider.start_tcp_tunnel())
+            if self.provider_factory is not None:
+                provider = await self.provider_factory()
+            elif self.remotepairing:
+                provider = await _create_remotepairing_tunnel_provider(self.serial)
+            else:
+                provider = await _create_no_root_tunnel_provider(
+                    self.serial, self.autopair, self.remotepairing_fallback
+                )
+            stack.push_async_callback(provider.service.close)
+            if provider.lockdown is not None:
+                stack.push_async_callback(provider.lockdown.close)
+            tunnel_result = await stack.enter_async_context(provider.service.start_tcp_tunnel())
             # In the userspace path create_tun_device() always builds a UserspaceTun (the factory
             # flag is set above), so the loosely-typed client.tun is narrowed here.
             self.tun = cast(UserspaceTun, tunnel_result.client.tun)
@@ -6208,20 +6264,23 @@ async def aclose(self) -> None:
 ## pymobiledevice3.remote.userspace_tunnel.establish_userspace_rsd
 
 ```
-establish_userspace_rsd(serial: Optional[str] = None, autopair: bool = True, remotepairing_fallback: bool = True) -> RemoteServiceDiscoveryService
+establish_userspace_rsd(serial: Optional[str] = None, autopair: bool = True, remotepairing_fallback: bool = True, remotepairing: bool = False) -> RemoteServiceDiscoveryService
 ```
 
 CLI convenience: establish a userspace tunnel, keep it alive, and return its connected RSD.
 
 Embedders should use :class:`UserspaceRsdTunnel` directly — it is a closeable handle / async context manager. This wrapper exists for the CLI, which has no teardown hook: it stashes the tunnel for the process lifetime and closes it at interpreter exit (a few ms).
 
-`remotepairing_fallback=False` makes a pre-17.4 device (no CoreDeviceProxy) raise :class:`UserspaceTunnelUnavailableError` instead of attempting RemotePairing, so the caller can route such devices elsewhere (the CLI uses this to fall back to `tunneld`).
+`remotepairing_fallback=False` makes a pre-17.4 device (no CoreDeviceProxy) raise :class:`UserspaceTunnelUnavailableError` instead of attempting RemotePairing, so the caller can route such devices elsewhere (the CLI uses this to fall back to `tunneld`). `remotepairing=True` reaches the device through RemotePairing over the network instead of USB (see :class:`UserspaceRsdTunnel`).
 
 Source code in `pymobiledevice3/remote/userspace_tunnel.py`
 
 ```
 async def establish_userspace_rsd(
-    serial: Optional[str] = None, autopair: bool = True, remotepairing_fallback: bool = True
+    serial: Optional[str] = None,
+    autopair: bool = True,
+    remotepairing_fallback: bool = True,
+    remotepairing: bool = False,
 ) -> RemoteServiceDiscoveryService:
     """CLI convenience: establish a userspace tunnel, keep it alive, and return its connected RSD.
 
@@ -6231,7 +6290,8 @@ async def establish_userspace_rsd(
 
     ``remotepairing_fallback=False`` makes a pre-17.4 device (no CoreDeviceProxy) raise
     :class:`UserspaceTunnelUnavailableError` instead of attempting RemotePairing, so the caller can
-    route such devices elsewhere (the CLI uses this to fall back to ``tunneld``).
+    route such devices elsewhere (the CLI uses this to fall back to ``tunneld``). ``remotepairing=True``
+    reaches the device through RemotePairing over the network instead of USB (see :class:`UserspaceRsdTunnel`).
     """
     global _cli_tunnel
     # In-process retry (the CLI re-runs main() with the userspace env var set after an
@@ -6243,7 +6303,9 @@ async def establish_userspace_rsd(
         and (serial is None or serial in (_cli_tunnel.serial, _cli_tunnel.rsd.udid))
     ):
         return _cli_tunnel.rsd
-    tunnel = UserspaceRsdTunnel(serial=serial, autopair=autopair, remotepairing_fallback=remotepairing_fallback)
+    tunnel = UserspaceRsdTunnel(
+        serial=serial, autopair=autopair, remotepairing_fallback=remotepairing_fallback, remotepairing=remotepairing
+    )
     try:
         rsd = await tunnel.aopen()
     except PyMobileDevice3Exception:

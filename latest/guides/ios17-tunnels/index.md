@@ -201,6 +201,11 @@ Requirements:
 
 - Nothing to install: the `pmd-pytcp` network stack behind it is a regular dependency.
 - **iOS 17.4+ over USB** (through the CoreDeviceProxy lockdown service), or **iOS 17.0-17.3 on Wi-Fi** (through RemotePairing, discovered over bonjour).
+- **Over the network only, with `--remotepairing`** (or `PYMOBILEDEVICE3_REMOTEPAIRING=1`): a device paired over the network with `pymobiledevice3 remote pair` — an Apple TV on Wi-Fi or Ethernet, or any device without a cable — is reached through RemotePairing, discovered over bonjour, with no USB and no root. `--udid` names the identifier the RemotePairing record is stored under (`remote_<id>.plist`): the pairing identifier for a record made by `remote pair`, the UDID for one made over USB. With a single record it can be left out; with several it is required, and only the named device is contacted. It is never tried implicitly: a device `usbmuxd` cannot see still fails at once without `--remotepairing`.
+
+```
+pymobiledevice3 developer dvt screenshot --remotepairing --udid <RECORD-ID> screen.png
+```
 
 What works over the userspace tunnel: the host-initiated developer services (`dvt`, `fetch-symbols`, `core-device …`), and the device-initiated AV/HID paths — `display serve-web`, `display serve-vnc`, `display start-video-stream` / `start-audio-stream`, and the HID gesture commands.
 
@@ -215,6 +220,28 @@ Because the tunnel is rebuilt per invocation (no persistent daemon), expect a li
 ### From Python
 
 To establish this tunnel programmatically, use the `UserspaceRsdTunnel` handle — see the [`UserspaceRsdTunnel` example](https://doronz88.github.io/pymobiledevice3/latest/internals/idevice-protocol-layers/#remotexpc) in the protocol-layers guide, listed there alongside the other ways to obtain an RSD. The in-process-only limitation above applies equally to the Python API.
+
+#### Reaching a device at a known address
+
+Bonjour only finds a network-paired device on the same local network. To reach one at an address you already know, for example over a VPN, give `UserspaceRsdTunnel` a `provider_factory` that connects to it, and raise the connect timeout for the slower link:
+
+```
+from pymobiledevice3.remote.tunnel_service import create_core_device_tunnel_service_using_remotepairing
+from pymobiledevice3.remote.userspace_tunnel import TunnelProvider, UserspaceRsdTunnel
+
+
+async def provider() -> TunnelProvider:
+    service = await create_core_device_tunnel_service_using_remotepairing(
+        udid, "10.0.0.5", 49152, autopair=False, connect_timeout=10
+    )
+    return TunnelProvider(service)
+
+
+async with UserspaceRsdTunnel(provider_factory=provider) as rsd:
+    ...
+```
+
+The device must already be paired for the network (`pymobiledevice3 lockdown remotepairing --pair` over USB), and its RemotePairing port is the one bonjour advertises on the local network (`49152` is common, not guaranteed). With `provider_factory` set, `serial`, `autopair` and `remotepairing_fallback` are ignored.
 
 ## Use tunnel details in commands
 

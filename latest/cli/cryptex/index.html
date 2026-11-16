@@ -2743,12 +2743,16 @@
 </thead>
 <tbody>
 <tr>
+<td><code>--remotepairing</code></td>
+<td>Build the no-root userspace tunnel over RemotePairing instead of USB, for a device paired over the network with <code>remote pair</code> (e.g. an Apple TV, on Wi-Fi or Ethernet). Found over bonjour; --udid names the identifier the RemotePairing record is stored under (remote_<id>.plist), required when there are several. Implies --userspace; mutually exclusive with --rsd/--tunnel/--native. [env var: PYMOBILEDEVICE3_REMOTEPAIRING]</td>
+</tr>
+<tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
 </tbody>
 </table>
-<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
+<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--udid</code>.</p>
 <h2 id="auto-install"><code>auto-install</code><a class="headerlink" href="#auto-install" title="Permanent link">&para;</a></h2>
 <p>Personalize and install the DeveloperDiskImage cryptex, using only cryptexd.</p>
 <p>Needs Internet: Apple's signing server personalizes the image for this device.</p>
@@ -2764,6 +2768,10 @@
 </thead>
 <tbody>
 <tr>
+<td><code>--remotepairing</code></td>
+<td>Build the no-root userspace tunnel over RemotePairing instead of USB, for a device paired over the network with <code>remote pair</code> (e.g. an Apple TV, on Wi-Fi or Ethernet). Found over bonjour; --udid names the identifier the RemotePairing record is stored under (remote_<id>.plist), required when there are several. Implies --userspace; mutually exclusive with --rsd/--tunnel/--native. [env var: PYMOBILEDEVICE3_REMOTEPAIRING]</td>
+</tr>
+<tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
@@ -2773,7 +2781,7 @@
 </tr>
 </tbody>
 </table>
-<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
+<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--udid</code>.</p>
 <h2 id="personalization-identifiers"><code>personalization-identifiers</code><a class="headerlink" href="#personalization-identifiers" title="Permanent link">&para;</a></h2>
 <p>Read the AppleImage4 chip instance used to personalize a cryptex.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pymobiledevice3 cryptex personalization-identifiers [OPTIONS]
@@ -2788,12 +2796,16 @@
 </thead>
 <tbody>
 <tr>
+<td><code>--remotepairing</code></td>
+<td>Build the no-root userspace tunnel over RemotePairing instead of USB, for a device paired over the network with <code>remote pair</code> (e.g. an Apple TV, on Wi-Fi or Ethernet). Found over bonjour; --udid names the identifier the RemotePairing record is stored under (remote_<id>.plist), required when there are several. Implies --userspace; mutually exclusive with --rsd/--tunnel/--native. [env var: PYMOBILEDEVICE3_REMOTEPAIRING]</td>
+</tr>
+<tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
 </tbody>
 </table>
-<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
+<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--udid</code>.</p>
 <h2 id="nonce"><code>nonce</code><a class="headerlink" href="#nonce" title="Permanent link">&para;</a></h2>
 <p>Read the nonce for a nonce domain.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pymobiledevice3 cryptex nonce [OPTIONS]
@@ -2808,6 +2820,10 @@
 </thead>
 <tbody>
 <tr>
+<td><code>--remotepairing</code></td>
+<td>Build the no-root userspace tunnel over RemotePairing instead of USB, for a device paired over the network with <code>remote pair</code> (e.g. an Apple TV, on Wi-Fi or Ethernet). Found over bonjour; --udid names the identifier the RemotePairing record is stored under (remote_<id>.plist), required when there are several. Implies --userspace; mutually exclusive with --rsd/--tunnel/--native. [env var: PYMOBILEDEVICE3_REMOTEPAIRING]</td>
+</tr>
+<tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
@@ -2821,7 +2837,7 @@
 </tr>
 </tbody>
 </table>
-<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
+<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--udid</code>.</p>
 <h2 id="roll-nonce"><code>roll-nonce</code><a class="headerlink" href="#roll-nonce" title="Permanent link">&para;</a></h2>
 <p>Roll a nonce domain's nonce (invalidates a personalized DDI; it must be re-mounted).</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pymobiledevice3 cryptex roll-nonce [OPTIONS]
@@ -2836,6 +2852,10 @@
 </thead>
 <tbody>
 <tr>
+<td><code>--remotepairing</code></td>
+<td>Build the no-root userspace tunnel over RemotePairing instead of USB, for a device paired over the network with <code>remote pair</code> (e.g. an Apple TV, on Wi-Fi or Ethernet). Found over bonjour; --udid names the identifier the RemotePairing record is stored under (remote_<id>.plist), required when there are several. Implies --userspace; mutually exclusive with --rsd/--tunnel/--native. [env var: PYMOBILEDEVICE3_REMOTEPAIRING]</td>
+</tr>
+<tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
@@ -2849,7 +2869,7 @@
 </tr>
 </tbody>
 </table>
-<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
+<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--udid</code>.</p>
 <h2 id="uninstall"><code>uninstall</code><a class="headerlink" href="#uninstall" title="Permanent link">&para;</a></h2>
 <p>Uninstall an installed cryptex by its identifier.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pymobiledevice3 cryptex uninstall [OPTIONS] {identifier}
@@ -2879,6 +2899,10 @@
 </thead>
 <tbody>
 <tr>
+<td><code>--remotepairing</code></td>
+<td>Build the no-root userspace tunnel over RemotePairing instead of USB, for a device paired over the network with <code>remote pair</code> (e.g. an Apple TV, on Wi-Fi or Ethernet). Found over bonjour; --udid names the identifier the RemotePairing record is stored under (remote_<id>.plist), required when there are several. Implies --userspace; mutually exclusive with --rsd/--tunnel/--native. [env var: PYMOBILEDEVICE3_REMOTEPAIRING]</td>
+</tr>
+<tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
@@ -2888,7 +2912,7 @@
 </tr>
 </tbody>
 </table>
-<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>.</p>
+<p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--udid</code>.</p>
 
 
 
