@@ -485,7 +485,11 @@ async def dvt_screenshot(
     service_provider: ServiceProviderDep,
     out: Annotated[Path, typer.Argument(help="Local file to write the PNG screenshot to.")],
 ) -> None:
-    """Take a screenshot of the device screen and save it as PNG."""
+    """Take a screenshot of the device's main screen and save it as PNG.
+
+    On a foldable the main screen is the cover panel, which captures black while the device is
+    unfolded: use `developer core-device screen-capture screenshot` there.
+    """
     async with DvtProvider(service_provider) as dvt, Screenshot(dvt) as screenshot:
         out.write_bytes(await screenshot.get_screenshot())
 

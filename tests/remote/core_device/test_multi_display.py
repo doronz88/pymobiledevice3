@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from pymobiledevice3.remote.core_device import device_info, hid_service
+from pymobiledevice3.remote.core_device import device_info, hid_service, screen_capture_service
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService, display_rotation, select_display
 from pymobiledevice3.remote.core_device.screen_stream import ScreenStreamServer, _SubState
 from pymobiledevice3.remote.core_device.vnc_server import (
@@ -149,6 +149,37 @@ async def test_touchscreen_service_id_matches_the_display(monkeypatch, unique_id
 
     monkeypatch.setattr(service, "list_connected_services", list_connected_services)
     assert await service.touchscreen_service_id(unique_id) == service_id
+
+
+class _DisplayInfo:
+    """Stands in for ``DeviceInfoService``: answers ``get_display_info`` with a canned reply."""
+
+    def __init__(self, reply: dict[str, Any]) -> None:
+        self._reply = reply
+
+    def __call__(self, rsd: RemoteServiceDiscoveryService) -> "_DisplayInfo":
+        return self
+
+    async def __aenter__(self) -> "_DisplayInfo":
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
+
+    async def get_display_info(self) -> dict[str, Any]:
+        return self._reply
+
+
+@pytest.mark.asyncio
+async def test_screenshot_captures_the_lit_panel(monkeypatch):
+    folded = json.loads(json.dumps(UNFOLDED))
+    folded["displays"][0]["active"] = True
+    folded["displays"][1]["active"] = False
+    service = screen_capture_service.ScreenCaptureService(_rsd())
+    # unfolded: the inner panel, by its uniqueId; folded: the primary display, as before
+    for reply, unique_id in ((UNFOLDED, "123-456-789"), (folded, None), ({}, None)):
+        monkeypatch.setattr(screen_capture_service, "DeviceInfoService", _DisplayInfo(reply))
+        assert await service.active_display_unique_id() == unique_id
 
 
 def test_screen_stream_switches_display_and_touchscreen():
