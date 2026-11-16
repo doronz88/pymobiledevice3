@@ -864,6 +864,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="From Python">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reaching-a-device-at-a-known-address" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reaching a device at a known address
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -2815,6 +2832,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="From Python">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reaching-a-device-at-a-known-address" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reaching a device at a known address
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -3146,21 +3180,43 @@ latency compared with attaching to an already-running <code>tunneld</code>.</p>
 <a href="../../internals/idevice-protocol-layers/#remotexpc"><code>UserspaceRsdTunnel</code> example</a> in the
 protocol-layers guide, listed there alongside the other ways to obtain an RSD. The in-process-only
 limitation above applies equally to the Python API.</p>
-<h2 id="use-tunnel-details-in-commands">Use tunnel details in commands<a class="headerlink" href="#use-tunnel-details-in-commands" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Default: no flag, no root — an in-process userspace tunnel is established automatically</span>
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>ls<span class="w"> </span>/
+<h4 id="reaching-a-device-at-a-known-address">Reaching a device at a known address<a class="headerlink" href="#reaching-a-device-at-a-known-address" title="Permanent link">&para;</a></h4>
+<p>Bonjour only finds a network-paired device on the same local network. To reach one at an address you
+already know, for example over a VPN, give <code>UserspaceRsdTunnel</code> a <code>provider_factory</code> that connects to
+it, and raise the connect timeout for the slower link:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.remote.tunnel_service</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_core_device_tunnel_service_using_remotepairing</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.remote.userspace_tunnel</span><span class="w"> </span><span class="kn">import</span> <span class="n">TunnelProvider</span><span class="p">,</span> <span class="n">UserspaceRsdTunnel</span>
 <a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
-<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># Force the no-root tunnel (skip the automatic tunneld fallback)</span>
-<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>ls<span class="w"> </span>/<span class="w"> </span>--userspace
-<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>
-<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="c1"># Use a running tunneld ('' = pick automatically, or pass a UDID)</span>
-<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>ls<span class="w"> </span>/<span class="w"> </span>--tunnel<span class="w"> </span><span class="s1">''</span>
-<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>
-<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a><span class="c1"># Use manual RSD connection details (from `start-tunnel`)</span>
-<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>ls<span class="w"> </span>/<span class="w"> </span>--rsd<span class="w"> </span>fd7b:e5b:6f53::1<span class="w"> </span><span class="m">64337</span>
-<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>
-<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a><span class="c1"># Non-developer command over a running tunneld</span>
-<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>pymobiledevice3<span class="w"> </span>syslog<span class="w"> </span>live<span class="w"> </span>--tunnel<span class="w"> </span><span class="s1">''</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">provider</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">TunnelProvider</span><span class="p">:</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>    <span class="n">service</span> <span class="o">=</span> <span class="k">await</span> <span class="n">create_core_device_tunnel_service_using_remotepairing</span><span class="p">(</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>        <span class="n">udid</span><span class="p">,</span> <span class="s2">"10.0.0.5"</span><span class="p">,</span> <span class="mi">49152</span><span class="p">,</span> <span class="n">autopair</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">connect_timeout</span><span class="o">=</span><span class="mi">10</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>    <span class="p">)</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>    <span class="k">return</span> <span class="n">TunnelProvider</span><span class="p">(</span><span class="n">service</span><span class="p">)</span>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="k">async</span> <span class="k">with</span> <span class="n">UserspaceRsdTunnel</span><span class="p">(</span><span class="n">provider_factory</span><span class="o">=</span><span class="n">provider</span><span class="p">)</span> <span class="k">as</span> <span class="n">rsd</span><span class="p">:</span>
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>    <span class="o">...</span>
+</code></pre></div>
+<p>The device must already be paired for the network (<code>pymobiledevice3 lockdown remotepairing --pair</code> over
+USB), and its RemotePairing port is the one bonjour advertises on the local network (<code>49152</code> is common,
+not guaranteed). With <code>provider_factory</code> set, <code>serial</code>, <code>autopair</code> and <code>remotepairing_fallback</code> are
+ignored.</p>
+<h2 id="use-tunnel-details-in-commands">Use tunnel details in commands<a class="headerlink" href="#use-tunnel-details-in-commands" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Default: no flag, no root — an in-process userspace tunnel is established automatically</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>ls<span class="w"> </span>/
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Force the no-root tunnel (skip the automatic tunneld fallback)</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>ls<span class="w"> </span>/<span class="w"> </span>--userspace
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="c1"># Use a running tunneld ('' = pick automatically, or pass a UDID)</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>ls<span class="w"> </span>/<span class="w"> </span>--tunnel<span class="w"> </span><span class="s1">''</span>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="c1"># Use manual RSD connection details (from `start-tunnel`)</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>ls<span class="w"> </span>/<span class="w"> </span>--rsd<span class="w"> </span>fd7b:e5b:6f53::1<span class="w"> </span><span class="m">64337</span>
+<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a>
+<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="c1"># Non-developer command over a running tunneld</span>
+<a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a>pymobiledevice3<span class="w"> </span>syslog<span class="w"> </span>live<span class="w"> </span>--tunnel<span class="w"> </span><span class="s1">''</span>
 </code></pre></div>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <ul>

@@ -3745,6 +3745,8 @@ Host-initiated developer services all work. Device-initiated inbound UDP (the AV
 
 The tunnel provider is selected like `remote start-tunnel` but restricted to the root-free paths (see :func:`_create_no_root_tunnel_provider`): CoreDeviceTunnelProxy over lockdown on iOS 17.4+, falling back to RemotePairing over bonjour on iOS 17.0-17.3 / Wi-Fi.
 
+`provider_factory` replaces that selection: an async callable returning a :class:`TunnelProvider`, for a device the caller reaches itself (e.g. a :class:`~pymobiledevice3.remote.tunnel_service.RemotePairingTunnelService` connected to a known address over a VPN, where bonjour does not reach). The tunnel closes the provider's service and lockdown on teardown. With `provider_factory` set, `autopair` and `remotepairing_fallback` are ignored and `serial` no longer selects the device: the factory alone decides which device the tunnel reaches.
+
 Source code in `pymobiledevice3/remote/userspace_tunnel.py`
 
 ```
@@ -3789,11 +3791,24 @@ class UserspaceRsdTunnel:
     The tunnel provider is selected like ``remote start-tunnel`` but restricted to the root-free
     paths (see :func:`_create_no_root_tunnel_provider`): CoreDeviceTunnelProxy over lockdown on
     iOS 17.4+, falling back to RemotePairing over bonjour on iOS 17.0-17.3 / Wi-Fi.
+
+    ``provider_factory`` replaces that selection: an async callable returning a
+    :class:`TunnelProvider`, for a device the caller reaches itself (e.g. a
+    :class:`~pymobiledevice3.remote.tunnel_service.RemotePairingTunnelService` connected to a known
+    address over a VPN, where bonjour does not reach). The tunnel closes the provider's service and
+    lockdown on teardown. With ``provider_factory`` set, ``autopair`` and ``remotepairing_fallback``
+    are ignored and ``serial`` no longer selects the device: the factory alone decides which device
+    the tunnel reaches.
     """
 
     def __init__(
-        self, serial: Optional[str] = None, autopair: bool = True, remotepairing_fallback: bool = True
+        self,
+        serial: Optional[str] = None,
+        autopair: bool = True,
+        remotepairing_fallback: bool = True,
+        provider_factory: Optional[TunnelProviderFactory] = None,
     ) -> None:
+        self.provider_factory = provider_factory
         self.serial = serial
         self.autopair = autopair
         self.remotepairing_fallback = remotepairing_fallback
@@ -3827,13 +3842,16 @@ class UserspaceRsdTunnel:
         # order; a failure mid-setup unwinds whatever was already acquired.
         stack = AsyncExitStack()
         try:
-            provider, lockdown = await _create_no_root_tunnel_provider(
-                self.serial, self.autopair, self.remotepairing_fallback
-            )
-            stack.push_async_callback(provider.close)
-            if lockdown is not None:
-                stack.push_async_callback(lockdown.close)
-            tunnel_result = await stack.enter_async_context(provider.start_tcp_tunnel())
+            if self.provider_factory is not None:
+                provider = await self.provider_factory()
+            else:
+                provider = await _create_no_root_tunnel_provider(
+                    self.serial, self.autopair, self.remotepairing_fallback
+                )
+            stack.push_async_callback(provider.service.close)
+            if provider.lockdown is not None:
+                stack.push_async_callback(provider.lockdown.close)
+            tunnel_result = await stack.enter_async_context(provider.service.start_tcp_tunnel())
             # In the userspace path create_tun_device() always builds a UserspaceTun (the factory
             # flag is set above), so the loosely-typed client.tun is narrowed here.
             self.tun = cast(UserspaceTun, tunnel_result.client.tun)
