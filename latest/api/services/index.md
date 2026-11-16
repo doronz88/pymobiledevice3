@@ -5323,10 +5323,35 @@ class DiagnosticsService(LockdownService):
 
         Convenience wrapper that queries the IORegistry entry of class ``IOPMPowerSource``.
 
+        Newer iOS versions no longer publish ``Temperature`` on that entry. When it is missing, it is filled in
+        from the ``BatteryData`` of the ``AppleSmartBatteryPack`` entry (the first pack on multi-pack devices),
+        which reports it in the same unit (hundredths of a degree Celsius).
+
         :returns: The IORegistry data for the power-source entry, or ``None`` if it is absent.
         :raises PyMobileDevice3Exception: If the underlying IORegistry request did not complete successfully.
         """
-        return await self.ioregistry(ioclass="IOPMPowerSource")
+        info = await self.ioregistry(ioclass="IOPMPowerSource")
+        if info is None or "Temperature" in info:
+            return info
+        pack: dict[str, Any] = await self.ioregistry(ioclass="AppleSmartBatteryPack") or {}
+        battery_data: dict[str, Any] = pack.get("BatteryData") or {}
+        temperature = battery_data.get("Temperature")
+        if temperature is not None:
+            info["Temperature"] = temperature
+        return info
+
+    async def get_battery_info(self) -> Optional[BatteryInfo]:
+        """
+        Fetch the battery state as a typed `BatteryInfo`.
+
+        Prefer this over `get_battery` unless you need the raw IORegistry data: the fields keep their meaning
+        and units when the device moves the values around between iOS versions.
+
+        :returns: The battery state, or ``None`` if the device has no power-source entry.
+        :raises PyMobileDevice3Exception: If the underlying IORegistry request did not complete successfully.
+        """
+        info = await self.get_battery()
+        return None if info is None else BatteryInfo.from_ioregistry(info)
 
     async def get_wifi(self) -> Optional[dict[str, Any]]:
         """
@@ -5659,6 +5684,8 @@ Fetch battery/power-source information from the IORegistry.
 
 Convenience wrapper that queries the IORegistry entry of class `IOPMPowerSource`.
 
+Newer iOS versions no longer publish `Temperature` on that entry. When it is missing, it is filled in from the `BatteryData` of the `AppleSmartBatteryPack` entry (the first pack on multi-pack devices), which reports it in the same unit (hundredths of a degree Celsius).
+
 Returns:
 
 | Type                       | Description                                                              |
@@ -5680,10 +5707,61 @@ async def get_battery(self) -> Optional[dict[str, Any]]:
 
     Convenience wrapper that queries the IORegistry entry of class ``IOPMPowerSource``.
 
+    Newer iOS versions no longer publish ``Temperature`` on that entry. When it is missing, it is filled in
+    from the ``BatteryData`` of the ``AppleSmartBatteryPack`` entry (the first pack on multi-pack devices),
+    which reports it in the same unit (hundredths of a degree Celsius).
+
     :returns: The IORegistry data for the power-source entry, or ``None`` if it is absent.
     :raises PyMobileDevice3Exception: If the underlying IORegistry request did not complete successfully.
     """
-    return await self.ioregistry(ioclass="IOPMPowerSource")
+    info = await self.ioregistry(ioclass="IOPMPowerSource")
+    if info is None or "Temperature" in info:
+        return info
+    pack: dict[str, Any] = await self.ioregistry(ioclass="AppleSmartBatteryPack") or {}
+    battery_data: dict[str, Any] = pack.get("BatteryData") or {}
+    temperature = battery_data.get("Temperature")
+    if temperature is not None:
+        info["Temperature"] = temperature
+    return info
+```
+
+### get_battery_info
+
+```
+get_battery_info() -> Optional[BatteryInfo]
+```
+
+Fetch the battery state as a typed `BatteryInfo`.
+
+Prefer this over `get_battery` unless you need the raw IORegistry data: the fields keep their meaning and units when the device moves the values around between iOS versions.
+
+Returns:
+
+| Type                    | Description                                                         |
+| ----------------------- | ------------------------------------------------------------------- |
+| `Optional[BatteryInfo]` | The battery state, or None if the device has no power-source entry. |
+
+Raises:
+
+| Type                       | Description                                                         |
+| -------------------------- | ------------------------------------------------------------------- |
+| `PyMobileDevice3Exception` | If the underlying IORegistry request did not complete successfully. |
+
+Source code in `pymobiledevice3/services/diagnostics.py`
+
+```
+async def get_battery_info(self) -> Optional[BatteryInfo]:
+    """
+    Fetch the battery state as a typed `BatteryInfo`.
+
+    Prefer this over `get_battery` unless you need the raw IORegistry data: the fields keep their meaning
+    and units when the device moves the values around between iOS versions.
+
+    :returns: The battery state, or ``None`` if the device has no power-source entry.
+    :raises PyMobileDevice3Exception: If the underlying IORegistry request did not complete successfully.
+    """
+    info = await self.get_battery()
+    return None if info is None else BatteryInfo.from_ioregistry(info)
 ```
 
 ### get_wifi
@@ -5725,6 +5803,135 @@ async def get_wifi(self) -> Optional[dict[str, Any]]:
     if result:
         return result
     return await self.ioregistry(ioclass="IO80211Interface")
+```
+
+## pymobiledevice3.services.diagnostics.BatteryInfo
+
+The battery state of a device, as returned by `DiagnosticsService.get_battery_info`.
+
+Every field is `None` when the device does not report it.
+
+Source code in `pymobiledevice3/services/diagnostics.py`
+
+```
+@dataclasses.dataclass(frozen=True)
+class BatteryInfo:
+    """
+    The battery state of a device, as returned by `DiagnosticsService.get_battery_info`.
+
+    Every field is ``None`` when the device does not report it.
+    """
+
+    #: Battery temperature, in degrees Celsius (the first pack's on multi-pack devices).
+    temperature: Optional[float] = None
+    #: Battery voltage, in millivolts.
+    voltage: Optional[int] = None
+    #: Instantaneous current, in milliamperes (negative while discharging).
+    instant_amperage: Optional[int] = None
+    #: Charge level, in percent.
+    level: Optional[int] = None
+    #: Whether the battery is currently charging.
+    is_charging: Optional[bool] = None
+    #: Whether an external power source is connected.
+    external_connected: Optional[bool] = None
+    #: Whether the battery is fully charged.
+    fully_charged: Optional[bool] = None
+    #: Number of charge cycles the battery has gone through.
+    cycle_count: Optional[int] = None
+    #: Capacity the battery was designed for, in milliampere-hours.
+    design_capacity: Optional[int] = None
+    #: Capacity the battery currently holds when full, in milliampere-hours.
+    full_charge_capacity: Optional[int] = None
+
+    @classmethod
+    def from_ioregistry(cls, info: dict[str, Any]) -> "BatteryInfo":
+        """
+        Build from the power-source IORegistry data returned by `DiagnosticsService.get_battery`.
+
+        :param info: The power-source IORegistry data.
+        :returns: The battery state it describes.
+        """
+        battery_data: dict[str, Any] = info.get("BatteryData") or {}
+
+        def lookup(key: str) -> Any:
+            # Capacities moved between the entry itself and its BatteryData across iOS versions.
+            value = info.get(key)
+            return battery_data.get(key) if value is None else value
+
+        def as_bool(key: str) -> Optional[bool]:
+            value = info.get(key)
+            return None if value is None else bool(value)
+
+        temperature = info.get("Temperature")
+        return cls(
+            temperature=None if temperature is None else temperature / 100,
+            voltage=info.get("Voltage"),
+            instant_amperage=info.get("InstantAmperage"),
+            level=info.get("CurrentCapacity"),
+            is_charging=as_bool("IsCharging"),
+            external_connected=as_bool("ExternalConnected"),
+            fully_charged=as_bool("FullyCharged"),
+            cycle_count=info.get("CycleCount"),
+            design_capacity=lookup("DesignCapacity"),
+            full_charge_capacity=lookup("FullChargeCapacity"),
+        )
+```
+
+### from_ioregistry
+
+```
+from_ioregistry(info: dict[str, Any]) -> BatteryInfo
+```
+
+Build from the power-source IORegistry data returned by `DiagnosticsService.get_battery`.
+
+Parameters:
+
+| Name   | Type             | Description                       | Default    |
+| ------ | ---------------- | --------------------------------- | ---------- |
+| `info` | `dict[str, Any]` | The power-source IORegistry data. | *required* |
+
+Returns:
+
+| Type          | Description                     |
+| ------------- | ------------------------------- |
+| `BatteryInfo` | The battery state it describes. |
+
+Source code in `pymobiledevice3/services/diagnostics.py`
+
+```
+@classmethod
+def from_ioregistry(cls, info: dict[str, Any]) -> "BatteryInfo":
+    """
+    Build from the power-source IORegistry data returned by `DiagnosticsService.get_battery`.
+
+    :param info: The power-source IORegistry data.
+    :returns: The battery state it describes.
+    """
+    battery_data: dict[str, Any] = info.get("BatteryData") or {}
+
+    def lookup(key: str) -> Any:
+        # Capacities moved between the entry itself and its BatteryData across iOS versions.
+        value = info.get(key)
+        return battery_data.get(key) if value is None else value
+
+    def as_bool(key: str) -> Optional[bool]:
+        value = info.get(key)
+        return None if value is None else bool(value)
+
+    temperature = info.get("Temperature")
+    return cls(
+        temperature=None if temperature is None else temperature / 100,
+        voltage=info.get("Voltage"),
+        instant_amperage=info.get("InstantAmperage"),
+        level=info.get("CurrentCapacity"),
+        is_charging=as_bool("IsCharging"),
+        external_connected=as_bool("ExternalConnected"),
+        fully_charged=as_bool("FullyCharged"),
+        cycle_count=info.get("CycleCount"),
+        design_capacity=lookup("DesignCapacity"),
+        full_charge_capacity=lookup("FullChargeCapacity"),
+    )
 ```
 
 ## pymobiledevice3.services.springboard.SpringBoardServicesService

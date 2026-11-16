@@ -1,0 +1,244 @@
+# iOS 17+ Developer Services via Tunnel
+
+Starting with iOS 17.0, Apple moved the developer services (the ones Xcode uses: process lists, screenshots, location simulation, debugging, ...) behind an encrypted tunnel to the device. Inside that tunnel, an index service called **RSD** (RemoteServiceDiscovery) lists the services, which speak Apple's **RemoteXPC** protocol. So `developer` commands (and a few others) need such a tunnel.
+
+**You usually don't need to do anything.** pymobiledevice3 establishes the tunnel for you, in-process, with no root/admin and no extra software. Just run the command:
+
+```
+pymobiledevice3 developer dvt ls /
+```
+
+On iOS 17.4 and later this works the same on macOS, Windows and Linux. The rest of this page is advanced material: you need it only for iOS 17.0-17.3 on Linux/Windows, for external tools such as `lldb`, or for a tunnel shared between many commands (see [When you still need `tunneld`](#when-you-still-need-a-privileged-tunneld)).
+
+Working from Python?
+
+See [Choosing a connection](https://doronz88.github.io/pymobiledevice3/latest/guides/python-api/#1-connect-to-a-device) in the Python API guide for when to use lockdown vs an RSD tunnel (userspace vs `tunneld`).
+
+Reference protocol details: [RemoteXPC](https://doronz88.github.io/pymobiledevice3/latest/internals/remotexpc/index.md)
+
+Tip
+
+For diagrams of what each transport path looks like under the hood — usbmux, Wi-Fi lockdown, kernel tunnels, the userspace tunnel and the macOS native tunnel — see [Understanding the network stacks](https://doronz88.github.io/pymobiledevice3/latest/guides/network-stacks/index.md).
+
+## The default: a no-root tunnel, automatically
+
+When a developer command needs an RSD tunnel and you passed no transport flag (`--rsd` / `--tunnel` / `--userspace` / `--native`), pymobiledevice3 brings up a **no-root tunnel** for you, built when the command starts and torn down when it exits: an **in-process userspace tunnel** using a pure-Python network stack (PyTCP) — no kernel interface, so no root/admin either, on every host.
+
+This covers iOS 17.4+ over USB (it uses the device's CoreDeviceProxy lockdown service) and is the right choice almost every time. When you do need more throughput or lower latency than the userspace stack gives, use a kernel-routable tunnel (one the operating system can route to, so any process can reach it). On macOS the opt-in `--native` transport, which rides Apple's own `remoted` tunnel, is the fastest and needs no root, but it is less stable because it competes with `remoted` for the device; see [Native remoted tunnel](https://doronz88.github.io/pymobiledevice3/latest/guides/network-stacks/#native-remoted-tunnel-macos-only). Otherwise use a privileged `tunneld` (below).
+
+iOS 17.0-17.3 devices, which the userspace tunnel cannot serve, are routed automatically to the native tunnel on macOS and to `tunneld` elsewhere; see the warning below. Set `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native|userspace|tunneld` to change which transport the automatic selection prefers (see [Environment variables](https://doronz88.github.io/pymobiledevice3/latest/guides/environment-variables/index.md) for every variable the CLI honors).
+
+iOS 17.0-17.3 needs `tunneld` on Linux/Windows
+
+These versions predate the CoreDeviceProxy service, so the userspace tunnel can only reach them over the RemotePairing path — which is Wi-Fi-only and, on macOS, races `remoted` (the no-root path can't suspend it without root). Rather than depend on that fragile path, pymobiledevice3 routes iOS 17.0-17.3 to the **native tunnel on macOS** (still no root — `remoted` already reaches these devices) and to **`tunneld` on Linux/Windows**, so keep one running there (on Windows, without `sudo`, from an Administrator terminal):
+
+```
+sudo pymobiledevice3 remote tunneld
+```
+
+On Linux, `sudo` may not find a per-user install; see [Running with `sudo`](https://doronz88.github.io/pymobiledevice3/latest/installation/#running-with-sudo).
+
+You can still force the userspace path with `--userspace` where it applies (a device on Wi-Fi; unreliable on macOS).
+
+## Support Notes
+
+| Host OS | iOS 17.0-17.3                                                                          | iOS 17.4+           |
+| ------- | -------------------------------------------------------------------------------------- | ------------------- |
+| macOS   | Supported (no root, native tunnel)                                                     | Supported (no root) |
+| Windows | Needs `tunneld` (Administrator) + a third-party driver ([see below](#troubleshooting)) | Supported (no root) |
+| Linux   | Needs `tunneld` (root)                                                                 | Supported (no root) |
+
+## When you still need a privileged `tunneld`
+
+*Advanced.* `tunneld` is a long-running pymobiledevice3 daemon that keeps a kernel tunnel to each connected device and hands it to any command that asks (`--tunnel`). Creating the kernel network interface is what needs root/Administrator.
+
+The in-process tunnel's device address lives **only inside the pymobiledevice3 process**, so it is not reachable from any other process on your machine. Use a kernel-routable tunnel (the sections below) when:
+
+- **An external tool must reach the device** — `developer debugserver lldb`, or `developer debugserver start-server` without `--local-port`, drive an external `lldb` and therefore refuse over the userspace tunnel. Pass `--tunnel` (or `--native` on macOS, or `--local-port` for `start-server`, which forwards to a local port and *does* work over the userspace tunnel).
+- **You want one shared/persistent tunnel** reused across many invocations instead of rebuilding it per command.
+- **You need more performance** than the userspace stack gives, such as bulk transfers. On macOS, `--native` is faster still but less stable (see above).
+- **iOS 17.0-17.3 on Linux/Windows** — routed to `tunneld` automatically; see the warning above.
+
+## Running `tunneld`
+
+```
+# If the device supports remote pairing (for example, Corellium/Apple TV/Apple Vision Pro), pair first.
+# Apple TV and Apple Vision Pro display a PIN to type in. Standard iOS devices usually do not need this step.
+pymobiledevice3 remote pair
+
+# On Windows, drop `sudo` and run from an Administrator terminal.
+sudo pymobiledevice3 remote tunneld
+```
+
+With `tunneld` running, point a command at it with `--tunnel` (empty value = pick automatically, or pass a UDID):
+
+```
+pymobiledevice3 developer dvt ls / --tunnel ''
+```
+
+`tunneld` binds `127.0.0.1:49151` by default. To relocate it, pass `--host`/`--port`; the `--tunnel` value accepts the matching `UDID:PORT` suffix (the UDID part may be empty).
+
+When the client cannot reach the tunnel interface `tunneld` created — for example, `tunneld` runs in a different docker network stack, or on a different host altogether — the RSD addresses reported over `GET /` are unreachable. The `/connect` websocket endpoint bridges into the tunnel through the HTTP API instead: binary websocket messages are forwarded as-is over a TCP connection opened on the device's tunnel address (to `?port=`, defaulting to the RSD port), and vice versa:
+
+```
+import websockets  # any websocket client works
+
+async with websockets.connect(f'ws://127.0.0.1:49151/connect?udid={udid}') as websocket:
+    # speak RSD (RemoteXPC) over the websocket, or pass ?port=<service-port>
+    # to reach any other service published over the tunnel
+    ...
+```
+
+`pymobiledevice3` itself consumes this bridge through the `--tunnel UDID@HOST[:PORT]` form (IPv6 in brackets), so every command works against a remote `tunneld` without any extra tooling:
+
+```
+# on the machine with the device attached
+sudo pymobiledevice3 remote tunneld --host 0.0.0.0
+
+# anywhere that can reach it
+pymobiledevice3 developer dvt ls / --tunnel 'UDID@lab-mac:49151'
+```
+
+Library consumers get the same via `get_tunneld_devices(('lab-mac', 49151))` / `get_tunneld_device_by_udid(...)` — connections are bridged automatically whenever the `tunneld` host is non-loopback, and the `bridge=True` parameter forces it for addresses that only look local (e.g. an SSH port-forward such as `ssh -L 49151:127.0.0.1:49151 lab-mac`, where the `@` form does the same on the CLI: `--tunnel UDID@127.0.0.1`).
+
+Warning
+
+Like the rest of the `tunneld` HTTP API, `/connect` is unauthenticated — anyone able to reach the listener gains access to the services exposed over the tunnel, so only bind non-loopback addresses on trusted networks.
+
+### Fronting several hosts with one tunneld
+
+A `tunneld` can federate others with `--upstream` (repeatable, also `POST /upstream` at runtime). Their devices appear in its `GET /` listing, and a `/connect` for a device it does not serve itself is relayed to the upstream that owns it — so a client needs a route to the front `tunneld` alone, with no VPN and no route to each host's tunnel interface:
+
+```
+# on every host with devices attached
+sudo pymobiledevice3 remote tunneld --host 0.0.0.0
+
+# on the one host clients can reach. Disable the monitors if devices are attached here too,
+# unless you want this instance to serve them itself: otherwise it builds its own tunnels
+# alongside the ones it federates, and each such device is then listed twice
+sudo pymobiledevice3 remote tunneld --host 0.0.0.0 \
+    --no-usb --no-wifi --no-usbmux --no-mobdev2 \
+    --upstream http://lab-1:49151 --upstream http://lab-2:49151
+
+# from anywhere: any device in the lab, addressed through the front tunneld
+pymobiledevice3 developer dvt ls / --tunnel 'UDID@front:49151'
+```
+
+Upstreams are addressed as `HOST`, `HOST:PORT` or `http://HOST[:PORT]` (IPv6 in brackets), all stored canonically as `http://HOST:PORT` with tunneld's default port filled in. `https://` is rejected: the relay speaks plaintext, so carry federation over a trusted network or an SSH forward.
+
+Each listing entry carries an `origin`: `null` for devices the queried instance serves directly, otherwise the URL of the upstream it came from. A client that *can* reach that upstream may skip the relay and address it directly, which saves a hop.
+
+Note
+
+Federated requests carry a hop budget (`x-tunneld-hops-remaining`, 4 by default), so tunnelds registering each other terminate instead of recursing, and a device reachable through several paths is listed once. Relaying costs an extra hop through the front instance's event loop — negligible for control traffic, measurable on bulk transfers such as DDI mounts.
+
+To make `tunneld` the **default** fallback — so commands route to it automatically without passing `--tunnel`, restoring the pre-userspace-default behavior — set `PYMOBILEDEVICE3_DEFAULT_FALLBACK=tunneld`:
+
+```
+export PYMOBILEDEVICE3_DEFAULT_FALLBACK=tunneld
+pymobiledevice3 developer dvt ls /
+```
+
+## Starting a tunnel manually
+
+You rarely need this: pymobiledevice3 commands build their own tunnel. Start one by hand only for the cases in [When you still need a privileged `tunneld`](#when-you-still-need-a-privileged-tunneld), and if you need it for more than one command, prefer running `tunneld`. A manual tunnel prints an `--rsd HOST PORT` option to pass to later commands.
+
+```
+# Optional for remote-pairing devices.
+pymobiledevice3 remote pair
+
+# iOS 17.4+ (lockdown tunnel, over USB)
+sudo pymobiledevice3 lockdown start-tunnel
+
+# Optional: allow Wi-Fi connections over lockdown
+pymobiledevice3 lockdown wifi-connections on
+
+# RemotePairing tunnel: the only manual option for iOS 17.0-17.3.
+# Add `-t wifi` to tunnel over Wi-Fi instead of USB.
+sudo pymobiledevice3 remote start-tunnel
+
+# macOS, no sudo: publishes Apple's own remoted tunnel instead of creating one.
+# It competes with remoted for the device; see "Native remoted tunnel" in the
+# network stacks guide.
+pymobiledevice3 remote start-tunnel --native
+```
+
+Example output:
+
+```
+Interface: utun6
+RSD Address: fd7b:e5b:6f53::1
+RSD Port: 64337
+Use the following connection option:
+--rsd fd7b:e5b:6f53::1 64337
+```
+
+The classic tunnel creation command must run with elevated privileges because it creates a virtual network interface (a TUN device, shown as `utunN` on macOS). The native path (`--native`, macOS) is the exception: it rides Apple's already-existing tunnel instead of creating one, so it needs no privileges. Device selection there is by `--udid`; the classic-tunnel-shaping options (`--protocol`/`--secrets`/`--max-idle-timeout`/ `-t`) don't apply to it, and passing one routes the command to the classic tunnel. Without `--native` (or `PYMOBILEDEVICE3_DEFAULT_FALLBACK=native`) the command builds the classic tunnel. `remote browse` is different: on macOS it lists devices via `remotepairingd` with no root by default, since browsing opens no RSD connection (`--no-native` forces the bonjour browse, which needs root to suspend `remoted`).
+
+Bootstrap the RemotePairing record over USB (no Trust dialog)
+
+`remote start-tunnel` (the RSD/Wi-Fi path) needs a RemotePairing pair record. You can create it over USB, promptlessly, via the `com.apple.dt.remotepairingdeviced.lockdown` control channel:
+
+```
+pymobiledevice3 lockdown remotepairing --pair
+```
+
+Because this runs over the already-trusted lockdownd (USB) transport, pairing is promptless (no on-device Trust dialog) and writes the same pair record `remote start-tunnel` / `remote pair` use. Without `--pair` the command just performs a handshake and prints the device's control-channel info (add `--raw` to keep the `deviceKVSData` blob base64-encoded). This control channel does not create tunnels itself.
+
+Wi-Fi discovery needs a pair record created by a recent version
+
+A device advertising RemotePairing over Wi-Fi is recognized by matching its bonjour `authTag` against the `altIRK` the device hands over during pairing, so only devices you are paired with are ever contacted. Pair records written before that key was stored cannot be matched: a warning names the stale `remote_<udid>.plist`; delete it and pair again (the promptless USB command above is the easiest way). See [RemoteXPC: Wi-Fi](https://doronz88.github.io/pymobiledevice3/latest/internals/remotexpc/#wi-fi) for how the matching works.
+
+## Forcing the userspace tunnel (`--userspace`)
+
+The userspace tunnel is already the default, so you rarely need the flag. Pass `--userspace` explicitly to **force** the no-root in-process tunnel and skip the automatic native/`tunneld` fallback (iOS 17.0-17.3) — any establishment failure is then surfaced as an error rather than masked:
+
+```
+pymobiledevice3 developer dvt ls / --userspace
+```
+
+Requirements:
+
+- Nothing to install: the `pmd-pytcp` network stack behind it is a regular dependency.
+- **iOS 17.4+ over USB** (through the CoreDeviceProxy lockdown service), or **iOS 17.0-17.3 on Wi-Fi** (through RemotePairing, discovered over bonjour).
+
+What works over the userspace tunnel: the host-initiated developer services (`dvt`, `fetch-symbols`, `core-device …`), and the device-initiated AV/HID paths — `display serve-web`, `display serve-vnc`, `display start-video-stream` / `start-audio-stream`, and the HID gesture commands.
+
+Service connections are handed off in-process over a `socketpair()` per connection, so there is no listener another process could connect to.
+
+### Limitation: in-process only
+
+The device's tunnel address lives only inside the pymobiledevice3 process, so it is **not reachable from any other process** on your machine. Commands that hand the device address to an external tool therefore cannot use the userspace tunnel — see [When you still need `tunneld`](#when-you-still-need-a-privileged-tunneld).
+
+Because the tunnel is rebuilt per invocation (no persistent daemon), expect a little extra startup latency compared with attaching to an already-running `tunneld`.
+
+### From Python
+
+To establish this tunnel programmatically, use the `UserspaceRsdTunnel` handle — see the [`UserspaceRsdTunnel` example](https://doronz88.github.io/pymobiledevice3/latest/internals/idevice-protocol-layers/#remotexpc) in the protocol-layers guide, listed there alongside the other ways to obtain an RSD. The in-process-only limitation above applies equally to the Python API.
+
+## Use tunnel details in commands
+
+```
+# Default: no flag, no root — an in-process userspace tunnel is established automatically
+pymobiledevice3 developer dvt ls /
+
+# Force the no-root tunnel (skip the automatic tunneld fallback)
+pymobiledevice3 developer dvt ls / --userspace
+
+# Use a running tunneld ('' = pick automatically, or pass a UDID)
+pymobiledevice3 developer dvt ls / --tunnel ''
+
+# Use manual RSD connection details (from `start-tunnel`)
+pymobiledevice3 developer dvt ls / --rsd fd7b:e5b:6f53::1 64337
+
+# Non-developer command over a running tunneld
+pymobiledevice3 syslog live --tunnel ''
+```
+
+## Troubleshooting
+
+- Most developer commands need no flag — the no-root tunnel is established for you. If one fails to establish a tunnel, the two explicit routes are `--tunnel ''` (uses a running `tunneld`) or `--userspace` (forces the no-root in-process tunnel and surfaces the real error).
+- iOS 17.0-17.3 is routed to the native tunnel on macOS and to `tunneld` on Linux/Windows (the userspace path only reaches those over the fragile Wi-Fi RemotePairing route), so start `tunneld` there. `--userspace` can still force the userspace path over Wi-Fi if you prefer.
+- Make sure the device is unlocked and trusts this computer; if you use `tunneld` or a manual tunnel, make sure it is still running.
+- On Windows, iOS 17.0-17.3 needs a third-party driver that pymobiledevice3 does not ship or endorse. Update the device to iOS 17.4 or later instead: it then works on Windows with no driver and no Administrator.
+- **Wi-Fi-only usage (no USB cable)**: run `pymobiledevice3 lockdown wifi-connections on` once over USB. After that the host's own daemon finds the device over Wi-Fi and every command keeps working with no extra flag — on macOS always, and on Windows when the *Apple Mobile Device Service* comes from the classic iTunes installer. If `pymobiledevice3 usbmux list` stays empty while the device is on the same network, the daemon has no network-device support. On Windows that means the Microsoft Store "Apple Devices" app, whose service discovers nothing over Wi-Fi (its own UI cannot reach the device either) — install iTunes from <https://www.apple.com/itunes/download/win64> instead, which is the real fix and needs no flags afterwards. On Linux, stock `libimobiledevice` `usbmuxd` has the same gap, with no equivalent daemon to switch to. Where the daemon cannot be fixed, check the device is advertising with `pymobiledevice3 bonjour mobdev2` and ask for bonjour discovery explicitly with `--mobdev2`, which reaches it over the regular lockdown pair record on TCP — no RemotePairing record needed. Discovery is never implicit: a device `usbmuxd` cannot see fails immediately rather than every miss paying for a network browse, and nothing is ever served from a device you did not name.
