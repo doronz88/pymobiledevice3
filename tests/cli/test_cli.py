@@ -1,8 +1,10 @@
 import io
 import logging
+import os
 import re
 import subprocess
 import sys
+from typing import Optional
 
 import pytest
 import typer
@@ -50,6 +52,37 @@ def test_mutually_exclusive_rsd_tunnel_renders_usage_error():
     assert result.exit_code == 2
     assert "mutually exclusive with --tunnel" in ANSI_ESCAPE.sub("", result.output)
     assert "Traceback" not in result.output
+
+
+def test_remotepairing_conflicts_with_an_explicit_tunnel():
+    result = CliRunner().invoke(__main__.app, ["developer", "dvt", "ls", "/", "--remotepairing", "--tunnel", "x"])
+
+    assert result.exit_code == 2
+    assert "--remotepairing is mutually exclusive" in ANSI_ESCAPE.sub("", result.output)
+
+
+def test_remotepairing_builds_the_userspace_tunnel_for_the_named_record(monkeypatch):
+    # No usbmux lookup either: a device that is only on the network has none.
+    from pymobiledevice3.remote import userspace_tunnel
+
+    calls = []
+
+    async def establish_userspace_rsd(**kwargs):
+        calls.append(kwargs)
+        return "rsd"
+
+    def no_usbmux(serial):
+        raise AssertionError("--remotepairing must not resolve the target through usbmux")
+
+    monkeypatch.setattr(userspace_tunnel, "establish_userspace_rsd", establish_userspace_rsd)
+    monkeypatch.setattr(cli_common, "_resolve_target_serial", no_usbmux)
+    monkeypatch.setattr(sys, "argv", ["pymobiledevice3", "--udid", "PAIRING-ID"])
+    rsd_dependency = cli_common.make_rsd_dependency(allow_none=True)
+
+    rsd = rsd_dependency(ctx=None, rsd=None, tunnel=None, userspace=False, remotepairing=True, native=False)
+
+    assert rsd == "rsd"
+    assert calls == [{"serial": "PAIRING-ID", "remotepairing": True}]
 
 
 def test_cli_from_python_m_with_invalid_option():
@@ -293,6 +326,52 @@ def test_reconnect_waits_for_the_target_device(monkeypatch):
     assert captured.get("serial") == "TARGET-UDID"
 
 
+def test_reconnect_with_remotepairing_waits_over_bonjour(monkeypatch):
+    """A --remotepairing device may never appear on usbmux: `--reconnect` waits for it over bonjour, and the
+    re-run keeps targeting its RemotePairing record rather than a stamped device UDID."""
+    from pymobiledevice3.remote import userspace_tunnel
+
+    _patch_isolated_asyncio_run(monkeypatch)
+    waited: list[Optional[str]] = []
+
+    async def wait_for_remotepairing_device(serial):
+        waited.append(serial)
+        return serial
+
+    async def no_usbmux(*args, **kwargs):
+        raise AssertionError("--reconnect with --remotepairing must not wait on usbmux")
+
+    invocations = iter([(__main__.ExitCode.ERROR, True), (__main__.ExitCode.SUCCESS, False)])
+    monkeypatch.setattr(__main__, "invoke_cli_with_error_handling", lambda: next(invocations))
+    monkeypatch.setattr(__main__, "RECONNECT", True)
+    monkeypatch.setattr(__main__, "retry_create_using_usbmux", no_usbmux)
+    monkeypatch.setattr(userspace_tunnel, "wait_for_remotepairing_device", wait_for_remotepairing_device)
+    monkeypatch.delenv(cli_common.UDID_ENV_VAR, raising=False)
+    monkeypatch.setattr(
+        sys, "argv", ["pymobiledevice3", "--reconnect", "remote", "rsd-info", "--remotepairing", "--udid", "REC"]
+    )
+
+    __main__.main()
+
+    assert waited == ["REC"]
+    assert cli_common.UDID_ENV_VAR not in os.environ
+
+
+@pytest.mark.parametrize(
+    ("argv", "env", "expected"),
+    [([], "0", False), ([], "false", False), ([], "1", True), (["--remotepairing"], None, True), ([], None, False)],
+)
+def test_remotepairing_env_var_is_read_like_the_option(monkeypatch, argv, env, expected):
+    # PYMOBILEDEVICE3_REMOTEPAIRING=0 leaves --remotepairing off, so it must not skip the automatic tunnel retry either.
+    monkeypatch.setattr(sys, "argv", ["pymobiledevice3", *argv])
+    if env is None:
+        monkeypatch.delenv(cli_common.REMOTEPAIRING_ENV_VAR, raising=False)
+    else:
+        monkeypatch.setenv(cli_common.REMOTEPAIRING_ENV_VAR, env)
+
+    assert __main__._remotepairing_requested() is expected
+
+
 def test_reconnect_any_accepts_first_available_device(monkeypatch, caplog):
     """With RECONNECT_ANY_ENV_VAR set, `--reconnect` must accept the first available device (no
     serial filter), warn about the UDID mismatch, and retarget the re-invocation at it."""
@@ -411,7 +490,11 @@ def test_tunneld_device_not_found_names_the_tunneld_instance(monkeypatch):
     async def fake_get_tunneld_devices(address, bridge=None):
         return [_FakeRsd()]
 
+    async def no_tunnel_under_that_key(udid, address, bridge=None):
+        return None
+
     monkeypatch.setattr(cli_common, "get_tunneld_devices", fake_get_tunneld_devices)
+    monkeypatch.setattr(cli_common, "get_tunneld_device_by_udid", no_tunnel_under_that_key)
 
     # A private loop, not asyncio.run: its cleanup unsets the main-thread event loop and breaks
     # later sync tests on Python 3.9 (see _patch_isolated_asyncio_run above).
@@ -424,6 +507,30 @@ def test_tunneld_device_not_found_names_the_tunneld_instance(monkeypatch):
 
     assert exc_info.value.udid == "TARGET-UDID"
     assert str(exc_info.value) == ("Device not found: tunneld (127.0.0.1:1234) serves no tunnel for udid TARGET-UDID")
+
+
+def test_tunneld_finds_a_wifi_tunnel_by_its_pairing_identifier(monkeypatch):
+    """tunneld keys a Wi-Fi tunnel by the pairing identifier, while its RSD reports the device UDID."""
+    import asyncio
+
+    asked = []
+
+    async def get_tunneld_device_by_udid(udid, address, bridge=None):
+        asked.append(udid)
+        return "rsd-under-key" if udid == "PAIRING-ID" else None
+
+    async def every_tunnel(address, bridge=None):
+        raise AssertionError("a tunnel found by its key needs no listing")
+
+    monkeypatch.setattr(cli_common, "get_tunneld_device_by_udid", get_tunneld_device_by_udid)
+    monkeypatch.setattr(cli_common, "get_tunneld_devices", every_tunnel)
+
+    loop = asyncio.new_event_loop()
+    try:
+        assert loop.run_until_complete(cli_common._tunneld("PAIRING-ID")) == "rsd-under-key"
+    finally:
+        loop.close()
+    assert asked == ["PAIRING-ID"]
 
 
 def test_native_tunnel_device_not_found_is_reconnectable(monkeypatch):

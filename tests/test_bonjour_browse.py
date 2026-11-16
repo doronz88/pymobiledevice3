@@ -15,6 +15,7 @@ from pymobiledevice3.bonjour import (
     QTYPE_PTR,
     QTYPE_SRV,
     QTYPE_TXT,
+    REMOTEPAIRING_SERVICE_NAME,
     MDNSResponder,
     _build_rr,
     _DatagramProtocol,
@@ -22,6 +23,7 @@ from pymobiledevice3.bonjour import (
     _encode_txt,
     browse_service,
     encode_name,
+    iter_browse_remotepairing,
     iter_browse_service,
 )
 
@@ -189,3 +191,44 @@ async def test_answers_arriving_on_a_skipped_interface_are_ignored(mdns, monkeyp
     instances = await browse_service(SERVICE, timeout=0.05, skip_interfaces=("utun",))
 
     assert [instance.addresses for instance in instances] == [[]]
+
+
+REMOTEPAIRING_INSTANCE = "9466B801._remotepairing._tcp.local."
+
+
+async def test_remotepairing_answers_wait_for_their_txt_record(mdns):
+    # The authTag in the TXT record is what identifies a RemotePairing device: an answer yielded
+    # before it arrived would never be matched to its pair record.
+    without_txt = MDNSResponder._build_message(
+        [_build_rr(REMOTEPAIRING_SERVICE_NAME, QTYPE_PTR, encode_name(REMOTEPAIRING_INSTANCE), 120, False)],
+        [
+            _build_rr(REMOTEPAIRING_INSTANCE, QTYPE_SRV, _encode_srv(0, 0, 49152, "tv.local."), 120, True),
+            _build_rr("tv.local.", QTYPE_A, socket.inet_aton("192.0.2.1"), 120, True),
+        ],
+    )
+    txt = MDNSResponder._build_message(
+        [], [_build_rr(REMOTEPAIRING_INSTANCE, QTYPE_TXT, _encode_txt({"authTag": "T"}), 120, True)]
+    )
+    mdns.packets = [without_txt, txt]
+
+    answers = [answer async for answer in iter_browse_remotepairing(timeout=0.05)]
+
+    assert [answer.properties for answer in answers] == [{"authTag": "T"}]
+
+
+async def test_an_empty_txt_record_counts_as_arrived(mdns):
+    # require_properties waits for the TXT record, not for it to hold something.
+    mdns.packets = [
+        MDNSResponder._build_message(
+            [_build_rr(SERVICE, QTYPE_PTR, encode_name(INSTANCE), 120, False)],
+            [
+                _build_rr(INSTANCE, QTYPE_SRV, _encode_srv(0, 0, 49152, "tv.local."), 120, True),
+                _build_rr("tv.local.", QTYPE_A, socket.inet_aton("192.0.2.1"), 120, True),
+                _build_rr(INSTANCE, QTYPE_TXT, _encode_txt({}), 120, True),
+            ],
+        )
+    ]
+
+    answers = [answer async for answer in iter_browse_service(SERVICE, timeout=0.05, require_properties=True)]
+
+    assert [answer.properties for answer in answers] == [{}]

@@ -121,6 +121,24 @@ async def test_every_reachable_address_of_a_matched_device_is_returned(remotepai
     assert await get_remote_pairing_tunnel_services() == [("MINE", "10.0.0.2")]
 
 
+async def test_every_address_is_connected_by_default(remotepairing):
+    # tunneld builds a tunnel per address, so the default keeps them all.
+    remotepairing.records = {"MINE": {PEER_ALT_IRK_KEY: ALT_IRK}}
+    remotepairing.answers = [_answer(ALT_IRK, addresses=("10.0.0.1", "10.0.0.2"))]
+
+    assert await get_remote_pairing_tunnel_services() == [("MINE", "10.0.0.1"), ("MINE", "10.0.0.2")]
+
+
+async def test_first_address_only_stops_at_the_first_address_that_connects(remotepairing):
+    remotepairing.records = {"MINE": {PEER_ALT_IRK_KEY: ALT_IRK}}
+    remotepairing.answers = [_answer(ALT_IRK, addresses=("10.0.0.1", "10.0.0.2", "10.0.0.3"))]
+    remotepairing.unreachable = {"10.0.0.1"}
+
+    assert await get_remote_pairing_tunnel_services(udid="MINE", first_address_only=True) == [("MINE", "10.0.0.2")]
+    # the third address is never dialled
+    assert [attempt[1] for attempt in remotepairing.attempts] == ["10.0.0.1", "10.0.0.2"]
+
+
 async def test_record_without_alt_irk_is_skipped_with_a_single_warning(remotepairing, caplog):
     remotepairing.records = {"STALE": {"private_key": b"\x00" * 32}}
     remotepairing.answers = [_answer(ALT_IRK)]

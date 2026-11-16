@@ -589,6 +589,189 @@ async def test_remotepairing_asks_for_the_device_it_handshook_with(mock_tunnel_p
     assert lockdown is None
 
 
+# --- explicit RemotePairing (--remotepairing) device selection ----------------
+
+
+class _FakeRemotePairing:
+    """A connected RemotePairingTunnelService stand-in: only its identity and close() matter here."""
+
+    def __init__(self, remote_identifier: str) -> None:
+        self.remote_identifier = remote_identifier
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+@pytest.fixture
+def remotepairing_lookup(monkeypatch):
+    """Fake the pair records on disk and the bonjour lookup; expose what was asked for."""
+
+    class State:
+        def __init__(self) -> None:
+            self.records: list[str] = []
+            self.found: list[_FakeRemotePairing] = []
+            self.stale: set[str] = set()  # records written before altIRK was recorded
+            self.quiet_lookups = 0  # lookups that hear nothing before the device answers
+            self.asked: list[Any] = []
+            self.first_address_only: list[bool] = []
+
+    state = State()
+
+    def get_local_pairing_record(filename, folder):
+        identifier = filename.split("remote_", 1)[1]
+        if identifier not in state.records:
+            return None
+        return {} if identifier in state.stale else {userspace_tunnel.tunnel_service.PEER_ALT_IRK_KEY: b"\x00" * 16}
+
+    async def get_remote_pairing_tunnel_services(bonjour_timeout=None, udid=None, first_address_only=False, **kwargs):
+        state.asked.append((udid, bonjour_timeout))
+        state.first_address_only.append(first_address_only)
+        if len(state.asked) <= state.quiet_lookups:
+            return []
+        return [service for service in state.found if udid is None or service.remote_identifier == udid]
+
+    monkeypatch.setattr(userspace_tunnel, "iter_remote_paired_identifiers", lambda: iter(state.records))
+    monkeypatch.setattr(userspace_tunnel, "get_local_pairing_record", get_local_pairing_record)
+    monkeypatch.setattr(userspace_tunnel, "get_home_folder", lambda: None)
+    monkeypatch.setattr(
+        userspace_tunnel.tunnel_service, "get_remote_pairing_tunnel_services", get_remote_pairing_tunnel_services
+    )
+    return state
+
+
+BONJOUR_WINDOW = userspace_tunnel.REMOTEPAIRING_BONJOUR_TIMEOUT
+
+
+async def test_explicit_remotepairing_asks_bonjour_for_the_named_record_only(remotepairing_lookup):
+    remotepairing_lookup.records = ["PAIRING-ID", "OTHER"]
+    remotepairing_lookup.found = [_FakeRemotePairing("PAIRING-ID"), _FakeRemotePairing("OTHER")]
+
+    provider = await userspace_tunnel._create_remotepairing_tunnel_provider("PAIRING-ID")
+
+    assert remotepairing_lookup.asked == [("PAIRING-ID", BONJOUR_WINDOW)]
+    assert provider.service.remote_identifier == "PAIRING-ID"
+
+
+async def test_explicit_remotepairing_names_a_record_stored_under_a_udid_too(remotepairing_lookup):
+    # A record paired over USB is stored under the device UDID; --udid <UDID> names it.
+    remotepairing_lookup.records = ["00008110-001E4D8E017B801E"]
+    remotepairing_lookup.found = [_FakeRemotePairing("00008110-001E4D8E017B801E")]
+
+    provider = await userspace_tunnel._create_remotepairing_tunnel_provider("00008110-001E4D8E017B801E")
+
+    assert provider.service.remote_identifier == "00008110-001E4D8E017B801E"
+
+
+async def test_explicit_remotepairing_refuses_an_unknown_identifier_without_browsing(remotepairing_lookup):
+    remotepairing_lookup.records = ["PAIRING-ID", "OTHER"]
+
+    with pytest.raises(UserspaceTunnelUnavailableError, match="OTHER, PAIRING-ID"):
+        await userspace_tunnel._create_remotepairing_tunnel_provider("UNKNOWN")
+    assert remotepairing_lookup.asked == []
+
+
+async def test_explicit_remotepairing_without_a_serial_uses_the_only_pair_record(remotepairing_lookup):
+    remotepairing_lookup.records = ["PAIRING-ID"]
+    remotepairing_lookup.found = [_FakeRemotePairing("PAIRING-ID")]
+
+    provider = await userspace_tunnel._create_remotepairing_tunnel_provider(None)
+
+    assert remotepairing_lookup.asked == [("PAIRING-ID", BONJOUR_WINDOW)]
+    assert provider.service.remote_identifier == "PAIRING-ID"
+
+
+async def test_explicit_remotepairing_without_a_serial_and_several_records_fails_before_browsing(remotepairing_lookup):
+    # Only a named device is ever contacted, so several records need --udid up front.
+    remotepairing_lookup.records = ["A", "B"]
+
+    with pytest.raises(UserspaceTunnelUnavailableError, match=r"--udid.*A, B"):
+        await userspace_tunnel._create_remotepairing_tunnel_provider(None)
+    assert remotepairing_lookup.asked == []
+
+
+async def test_explicit_remotepairing_without_any_record_says_to_pair(remotepairing_lookup):
+    with pytest.raises(UserspaceTunnelUnavailableError, match="remote pair"):
+        await userspace_tunnel._create_remotepairing_tunnel_provider(None)
+    assert remotepairing_lookup.asked == []
+
+
+async def test_explicit_remotepairing_connects_one_address_only(remotepairing_lookup):
+    # A device advertising several addresses is dialled until one connects, not at each of them.
+    remotepairing_lookup.records = ["PAIRING-ID"]
+    remotepairing_lookup.found = [_FakeRemotePairing("PAIRING-ID")]
+
+    await userspace_tunnel._create_remotepairing_tunnel_provider(None)
+
+    assert remotepairing_lookup.first_address_only == [True]
+
+
+async def test_explicit_remotepairing_refuses_a_record_without_alt_irk_before_browsing(remotepairing_lookup):
+    # Its bonjour answers could never be matched, so "did not answer" would be the wrong diagnosis.
+    remotepairing_lookup.records = ["PAIRING-ID"]
+    remotepairing_lookup.stale = {"PAIRING-ID"}
+
+    with pytest.raises(UserspaceTunnelUnavailableError, match="altIRK"):
+        await userspace_tunnel._create_remotepairing_tunnel_provider("PAIRING-ID")
+    assert remotepairing_lookup.asked == []
+
+
+async def test_remotepairing_wait_browses_until_the_device_answers(remotepairing_lookup):
+    # The --reconnect wait: keep browsing, then release the connection the check made.
+    device = _FakeRemotePairing("PAIRING-ID")
+    remotepairing_lookup.records = ["PAIRING-ID"]
+    remotepairing_lookup.found = [device]
+    remotepairing_lookup.quiet_lookups = 2
+
+    assert await userspace_tunnel.wait_for_remotepairing_device(None) == "PAIRING-ID"
+    assert len(remotepairing_lookup.asked) == 3
+    assert device.closed
+
+
+async def test_remotepairing_wait_with_an_unknown_record_fails_at_once(remotepairing_lookup):
+    remotepairing_lookup.records = ["PAIRING-ID"]
+
+    with pytest.raises(UserspaceTunnelUnavailableError, match="PAIRING-ID"):
+        await userspace_tunnel.wait_for_remotepairing_device("UNKNOWN")
+    assert remotepairing_lookup.asked == []
+
+
+async def test_explicit_remotepairing_with_no_answer_is_a_reconnectable_miss(remotepairing_lookup):
+    # --reconnect keeps waiting on DeviceNotFoundError (test_device_not_found_is_a_reconnectable_failure),
+    # so a device that is asleep, or missed one browse window, must raise it and name the record.
+    remotepairing_lookup.records = ["PAIRING-ID"]
+
+    with pytest.raises(DeviceNotFoundError, match="did not answer") as exc_info:
+        await userspace_tunnel._create_remotepairing_tunnel_provider("PAIRING-ID")
+    assert exc_info.value.udid == "PAIRING-ID"
+
+
+async def test_explicit_remotepairing_establishes_through_the_named_device_without_usbmux(
+    remotepairing_lookup, mock_tunnel_provider, monkeypatch
+):
+    class TunnelStartError(Exception):
+        pass
+
+    class Device(_FakeRemotePairing):
+        def start_tcp_tunnel(self) -> Any:
+            raise TunnelStartError
+
+    device = Device("PAIRING-ID")
+    remotepairing_lookup.records = ["PAIRING-ID", "OTHER"]
+    remotepairing_lookup.found = [device, _FakeRemotePairing("OTHER")]
+    monkeypatch.setattr(userspace_tunnel, "_active_tunnel", None)
+    tunnel = userspace_tunnel.UserspaceRsdTunnel(serial="PAIRING-ID", remotepairing=True)
+
+    # the tunnel is started on the named device, which is closed when that fails
+    with pytest.raises(TunnelStartError):
+        await tunnel.aopen()
+
+    assert remotepairing_lookup.asked == [("PAIRING-ID", BONJOUR_WINDOW)]
+    assert device.closed
+    assert not userspace_tunnel.tunnel_service.USE_USERSPACE_TUNNEL
+    mock_tunnel_provider.create_using_usbmux.assert_not_called()
+
+
 async def test_remotepairing_prefers_an_explicit_serial(mock_tunnel_provider, monkeypatch):
     """An explicit --udid wins over the handshake, so the caller's choice is never second-guessed."""
 
