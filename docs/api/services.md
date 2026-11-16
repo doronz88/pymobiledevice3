@@ -25,6 +25,8 @@ from `LockdownService`; `CrashReportsManager` instead wraps other services. See 
 
 ::: pymobiledevice3.services.diagnostics.DiagnosticsService
 
+::: pymobiledevice3.services.diagnostics.BatteryInfo
+
 ::: pymobiledevice3.services.springboard.SpringBoardServicesService
 
 ::: pymobiledevice3.services.crash_reports.CrashReportsManager
