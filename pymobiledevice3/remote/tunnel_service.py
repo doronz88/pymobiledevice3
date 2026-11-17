@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import contextlib
 import dataclasses
 import inspect
 import json
@@ -23,21 +22,14 @@ from socket import create_connection
 from ssl import VerifyMode
 from typing import TYPE_CHECKING, Annotated, Any, Callable, NamedTuple, Optional, TextIO, Union, cast
 
-import opack2
 from bytestruct import (
     GREEDY_BYTES,
-    U8,
     U16_BE,
     BinaryParseError,
     BinaryStruct,
-    ByteReader,
     Bytes,
-    BytesLike,
     Const,
-    OpenIntEnum,
     Prefixed,
-    TruncatedDataError,
-    u8,
 )
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives._serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
@@ -96,6 +88,14 @@ from pymobiledevice3.pair_records import (
     iter_remote_pair_records_by_identifier,
 )
 from pymobiledevice3.remote.common import TunnelProtocol
+from pymobiledevice3.remote.pair_setup import (
+    PairingDataComponentTLV8,
+    PairingDataComponentTLVBuf,
+    PairingDataComponentType,
+    describe_pairing_error,
+    opack_loads,
+)
+from pymobiledevice3.remote.pair_setup import opack_dumps as dumps
 from pymobiledevice3.remote.remote_service import RemoteService
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService, parse_device_kvs_data
 from pymobiledevice3.remote.siphash import compute_auth_tag, validate_auth_tag
@@ -108,8 +108,6 @@ from pymobiledevice3.utils import current_task_name as _current_task_name
 
 # These third-party helpers ship only partial type information (Unknown-typed parameters/returns);
 # re-expose them through casts so downstream call sites stay typed.
-dumps = cast(Callable[[Any], bytes], cast(Any, opack2).dumps)
-opack_loads = cast(Callable[[bytes], Mapping[Any, Any]], cast(Any, opack2).loads)
 aioquic_connect = cast(
     Callable[..., AbstractAsyncContextManager[QuicConnectionProtocol]], cast(Any, _aioquic_client).connect
 )
@@ -128,92 +126,6 @@ UDP_HEADER_SIZE = 8
 # The iOS device uses an MTU of 1500, so we'll have to increase the default QUIC MTU
 IOS_DEVICE_MTU_SIZE = 1500
 packet_builder.PACKET_MAX_SIZE = IOS_DEVICE_MTU_SIZE - IPV6_HEADER_SIZE - UDP_HEADER_SIZE
-
-
-class PairingDataComponentType(OpenIntEnum):
-    METHOD = 0x00
-    IDENTIFIER = 0x01
-    SALT = 0x02
-    PUBLIC_KEY = 0x03
-    PROOF = 0x04
-    ENCRYPTED_DATA = 0x05
-    STATE = 0x06
-    ERROR = 0x07
-    RETRY_DELAY = 0x08
-    CERTIFICATE = 0x09
-    SIGNATURE = 0x0A
-    PERMISSIONS = 0x0B
-    FRAGMENT_DATA = 0x0C
-    FRAGMENT_LAST = 0x0D
-    SESSION_ID = 0x0E
-    TTL = 0x0F
-    EXTRA_DATA = 0x10
-    INFO = 0x11
-    ACL = 0x12
-    FLAGS = 0x13
-    VALIDATION_DATA = 0x14
-    MFI_AUTH_TOKEN = 0x15
-    MFI_PRODUCT_TYPE = 0x16
-    SERIAL_NUMBER = 0x17
-    MFI_AUTH_TOKEN_UUID = 0x18
-    APP_FLAGS = 0x19
-    OWNERSHIP_PROOF = 0x1A
-    SETUP_CODE_TYPE = 0x1B
-    PRODUCTION_DATA = 0x1C
-    APP_INFO = 0x1D
-    SEPARATOR = 0xFF
-
-
-@dataclasses.dataclass
-class PairingDataComponentTLV8(BinaryStruct):
-    """One TLV8 item: 1-byte type, 1-byte length, ``length`` bytes of data."""
-
-    type: Annotated[PairingDataComponentType, u8]
-    data: Annotated[bytes, Prefixed(U8, GREEDY_BYTES)]
-
-
-class PairingDataComponentTLVBuf:
-    """A buffer of consecutive TLV8 items."""
-
-    @staticmethod
-    def parse(data: BytesLike) -> list[PairingDataComponentTLV8]:
-        """Parse as many complete items as possible; an incomplete trailing item is ignored."""
-        reader = ByteReader(data)
-        result: list[PairingDataComponentTLV8] = []
-        with contextlib.suppress(TruncatedDataError):
-            while reader.remaining:
-                result.append(PairingDataComponentTLV8.read(reader))
-        return result
-
-    @staticmethod
-    def build(items: list[PairingDataComponentTLV8]) -> bytes:
-        return b"".join(item.build() for item in items)
-
-
-# Values of the ERROR component, as CoreUtils' pair-setup maps them to/from its OSStatus codes (noted per value).
-# HomeKit's published kTLVError_* table only agrees up to BACKOFF.
-class PairingErrorCode(OpenIntEnum):
-    UNKNOWN = 0x01  # kUnknownErr
-    AUTHENTICATION = 0x02  # kAuthenticationErr
-    BACKOFF = 0x03  # kBackoffErr, sent along with RETRY_DELAY
-    UNKNOWN_PEER = 0x04  # kNotFoundErr
-    MAX_PEERS = 0x05  # kNoSpaceErr
-    MAX_TRIES = 0x06  # kCountErr, pair-setup disabled after too many attempts
-    PERMISSION = 0x07  # kPermissionErr
-    OWNERSHIP_FAILURE = 0x08  # kOwnershipFailureErr
-    ACCESS = 0x09  # kAccessErr
-    UNSUPPORTED = 0x0A  # kUnsupportedErr
-
-
-def _describe_pairing_error(tlv: dict[int, bytes]) -> str:
-    """Describe the ERROR component of a decoded pairing TLV."""
-    code = PairingErrorCode(ByteReader(tlv[PairingDataComponentType.ERROR]).read(1)[0])
-    message = f"The device rejected pairing: {code.name}"
-    retry_delay = tlv.get(PairingDataComponentType.RETRY_DELAY)
-    if retry_delay:
-        # little-endian seconds until the device accepts another attempt
-        message += f"; retry in {int.from_bytes(retry_delay, 'little')} seconds."
-    return message
 
 
 class PairConsentResult(NamedTuple):
@@ -940,7 +852,7 @@ class RemotePairingProtocol(StartTcpTunnel):
         data = self.decode_tlv(PairingDataComponentTLVBuf.parse(pairing_data))
         if PairingDataComponentType.ERROR in data:
             # e.g. BACKOFF, sent without PUBLIC_KEY and SALT
-            raise PairingError(_describe_pairing_error(data))
+            raise PairingError(describe_pairing_error(data))
 
         # input() holds up the loop, so a cancellation would only be seen once it returns.
         with sigint_handler(signal.default_int_handler):
@@ -2094,7 +2006,7 @@ class PairableHost:
     @staticmethod
     def _ensure_no_error(tlv: dict[int, bytes]) -> None:
         if PairingDataComponentType.ERROR in tlv:
-            raise PairingError(_describe_pairing_error(tlv))
+            raise PairingError(describe_pairing_error(tlv))
 
     @staticmethod
     def decode_tlv(tlv_list: list[PairingDataComponentTLV8]) -> dict[int, bytes]:
