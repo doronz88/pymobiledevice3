@@ -4,21 +4,24 @@ import datetime
 import logging
 import plistlib
 from pathlib import Path
-from typing import Annotated, Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional, cast
 
 import typer
 from typer_injector import InjectingTyper
 
+from pymobiledevice3.bonjour import ServiceInstance, browse_pairable
 from pymobiledevice3.cli.cli_common import (
     LockdownClientDep,
     NoAutoPairLockdownClientDep,
     ServiceProviderDep,
     async_command,
     print_json,
+    prompt_selection,
     sudo_required,
 )
 from pymobiledevice3.cli.remote import tunnel_task
-from pymobiledevice3.exceptions import RemotePairingCompletedError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, RemotePairingCompletedError
+from pymobiledevice3.lockdown import LockdownClient, create_using_tcp
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.tunnel_service import CoreDeviceTunnelProxy, RemotePairingLockdownService
@@ -141,6 +144,88 @@ async def lockdown_unpair(
 async def lockdown_pair(service_provider: NoAutoPairLockdownClientDep) -> None:
     """Pair this computer with the device (accept "Trust This Computer" on the device)."""
     await service_provider.pair()
+
+
+async def _connect_pairable_device() -> LockdownClient:
+    """Connect to the device bonjour finds in wireless pairing mode, asking which one if there are several."""
+    devices = [instance for instance in await browse_pairable() if instance.addresses]
+    if not devices:
+        typer.secho(
+            "No device in pairing mode was found. On the Apple TV, open Settings > Remotes and Devices > "
+            "Remote App and Devices, or pass its hostname.",
+            err=True,
+            fg="red",
+        )
+        raise typer.Exit(code=1)
+    # each device is connected to before asking, since only lockdown knows the name the user gave it
+    connected: list[tuple[ServiceInstance, LockdownClient]] = []
+    error: Optional[Exception] = None
+    for device in devices:
+        try:
+            connected.append((device, await _connect_pairable_instance(device)))
+        except (OSError, ConnectionTerminatedError) as e:
+            error = e
+    if not connected:
+        assert error is not None
+        raise error
+    chosen: Optional[LockdownClient] = None
+    try:
+        index = 0
+        if len(connected) > 1:
+            index = cast(
+                int,
+                prompt_selection(
+                    [_describe_pairable_device(instance, lockdown) for instance, lockdown in connected],
+                    "Choose device",
+                    idx=True,
+                    hint="Pass a hostname to choose non-interactively.",
+                ),
+            )
+        chosen = connected[index][1]
+        return chosen
+    finally:
+        for _, lockdown in connected:
+            if lockdown is not chosen:
+                await lockdown.close()
+
+
+async def _connect_pairable_instance(instance: ServiceInstance) -> LockdownClient:
+    # the advertised port is lockdown's with its bytes swapped, so the default one is used instead
+    error: Optional[Exception] = None
+    for address in instance.addresses:
+        try:
+            return await create_using_tcp(address.full_ip, autopair=False)
+        except (OSError, ConnectionTerminatedError) as e:
+            error = e
+    assert error is not None
+    raise error
+
+
+def _describe_pairable_device(instance: ServiceInstance, lockdown: LockdownClient) -> str:
+    """The device's own name, when it tells an unpaired host, next to where it was found."""
+    where = f"{instance.host} ({lockdown.identifier})"
+    name = lockdown.all_values.get("DeviceName")
+    return where if name is None else f"{name} - {where}"
+
+
+@cli.command("pair-wireless")
+@async_command
+async def lockdown_pair_wireless(
+    hostname: Annotated[
+        Optional[str],
+        typer.Argument(help="Hostname or IP address of the device; omit to find it over bonjour."),
+    ] = None,
+) -> None:
+    """Pair this computer with an Apple TV over the network, using the PIN it displays.
+
+    Put the Apple TV in pairing mode first: Settings > Remotes and Devices > Remote App and Devices.
+    It accepts lockdown connections from the network only while that screen is open.
+    """
+    lockdown = (
+        await create_using_tcp(hostname, autopair=False) if hostname is not None else await _connect_pairable_device()
+    )
+    async with lockdown:
+        await lockdown.pair_cu(lambda: typer.prompt("Enter PIN"))
 
 
 @cli.command("pair-supervised")

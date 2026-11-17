@@ -27,6 +27,11 @@ sudo pymobiledevice3 bonjour rsd
 
 # Forward a host TCP port to a port on the device, over USB
 pymobiledevice3 usbmux forward HOST_PORT DEVICE_PORT
+
+# Pair with an Apple TV over the network, typing in the PIN it displays. Open Settings > Remotes and
+# Devices > Remote App and Devices on it first: it only takes lockdown connections from the network
+# while that screen is open. It is found over bonjour; pass its hostname or IP address to skip that
+pymobiledevice3 lockdown pair-wireless
 ```
 
 ## Logging and Diagnostics
