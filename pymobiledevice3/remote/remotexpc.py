@@ -626,7 +626,9 @@ class RemoteXPCConnection:
             if not isinstance(frame, DataFrame):
                 continue
 
-            if frame.stream_id % 2 == 0 and frame.body_len > 0:
+            # Replies (odd streams) spend the receive window as file transfers (even streams) do:
+            # left unreplenished, the device stops sending once a connection received 16 MiB.
+            if frame.body_len > 0:
                 await self._replenish_receive_window(frame.stream_id, frame.body_len)
 
             return frame

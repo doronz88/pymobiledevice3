@@ -63,8 +63,10 @@ class ResettingWriter:
 
 
 @pytest.mark.asyncio
-async def test_receive_data_frame_batches_window_updates():
-    frame = DataFrame(stream_id=2, data=b"x" * WINDOW_UPDATE_THRESHOLD)
+@pytest.mark.parametrize("stream_id", [1, 2, 3], ids=["root-channel", "file-transfer", "reply-channel"])
+async def test_receive_data_frame_batches_window_updates(stream_id: int):
+    """Replies spend the receive window like file transfers do; unreplenished, the device stalls after 16 MiB."""
+    frame = DataFrame(stream_id=stream_id, data=b"x" * WINDOW_UPDATE_THRESHOLD)
     frame.serialize()
 
     async def receive_frame():
