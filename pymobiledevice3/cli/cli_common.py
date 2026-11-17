@@ -1,4 +1,5 @@
 import asyncio
+import atexit
 import datetime
 import io
 import json
@@ -29,7 +30,12 @@ from pymobiledevice3.exceptions import (
     NoDeviceConnectedError,
     UserspaceTunnelUnavailableError,
 )
-from pymobiledevice3.lockdown import LockdownClient, TcpLockdownClient, create_using_usbmux, get_mobdev2_lockdowns
+from pymobiledevice3.lockdown import (
+    LockdownClient,
+    TcpLockdownClient,
+    create_using_usbmux,
+    get_mobdev2_lockdowns,
+)
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -238,6 +244,18 @@ def _record_resolved(provider: LockdownServiceProvider) -> LockdownServiceProvid
     if provider.udid is not None:
         _resolved_udid = provider.udid
     return provider
+
+
+def _close_lockdown_at_exit(lockdown: LockdownClient) -> None:
+    """Close a network ``lockdown``, and with it its heartbeat: a command has no teardown hook to do it from."""
+    if cli_loop.is_closed() or cli_loop.is_running():
+        return  # nothing safe to run here
+    try:
+        cli_loop.run_until_complete(asyncio.wait_for(lockdown.close(), timeout=3))
+    except KeyboardInterrupt:
+        logging.getLogger(__name__).debug("closing %s at exit was interrupted", lockdown.identifier)
+    except Exception:
+        logging.getLogger(__name__).debug("closing %s at exit failed", lockdown.identifier, exc_info=True)
 
 
 cli_loop = get_asyncio_loop()
@@ -732,10 +750,9 @@ def any_service_provider_dependency(
         if not devices:
             raise NoDeviceConnectedError()
 
-        if len(devices) == 1:
-            return _record_resolved(devices[0])
-
-        return _record_resolved(_prompt_device(devices))
+        device = devices[0] if len(devices) == 1 else _prompt_device(devices)
+        atexit.register(_close_lockdown_at_exit, device)
+        return _record_resolved(device)
 
     return _usbmux_service_provider(udid, usbmux)
 
