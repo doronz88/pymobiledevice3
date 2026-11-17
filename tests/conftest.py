@@ -16,6 +16,10 @@ import pytest_asyncio
 # Must precede the other first-party imports (isort keeps it first): on Python 3.15+ this makes
 # pymobiledevice3-internal imports lazy for the whole test run, exercising the mode the CLI ships.
 import pymobiledevice3._lazy_imports  # noqa: F401
+
+# Importing it creates the CLI's event loop, which lives for the whole process. Created here rather
+# than by whichever test imports it first, it is not a socket that test left open.
+from pymobiledevice3.cli import cli_common  # noqa: F401
 from pymobiledevice3.exceptions import (
     ConnectionFailedToUsbmuxdError,
     DeviceNotFoundError,
