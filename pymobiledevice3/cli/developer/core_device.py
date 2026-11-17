@@ -664,12 +664,11 @@ _BUTTON_STATE_CHOICES = {
 
 # Named iOS hardware buttons → (usage_page, usage_code, hold_seconds).
 # Most physical iOS buttons live on the Consumer page (0x0C). ``hold_seconds``
-# is how long to keep DOWN before sending UP for the ``press`` shortcut --
-# iOS distinguishes a tap (Home / Vol / Mute) from a hold (Lock = sleep,
-# Siri = start listening) by the time the usage stays asserted. A 0 s hold
-# (which the previous implementation effectively did via back-to-back
-# send_button calls ~70 µs apart) reads to backboardd as bounce noise and
-# only the tap-class buttons fire on it.
+# is how long to keep DOWN before sending UP for the ``press`` shortcut. A 0 s
+# hold (back-to-back send_button calls ~70 µs apart) reads to backboardd as
+# bounce noise, so every button is held at least 0.05 s. Lock must stay a tap:
+# SpringBoard's LockButton long-press fires ~0.4 s in and opens Siri instead of
+# sleeping the device. Siri is the one button that is a hold by design.
 class ButtonName(str, Enum):
     """Named iOS hardware buttons; ``_NAMED_BUTTONS`` maps each to (usage_page, usage_code, hold_seconds)."""
 
@@ -686,7 +685,7 @@ class ButtonName(str, Enum):
 
 _NAMED_BUTTONS: dict[ButtonName, tuple[int, int, float]] = {
     ButtonName.HOME: (0x0C, 0x40, 0.05),  # Consumer / Menu
-    ButtonName.LOCK: (0x0C, 0x30, 0.5),  # Consumer / Power, held long enough for iOS to sleep
+    ButtonName.LOCK: (0x0C, 0x30, 0.05),  # Consumer / Power, a tap (a ~0.4 s hold opens Siri)
     ButtonName.VOLUME_UP: (0x0C, 0xE9, 0.05),  # Consumer / Volume Increment
     ButtonName.VOLUME_DOWN: (0x0C, 0xEA, 0.05),  # Consumer / Volume Decrement
     ButtonName.MUTE: (0x0C, 0xE2, 0.05),  # Consumer / Mute
