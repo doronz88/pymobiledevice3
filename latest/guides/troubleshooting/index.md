@@ -206,6 +206,8 @@ Automation commands (`webinspector launch`, `webinspector js-shell --automation`
 
 If the device has backup encryption enabled, commands that read backup contents need the password: pass `--password` (`-p`) to `backup2` subcommands. A `BackupFilterPasswordRequiredError` means you combined a filtered backup with `--patch-manifest` on an encrypted backup — that also requires `--password`, so the manifest can be decrypted and re-encrypted.
 
+`backup2 info` and `backup2 list` fail with `MBErrorDomain/207` on an encrypted backup unless `--password` is given: the device accepts no password for them, so the manifest is decrypted on the host into a temporary copy the device then reads. `InvalidBackupPasswordError` means the password does not match the backup.
+
 ### "device asked the host to free N bytes"
 
 The device decided the backup destination is too small and asked the host to make room (`DLMessagePurgeDiskSpace`). pymobiledevice3 has no way to reclaim space on your behalf, so it answers "failed to purge" — exactly like Apple's own host does when its purge fails — and lets the device report what it wants to do next.
