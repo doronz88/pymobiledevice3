@@ -12,12 +12,14 @@ from ssl import SSLEOFError
 from unittest.mock import AsyncMock, Mock, call
 
 import pytest
+from cryptography.hazmat.primitives.keywrap import InvalidUnwrap
 
 from pymobiledevice3.exceptions import (
     BackupFilterPasswordRequiredError,
     ConnectionFailedError,
     ConnectionTerminatedError,
     InvalidBackupError,
+    InvalidBackupPasswordError,
     NotEnoughDiskSpaceError,
     PyMobileDevice3Exception,
 )
@@ -87,8 +89,82 @@ async def test_backup(lockdown: LockdownClient, tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_encrypted_backup(lockdown: LockdownClient, tmp_path: Path) -> None:
     await change_password(lockdown, new=PASSWORD)
-    await backup(lockdown, tmp_path)
-    await change_password(lockdown, old=PASSWORD)
+    try:
+        await backup(lockdown, tmp_path)
+    finally:
+        await change_password(lockdown, old=PASSWORD)
+
+    async with Mobilebackup2Service(lockdown) as service:
+        assert "encrypted=1" in await service.info(backup_directory=tmp_path, password=PASSWORD)
+    async with Mobilebackup2Service(lockdown) as service:
+        assert "HomeDomain" in await service.list(backup_directory=tmp_path, password=PASSWORD)
+    async with Mobilebackup2Service(lockdown) as service:
+        with pytest.raises(InvalidBackupPasswordError):
+            await service.info(backup_directory=tmp_path, password=PASSWORD + "x")
+
+
+def _write_backup_metadata(device_directory: Path, encrypted: bool) -> None:
+    device_directory.mkdir(parents=True)
+    manifest = {"IsEncrypted": encrypted, "ManifestKey": b"wrapped", "BackupKeyBag": b"keybag"}
+    (device_directory / "Manifest.plist").write_bytes(plistlib.dumps(manifest))
+    (device_directory / "Manifest.db").write_bytes(b"ciphertext")
+    (device_directory / "Info.plist").write_bytes(b"info")
+    (device_directory / "Status.plist").write_bytes(b"status")
+    (device_directory / "ab").mkdir()
+
+
+@pytest.mark.parametrize("encrypted,password", [(False, PASSWORD), (True, ""), (False, "")])
+def test_manifest_readable_backup_is_the_backup_itself_without_decryption(
+    tmp_path: Path, encrypted: bool, password: str
+) -> None:
+    _write_backup_metadata(tmp_path / "udid", encrypted)
+
+    with Mobilebackup2Service._manifest_readable_backup(tmp_path, "udid", password) as readable:
+        assert readable == tmp_path
+
+
+def test_manifest_readable_backup_decrypts_manifest_into_temporary_copy(monkeypatch, tmp_path: Path) -> None:
+    device_directory = tmp_path / "udid"
+    _write_backup_metadata(device_directory, encrypted=True)
+
+    def decrypt(source: Path, password: str, destination: Path) -> bytes:
+        assert (source, password) == (device_directory, PASSWORD)
+        destination.write_bytes(b"plaintext")
+        return b"key"
+
+    monkeypatch.setattr(Mobilebackup2Service, "_decrypt_backup_manifest_db", staticmethod(decrypt))
+
+    with Mobilebackup2Service._manifest_readable_backup(tmp_path, "udid", PASSWORD) as readable:
+        assert readable != tmp_path
+        assert sorted(path.name for path in (readable / "udid").iterdir()) == [
+            "Info.plist",
+            "Manifest.db",
+            "Manifest.plist",
+            "Status.plist",
+        ]
+        assert (readable / "udid" / "Manifest.db").read_bytes() == b"plaintext"
+        assert plistlib.loads((readable / "udid" / "Manifest.plist").read_bytes()) == {
+            "IsEncrypted": False,
+            "BackupKeyBag": b"keybag",
+        }
+        assert (readable / "udid" / "Info.plist").read_bytes() == b"info"
+
+    assert not readable.exists()
+    assert (device_directory / "Manifest.db").read_bytes() == b"ciphertext"
+    assert plistlib.loads((device_directory / "Manifest.plist").read_bytes())["IsEncrypted"] is True
+
+
+def test_manifest_readable_backup_rejects_wrong_password(monkeypatch, tmp_path: Path) -> None:
+    _write_backup_metadata(tmp_path / "udid", encrypted=True)
+    monkeypatch.setattr(
+        Mobilebackup2Service, "_decrypt_backup_manifest_db", staticmethod(Mock(side_effect=InvalidUnwrap()))
+    )
+
+    with (
+        pytest.raises(InvalidBackupPasswordError),
+        Mobilebackup2Service._manifest_readable_backup(tmp_path, "udid", PASSWORD),
+    ):
+        pass
 
 
 def test_resolve_backup_selection_sms() -> None:

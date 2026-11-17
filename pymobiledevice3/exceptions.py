@@ -38,6 +38,7 @@ __all__ = [
     "InspectorEvaluateError",
     "InternalError",
     "InvalidBackupError",
+    "InvalidBackupPasswordError",
     "InvalidConnectionError",
     "InvalidHostIDError",
     "InvalidServiceError",
@@ -166,6 +167,10 @@ class PasswordRequiredError(PairingError):
 
 class BackupFilterPasswordRequiredError(PyMobileDevice3Exception):
     """The backup is encrypted, so filtering it needs the backup password."""
+
+
+class InvalidBackupPasswordError(PyMobileDevice3Exception):
+    """The given password does not unlock the encrypted backup."""
 
 
 class StartServiceError(PyMobileDevice3Exception):

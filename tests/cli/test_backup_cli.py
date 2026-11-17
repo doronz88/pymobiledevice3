@@ -110,3 +110,13 @@ def test_backup_full_help_describes_conditional_default():
     assert "full for an" in normalized_output
     assert "empty or incomplete backup" in normalized_output
     assert "directory" in normalized_output
+
+
+@pytest.mark.parametrize("command", ["info", "list"])
+def test_backup_info_and_list_accept_password(command: str) -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(__main__.app, ["backup2", command, "--help"], env={"COLUMNS": "200"})
+
+    assert result.exit_code == 0
+    assert "--password" in plain_cli_output(result.output)

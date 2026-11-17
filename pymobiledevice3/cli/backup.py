@@ -231,25 +231,31 @@ async def restore(
 @cli.command()
 @async_command
 async def info(
-    service_provider: ServiceProviderDep, backup_directory: BackupDirectoryArg, source: SourceOption = ""
+    service_provider: ServiceProviderDep,
+    backup_directory: BackupDirectoryArg,
+    source: SourceOption = "",
+    password: PasswordOption = "",
 ) -> None:
     """
     Print information about a backup.
     """
     async with Mobilebackup2Service(service_provider) as backup_client:
-        print(await backup_client.info(backup_directory=str(backup_directory), source=source))
+        print(await backup_client.info(backup_directory=str(backup_directory), source=source, password=password))
 
 
 @cli.command("list")
 @async_command
 async def list_(
-    service_provider: ServiceProviderDep, backup_directory: BackupDirectoryArg, source: SourceOption = ""
+    service_provider: ServiceProviderDep,
+    backup_directory: BackupDirectoryArg,
+    source: SourceOption = "",
+    password: PasswordOption = "",
 ) -> None:
     """
     List all files in the backup, in CSV format.
     """
     async with Mobilebackup2Service(service_provider) as backup_client:
-        print(await backup_client.list(backup_directory=str(backup_directory), source=source))
+        print(await backup_client.list(backup_directory=str(backup_directory), source=source, password=password))
 
 
 @cli.command()

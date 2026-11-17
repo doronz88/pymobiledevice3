@@ -7,8 +7,8 @@ import shutil
 import sqlite3
 import tempfile
 import uuid
-from collections.abc import Callable, Sequence
-from contextlib import asynccontextmanager, closing, suppress
+from collections.abc import Callable, Generator, Sequence
+from contextlib import asynccontextmanager, closing, contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -17,7 +17,7 @@ from typing import Any, Optional, Union, cast
 
 from bytestruct import U32_LE, ByteReader
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
+from cryptography.hazmat.primitives.keywrap import InvalidUnwrap, aes_key_unwrap
 from pyiosbackup import Backup
 from pyiosbackup.keybag import Keybag
 from pyiosbackup.manifest_plist import ManifestPlist
@@ -27,6 +27,7 @@ from pymobiledevice3.exceptions import (
     AfcFileNotFoundError,
     BackupFilterPasswordRequiredError,
     ConnectionTerminatedError,
+    InvalidBackupPasswordError,
     LockdownError,
     NotConnectedError,
     ProtocolError,
@@ -433,43 +434,53 @@ class Mobilebackup2Service(LockdownService):
         await afc.makedirs(posixpath.dirname(RESTORE_APPLICATIONS_PATH))
         await afc.set_file_contents(RESTORE_APPLICATIONS_PATH, plistlib.dumps(applications))
 
-    async def info(self, backup_directory: Union[str, Path] = ".", source: str = "") -> str:
+    async def info(self, backup_directory: Union[str, Path] = ".", source: str = "", password: str = "") -> str:
         """
         Get information about a backup.
 
         :param backup_directory: Path of the backup directory.
         :param source: Identifier of the device to get info about; defaults to the connected
             device's UDID.
+        :param password: Password of the backup; required if the backup is encrypted.
         :returns: Information about the backup, as returned by the device.
+        :raises InvalidBackupPasswordError: If `password` does not unlock the encrypted backup.
         """
         backup_dir = Path(backup_directory)
-        self._assert_backup_exists(backup_dir, source if source else self._udid)
-        async with self.device_link(backup_dir) as dl:
-            message: dict[str, Any] = {"MessageName": "Info", "TargetIdentifier": self.lockdown.udid}
-            if source:
-                message["SourceIdentifier"] = source
-            await dl.send_process_message(message)
-            result = await dl.dl_loop()
+        identifier = source if source else self._udid
+        self._assert_backup_exists(backup_dir, identifier)
+        with self._manifest_readable_backup(backup_dir, identifier, password) as readable_dir:
+            async with self.device_link(readable_dir) as dl:
+                message: dict[str, Any] = {"MessageName": "Info", "TargetIdentifier": self.lockdown.udid}
+                if source:
+                    message["SourceIdentifier"] = source
+                await dl.send_process_message(message)
+                result = await dl.dl_loop()
+        if readable_dir != backup_dir:
+            # The device described the decrypted copy; the backup itself is encrypted.
+            result = result.replace("encrypted=0", "encrypted=1", 1)
         return result
 
-    async def list(self, backup_directory: Union[str, Path] = ".", source: str = "") -> str:
+    async def list(self, backup_directory: Union[str, Path] = ".", source: str = "", password: str = "") -> str:
         """
         List the files in the last backup.
 
         :param backup_directory: Path of the backup directory.
         :param source: Identifier of the device to list; defaults to the connected device's UDID.
+        :param password: Password of the backup; required if the backup is encrypted.
         :returns: The files and per-file metadata in CSV format.
+        :raises InvalidBackupPasswordError: If `password` does not unlock the encrypted backup.
         """
         backup_dir = Path(backup_directory)
         source = source if source else self._udid
         self._assert_backup_exists(backup_dir, source)
-        async with self.device_link(backup_dir) as dl:
-            await dl.send_process_message({
-                "MessageName": "List",
-                "TargetIdentifier": self.lockdown.udid,
-                "SourceIdentifier": source,
-            })
-            result = await dl.dl_loop()
+        with self._manifest_readable_backup(backup_dir, source, password) as readable_dir:
+            async with self.device_link(readable_dir) as dl:
+                await dl.send_process_message({
+                    "MessageName": "List",
+                    "TargetIdentifier": self.lockdown.udid,
+                    "SourceIdentifier": source,
+                })
+                result = await dl.dl_loop()
         return result
 
     async def unback(self, backup_directory: Union[str, Path] = ".", password: str = "", source: str = "") -> None:
@@ -977,6 +988,41 @@ class Mobilebackup2Service(LockdownService):
         reader = ByteReader(manifest.manifest_key)
         protection_class = reader.unpack_one(U32_LE)
         return aes_key_unwrap(cast(Any, keybag).get_key(protection_class), reader.read_all())
+
+    @classmethod
+    @contextmanager
+    def _manifest_readable_backup(
+        cls, backup_directory: Path, identifier: str, password: str
+    ) -> Generator[Path, None, None]:
+        """
+        Yield a backup directory whose manifest the device can read without a password.
+
+        The device takes no password for ``Info`` and ``List``, so it refuses an encrypted
+        backup. Given the password of one, yield a temporary directory holding only the backup's
+        metadata, with Manifest.db decrypted on the host. Otherwise yield `backup_directory`.
+
+        :raises InvalidBackupPasswordError: If `password` does not unlock the encrypted backup.
+        """
+        device_directory = backup_directory / identifier
+        manifest_plist_path = cls._backup_manifest_plist_path(device_directory)
+        if not password or manifest_plist_path is None or not cls._is_encrypted_backup(device_directory):
+            yield backup_directory
+            return
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            readable_directory = Path(temporary_directory) / identifier
+            readable_directory.mkdir()
+            try:
+                cls._decrypt_backup_manifest_db(device_directory, password, readable_directory / "Manifest.db")
+            except InvalidUnwrap as e:
+                raise InvalidBackupPasswordError("The password does not unlock the encrypted backup.") from e
+            manifest = plistlib.loads(manifest_plist_path.read_bytes())
+            manifest["IsEncrypted"] = False
+            del manifest["ManifestKey"]
+            (readable_directory / "Manifest.plist").write_bytes(plistlib.dumps(manifest, fmt=plistlib.FMT_BINARY))
+            for name in ("Info.plist", "Status.plist"):
+                shutil.copy(device_directory / name, readable_directory / name)
+            yield Path(temporary_directory)
 
     @staticmethod
     def _encrypt_backup_manifest_db(decrypted_manifest_path: Path, manifest_db_path: Path, manifest_key: bytes) -> None:
