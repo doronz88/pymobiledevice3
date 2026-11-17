@@ -3529,6 +3529,10 @@ password: pass <code>--password</code> (<code>-p</code>) to <code>backup2</code>
 <code>BackupFilterPasswordRequiredError</code> means you combined a filtered backup with
 <code>--patch-manifest</code> on an encrypted backup — that also requires <code>--password</code>, so the manifest
 can be decrypted and re-encrypted.</p>
+<p><code>backup2 info</code> and <code>backup2 list</code> fail with <code>MBErrorDomain/207</code> on an encrypted backup unless
+<code>--password</code> is given: the device accepts no password for them, so the manifest is decrypted
+on the host into a temporary copy the device then reads. <code>InvalidBackupPasswordError</code> means
+the password does not match the backup.</p>
 <h3 id="device-asked-the-host-to-free-n-bytes">"device asked the host to free N bytes"<a class="headerlink" href="#device-asked-the-host-to-free-n-bytes" title="Permanent link">&para;</a></h3>
 <p>The device decided the backup destination is too small and asked the host to make room
 (<code>DLMessagePurgeDiskSpace</code>). pymobiledevice3 has no way to reclaim space on your behalf, so it
