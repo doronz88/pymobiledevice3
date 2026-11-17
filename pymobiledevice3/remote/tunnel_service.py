@@ -1762,7 +1762,7 @@ SRP_PUBLIC_KEY_SIZE = 384
 # TLV component data is length-prefixed with a single byte
 TLV_MAX_FRAGMENT_SIZE = 0xFF
 
-PinCallback = Callable[[str], Union[None, Awaitable[None]]]
+PinCallback = Callable[[str], Optional[Awaitable[None]]]
 
 
 @dataclasses.dataclass
@@ -2177,7 +2177,7 @@ async def serve_pairable_host(
     ed25519_private_key: Optional[Ed25519PrivateKey] = None,
     timeout: Optional[float] = None,
     heartbeat_interval: float = 15.0,
-    waiting_callback: Optional[Callable[[float], Union[None, Awaitable[None]]]] = None,
+    waiting_callback: Optional[Callable[[float], Optional[Awaitable[None]]]] = None,
 ) -> PairableHostResult:
     """
     Advertise a ``_remotepairing-pairable-host._tcp`` service and accept a single
