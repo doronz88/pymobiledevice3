@@ -19,8 +19,9 @@ from pymobiledevice3.cli.developer.dvt.sysmon.process import (
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.dvt.instruments.sysmontap import Sysmontap
 
-RELAUNCHABLE_BUNDLE_ID = "com.apple.mobilesafari"
-RELAUNCHABLE_PROCESS_NAME = "MobileSafari"
+# An app every device of the platform ships, as (bundle identifier, process name).
+RELAUNCHABLE_APP = ("com.apple.mobilesafari", "MobileSafari")
+RELAUNCHABLE_TVOS_APP = ("com.apple.TVSettings", "TVSettings")
 
 
 @pytest_asyncio.fixture
@@ -93,7 +94,7 @@ async def test_sysmon_process_monitor_process_task_keep_monitoring_streams_by_fi
 
     await sysmon_process_monitor_process_task(
         service_provider,
-        filter_expressions=["name=SpringBoard"],
+        filter_expressions=["name=launchd"],
         duration=1500,
         choose=ProcessSelectionMode.LAST,
         keys=["pid", "name"],
@@ -103,7 +104,7 @@ async def test_sysmon_process_monitor_process_task_keep_monitoring_streams_by_fi
 
     records = [json.loads(line) for line in out.getvalue().splitlines() if line.strip()]
     assert len(records) > 0
-    assert {record["name"] for record in records} == {"SpringBoard"}
+    assert {record["name"] for record in records} == {"launchd"}
 
 
 async def _wait_for_monitored_pid(pid: int, out: StringIO, monitor_task: "asyncio.Task[None]") -> None:
@@ -130,14 +131,16 @@ async def test_sysmon_process_monitor_process_task_keep_monitoring_reacquires_re
     dvt, service_provider
 ) -> None:
     out = StringIO()
+    is_tvos = service_provider.product_type.startswith("AppleTV")
+    bundle_id, process_name = RELAUNCHABLE_TVOS_APP if is_tvos else RELAUNCHABLE_APP
 
     async with ProcessControl(dvt) as process_control:
-        first_pid = await process_control.launch(RELAUNCHABLE_BUNDLE_ID)
+        first_pid = await process_control.launch(bundle_id)
 
         monitor_task = asyncio.create_task(
             sysmon_process_monitor_process_task(
                 service_provider,
-                filter_expressions=[f"name={RELAUNCHABLE_PROCESS_NAME}"],
+                filter_expressions=[f"name={process_name}"],
                 # Upper bound only. The test cancels the task as soon as the relaunched process is observed.
                 duration=120000,
                 choose=ProcessSelectionMode.LAST,
@@ -151,7 +154,7 @@ async def test_sysmon_process_monitor_process_task_keep_monitoring_reacquires_re
             await _wait_for_monitored_pid(first_pid, out, monitor_task)
 
             # launch() kills the running instance first, so the app comes back under a fresh identity.
-            second_pid = await process_control.launch(RELAUNCHABLE_BUNDLE_ID)
+            second_pid = await process_control.launch(bundle_id)
             assert second_pid != first_pid
 
             await _wait_for_monitored_pid(second_pid, out, monitor_task)
