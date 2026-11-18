@@ -601,6 +601,67 @@ pymobiledevice3 syslog live --mobdev2 --udid 00008030-0000000000000000
 An advert that carries no tags (older iOS versions) rules nothing out; such a device is offered the known records
 directly.
 
+To connect to a single device, `create_using_mobdev2()` wraps this: given a hostname it skips the browse and offers
+the known records directly, otherwise it returns the first paired device the browse finds.
+
+```python
+from pymobiledevice3.lockdown import create_using_mobdev2
+from pymobiledevice3.services.afc import AfcService
+
+
+async def main() -> None:
+  async with await create_using_mobdev2('192.168.0.2') as lockdown, AfcService(lockdown) as afc:
+      print(await afc.listdir('/'))
+```
+
+```shell
+pymobiledevice3 afc ls / --mobdev2-host 192.168.0.2
+```
+
+#### The heartbeat
+
+A lockdown connection from the network is not enough to keep a service. The device expects the host to hold a
+`com.apple.mobile.heartbeat` connection, on which it sends `{"Command": "Marco", "Interval": 10}` every ten seconds
+and wants `{"Command": "Polo"}` back. Measured against iOS 27.2 and tvOS 27.2:
+
+| Host does | Device does |
+| --- | --- |
+| starts a service with no heartbeat connection open | closes the service connection at once |
+| opens the heartbeat but never answers | closes the services about 25 seconds later |
+| closes the heartbeat | closes the services about 10 seconds later |
+| closes it and opens a new one right away | still closes the services started under the old one |
+| only talks to lockdownd (`GetValue`, ...) | nothing: no heartbeat is needed |
+
+`com.apple.syslog_relay` on iOS is the one exception seen: it keeps running without a heartbeat. The tunnel service
+(`com.apple.internal.devicecompute.CoreDeviceProxy`) follows the rule like any other.
+
+The verdict is about the *host*, not the connection: when any heartbeat connection of a host closes, the device drops
+the services of all of that host's connections, including those of another process. This is why
+`TcpLockdownClient` opens the heartbeat with the first service it starts and not when it is created: a client that
+only reads values never opens one, so creating and closing it cannot take down the services of another client.
+
+The same service exists over USB (`pymobiledevice3 lockdown heartbeat`), where services do not depend on it.
+
+### Pairing over the network with a PIN
+
+A device does not let a network host read `DevicePublicKey`, so the classic `Pair` request cannot be built. A device
+that can display a PIN, such as an Apple TV, offers another way while its pairing screen is open (Settings > Remotes
+and Devices > Remote App and Devices), which is also the only time it accepts lockdown connections from the network
+of a host it is not paired with. Devices in that mode are found by browsing `_apple-pairable._tcp`.
+
+1. `CUPairingCreate` carries a HomeKit-style Pair-Setup in TLV8: an SRP exchange keyed by the PIN (M1-M4), then the
+   host's identity, encrypted with a key derived from the SRP session key (M5-M6).
+2. Further requests travel encrypted with keys derived from that same session key (ChaCha20-Poly1305, one key per
+   direction): `GetValueCU` reads `DevicePublicKey` and `WiFiAddress`.
+3. With the public key in hand the usual certificate chain is generated and sent in `PairCU`, the encrypted
+   counterpart of `Pair`. The reply carries the device's UDID and escrow bag.
+
+The result is an ordinary lockdown pair record, usable over USB and over the network alike.
+
+```shell
+pymobiledevice3 lockdown pair-wireless
+```
+
 ### RemotePairing over Wi-Fi
 
 The RemotePairing advert identifies the *device*. The key is the device's `altIRK` - see

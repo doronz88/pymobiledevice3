@@ -25,6 +25,18 @@ Read this file when the request touches transport selection, iOS 17+ developer s
   leave Xcode/`devicectl` without the device. Don't use it while the user is working in Xcode.
 - `--rsd`, `--tunnel`, `--userspace`, and `--native` are mutually exclusive. `--remotepairing` may
   be combined only with `--userspace`.
+- `--mobdev2` / `--mobdev2-host HOSTNAME` run classic lockdown services over the network (TCP
+  62078) instead of USB: `--mobdev2` finds the device over bonjour, `--mobdev2-host` connects to a
+  known address. The device must already be paired with this host (over USB, or with
+  `lockdown pair-wireless` for a device that displays a PIN, such as an Apple TV); an Apple TV only
+  answers while Settings > Remotes and Devices > Remote App and Devices is open. Opt-in only, and
+  mutually exclusive with the RSD options. Developer/DVT services still need an RSD tunnel
+  (`--remotepairing` for a device with no USB connection).
+- Over network lockdown, run **one service-holding command per device at a time**. The device keeps
+  a host's services alive by a heartbeat and judges the host as a whole: when one command that held a
+  service finishes, the services of every other network connection to that device are dropped about
+  ten seconds later (including a `tunneld` network tunnel). Commands that only read values
+  (`lockdown info`, `lockdown date`) are safe to run alongside.
 - `--rsd HOST PORT` is for a specific RemoteServiceDiscovery endpoint.
 - `--tunnel ''` or `--tunnel <UDID>` targets a device already exposed by `tunneld`.
 - With multiple devices attached, always pass `--udid <UDID>` (or set
