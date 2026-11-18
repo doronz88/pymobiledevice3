@@ -111,6 +111,118 @@ async def create_using_usbmux(
         return lockdown_client
 ```
 
+## pymobiledevice3.lockdown.create_using_mobdev2
+
+```
+create_using_mobdev2(hostname: Optional[str] = None, udid: Optional[str] = None, pair_records: Optional[Path] = None, timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> TcpLockdownClient
+```
+
+Connect to a paired device over the network (mobdev2) and return a ready-to-use lockdown client.
+
+The network counterpart of `create_using_usbmux`: without a `hostname` the first paired device found over bonjour is used. The device is offered the pair records this host knows and must accept one of them; pair it first over USB or with `LockdownClient.pair_cu`. Close the client (or use it as an async context manager) when done with its services:
+
+.. code-block:: python
+
+```
+async with await create_using_mobdev2("192.168.0.2") as lockdown:
+    async with AfcService(lockdown) as afc:
+        ...
+```
+
+To enumerate the devices on the network use `get_mobdev2_lockdowns`, and to connect with one given pair record, or to a device that is not paired yet, `create_using_tcp`.
+
+Parameters:
+
+| Name           | Type             | Description                                                             | Default                   |
+| -------------- | ---------------- | ----------------------------------------------------------------------- | ------------------------- |
+| `hostname`     | `Optional[str]`  | The device's hostname or IP address, or None to browse bonjour for one. | `None`                    |
+| `udid`         | `Optional[str]`  | Only connect to this device.                                            | `None`                    |
+| `pair_records` | `Optional[Path]` | Pair record file folder to use instead of this host's pair records.     | `None`                    |
+| `timeout`      | `float`          | How long to browse bonjour for, when hostname is omitted.               | `DEFAULT_BONJOUR_TIMEOUT` |
+
+Returns:
+
+| Type                | Description                                  |
+| ------------------- | -------------------------------------------- |
+| `TcpLockdownClient` | A connected, paired network lockdown client. |
+
+Raises:
+
+| Type                     | Description                                                                                     |
+| ------------------------ | ----------------------------------------------------------------------------------------------- |
+| `NoDeviceConnectedError` | Nothing answered at hostname, or bonjour found no paired device.                                |
+| `NotPairedError`         | The device at hostname accepts none of the pair records.                                        |
+| `DeviceNotFoundError`    | The device at hostname is not udid or turns its pair record down, or bonjour did not find udid. |
+
+Source code in `pymobiledevice3/lockdown.py`
+
+```
+async def create_using_mobdev2(
+    hostname: Optional[str] = None,
+    udid: Optional[str] = None,
+    pair_records: Optional[Path] = None,
+    timeout: float = DEFAULT_BONJOUR_TIMEOUT,
+) -> TcpLockdownClient:
+    """Connect to a paired device over the network (mobdev2) and return a ready-to-use lockdown client.
+
+    The network counterpart of `create_using_usbmux`: without a ``hostname`` the first paired device
+    found over bonjour is used. The device is offered the pair records this host knows and must accept
+    one of them; pair it first over USB or with `LockdownClient.pair_cu`. Close the client (or use it as
+    an async context manager) when done with its services:
+
+    .. code-block:: python
+
+        async with await create_using_mobdev2("192.168.0.2") as lockdown:
+            async with AfcService(lockdown) as afc:
+                ...
+
+    To enumerate the devices on the network use `get_mobdev2_lockdowns`, and to connect with one given
+    pair record, or to a device that is not paired yet, `create_using_tcp`.
+
+    :param hostname: The device's hostname or IP address, or ``None`` to browse bonjour for one.
+    :param udid: Only connect to this device.
+    :param pair_records: Pair record file folder to use instead of this host's pair records.
+    :param timeout: How long to browse bonjour for, when ``hostname`` is omitted.
+    :returns: A connected, paired network lockdown client.
+    :raises NoDeviceConnectedError: Nothing answered at ``hostname``, or bonjour found no paired device.
+    :raises NotPairedError: The device at ``hostname`` accepts none of the pair records.
+    :raises DeviceNotFoundError: The device at ``hostname`` is not ``udid`` or turns its pair record down,
+        or bonjour did not find ``udid``.
+    """
+    if hostname is None:
+        lockdowns = get_mobdev2_lockdowns(udid=udid, pair_records=pair_records, only_paired=True, timeout=timeout)
+        try:
+            async for _, lockdown in lockdowns:
+                return lockdown
+        finally:
+            await lockdowns.aclose()
+        if udid is not None:
+            raise DeviceNotFoundError(
+                udid, f"Device not found: bonjour found no paired mobdev2 device with udid {udid}"
+            )
+        raise NoDeviceConnectedError()
+
+    records = await _known_lockdown_pair_records(udid, pair_records)
+    try:
+        lockdown = await _create_mobdev2_lockdown(hostname, records)
+    except (OSError, asyncio.TimeoutError, PyMobileDevice3Exception) as e:
+        raise NoDeviceConnectedError(f"No device is answering at {hostname}: {str(e) or type(e).__name__}") from e
+    if not lockdown.paired:
+        await lockdown.close()
+        if udid is not None and records:
+            # An unpaired device does not say who it is: all that is known is that it turned the record down.
+            raise DeviceNotFoundError(
+                udid,
+                f"Device not found: the device at {hostname} does not accept the pair record of {udid} "
+                "(it is another device, or no longer paired with this host)",
+            )
+        raise NotPairedError()
+    if udid is not None and lockdown.udid != udid:
+        await lockdown.close()
+        raise DeviceNotFoundError(udid, f"Device not found: the device at {hostname} is not {udid}")
+    return lockdown
+```
+
 ## pymobiledevice3.lockdown.LockdownClient
 
 Bases: `ABC`, `LockdownServiceProvider`
@@ -2687,6 +2799,562 @@ async def create_service_connection(
         ssl_context=ssl_context,
         strip_ssl=strip_ssl,
     )
+```
+
+## pymobiledevice3.lockdown.TcpLockdownClient
+
+Bases: `LockdownClient`
+
+Lockdown client that reaches the device over a direct TCP connection (Wi-Fi/network).
+
+Obtain an instance from `create_using_mobdev2` (or `create_using_tcp`). The device is addressed by hostname; service connections are opened with `create_using_tcp`.
+
+A device drops the services of a network host that is not answering its heartbeat, so the client answers it in the background from the first service it starts until it is closed. Keep the client open for as long as its services are in use:
+
+.. code-block:: python
+
+```
+async with await create_using_mobdev2("192.168.0.2") as lockdown:
+    async with AfcService(lockdown) as afc:
+        ...
+```
+
+The device keeps one verdict per host: when any heartbeat connection of this host closes, it drops the services of all of this host's clients within seconds. So use one client per device for services, and close it last. A client that started no service has no heartbeat, and closing it disturbs nothing.
+
+Source code in `pymobiledevice3/lockdown.py`
+
+```
+class TcpLockdownClient(LockdownClient):
+    """Lockdown client that reaches the device over a direct TCP connection (Wi-Fi/network).
+
+    Obtain an instance from `create_using_mobdev2` (or `create_using_tcp`). The device is addressed by
+    hostname; service connections are opened with `create_using_tcp`.
+
+    A device drops the services of a network host that is not answering its heartbeat, so the client
+    answers it in the background from the first service it starts until it is closed. Keep the client
+    open for as long as its services are in use:
+
+    .. code-block:: python
+
+        async with await create_using_mobdev2("192.168.0.2") as lockdown:
+            async with AfcService(lockdown) as afc:
+                ...
+
+    The device keeps one verdict per host: when any heartbeat connection of this host closes, it drops
+    the services of all of this host's clients within seconds. So use one client per device for services,
+    and close it last. A client that started no service has no heartbeat, and closing it disturbs nothing.
+    """
+
+    HEARTBEAT_SERVICE_NAME = "com.apple.mobile.heartbeat"
+
+    def __init__(
+        self,
+        service: ServiceConnection,
+        host_id: str,
+        hostname: str,
+        identifier: Optional[str] = None,
+        label: str = DEFAULT_LABEL,
+        system_buid: str = SYSTEM_BUID,
+        pair_record: Optional[dict[str, Any]] = None,
+        pairing_records_cache_folder: Optional[Path] = None,
+        port: int = SERVICE_PORT,
+        keep_alive: bool = True,
+    ):
+        """Initialize a new TcpLockdownClient instance.
+
+        Normally constructed by `create_using_tcp` rather than directly. Note that
+        `identifier` is overwritten with ``hostname``.
+
+        :param service: An already-established lockdownd connection (opened over TCP).
+        :param host_id: The HostID identifying this host to the device.
+        :param hostname: The device's hostname or IP address; used to open further connections.
+        :param identifier: Device identifier used to locate the matching pair record (overridden by
+            ``hostname``).
+        :param label: User-agent label included in every request sent to lockdownd.
+        :param system_buid: The host's SystemBUID, included when starting a session.
+        :param pair_record: A pre-loaded pair record to use instead of looking one up.
+        :param pairing_records_cache_folder: Directory used to search for and persist pair records.
+        :param port: TCP port of the lockdownd service on the device.
+        :param keep_alive: Enable TCP keep-alive so a lost connection is detected.
+        """
+        super().__init__(
+            service, host_id, identifier, label, system_buid, pair_record, pairing_records_cache_folder, port
+        )
+        self._keep_alive = keep_alive
+        self.hostname = hostname
+        self.identifier = hostname
+        self._heartbeat: Optional[asyncio.Task[None]] = None
+        self._heartbeat_service: Optional[ServiceConnection] = None
+        self._heartbeat_lock: Optional[asyncio.Lock] = None
+
+    async def pair(self, timeout: Optional[float] = None, private_key: Optional[RSAPrivateKey] = None) -> None:
+        """Pair this host with the device, as `LockdownClient.pair` does.
+
+        A device does not hand its public key to a network host, so this only works where it makes an
+        exception; pair over USB, or with `pair_cu` on a device that displays a PIN.
+
+        :param timeout: Maximum time in seconds to wait for the user to accept the pairing dialog. A value of
+            0 fails immediately if the dialog is pending; ``None`` waits indefinitely.
+        :param private_key: RSA private key to use when generating the pairing certificate chain; a new key
+            is generated if omitted.
+        :raises PairingError: The device does not allow pairing over the network.
+        :raises PairingDialogResponsePendingError: The user did not accept the pairing dialog in time.
+        :raises UserDeniedPairingError: The user declined the pairing request.
+        """
+        try:
+            await super().pair(timeout=timeout, private_key=private_key)
+        except GetProhibitedError as e:
+            raise PairingError(
+                f"{self.identifier} does not allow pairing over the network: pair with it over USB, or with a "
+                "PIN (`lockdown pair-wireless`) if it displays one"
+            ) from e
+
+    async def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> dict[str, Any]:
+        """Ask lockdownd to start a named service and return its connection attributes.
+
+        The heartbeat is opened first, unless one is already being answered. See
+        `LockdownClient.get_service_connection_attributes`.
+
+        :param name: The lockdownd service name to start (e.g. ``"com.apple.afc"``).
+        :param include_escrow_bag: When True, include the pair record's escrow bag in the request (required by
+            some services to operate while the device is locked).
+        :returns: The service connection attributes (including ``Port`` and possibly ``EnableServiceSSL``).
+        :raises NotPairedError: The client is not paired with the device.
+        :raises PasswordRequiredError: The device is passcode-protected and must be unlocked first.
+        :raises StartServiceError: lockdownd refused to start the service.
+        """
+        if name != self.HEARTBEAT_SERVICE_NAME:
+            await self._ensure_heartbeat()
+        return await super().get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
+
+    async def close(self) -> None:
+        """Stop answering the heartbeat and close the underlying lockdownd connection.
+
+        The device drops the services started through this client within seconds of this.
+        Called automatically when the client is used as an async context manager.
+        """
+        try:
+            await self._close_heartbeat()
+        finally:
+            await super().close()
+
+    async def _ensure_heartbeat(self) -> None:
+        """Open the heartbeat connection unless one is being answered; a lost one is reopened.
+
+        A heartbeat that cannot be started is not an error here: whatever prevents it is left for the
+        service the caller starts next to report.
+        """
+        if not self.paired:
+            return
+        if self._heartbeat_lock is None:
+            self._heartbeat_lock = asyncio.Lock()
+        async with self._heartbeat_lock:
+            if self._heartbeat is not None and not self._heartbeat.done():
+                return
+            await self._close_heartbeat()
+            try:
+                service = await self.start_lockdown_service(self.HEARTBEAT_SERVICE_NAME)
+            except (PyMobileDevice3Exception, OSError) as e:
+                self.logger.debug("no heartbeat with %s: %r", self.identifier, e)
+                return
+            self._heartbeat_service = service
+            self._heartbeat = asyncio.create_task(self._answer_heartbeat(service))
+
+    async def _close_heartbeat(self) -> None:
+        """Stop answering the heartbeat, if it is, and close its connection."""
+        heartbeat, service = self._heartbeat, self._heartbeat_service
+        self._heartbeat = self._heartbeat_service = None
+        try:
+            if heartbeat is not None:
+                heartbeat.cancel()
+                await asyncio.wait({heartbeat})
+        finally:
+            if service is not None:
+                # The device never completes the TLS shutdown of this connection; don't wait for it.
+                await service.close(timeout=0)
+
+    async def _answer_heartbeat(self, service: ServiceConnection) -> None:
+        """Reply ``Polo`` to every ``Marco`` the device sends, until cancelled or the connection is lost."""
+        try:
+            while True:
+                self.logger.debug(await service.recv_plist())
+                await service.send_plist({"Command": "Polo"})
+        except (PyMobileDevice3Exception, OSError, asyncio.IncompleteReadError) as e:
+            # The device ends the services started under this heartbeat within seconds, even when a new
+            # one is opened right away; say why they are about to fail.
+            self.logger.warning(
+                "lost the heartbeat with %s, the device will drop the services started so far: %r", self.identifier, e
+            )
+
+    async def create_service_connection(
+        self, port: int, ssl_context: Optional[SSLContext] = None, strip_ssl: bool = False
+    ) -> ServiceConnection:
+        """Open a new TCP connection to the device on the given port.
+
+        :param port: The device-side port to connect to.
+        :param ssl_context: Negotiate TLS with this context before any service traffic.
+        :param strip_ssl: Carry the traffic in plaintext once the TLS handshake completes.
+        :returns: A connected `ServiceConnection` to this client's hostname, honoring its keep-alive
+            setting.
+        """
+        return await ServiceConnection.create_using_tcp(
+            self.hostname, port, keep_alive=self._keep_alive, ssl_context=ssl_context, strip_ssl=strip_ssl
+        )
+```
+
+### pair
+
+```
+pair(timeout: Optional[float] = None, private_key: Optional[RSAPrivateKey] = None) -> None
+```
+
+Pair this host with the device, as `LockdownClient.pair` does.
+
+A device does not hand its public key to a network host, so this only works where it makes an exception; pair over USB, or with `pair_cu` on a device that displays a PIN.
+
+Parameters:
+
+| Name          | Type                      | Description                                                                                                                                                  | Default |
+| ------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `timeout`     | `Optional[float]`         | Maximum time in seconds to wait for the user to accept the pairing dialog. A value of 0 fails immediately if the dialog is pending; None waits indefinitely. | `None`  |
+| `private_key` | `Optional[RSAPrivateKey]` | RSA private key to use when generating the pairing certificate chain; a new key is generated if omitted.                                                     | `None`  |
+
+Raises:
+
+| Type                                | Description                                         |
+| ----------------------------------- | --------------------------------------------------- |
+| `PairingError`                      | The device does not allow pairing over the network. |
+| `PairingDialogResponsePendingError` | The user did not accept the pairing dialog in time. |
+| `UserDeniedPairingError`            | The user declined the pairing request.              |
+
+Source code in `pymobiledevice3/lockdown.py`
+
+```
+async def pair(self, timeout: Optional[float] = None, private_key: Optional[RSAPrivateKey] = None) -> None:
+    """Pair this host with the device, as `LockdownClient.pair` does.
+
+    A device does not hand its public key to a network host, so this only works where it makes an
+    exception; pair over USB, or with `pair_cu` on a device that displays a PIN.
+
+    :param timeout: Maximum time in seconds to wait for the user to accept the pairing dialog. A value of
+        0 fails immediately if the dialog is pending; ``None`` waits indefinitely.
+    :param private_key: RSA private key to use when generating the pairing certificate chain; a new key
+        is generated if omitted.
+    :raises PairingError: The device does not allow pairing over the network.
+    :raises PairingDialogResponsePendingError: The user did not accept the pairing dialog in time.
+    :raises UserDeniedPairingError: The user declined the pairing request.
+    """
+    try:
+        await super().pair(timeout=timeout, private_key=private_key)
+    except GetProhibitedError as e:
+        raise PairingError(
+            f"{self.identifier} does not allow pairing over the network: pair with it over USB, or with a "
+            "PIN (`lockdown pair-wireless`) if it displays one"
+        ) from e
+```
+
+### get_service_connection_attributes
+
+```
+get_service_connection_attributes(name: str, include_escrow_bag: bool = False) -> dict[str, Any]
+```
+
+Ask lockdownd to start a named service and return its connection attributes.
+
+The heartbeat is opened first, unless one is already being answered. See `LockdownClient.get_service_connection_attributes`.
+
+Parameters:
+
+| Name                 | Type   | Description                                                                                                                       | Default    |
+| -------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `name`               | `str`  | The lockdownd service name to start (e.g. "com.apple.afc").                                                                       | *required* |
+| `include_escrow_bag` | `bool` | When True, include the pair record's escrow bag in the request (required by some services to operate while the device is locked). | `False`    |
+
+Returns:
+
+| Type             | Description                                                                       |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `dict[str, Any]` | The service connection attributes (including Port and possibly EnableServiceSSL). |
+
+Raises:
+
+| Type                    | Description                                                  |
+| ----------------------- | ------------------------------------------------------------ |
+| `NotPairedError`        | The client is not paired with the device.                    |
+| `PasswordRequiredError` | The device is passcode-protected and must be unlocked first. |
+| `StartServiceError`     | lockdownd refused to start the service.                      |
+
+Source code in `pymobiledevice3/lockdown.py`
+
+```
+async def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> dict[str, Any]:
+    """Ask lockdownd to start a named service and return its connection attributes.
+
+    The heartbeat is opened first, unless one is already being answered. See
+    `LockdownClient.get_service_connection_attributes`.
+
+    :param name: The lockdownd service name to start (e.g. ``"com.apple.afc"``).
+    :param include_escrow_bag: When True, include the pair record's escrow bag in the request (required by
+        some services to operate while the device is locked).
+    :returns: The service connection attributes (including ``Port`` and possibly ``EnableServiceSSL``).
+    :raises NotPairedError: The client is not paired with the device.
+    :raises PasswordRequiredError: The device is passcode-protected and must be unlocked first.
+    :raises StartServiceError: lockdownd refused to start the service.
+    """
+    if name != self.HEARTBEAT_SERVICE_NAME:
+        await self._ensure_heartbeat()
+    return await super().get_service_connection_attributes(name, include_escrow_bag=include_escrow_bag)
+```
+
+### close
+
+```
+close() -> None
+```
+
+Stop answering the heartbeat and close the underlying lockdownd connection.
+
+The device drops the services started through this client within seconds of this. Called automatically when the client is used as an async context manager.
+
+Source code in `pymobiledevice3/lockdown.py`
+
+```
+async def close(self) -> None:
+    """Stop answering the heartbeat and close the underlying lockdownd connection.
+
+    The device drops the services started through this client within seconds of this.
+    Called automatically when the client is used as an async context manager.
+    """
+    try:
+        await self._close_heartbeat()
+    finally:
+        await super().close()
+```
+
+### create_service_connection
+
+```
+create_service_connection(port: int, ssl_context: Optional[SSLContext] = None, strip_ssl: bool = False) -> ServiceConnection
+```
+
+Open a new TCP connection to the device on the given port.
+
+Parameters:
+
+| Name          | Type                   | Description                                                      | Default    |
+| ------------- | ---------------------- | ---------------------------------------------------------------- | ---------- |
+| `port`        | `int`                  | The device-side port to connect to.                              | *required* |
+| `ssl_context` | `Optional[SSLContext]` | Negotiate TLS with this context before any service traffic.      | `None`     |
+| `strip_ssl`   | `bool`                 | Carry the traffic in plaintext once the TLS handshake completes. | `False`    |
+
+Returns:
+
+| Type                | Description                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| `ServiceConnection` | A connected ServiceConnection to this client's hostname, honoring its keep-alive setting. |
+
+Source code in `pymobiledevice3/lockdown.py`
+
+```
+async def create_service_connection(
+    self, port: int, ssl_context: Optional[SSLContext] = None, strip_ssl: bool = False
+) -> ServiceConnection:
+    """Open a new TCP connection to the device on the given port.
+
+    :param port: The device-side port to connect to.
+    :param ssl_context: Negotiate TLS with this context before any service traffic.
+    :param strip_ssl: Carry the traffic in plaintext once the TLS handshake completes.
+    :returns: A connected `ServiceConnection` to this client's hostname, honoring its keep-alive
+        setting.
+    """
+    return await ServiceConnection.create_using_tcp(
+        self.hostname, port, keep_alive=self._keep_alive, ssl_context=ssl_context, strip_ssl=strip_ssl
+    )
+```
+
+### Lower-level network entry points
+
+`create_using_mobdev2` is the one to reach for. These two are what it is built from: enumerating every device on the network, and connecting with one given pair record or to a device that is not paired yet.
+
+## pymobiledevice3.lockdown.get_mobdev2_lockdowns
+
+```
+get_mobdev2_lockdowns(udid: Optional[str] = None, pair_records: Optional[Path] = None, only_paired: bool = False, timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> AsyncGenerator[tuple[str, TcpLockdownClient], None]
+```
+
+Browse bonjour for mobdev2 devices and yield a connected lockdown client for each.
+
+Each device is offered the known pair records it may accept, and is yielded once even when it answers on several addresses. The caller owns the yielded clients and closes them. To connect to a single device, use `create_using_mobdev2`.
+
+Parameters:
+
+| Name           | Type             | Description                                                                    | Default                   |
+| -------------- | ---------------- | ------------------------------------------------------------------------------ | ------------------------- |
+| `udid`         | `Optional[str]`  | Only yield this device; nothing is browsed when no pair record of it is known. | `None`                    |
+| `pair_records` | `Optional[Path]` | Pair record file folder to use instead of this host's pair records.            | `None`                    |
+| `only_paired`  | `bool`           | Skip devices that accept none of the pair records.                             | `False`                   |
+| `timeout`      | `float`          | How long to browse bonjour for.                                                | `DEFAULT_BONJOUR_TIMEOUT` |
+
+Returns:
+
+| Type                                                  | Description                                    |
+| ----------------------------------------------------- | ---------------------------------------------- |
+| `AsyncGenerator[tuple[str, TcpLockdownClient], None]` | An async generator of (address, client) pairs. |
+
+Source code in `pymobiledevice3/lockdown.py`
+
+```
+async def get_mobdev2_lockdowns(
+    udid: Optional[str] = None,
+    pair_records: Optional[Path] = None,
+    only_paired: bool = False,
+    timeout: float = DEFAULT_BONJOUR_TIMEOUT,
+) -> AsyncGenerator[tuple[str, TcpLockdownClient], None]:
+    """Browse bonjour for mobdev2 devices and yield a connected lockdown client for each.
+
+    Each device is offered the known pair records it may accept, and is yielded once even when it
+    answers on several addresses. The caller owns the yielded clients and closes them. To connect to a
+    single device, use `create_using_mobdev2`.
+
+    :param udid: Only yield this device; nothing is browsed when no pair record of it is known.
+    :param pair_records: Pair record file folder to use instead of this host's pair records.
+    :param only_paired: Skip devices that accept none of the pair records.
+    :param timeout: How long to browse bonjour for.
+    :returns: An async generator of ``(address, client)`` pairs.
+    """
+    records = await _known_lockdown_pair_records(udid, pair_records)
+    if udid is not None and not records:
+        # Nothing the requested device would accept: don't sit through a browse.
+        return
+    records_by_mac = {record["WiFiMACAddress"]: record for record in records if "WiFiMACAddress" in record}
+
+    async for answer in iter_browse_mobdev2(timeout=timeout):
+        if "@" not in answer.instance:
+            continue
+        wifi_mac_address = answer.instance.split("@", 1)[0]
+        # A device using a private Wi-Fi address advertises that randomized MAC rather than the
+        # WiFiMACAddress of its pair record, so a device we cannot name is offered the records of the
+        # hosts it says it is paired with; it accepts only its own.
+        record = records_by_mac.get(wifi_mac_address)
+        candidates = _mobdev2_pair_record_candidates(answer, [record] if record is not None else records)
+        if not candidates and (only_paired or udid is not None):
+            # Not paired with any of our hosts: not a device the caller asked for.
+            continue
+
+        for address in answer.addresses:
+            try:
+                lockdown = await _create_mobdev2_lockdown(address.full_ip, candidates)
+            except Exception:
+                # not reachable at this address
+                continue
+            if (only_paired and not lockdown.paired) or (udid is not None and lockdown.udid != udid):
+                await lockdown.close()
+                continue
+            yield address.full_ip, lockdown
+            # One client per device: its other addresses lead to the same place.
+            break
+```
+
+## pymobiledevice3.lockdown.create_using_tcp
+
+```
+create_using_tcp(hostname: str, identifier: Optional[str] = None, label: str = DEFAULT_LABEL, autopair: bool = True, pair_timeout: Optional[float] = None, local_hostname: Optional[str] = None, pair_record: Optional[dict[str, Any]] = None, pairing_records_cache_folder: Optional[Path] = None, port: int = SERVICE_PORT, keep_alive: bool = False) -> TcpLockdownClient
+```
+
+Connect to a device over TCP (Wi-Fi/network) and return a ready-to-use lockdown client.
+
+Opens a lockdownd connection to `hostname`, queries the device's values, and (when `autopair` is set) validates an existing pairing or performs a new one. The connection is closed automatically if setup fails.
+
+The pair record is the one given, or the one stored under `identifier`. To reach an already paired device by its address alone, use `create_using_mobdev2`, which finds the record the device accepts.
+
+A device does not pair with a network host this way, so for one that is not paired pass `autopair=False`: the client is then unpaired (`paired` is False) and can still read the values lockdownd gives any host, such as `DeviceName` and `ProductType`, or pair with `LockdownClient.pair_cu`.
+
+Parameters:
+
+| Name                           | Type                       | Description                                                                | Default         |
+| ------------------------------ | -------------------------- | -------------------------------------------------------------------------- | --------------- |
+| `hostname`                     | `str`                      | The target device's hostname or IP address.                                | *required*      |
+| `identifier`                   | `Optional[str]`            | Device identifier used to locate the matching pair record.                 | `None`          |
+| `label`                        | `str`                      | User-agent label included in every request sent to lockdownd.              | `DEFAULT_LABEL` |
+| `autopair`                     | `bool`                     | When True, pair with the device (blocking) if it is not already paired.    | `True`          |
+| `pair_timeout`                 | `Optional[float]`          | Maximum time in seconds to wait for the user to accept the pairing dialog. | `None`          |
+| `local_hostname`               | `Optional[str]`            | Seed used to generate the HostID.                                          | `None`          |
+| `pair_record`                  | `Optional[dict[str, Any]]` | A pre-loaded pair record to use instead of looking one up.                 | `None`          |
+| `pairing_records_cache_folder` | `Optional[Path]`           | Directory used to search for and persist pair records.                     | `None`          |
+| `port`                         | `int`                      | TCP port of the lockdownd service on the device.                           | `SERVICE_PORT`  |
+| `keep_alive`                   | `bool`                     | Enable TCP keep-alive so a lost connection is detected.                    | `False`         |
+
+Returns:
+
+| Type                | Description                      |
+| ------------------- | -------------------------------- |
+| `TcpLockdownClient` | A connected TCP lockdown client. |
+
+Raises:
+
+| Type           | Description                                                                      |
+| -------------- | -------------------------------------------------------------------------------- |
+| `PairingError` | autopair is set and the device is not paired: it does not pair over the network. |
+
+Source code in `pymobiledevice3/lockdown.py`
+
+```
+async def create_using_tcp(
+    hostname: str,
+    identifier: Optional[str] = None,
+    label: str = DEFAULT_LABEL,
+    autopair: bool = True,
+    pair_timeout: Optional[float] = None,
+    local_hostname: Optional[str] = None,
+    pair_record: Optional[dict[str, Any]] = None,
+    pairing_records_cache_folder: Optional[Path] = None,
+    port: int = SERVICE_PORT,
+    keep_alive: bool = False,
+) -> TcpLockdownClient:
+    """Connect to a device over TCP (Wi-Fi/network) and return a ready-to-use lockdown client.
+
+    Opens a lockdownd connection to ``hostname``, queries the device's values, and (when ``autopair`` is set)
+    validates an existing pairing or performs a new one. The connection is closed automatically if setup
+    fails.
+
+    The pair record is the one given, or the one stored under ``identifier``. To reach an already paired
+    device by its address alone, use `create_using_mobdev2`, which finds the record the device accepts.
+
+    A device does not pair with a network host this way, so for one that is not paired pass
+    ``autopair=False``: the client is then unpaired (``paired`` is False) and can still read the values
+    lockdownd gives any host, such as ``DeviceName`` and ``ProductType``, or pair with `LockdownClient.pair_cu`.
+
+    :param hostname: The target device's hostname or IP address.
+    :param identifier: Device identifier used to locate the matching pair record.
+    :param label: User-agent label included in every request sent to lockdownd.
+    :param autopair: When True, pair with the device (blocking) if it is not already paired.
+    :param pair_timeout: Maximum time in seconds to wait for the user to accept the pairing dialog.
+    :param local_hostname: Seed used to generate the HostID.
+    :param pair_record: A pre-loaded pair record to use instead of looking one up.
+    :param pairing_records_cache_folder: Directory used to search for and persist pair records.
+    :param port: TCP port of the lockdownd service on the device.
+    :param keep_alive: Enable TCP keep-alive so a lost connection is detected.
+    :returns: A connected TCP lockdown client.
+    :raises PairingError: ``autopair`` is set and the device is not paired: it does not pair over the network.
+    """
+    service = await ServiceConnection.create_using_tcp(hostname, port, keep_alive=keep_alive)
+    try:
+        return await TcpLockdownClient.create(
+            service,
+            identifier=identifier,
+            label=label,
+            local_hostname=local_hostname,
+            pair_record=pair_record,
+            pairing_records_cache_folder=pairing_records_cache_folder,
+            pair_timeout=pair_timeout,
+            autopair=autopair,
+            port=port,
+            hostname=hostname,
+            keep_alive=keep_alive,
+        )
+    except BaseException:
+        await service.close()
+        raise
 ```
 
 ## RemoteServiceDiscovery (iOS 17+ tunnel)
