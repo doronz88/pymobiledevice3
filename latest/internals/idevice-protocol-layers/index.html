@@ -2407,6 +2407,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Lockdown over Wi-Fi (mobdev2)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-heartbeat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The heartbeat
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pairing-over-the-network-with-a-pin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pairing over the network with a PIN
+      
+    </span>
+  </a>
+  
 </li>
         
           <li class="md-nav__item">
@@ -2810,6 +2838,34 @@
     <span class="md-ellipsis">
       
         Lockdown over Wi-Fi (mobdev2)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lockdown over Wi-Fi (mobdev2)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-heartbeat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The heartbeat
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pairing-over-the-network-with-a-pin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pairing over the network with a PIN
       
     </span>
   </a>
@@ -3373,13 +3429,82 @@ folder or from <code>usbmuxd</code>), skips the browse entirely when there is no
 </code></pre></div>
 <p>An advert that carries no tags (older iOS versions) rules nothing out; such a device is offered the known records
 directly.</p>
+<p>To connect to a single device, <code>create_using_mobdev2()</code> wraps this: given a hostname it skips the browse and offers
+the known records directly, otherwise it returns the first paired device the browse finds.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.lockdown</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_using_mobdev2</span>
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">pymobiledevice3.services.afc</span><span class="w"> </span><span class="kn">import</span> <span class="n">AfcService</span>
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>
+<a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a>
+<a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-34-6" name="__codelineno-34-6" href="#__codelineno-34-6"></a>  <span class="k">async</span> <span class="k">with</span> <span class="k">await</span> <span class="n">create_using_mobdev2</span><span class="p">(</span><span class="s1">'192.168.0.2'</span><span class="p">)</span> <span class="k">as</span> <span class="n">lockdown</span><span class="p">,</span> <span class="n">AfcService</span><span class="p">(</span><span class="n">lockdown</span><span class="p">)</span> <span class="k">as</span> <span class="n">afc</span><span class="p">:</span>
+<a id="__codelineno-34-7" name="__codelineno-34-7" href="#__codelineno-34-7"></a>      <span class="nb">print</span><span class="p">(</span><span class="k">await</span> <span class="n">afc</span><span class="o">.</span><span class="n">listdir</span><span class="p">(</span><span class="s1">'/'</span><span class="p">))</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>pymobiledevice3<span class="w"> </span>afc<span class="w"> </span>ls<span class="w"> </span>/<span class="w"> </span>--mobdev2-host<span class="w"> </span><span class="m">192</span>.168.0.2
+</code></pre></div>
+<h4 id="the-heartbeat">The heartbeat<a class="headerlink" href="#the-heartbeat" title="Permanent link">&para;</a></h4>
+<p>A lockdown connection from the network is not enough to keep a service. The device expects the host to hold a
+<code>com.apple.mobile.heartbeat</code> connection, on which it sends <code>{"Command": "Marco", "Interval": 10}</code> every ten seconds
+and wants <code>{"Command": "Polo"}</code> back. Measured against iOS 27.2 and tvOS 27.2:</p>
+<table>
+<thead>
+<tr>
+<th>Host does</th>
+<th>Device does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>starts a service with no heartbeat connection open</td>
+<td>closes the service connection at once</td>
+</tr>
+<tr>
+<td>opens the heartbeat but never answers</td>
+<td>closes the services about 25 seconds later</td>
+</tr>
+<tr>
+<td>closes the heartbeat</td>
+<td>closes the services about 10 seconds later</td>
+</tr>
+<tr>
+<td>closes it and opens a new one right away</td>
+<td>still closes the services started under the old one</td>
+</tr>
+<tr>
+<td>only talks to lockdownd (<code>GetValue</code>, ...)</td>
+<td>nothing: no heartbeat is needed</td>
+</tr>
+</tbody>
+</table>
+<p><code>com.apple.syslog_relay</code> on iOS is the one exception seen: it keeps running without a heartbeat. The tunnel service
+(<code>com.apple.internal.devicecompute.CoreDeviceProxy</code>) follows the rule like any other.</p>
+<p>The verdict is about the <em>host</em>, not the connection: when any heartbeat connection of a host closes, the device drops
+the services of all of that host's connections, including those of another process. This is why
+<code>TcpLockdownClient</code> opens the heartbeat with the first service it starts and not when it is created: a client that
+only reads values never opens one, so creating and closing it cannot take down the services of another client.</p>
+<p>The same service exists over USB (<code>pymobiledevice3 lockdown heartbeat</code>), where services do not depend on it.</p>
+<h3 id="pairing-over-the-network-with-a-pin">Pairing over the network with a PIN<a class="headerlink" href="#pairing-over-the-network-with-a-pin" title="Permanent link">&para;</a></h3>
+<p>A device does not let a network host read <code>DevicePublicKey</code>, so the classic <code>Pair</code> request cannot be built. A device
+that can display a PIN, such as an Apple TV, offers another way while its pairing screen is open (Settings &gt; Remotes
+and Devices &gt; Remote App and Devices), which is also the only time it accepts lockdown connections from the network
+of a host it is not paired with. Devices in that mode are found by browsing <code>_apple-pairable._tcp</code>.</p>
+<ol>
+<li><code>CUPairingCreate</code> carries a HomeKit-style Pair-Setup in TLV8: an SRP exchange keyed by the PIN (M1-M4), then the
+   host's identity, encrypted with a key derived from the SRP session key (M5-M6).</li>
+<li>Further requests travel encrypted with keys derived from that same session key (ChaCha20-Poly1305, one key per
+   direction): <code>GetValueCU</code> reads <code>DevicePublicKey</code> and <code>WiFiAddress</code>.</li>
+<li>With the public key in hand the usual certificate chain is generated and sent in <code>PairCU</code>, the encrypted
+   counterpart of <code>Pair</code>. The reply carries the device's UDID and escrow bag.</li>
+</ol>
+<p>The result is an ordinary lockdown pair record, usable over USB and over the network alike.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>pair-wireless
+</code></pre></div>
 <h3 id="remotepairing-over-wi-fi">RemotePairing over Wi-Fi<a class="headerlink" href="#remotepairing-over-wi-fi" title="Permanent link">&para;</a></h3>
 <p>The RemotePairing advert identifies the <em>device</em>. The key is the device's <code>altIRK</code> - see
 <a href="../remotexpc/#wi-fi">RemoteXPC: Wi-Fi</a> for where it comes from and how the tag is computed. Because it is a device
 secret handed over during pairing, a RemotePairing record created before pymobiledevice3 started storing it cannot
 be matched over Wi-Fi (it keeps working over USB). A one-time warning names the stale file; delete it and pair again:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="c1"># Promptless over USB - no Trust dialog</span>
-<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>remotepairing<span class="w"> </span>--pair
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="c1"># Promptless over USB - no Trust dialog</span>
+<a id="__codelineno-37-2" name="__codelineno-37-2" href="#__codelineno-37-2"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>remotepairing<span class="w"> </span>--pair
 </code></pre></div>
 <h3 id="the-tag-is-a-hint-not-authentication">The tag is a hint, not authentication<a class="headerlink" href="#the-tag-is-a-hint-not-authentication" title="Permanent link">&para;</a></h3>
 <p>A 6 or 8 byte tag only decides <em>who to talk to</em>. Trust is still established afterwards by the real handshake:

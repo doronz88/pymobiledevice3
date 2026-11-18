@@ -27,7 +27,7 @@ async def my_command(service_provider: ServiceProviderDep) -> None:
 
 Why this pattern:
 
-- `ServiceProviderDep` adds the standard device options (`--udid`, `--rsd`, `--tunnel`, `--userspace`, `--native`, `--mobdev2`, `--usbmux`) and resolves them into a connected provider: a lockdown client over USB by default, or an RSD when a tunnel option is given.
+- `ServiceProviderDep` adds the standard device options (`--udid`, `--rsd`, `--tunnel`, `--userspace`, `--native`, `--mobdev2`, `--mobdev2-host`, `--usbmux`) and resolves them into a connected provider: a lockdown client over USB by default, or an RSD when a tunnel option is given.
 - Use `RSDServiceProviderDep` instead when the command only works over an iOS 17+ RSD tunnel; with no transport flag it establishes a no-root tunnel automatically.
 - `@async_command` runs the coroutine on the CLI's event loop and turns Ctrl-C into a clean exit.
 - Never import `click` in package code; stay on Typer's public API (`typer.Option`, `typer.Argument`, `typer.BadParameter`, `typer.Exit`, ...).

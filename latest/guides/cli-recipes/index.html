@@ -3074,6 +3074,16 @@ itself, with no flag and no <code>sudo</code> (<a href="../ios17-tunnels/">iOS 1
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="c1"># Forward a host TCP port to a port on the device, over USB</span>
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>pymobiledevice3<span class="w"> </span>usbmux<span class="w"> </span>forward<span class="w"> </span>HOST_PORT<span class="w"> </span>DEVICE_PORT
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="c1"># Pair with an Apple TV over the network, typing in the PIN it displays. Open Settings &gt; Remotes and</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="c1"># Devices &gt; Remote App and Devices on it first: it only takes lockdown connections from the network</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1"># while that screen is open. It is found over bonjour; pass its hostname or IP address to skip that</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>pymobiledevice3<span class="w"> </span>lockdown<span class="w"> </span>pair-wireless
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="c1"># Run a command against a device paired this way (or any device with Wi-Fi connections enabled),</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="c1"># found over bonjour or addressed directly</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>pymobiledevice3<span class="w"> </span>syslog<span class="w"> </span>live<span class="w"> </span>--mobdev2
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>pymobiledevice3<span class="w"> </span>syslog<span class="w"> </span>live<span class="w"> </span>--mobdev2-host<span class="w"> </span>HOSTNAME
 </code></pre></div>
 <h2 id="logging-and-diagnostics">Logging and Diagnostics<a class="headerlink" href="#logging-and-diagnostics" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># View all syslog lines (including debug)</span>

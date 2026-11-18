@@ -2854,13 +2854,26 @@ streams over the USB link.</p>
 </ul>
 <h2 id="wi-fi-lockdown-mobdev2">Wi-Fi lockdown (mobdev2)<a class="headerlink" href="#wi-fi-lockdown-mobdev2" title="Permanent link">&para;</a></h2>
 <p>The same lockdown protocol, carried over the LAN to port 62078 (<code>--mobdev2</code> /
-<code>get_mobdev2_lockdowns</code>). Devices are discovered over bonjour.</p>
+<code>get_mobdev2_lockdowns</code>). Devices are discovered over bonjour, or addressed directly with
+<code>--mobdev2-host HOSTNAME</code> when the address is already known. From Python, <code>create_using_mobdev2</code>
+does both: <code>async with await create_using_mobdev2("192.168.0.2") as lockdown:</code> (omit the hostname to
+take the first paired device found over bonjour).</p>
 <pre class="mermaid"><code>flowchart LR
     cli["pymobiledevice3"] --&gt;|"TCP :62078 over Wi-Fi"| dev["iOS device&lt;br/&gt;lockdownd + services"]</code></pre>
 <ul>
 <li><strong>Root:</strong> not required.</li>
 <li><strong>Disconnect:</strong> a Wi-Fi link can die silently, so these connections run TCP keep-alive
   (idle 3 s / interval 3 s) — a vanished device errors out within seconds.</li>
+<li><strong>Heartbeat:</strong> a device drops the services of a network host that is not answering
+  <code>com.apple.mobile.heartbeat</code> (iOS and tvOS 27.2 do so within seconds, for most services). The network
+  lockdown client answers it in the background from the first service it starts until it is closed,
+  so keep it open for as long as its services are in use.</li>
+<li><strong>One client per device:</strong> the device judges the host, not the connection. Closing a client that
+  started services closes its heartbeat, and the device then drops the services of every other client
+  this host has on it, in this process or another. A client that only reads values has no heartbeat
+  and can come and go freely.</li>
+<li><strong>USB only:</strong> <code>pcap</code> is not available here. <code>com.apple.pcapd</code> is the one service lockdownd only
+  starts for a USB host.</li>
 </ul>
 <h2 id="kernel-tunnel-start-tunnel-tunneld">Kernel tunnel (<code>start-tunnel</code> / <code>tunneld</code>)<a class="headerlink" href="#kernel-tunnel-start-tunnel-tunneld" title="Permanent link">&para;</a></h2>
 <p>iOS 17+ developer services live behind an encrypted tunnel to an RSD endpoint. The kernel
