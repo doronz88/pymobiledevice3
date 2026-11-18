@@ -1405,6 +1405,28 @@ class TcpLockdownClient(LockdownClient):
         self._heartbeat_service: Optional[ServiceConnection] = None
         self._heartbeat_lock: Optional[asyncio.Lock] = None
 
+    async def pair(self, timeout: Optional[float] = None, private_key: Optional[RSAPrivateKey] = None) -> None:
+        """Pair this host with the device, as `LockdownClient.pair` does.
+
+        A device does not hand its public key to a network host, so this only works where it makes an
+        exception; pair over USB, or with `pair_cu` on a device that displays a PIN.
+
+        :param timeout: Maximum time in seconds to wait for the user to accept the pairing dialog. A value of
+            0 fails immediately if the dialog is pending; ``None`` waits indefinitely.
+        :param private_key: RSA private key to use when generating the pairing certificate chain; a new key
+            is generated if omitted.
+        :raises PairingError: The device does not allow pairing over the network.
+        :raises PairingDialogResponsePendingError: The user did not accept the pairing dialog in time.
+        :raises UserDeniedPairingError: The user declined the pairing request.
+        """
+        try:
+            await super().pair(timeout=timeout, private_key=private_key)
+        except GetProhibitedError as e:
+            raise PairingError(
+                f"{self.identifier} does not allow pairing over the network: pair with it over USB, or with a "
+                "PIN (`lockdown pair-wireless`) if it displays one"
+            ) from e
+
     async def get_service_connection_attributes(self, name: str, include_escrow_bag: bool = False) -> dict[str, Any]:
         """Ask lockdownd to start a named service and return its connection attributes.
 
@@ -1719,6 +1741,10 @@ async def create_using_tcp(
     The pair record is the one given, or the one stored under ``identifier``. To reach an already paired
     device by its address alone, use `create_using_mobdev2`, which finds the record the device accepts.
 
+    A device does not pair with a network host this way, so for one that is not paired pass
+    ``autopair=False``: the client is then unpaired (``paired`` is False) and can still read the values
+    lockdownd gives any host, such as ``DeviceName`` and ``ProductType``, or pair with `LockdownClient.pair_cu`.
+
     :param hostname: The target device's hostname or IP address.
     :param identifier: Device identifier used to locate the matching pair record.
     :param label: User-agent label included in every request sent to lockdownd.
@@ -1730,6 +1756,7 @@ async def create_using_tcp(
     :param port: TCP port of the lockdownd service on the device.
     :param keep_alive: Enable TCP keep-alive so a lost connection is detected.
     :returns: A connected TCP lockdown client.
+    :raises PairingError: ``autopair`` is set and the device is not paired: it does not pair over the network.
     """
     service = await ServiceConnection.create_using_tcp(hostname, port, keep_alive=keep_alive)
     try:

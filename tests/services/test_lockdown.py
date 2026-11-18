@@ -15,6 +15,7 @@ from pymobiledevice3 import lockdown as lockdown_module
 from pymobiledevice3.cli import cli_common
 from pymobiledevice3.exceptions import (
     DeviceNotFoundError,
+    GetProhibitedError,
     LockdownError,
     MCProtectedError,
     NoDeviceConnectedError,
@@ -375,6 +376,20 @@ async def test_network_client_starts_one_heartbeat_for_concurrent_services() -> 
     async with _NetworkLockdown() as lockdown:
         await asyncio.gather(*(lockdown.start_lockdown_service("com.apple.afc") for _ in range(3)))
         assert len(lockdown.heartbeats) == 1
+
+
+@pytest.mark.asyncio
+async def test_network_client_says_why_it_cannot_pair() -> None:
+    lockdown = _NetworkLockdown(paired=False)
+
+    async def get_value(domain: Optional[str] = None, key: Optional[str] = None) -> Any:
+        assert key == "DevicePublicKey"
+        raise GetProhibitedError("lockdownd does not allow reading this value.", None, "27.2")
+
+    lockdown.get_value = get_value  # type: ignore[method-assign]
+    with pytest.raises(PairingError, match="does not allow pairing over the network") as exc_info:
+        await lockdown.pair()
+    assert isinstance(exc_info.value.__cause__, GetProhibitedError)
 
 
 def test_cli_closes_a_network_client_at_exit(monkeypatch: pytest.MonkeyPatch) -> None:
