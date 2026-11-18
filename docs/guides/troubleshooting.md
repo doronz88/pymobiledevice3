@@ -68,6 +68,24 @@ the transport that was asked for it — the message names that transport (`usbmu
 pymobiledevice3 usbmux list
 ```
 
+### "No device is answering at HOST" (`--mobdev2-host`)
+
+Nothing accepted a lockdown connection on TCP port 62078 at that address; the message ends with the
+reason (`TimeoutError`, `Connect call failed`, ...).
+
+- An Apple TV only takes lockdown connections from the network while **Settings > Remotes and
+  Devices > Remote App and Devices** is open on it.
+- An iPhone or iPad needs Wi-Fi connections enabled, which is set over USB:
+  `pymobiledevice3 lockdown wifi-connections on`.
+- Check the address. `pymobiledevice3 bonjour mobdev2` lists the devices that announce themselves;
+  a device that does not can still be reached with `--mobdev2-host`.
+
+### "the device at HOST does not accept the pair record of UDID"
+
+`--mobdev2-host` was combined with `--udid`, and the device at that address turned that device's pair
+record down: it is another device, or it is no longer paired with this host. An unpaired device does
+not say who it is, so the two cannot be told apart. Drop `--udid` to connect to whatever is there.
+
 ### The device is advertising over Wi-Fi but `usbmux list` does not show it
 
 Two different things have to be true, and only the first lives on the device:
@@ -129,6 +147,39 @@ pymobiledevice3 lockdown pair
 If pairing keeps failing with *"The device does not recognize this computer's pairing record"*
 (`InvalidHostIDError`), the device holds a stale record for this host — unpair first
 (`pymobiledevice3 lockdown unpair`) or reset trust as described above, then pair again.
+
+Over the network (`--mobdev2` / `--mobdev2-host`) there is no Trust dialog to answer: the device must
+already be paired with this host. Pair it over USB, or, for a device that displays a PIN such as an
+Apple TV, over the network:
+
+```shell
+pymobiledevice3 lockdown pair-wireless
+```
+
+### "does not allow pairing over the network" (`PairingError`)
+
+A device does not hand its public key to a network host, so the classic pairing cannot run there. It
+is what `create_using_tcp()` attempts by default for a device that is not paired. Pair over USB or
+with `lockdown pair-wireless`; to only read the values an unpaired host is given (`DeviceName`,
+`ProductType`, ...), connect with `create_using_tcp(hostname, autopair=False)`.
+
+### "lost the heartbeat with ..., the device will drop the services started so far"
+
+Also seen as services over the network ending in *"Connection was terminated abruptly"* a few seconds
+after another command finished.
+
+A device keeps the services of a network host alive only while that host answers its heartbeat, and
+it judges the host as a whole: when **any** heartbeat connection of the host closes, it drops the
+services of **all** of the host's connections about ten seconds later. pymobiledevice3 answers the
+heartbeat for you from the first service a network client starts until the client is closed, so
+this shows up when two things hold services on the same device over the network at once and one of
+them finishes, e.g. a `syslog live --mobdev2-host` in one terminal and an `afc ls --mobdev2-host` in
+another, or a command run while `tunneld` holds a network tunnel to that device.
+
+- Run one service-holding command per device at a time over the network; commands that only read
+  values (`lockdown info`, `lockdown date`) open no heartbeat and are safe to run alongside.
+- From Python, use one client per device and close it last.
+- USB and the RSD tunnels are not affected.
 
 ## Developer services
 

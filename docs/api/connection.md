@@ -13,9 +13,23 @@ built on top of: a lockdown client for classic services, or a `RemoteServiceDisc
 
 ::: pymobiledevice3.lockdown.create_using_usbmux
 
+::: pymobiledevice3.lockdown.create_using_mobdev2
+
 ::: pymobiledevice3.lockdown.LockdownClient
 
 ::: pymobiledevice3.lockdown.UsbmuxLockdownClient
+
+::: pymobiledevice3.lockdown.TcpLockdownClient
+
+### Lower-level network entry points
+
+`create_using_mobdev2` is the one to reach for. These two are what it is built from: enumerating
+every device on the network, and connecting with one given pair record or to a device that is not
+paired yet.
+
+::: pymobiledevice3.lockdown.get_mobdev2_lockdowns
+
+::: pymobiledevice3.lockdown.create_using_tcp
 
 ## RemoteServiceDiscovery (iOS 17+ tunnel)
 
