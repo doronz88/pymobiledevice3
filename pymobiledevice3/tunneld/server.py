@@ -46,7 +46,7 @@ from pymobiledevice3.exceptions import (
     QuicProtocolNotSupportedError,
     StreamClosedError,
 )
-from pymobiledevice3.lockdown import create_using_usbmux, get_mobdev2_lockdowns
+from pymobiledevice3.lockdown import LockdownClient, create_using_usbmux, get_mobdev2_lockdowns
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.common import TunnelProtocol
 from pymobiledevice3.remote.module_imports import start_tunnel
@@ -503,25 +503,26 @@ class TunneldCore:
         try:
             while True:
                 async for ip, lockdown in get_mobdev2_lockdowns(only_paired=True):
-                    async with lockdown:
-                        udid = lockdown.udid
-                        # a paired lockdown always exposes UniqueDeviceID
-                        assert udid is not None
-                        task_identifier = f"mobdev2-{udid}-{ip}"
-                        if self.tunnel_exists_for_udid(udid):
-                            # Skip tunnel if already exists for this udid
-                            continue
-                        if task_identifier in self.tunnel_tasks:
-                            # Skip if already trying to establish a tunnel for this device
-                            continue
-                        try:
-                            tunnel_service = await CoreDeviceTunnelProxy.create(lockdown)
-                        except InvalidServiceError:
-                            logger.warning(f"[{task_identifier}] failed to start CoreDeviceTunnelProxy - skipping")
-                            continue
+                    udid = lockdown.udid
+                    # a paired lockdown always exposes UniqueDeviceID
+                    assert udid is not None
+                    task_identifier = f"mobdev2-{udid}-{ip}"
+                    tunnel_service = None
+                    try:
+                        # Skip a device that already has a tunnel, or one being established
+                        if not self.tunnel_exists_for_udid(udid) and task_identifier not in self.tunnel_tasks:
+                            try:
+                                tunnel_service = await CoreDeviceTunnelProxy.create(lockdown)
+                            except InvalidServiceError:
+                                logger.warning(f"[{task_identifier}] failed to start CoreDeviceTunnelProxy - skipping")
+                    finally:
+                        if tunnel_service is None:
+                            await lockdown.close()
+                    if tunnel_service is None:
+                        continue
                     self.tunnel_tasks[task_identifier] = TunnelTask(
                         task=asyncio.create_task(
-                            self.start_tunnel_task(task_identifier, tunnel_service),
+                            self.start_mobdev2_tunnel_task(task_identifier, lockdown, tunnel_service),
                             name=f"start-tunnel-task-{task_identifier}",
                         ),
                         udid=udid,
@@ -529,6 +530,14 @@ class TunneldCore:
                 await asyncio.sleep(MOBDEV2_INTERVAL)
         except asyncio.CancelledError:
             pass
+
+    async def start_mobdev2_tunnel_task(
+        self, task_identifier: str, lockdown: LockdownClient, tunnel_service: CoreDeviceTunnelProxy
+    ) -> None:
+        # The lockdown client answers the device's heartbeat, without which the device drops the tunnel
+        # within seconds, so it stays open for as long as the tunnel does.
+        async with lockdown:
+            await self.start_tunnel_task(task_identifier, tunnel_service)
 
     @asyncio_print_traceback
     async def start_tunnel_task(
