@@ -2764,7 +2764,7 @@ device as a <code>ServiceProviderDep</code> parameter and decorate async handler
 <p>Why this pattern:</p>
 <ul>
 <li><code>ServiceProviderDep</code> adds the standard device options (<code>--udid</code>, <code>--rsd</code>, <code>--tunnel</code>,
-  <code>--userspace</code>, <code>--native</code>, <code>--mobdev2</code>, <code>--usbmux</code>) and resolves them into a connected
+  <code>--userspace</code>, <code>--native</code>, <code>--mobdev2</code>, <code>--mobdev2-host</code>, <code>--usbmux</code>) and resolves them into a connected
   provider: a lockdown client over USB by default, or an RSD when a tunnel option is given.</li>
 <li>Use <code>RSDServiceProviderDep</code> instead when the command only works over an iOS 17+ RSD tunnel;
   with no transport flag it establishes a no-root tunnel automatically.</li>

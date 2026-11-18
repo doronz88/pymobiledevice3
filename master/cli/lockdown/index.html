@@ -1591,6 +1591,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#pair-wireless" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pair-wireless
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pair-supervised" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2909,6 +2920,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#pair-wireless" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pair-wireless
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pair-supervised" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3082,6 +3104,10 @@ to boot it back normally.</p>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
+</tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
@@ -3120,6 +3146,10 @@ to boot it back normally.</p>
 <tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
+</tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
 </tr>
 </tbody>
 </table>
@@ -3160,6 +3190,10 @@ to boot it back normally.</p>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
+</tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
@@ -3183,6 +3217,10 @@ to boot it back normally.</p>
 <tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
+</tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
 </tr>
 </tbody>
 </table>
@@ -3226,6 +3264,10 @@ to boot it back normally.</p>
 <tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
+</tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
 </tr>
 </tbody>
 </table>
@@ -3276,6 +3318,10 @@ strings, e.g. "'My iPhone'".</p>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
+</tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
@@ -3318,6 +3364,10 @@ strings, e.g. "'My iPhone'".</p>
 <tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
+</tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
 </tr>
 </tbody>
 </table>
@@ -3386,9 +3436,30 @@ strings, e.g. "'My iPhone'".</p>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
+<h2 id="pair-wireless"><code>pair-wireless</code><a class="headerlink" href="#pair-wireless" title="Permanent link">&para;</a></h2>
+<p>Pair this computer with an Apple TV over the network, using the PIN it displays.</p>
+<p>Put the Apple TV in pairing mode first: Settings &gt; Remotes and Devices &gt; Remote App and Devices.
+It accepts lockdown connections from the network only while that screen is open.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pymobiledevice3 lockdown pair-wireless [OPTIONS] [hostname]
+</code></pre></div>
+<p><strong>Arguments:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Argument</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hostname &lt;str&gt;</code></td>
+<td>Hostname or IP address of the device; omit to find it over bonjour.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="pair-supervised"><code>pair-supervised</code><a class="headerlink" href="#pair-supervised" title="Permanent link">&para;</a></h2>
 <p>Pair with a supervised device using its supervision identity (no Trust dialog).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pymobiledevice3 lockdown pair-supervised [OPTIONS] {keybag}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>pymobiledevice3 lockdown pair-supervised [OPTIONS] {keybag}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3427,7 +3498,7 @@ strings, e.g. "'My iPhone'".</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="save-pair-record"><code>save-pair-record</code><a class="headerlink" href="#save-pair-record" title="Permanent link">&para;</a></h2>
 <p>Save this host's pair record for the device to a file (it grants access to the device).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>pymobiledevice3 lockdown save-pair-record [OPTIONS] {output}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>pymobiledevice3 lockdown save-pair-record [OPTIONS] {output}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3466,7 +3537,7 @@ strings, e.g. "'My iPhone'".</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="date"><code>date</code><a class="headerlink" href="#date" title="Permanent link">&para;</a></h2>
 <p>Print the device's current date and time.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>pymobiledevice3 lockdown date [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>pymobiledevice3 lockdown date [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -3484,13 +3555,17 @@ strings, e.g. "'My iPhone'".</p>
 <tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
+</tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
 </tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="heartbeat"><code>heartbeat</code><a class="headerlink" href="#heartbeat" title="Permanent link">&para;</a></h2>
 <p>Keep a lockdown heartbeat going with the device; runs until Ctrl+C.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>pymobiledevice3 lockdown heartbeat [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>pymobiledevice3 lockdown heartbeat [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -3509,12 +3584,16 @@ strings, e.g. "'My iPhone'".</p>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
+</tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="language"><code>language</code><a class="headerlink" href="#language" title="Permanent link">&para;</a></h2>
 <p>Print the device language, or change it first if LANGUAGE is given.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>pymobiledevice3 lockdown language [OPTIONS] [language]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>pymobiledevice3 lockdown language [OPTIONS] [language]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3548,12 +3627,16 @@ strings, e.g. "'My iPhone'".</p>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
+</tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="locale"><code>locale</code><a class="headerlink" href="#locale" title="Permanent link">&para;</a></h2>
 <p>Print the device locale (region format), or change it first if LOCALE is given.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>pymobiledevice3 lockdown locale [OPTIONS] [locale]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>pymobiledevice3 lockdown locale [OPTIONS] [locale]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3587,12 +3670,16 @@ strings, e.g. "'My iPhone'".</p>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
+</tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="device-name"><code>device-name</code><a class="headerlink" href="#device-name" title="Permanent link">&para;</a></h2>
 <p>Print the device name, or rename the device.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>pymobiledevice3 lockdown device-name [OPTIONS] [new_name]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>pymobiledevice3 lockdown device-name [OPTIONS] [new_name]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3626,12 +3713,16 @@ strings, e.g. "'My iPhone'".</p>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
+</tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="wifi-connections"><code>wifi-connections</code><a class="headerlink" href="#wifi-connections" title="Permanent link">&para;</a></h2>
 <p>Show or set whether this host may connect to the device over Wi-Fi (EnableWifiConnections).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>pymobiledevice3 lockdown wifi-connections [OPTIONS] [state]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>pymobiledevice3 lockdown wifi-connections [OPTIONS] [state]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3665,6 +3756,10 @@ strings, e.g. "'My iPhone'".</p>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
+</tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
@@ -3672,7 +3767,7 @@ strings, e.g. "'My iPhone'".</p>
 <p>Start an iOS 17.4+ tunnel over lockdown and print its <code>--rsd HOST PORT</code> (needs root).</p>
 <p>Rarely needed: commands build their own no-root tunnel. Use it when another
 process needs --rsd. Always uses TCP. Runs until Ctrl+C.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>pymobiledevice3 lockdown start-tunnel [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>pymobiledevice3 lockdown start-tunnel [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -3690,6 +3785,10 @@ process needs --rsd. Always uses TCP. Runs until Ctrl+C.</p>
 <tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
+</tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
 </tr>
 <tr>
 <td><code>--script-mode / --no-script-mode</code></td>
@@ -3711,7 +3810,7 @@ transport, pairing is promptless - no Trust dialog is shown - and it writes
 the RemotePairing pair record used by <code>pymobiledevice3 remote start-tunnel</code>,
 letting you bootstrap that record over USB without any on-device
 interaction.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>pymobiledevice3 lockdown remotepairing [OPTIONS]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>pymobiledevice3 lockdown remotepairing [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
 <table>
@@ -3731,6 +3830,10 @@ interaction.</p>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
 <tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
+</tr>
+<tr>
 <td><code>--pair</code></td>
 <td>Perform RemotePairing pair-setup if not already paired (promptless over lockdownd).</td>
 </tr>
@@ -3743,7 +3846,7 @@ interaction.</p>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="assistive-touch"><code>assistive-touch</code><a class="headerlink" href="#assistive-touch" title="Permanent link">&para;</a></h2>
 <p>Show or set whether the AssistiveTouch button is shown on screen.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>pymobiledevice3 lockdown assistive-touch [OPTIONS] [state]
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>pymobiledevice3 lockdown assistive-touch [OPTIONS] [state]
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3777,12 +3880,16 @@ interaction.</p>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
 </tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
+</tr>
 </tbody>
 </table>
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="auto-answer"><code>auto-answer</code><a class="headerlink" href="#auto-answer" title="Permanent link">&para;</a></h2>
 <p>Set whether incoming calls are answered automatically (Accessibility &gt; Call Audio Routing).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>pymobiledevice3 lockdown auto-answer [OPTIONS] {state}
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>pymobiledevice3 lockdown auto-answer [OPTIONS] {state}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
 <table>
@@ -3815,6 +3922,10 @@ interaction.</p>
 <tr>
 <td><code>--native</code></td>
 <td>macOS only: reach the iOS 17+ tunnel by piggybacking Apple's own <code>remoted</code> tunnel via the <code>remotepairingd</code> service. NO root, no entitlement, no Xcode. Rides Apple's kernel-routable tunnel, so throughput matches the kernel tunnel, but the device keeps a single RSD connection on it: <code>remoted</code> and this process evict each other's, which can reset connections and leave Xcode/devicectl without the device until <code>remoted</code> reconnects. Mutually exclusive with --rsd/--tunnel/--userspace. [env var: PYMOBILEDEVICE3_NATIVE]</td>
+</tr>
+<tr>
+<td><code>--mobdev2-host HOSTNAME</code></td>
+<td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
 </tr>
 </tbody>
 </table>

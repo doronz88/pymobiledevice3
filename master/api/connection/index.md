@@ -180,6 +180,7 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.pairing_records_cache_folder = pairing_records_cache_folder
         self.port = port
         self._reestablishing_connection = False
+        self._cu_key: Optional[bytes] = None
 
         self.all_values = {}
         self.udid = None
@@ -669,6 +670,155 @@ class LockdownClient(ABC, LockdownServiceProvider):
         self.pair_record = pair_record
         await self.save_pair_record()
         self.paired = True
+
+    async def pair_cu(self, get_pin: Callable[[], str], private_key: Optional[RSAPrivateKey] = None) -> None:
+        """Pair this host with the device using the PIN it displays (CU pairing).
+
+        This is the pairing an Apple TV offers over the network, where there is no Trust dialog to accept:
+        the device shows a PIN, an SRP Pair-Setup proves this host knows it, and the pair record is then
+        exchanged encrypted with the resulting key. On success the pair record is saved under the device's
+        UDID and the client is marked paired.
+
+        :param get_pin: Called once the device displays its PIN; returns the PIN as the user read it.
+        :param private_key: RSA private key to use when generating the pairing certificate chain; a new key
+            is generated if omitted.
+        :raises PairingError: The device rejected the pairing, e.g. because of a wrong PIN.
+        """
+        await self._cu_pairing_create(get_pin)
+
+        device_public_key = await self.get_value_cu(key="DevicePublicKey")
+        wifi_mac_address = await self.get_value_cu(key="WiFiAddress")
+        host_cert_pem, host_key_pem, device_cert_pem, root_cert_pem, root_key_pem = generate_pairing_cert_chain(
+            device_public_key, private_key=private_key
+        )
+        pair_record: dict[str, Any] = {
+            "DeviceCertificate": device_cert_pem,
+            "HostCertificate": host_cert_pem,
+            "HostID": self.host_id,
+            "RootCertificate": root_cert_pem,
+            "SystemBUID": self.system_buid,
+        }
+        reply = await self._cu_request(
+            "PairCU", {"PairRecord": pair_record, "PairingOptions": {"ExtendedPairingErrors": True}}
+        )
+
+        pair_record["RootPrivateKey"] = root_key_pem
+        pair_record["HostPrivateKey"] = host_key_pem
+        # absent on a device without Wi-Fi
+        if wifi_mac_address is not None:
+            pair_record["WiFiMACAddress"] = wifi_mac_address
+        if reply.get("EscrowBag") is not None:
+            pair_record["EscrowBag"] = reply["EscrowBag"]
+
+        # the record is looked up by UDID, which a network connection only learns here
+        self.identifier = reply.get("UDID", self.identifier)
+        self.pair_record = pair_record
+        await self.save_pair_record()
+        self.paired = True
+
+    async def get_value_cu(self, domain: Optional[str] = None, key: Optional[str] = None) -> Any:
+        """Read a lockdown value over the encrypted channel of a CU pairing in progress.
+
+        :param domain: The lockdown domain to query; ``None`` selects the default domain.
+        :param key: The key to query; ``None`` returns every value of the domain.
+        :returns: The value, or ``None`` when the device reported none.
+        """
+        options: dict[str, Any] = {}
+        if domain:
+            options["Domain"] = domain
+        if key:
+            options["Key"] = key
+        return (await self._cu_request("GetValueCU", options)).get("Value")
+
+    async def _cu_pairing_create(self, get_pin: Callable[[], str]) -> None:
+        """Run the SRP Pair-Setup of a CU pairing (``CUPairingCreate``), leaving its key in ``_cu_key``."""
+        # M1 -> M2: the device displays its PIN and returns its SRP salt and public key
+        m2 = await self._cu_pairing_step(1, {Component.METHOD: b"\x00"})
+        srp = SrpClient(get_pin())
+        srp.process(m2[Component.PUBLIC_KEY], m2[Component.SALT])
+
+        # M3 -> M4: prove knowledge of the PIN, and have the device prove it too
+        m4 = await self._cu_pairing_step(3, {Component.PUBLIC_KEY: srp.public, Component.PROOF: srp.proof})
+        if not srp.verify_server_proof(m4[Component.PROOF]):
+            raise PairingError("The device failed to prove it knows the PIN.")
+
+        # M5 -> M6: exchange identities, encrypted with a key derived from the SRP session key
+        def derive(salt: bytes, info: bytes) -> bytes:
+            return HKDF(algorithm=hashes.SHA512(), length=32, salt=salt, info=info).derive(srp.key)
+
+        cipher = ChaCha20Poly1305(derive(b"Pair-Setup-Encrypt-Salt", b"Pair-Setup-Encrypt-Info"))
+        signing_key = Ed25519PrivateKey.generate()
+        public_key = signing_key.public_key().public_bytes_raw()
+        account_id = self.system_buid.encode()
+        signature = signing_key.sign(
+            derive(b"Pair-Setup-Controller-Sign-Salt", b"Pair-Setup-Controller-Sign-Info") + account_id + public_key
+        )
+        identity = build_pairing_tlv({
+            Component.IDENTIFIER: account_id,
+            Component.PUBLIC_KEY: public_key,
+            Component.SIGNATURE: signature,
+            Component.ACL: opack_dumps({"com.apple.ScreenCapture": True, "com.apple.developer": True}),
+            Component.INFO: opack_dumps({
+                "accountID": self.system_buid,
+                "model": "computer-model",
+                "name": socket.gethostname(),
+                "mac": uuid.getnode().to_bytes(6, "big"),
+            }),
+        })
+        m6 = await self._cu_pairing_step(
+            5, {Component.ENCRYPTED_DATA: cipher.encrypt(b"\x00\x00\x00\x00PS-Msg05", identity, b"")}
+        )
+        try:
+            cipher.decrypt(b"\x00\x00\x00\x00PS-Msg06", m6[Component.ENCRYPTED_DATA], b"")
+        except InvalidTag as e:
+            raise PairingError("The device's Pair-Setup identity could not be decrypted.") from e
+
+        self._cu_key = srp.key
+
+    async def _cu_pairing_step(self, state: int, components: dict[int, bytes]) -> dict[int, bytes]:
+        """Send Pair-Setup message ``state`` and return the components of the device's answer to it."""
+        response = await self._request(
+            "CUPairingCreate",
+            {
+                "Flags": 1 if state == 1 else 0,  # 1 starts a new Pair-Setup session
+                "Payload": build_pairing_tlv({**components, Component.STATE: bytes([state])}),
+                "ProtocolVersion": 2,
+            },
+        )
+        answer: dict[int, bytes] = {}
+        for item in PairingDataComponentTLVBuf.parse(response["ExtendedResponse"]["Payload"]):
+            answer[item.type] = answer.get(item.type, b"") + item.data
+        if Component.ERROR in answer:
+            raise PairingError(describe_pairing_error(answer))
+        if answer.get(Component.STATE) != bytes([state + 1]):
+            raise PairingError(f"Unexpected Pair-Setup state from the device: {answer.get(Component.STATE)!r}")
+        return answer
+
+    async def _cu_request(self, request: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Send a request whose payload is encrypted with the key of the CU pairing in progress."""
+        if self._cu_key is None:
+            raise PairingError("No CU pairing is in progress.")
+
+        def cipher(direction: bytes) -> ChaCha20Poly1305:
+            return ChaCha20Poly1305(
+                HKDF(
+                    algorithm=hashes.SHA512(),
+                    length=32,
+                    salt=direction + b"KeySaltMDLD",
+                    info=direction + b"KeyInfoMDLD",
+                ).derive(cast(bytes, self._cu_key))
+            )
+
+        nonce = os.urandom(12)
+        response = await self._request(
+            request,
+            {
+                "Payload": cipher(b"Write").encrypt(nonce, plistlib.dumps(payload, fmt=plistlib.FMT_BINARY), b""),
+                "Nonce": nonce,
+                "ProtocolVersion": 2,
+            },
+        )
+        return plistlib.loads(cipher(b"Read").decrypt(response["Nonce"][:12], response["Payload"], b""))
 
     async def unpair(self, host_id: Optional[str] = None) -> None:
         """Remove a pairing from the device.
@@ -1760,6 +1910,117 @@ async def pair_supervised(self, keybag_file: Path, timeout: Optional[float] = No
     self.pair_record = pair_record
     await self.save_pair_record()
     self.paired = True
+```
+
+### pair_cu
+
+```
+pair_cu(get_pin: Callable[[], str], private_key: Optional[RSAPrivateKey] = None) -> None
+```
+
+Pair this host with the device using the PIN it displays (CU pairing).
+
+This is the pairing an Apple TV offers over the network, where there is no Trust dialog to accept: the device shows a PIN, an SRP Pair-Setup proves this host knows it, and the pair record is then exchanged encrypted with the resulting key. On success the pair record is saved under the device's UDID and the client is marked paired.
+
+Parameters:
+
+| Name          | Type                      | Description                                                                                              | Default    |
+| ------------- | ------------------------- | -------------------------------------------------------------------------------------------------------- | ---------- |
+| `get_pin`     | `Callable[[], str]`       | Called once the device displays its PIN; returns the PIN as the user read it.                            | *required* |
+| `private_key` | `Optional[RSAPrivateKey]` | RSA private key to use when generating the pairing certificate chain; a new key is generated if omitted. | `None`     |
+
+Raises:
+
+| Type           | Description                                                   |
+| -------------- | ------------------------------------------------------------- |
+| `PairingError` | The device rejected the pairing, e.g. because of a wrong PIN. |
+
+Source code in `pymobiledevice3/lockdown.py`
+
+```
+async def pair_cu(self, get_pin: Callable[[], str], private_key: Optional[RSAPrivateKey] = None) -> None:
+    """Pair this host with the device using the PIN it displays (CU pairing).
+
+    This is the pairing an Apple TV offers over the network, where there is no Trust dialog to accept:
+    the device shows a PIN, an SRP Pair-Setup proves this host knows it, and the pair record is then
+    exchanged encrypted with the resulting key. On success the pair record is saved under the device's
+    UDID and the client is marked paired.
+
+    :param get_pin: Called once the device displays its PIN; returns the PIN as the user read it.
+    :param private_key: RSA private key to use when generating the pairing certificate chain; a new key
+        is generated if omitted.
+    :raises PairingError: The device rejected the pairing, e.g. because of a wrong PIN.
+    """
+    await self._cu_pairing_create(get_pin)
+
+    device_public_key = await self.get_value_cu(key="DevicePublicKey")
+    wifi_mac_address = await self.get_value_cu(key="WiFiAddress")
+    host_cert_pem, host_key_pem, device_cert_pem, root_cert_pem, root_key_pem = generate_pairing_cert_chain(
+        device_public_key, private_key=private_key
+    )
+    pair_record: dict[str, Any] = {
+        "DeviceCertificate": device_cert_pem,
+        "HostCertificate": host_cert_pem,
+        "HostID": self.host_id,
+        "RootCertificate": root_cert_pem,
+        "SystemBUID": self.system_buid,
+    }
+    reply = await self._cu_request(
+        "PairCU", {"PairRecord": pair_record, "PairingOptions": {"ExtendedPairingErrors": True}}
+    )
+
+    pair_record["RootPrivateKey"] = root_key_pem
+    pair_record["HostPrivateKey"] = host_key_pem
+    # absent on a device without Wi-Fi
+    if wifi_mac_address is not None:
+        pair_record["WiFiMACAddress"] = wifi_mac_address
+    if reply.get("EscrowBag") is not None:
+        pair_record["EscrowBag"] = reply["EscrowBag"]
+
+    # the record is looked up by UDID, which a network connection only learns here
+    self.identifier = reply.get("UDID", self.identifier)
+    self.pair_record = pair_record
+    await self.save_pair_record()
+    self.paired = True
+```
+
+### get_value_cu
+
+```
+get_value_cu(domain: Optional[str] = None, key: Optional[str] = None) -> Any
+```
+
+Read a lockdown value over the encrypted channel of a CU pairing in progress.
+
+Parameters:
+
+| Name     | Type            | Description                                                    | Default |
+| -------- | --------------- | -------------------------------------------------------------- | ------- |
+| `domain` | `Optional[str]` | The lockdown domain to query; None selects the default domain. | `None`  |
+| `key`    | `Optional[str]` | The key to query; None returns every value of the domain.      | `None`  |
+
+Returns:
+
+| Type  | Description                                       |
+| ----- | ------------------------------------------------- |
+| `Any` | The value, or None when the device reported none. |
+
+Source code in `pymobiledevice3/lockdown.py`
+
+```
+async def get_value_cu(self, domain: Optional[str] = None, key: Optional[str] = None) -> Any:
+    """Read a lockdown value over the encrypted channel of a CU pairing in progress.
+
+    :param domain: The lockdown domain to query; ``None`` selects the default domain.
+    :param key: The key to query; ``None`` returns every value of the domain.
+    :returns: The value, or ``None`` when the device reported none.
+    """
+    options: dict[str, Any] = {}
+    if domain:
+        options["Domain"] = domain
+    if key:
+        options["Key"] = key
+    return (await self._cu_request("GetValueCU", options)).get("Value")
 ```
 
 ### unpair
