@@ -1345,8 +1345,8 @@ class PlistUsbmuxLockdownClient(UsbmuxLockdownClient):
 class TcpLockdownClient(LockdownClient):
     """Lockdown client that reaches the device over a direct TCP connection (Wi-Fi/network).
 
-    Obtain an instance from `create_using_tcp`. The device is addressed by hostname; service
-    connections are opened with `create_using_tcp`.
+    Obtain an instance from `create_using_mobdev2` (or `create_using_tcp`). The device is addressed by
+    hostname; service connections are opened with `create_using_tcp`.
 
     A device drops the services of a network host that is not answering its heartbeat, so the client
     answers it in the background from the first service it starts until it is closed. Keep the client
@@ -1354,7 +1354,7 @@ class TcpLockdownClient(LockdownClient):
 
     .. code-block:: python
 
-        async with await create_using_tcp("192.168.0.2") as lockdown:
+        async with await create_using_mobdev2("192.168.0.2") as lockdown:
             async with AfcService(lockdown) as afc:
                 ...
 
@@ -1716,6 +1716,9 @@ async def create_using_tcp(
     validates an existing pairing or performs a new one. The connection is closed automatically if setup
     fails.
 
+    The pair record is the one given, or the one stored under ``identifier``. To reach an already paired
+    device by its address alone, use `create_using_mobdev2`, which finds the record the device accepts.
+
     :param hostname: The target device's hostname or IP address.
     :param identifier: Device identifier used to locate the matching pair record.
     :param label: User-agent label included in every request sent to lockdownd.
@@ -1829,18 +1832,19 @@ def _mobdev2_pair_record_candidates(
     ]
 
 
-async def _create_mobdev2_lockdown(hostname: str, pair_records: list[dict[str, Any]]) -> Optional[TcpLockdownClient]:
-    """Connect to a mobdev2 device, paired through whichever of ``pair_records`` it accepts (else unpaired)."""
+async def _create_mobdev2_lockdown(hostname: str, pair_records: list[dict[str, Any]]) -> TcpLockdownClient:
+    """Connect to a mobdev2 device, paired through whichever of ``pair_records`` it accepts (else unpaired).
+
+    A device that cannot be connected to raises whatever the connection attempt did.
+    """
     lockdown = None
     for pair_record in pair_records or [None]:
         if lockdown is not None:
             await lockdown.close()
-        try:
-            lockdown = await create_using_tcp(hostname=hostname, autopair=False, pair_record=pair_record)
-        except Exception:
-            return None
+        lockdown = await create_using_tcp(hostname=hostname, autopair=False, pair_record=pair_record)
         if lockdown.paired:
             break
+    assert lockdown is not None
     return lockdown
 
 
@@ -1876,6 +1880,72 @@ async def _known_lockdown_pair_records(udid: Optional[str], folder: Optional[Pat
     return records
 
 
+async def create_using_mobdev2(
+    hostname: Optional[str] = None,
+    udid: Optional[str] = None,
+    pair_records: Optional[Path] = None,
+    timeout: float = DEFAULT_BONJOUR_TIMEOUT,
+) -> TcpLockdownClient:
+    """Connect to a paired device over the network (mobdev2) and return a ready-to-use lockdown client.
+
+    The network counterpart of `create_using_usbmux`: without a ``hostname`` the first paired device
+    found over bonjour is used. The device is offered the pair records this host knows and must accept
+    one of them; pair it first over USB or with `LockdownClient.pair_cu`. Close the client (or use it as
+    an async context manager) when done with its services:
+
+    .. code-block:: python
+
+        async with await create_using_mobdev2("192.168.0.2") as lockdown:
+            async with AfcService(lockdown) as afc:
+                ...
+
+    To enumerate the devices on the network use `get_mobdev2_lockdowns`, and to connect with one given
+    pair record, or to a device that is not paired yet, `create_using_tcp`.
+
+    :param hostname: The device's hostname or IP address, or ``None`` to browse bonjour for one.
+    :param udid: Only connect to this device.
+    :param pair_records: Pair record file folder to use instead of this host's pair records.
+    :param timeout: How long to browse bonjour for, when ``hostname`` is omitted.
+    :returns: A connected, paired network lockdown client.
+    :raises NoDeviceConnectedError: Nothing answered at ``hostname``, or bonjour found no paired device.
+    :raises NotPairedError: The device at ``hostname`` accepts none of the pair records.
+    :raises DeviceNotFoundError: The device at ``hostname`` is not ``udid`` or turns its pair record down,
+        or bonjour did not find ``udid``.
+    """
+    if hostname is None:
+        lockdowns = get_mobdev2_lockdowns(udid=udid, pair_records=pair_records, only_paired=True, timeout=timeout)
+        try:
+            async for _, lockdown in lockdowns:
+                return lockdown
+        finally:
+            await lockdowns.aclose()
+        if udid is not None:
+            raise DeviceNotFoundError(
+                udid, f"Device not found: bonjour found no paired mobdev2 device with udid {udid}"
+            )
+        raise NoDeviceConnectedError()
+
+    records = await _known_lockdown_pair_records(udid, pair_records)
+    try:
+        lockdown = await _create_mobdev2_lockdown(hostname, records)
+    except (OSError, asyncio.TimeoutError, PyMobileDevice3Exception) as e:
+        raise NoDeviceConnectedError(f"No device is answering at {hostname}: {str(e) or type(e).__name__}") from e
+    if not lockdown.paired:
+        await lockdown.close()
+        if udid is not None and records:
+            # An unpaired device does not say who it is: all that is known is that it turned the record down.
+            raise DeviceNotFoundError(
+                udid,
+                f"Device not found: the device at {hostname} does not accept the pair record of {udid} "
+                "(it is another device, or no longer paired with this host)",
+            )
+        raise NotPairedError()
+    if udid is not None and lockdown.udid != udid:
+        await lockdown.close()
+        raise DeviceNotFoundError(udid, f"Device not found: the device at {hostname} is not {udid}")
+    return lockdown
+
+
 def _glob_pair_record_files(folder: Path) -> list[Path]:
     with suppress(OSError):
         return sorted(folder.glob("*.plist"))
@@ -1888,6 +1958,18 @@ async def get_mobdev2_lockdowns(
     only_paired: bool = False,
     timeout: float = DEFAULT_BONJOUR_TIMEOUT,
 ) -> AsyncGenerator[tuple[str, TcpLockdownClient], None]:
+    """Browse bonjour for mobdev2 devices and yield a connected lockdown client for each.
+
+    Each device is offered the known pair records it may accept, and is yielded once even when it
+    answers on several addresses. The caller owns the yielded clients and closes them. To connect to a
+    single device, use `create_using_mobdev2`.
+
+    :param udid: Only yield this device; nothing is browsed when no pair record of it is known.
+    :param pair_records: Pair record file folder to use instead of this host's pair records.
+    :param only_paired: Skip devices that accept none of the pair records.
+    :param timeout: How long to browse bonjour for.
+    :returns: An async generator of ``(address, client)`` pairs.
+    """
     records = await _known_lockdown_pair_records(udid, pair_records)
     if udid is not None and not records:
         # Nothing the requested device would accept: don't sit through a browse.
@@ -1908,8 +1990,10 @@ async def get_mobdev2_lockdowns(
             continue
 
         for address in answer.addresses:
-            lockdown = await _create_mobdev2_lockdown(address.full_ip, candidates)
-            if lockdown is None:
+            try:
+                lockdown = await _create_mobdev2_lockdown(address.full_ip, candidates)
+            except Exception:
+                # not reachable at this address
                 continue
             if (only_paired and not lockdown.paired) or (udid is not None and lockdown.udid != udid):
                 await lockdown.close()

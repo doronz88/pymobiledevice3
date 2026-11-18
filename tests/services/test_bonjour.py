@@ -1,12 +1,21 @@
+import asyncio
 import base64
+from contextlib import suppress
 
 import pytest
 from packaging.version import Version
 
 from pymobiledevice3.bonjour import ServiceInstance, browse_mobdev2, browse_remoted, browse_remotepairing
-from pymobiledevice3.lockdown import LockdownClient, compute_mobdev2_auth_tag, get_mobdev2_lockdowns
+from pymobiledevice3.exceptions import DeviceNotFoundError, NoDeviceConnectedError, SetProhibitedError
+from pymobiledevice3.lockdown import (
+    LockdownClient,
+    compute_mobdev2_auth_tag,
+    create_using_mobdev2,
+    get_mobdev2_lockdowns,
+)
 from pymobiledevice3.pair_records import iter_remote_pair_records_by_identifier
 from pymobiledevice3.remote.tunnel_service import PEER_ALT_IRK_KEY, _match_remote_pair_record
+from pymobiledevice3.services.afc import AfcService
 
 
 @pytest.mark.asyncio
@@ -77,6 +86,24 @@ async def test_mobdev2_lockdown_by_udid(lockdown: LockdownClient) -> None:
     finally:
         for client in found:
             await client.close()
+
+
+@pytest.mark.asyncio
+async def test_mobdev2_service_outlives_an_unanswered_heartbeat(lockdown: LockdownClient) -> None:
+    """A device ends the services of a network host about 25 seconds after its heartbeat goes unanswered,
+    and at once when it has none, so a service still working after that is a heartbeat being answered."""
+    with suppress(SetProhibitedError):
+        # an Apple TV does not let this be set, and is reachable anyway
+        await lockdown.set_enable_wifi_connections(True)
+    assert lockdown.udid is not None
+    try:
+        network = await create_using_mobdev2(udid=lockdown.udid)
+    except (DeviceNotFoundError, NoDeviceConnectedError):
+        pytest.skip("The device was not discovered over mobdev2 on this host/network")
+    async with network, AfcService(network) as afc:
+        for _ in range(7):
+            assert await afc.listdir("/")
+            await asyncio.sleep(5)
 
 
 @pytest.mark.asyncio

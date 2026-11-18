@@ -33,6 +33,7 @@ from pymobiledevice3.exceptions import (
 from pymobiledevice3.lockdown import (
     LockdownClient,
     TcpLockdownClient,
+    create_using_mobdev2,
     create_using_usbmux,
     get_mobdev2_lockdowns,
 )
@@ -721,6 +722,14 @@ def any_service_provider_dependency(
             rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
         ),
     ] = False,
+    mobdev2_host: Annotated[
+        Optional[str],
+        typer.Option(
+            metavar="HOSTNAME",
+            help="Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.",
+            rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
+        ),
+    ] = None,
     usbmux: Annotated[
         Optional[str],
         typer.Option(
@@ -742,8 +751,18 @@ def any_service_provider_dependency(
         # prevent lockdown connection establishment when in autocomplete mode
         return  # type: ignore[return-value]
 
+    if mobdev2_host is not None and (mobdev2 or rsd_service_provider is not None):
+        raise typer.BadParameter(
+            "--mobdev2-host is mutually exclusive with --mobdev2, --rsd, --tunnel, --userspace and --native."
+        )
+
     if rsd_service_provider is not None:
         return _record_resolved(rsd_service_provider)
+
+    if mobdev2_host is not None:
+        device = cli_loop.run_until_complete(create_using_mobdev2(mobdev2_host, udid=udid))
+        atexit.register(_close_lockdown_at_exit, device)
+        return _record_resolved(device)
 
     if mobdev2:
         devices = cli_loop.run_until_complete(get_mobdev2_devices(udid=udid))

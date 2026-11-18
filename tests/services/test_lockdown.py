@@ -11,10 +11,13 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from pymobiledevice3 import lockdown as lockdown_module
 from pymobiledevice3.cli import cli_common
 from pymobiledevice3.exceptions import (
+    DeviceNotFoundError,
     LockdownError,
     MCProtectedError,
+    NoDeviceConnectedError,
     NotPairedError,
     PairingDialogResponsePendingError,
     PairingError,
@@ -386,3 +389,75 @@ def test_cli_closes_a_network_client_at_exit(monkeypatch: pytest.MonkeyPatch) ->
         assert cast(_Connection, lockdown.service).closed
     finally:
         loop.close()
+
+
+class _Mobdev2Device:
+    def __init__(self, udid: str, closed: list[str], paired: bool = True) -> None:
+        self.udid = udid
+        self.paired = paired
+        self._closed = closed
+
+    async def close(self) -> None:
+        self._closed.append(self.udid)
+
+
+@pytest.mark.asyncio
+async def test_create_using_mobdev2_connects_to_a_hostname(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    (tmp_path / "UDID-A.plist").write_bytes(plistlib.dumps({"HostID": "HOST"}))
+    closed: list[str] = []
+    offered: list[Any] = []
+
+    async def create_using_tcp(hostname: str, autopair: bool, pair_record: Any) -> _Mobdev2Device:
+        if hostname == "unreachable":
+            raise ConnectionRefusedError()
+        offered.append(pair_record)
+        return _Mobdev2Device("UDID-A", closed, paired=hostname != "stranger")
+
+    monkeypatch.setattr(lockdown_module, "create_using_tcp", create_using_tcp)
+
+    assert (await lockdown_module.create_using_mobdev2("host", pair_records=tmp_path)).udid == "UDID-A"
+    assert offered == [{"HostID": "HOST"}]
+
+    # each way of not getting a paired client says which it was
+    with pytest.raises(NoDeviceConnectedError, match="No device is answering at unreachable") as unreachable:
+        await lockdown_module.create_using_mobdev2("unreachable", pair_records=tmp_path)
+    assert isinstance(unreachable.value.__cause__, ConnectionRefusedError)
+
+    with pytest.raises(NotPairedError):
+        await lockdown_module.create_using_mobdev2("stranger", pair_records=tmp_path)
+    # a device turning down the record of the one that was asked for may well be another device
+    with pytest.raises(DeviceNotFoundError, match="does not accept the pair record of UDID-A"):
+        await lockdown_module.create_using_mobdev2("stranger", udid="UDID-A", pair_records=tmp_path)
+    assert closed == ["UDID-A", "UDID-A"]
+
+    # another device answering at that address is not the one that was asked for
+    (tmp_path / "UDID-B.plist").write_bytes(plistlib.dumps({"HostID": "HOST"}))
+    with pytest.raises(DeviceNotFoundError) as other:
+        await lockdown_module.create_using_mobdev2("host", udid="UDID-B", pair_records=tmp_path)
+    assert other.value.udid == "UDID-B"
+    assert closed == ["UDID-A", "UDID-A", "UDID-A"]
+
+
+@pytest.mark.asyncio
+async def test_create_using_mobdev2_without_a_hostname_takes_the_first_paired_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed: list[str] = []
+    devices = [_Mobdev2Device("UDID-A", closed), _Mobdev2Device("UDID-B", closed)]
+    asked: list[dict[str, Any]] = []
+
+    async def get_mobdev2_lockdowns(**kwargs: Any) -> Any:
+        asked.append(kwargs)
+        for device in devices:
+            yield "host", device
+
+    monkeypatch.setattr(lockdown_module, "get_mobdev2_lockdowns", get_mobdev2_lockdowns)
+
+    assert await lockdown_module.create_using_mobdev2(udid="UDID", timeout=1) is devices[0]
+    assert asked == [{"udid": "UDID", "pair_records": None, "only_paired": True, "timeout": 1}]
+
+    devices.clear()
+    with pytest.raises(NoDeviceConnectedError):
+        await lockdown_module.create_using_mobdev2()
+    with pytest.raises(DeviceNotFoundError):
+        await lockdown_module.create_using_mobdev2(udid="UDID")

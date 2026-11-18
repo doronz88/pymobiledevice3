@@ -25,7 +25,8 @@ tunnel). Pick based on the iOS version and the service you need:
 
 | Connection | Python entry point | iOS | Root? | Use when |
 | --- | --- | --- | --- | --- |
-| Lockdown (USB / Wi-Fi) | `create_using_usbmux` | all | no | Classic services: AFC, app install, syslog, diagnostics, backup, profiles |
+| Lockdown (USB) | `create_using_usbmux` | all | no | Classic services: AFC, app install, syslog, diagnostics, backup, profiles |
+| Lockdown (network) | `create_using_mobdev2` | all | no | The same services for a paired device on the LAN, e.g. an Apple TV |
 | RSD, best no-root tunnel | `PreferredRsdTunnel` | 17+ | no | **Default** for developer/DVT: the userspace tunnel, falling back to the native tunnel for iOS 17.0-17.3 on macOS |
 | RSD, native (macOS) | `NativeRemotedTunnel` | 17+ | no | macOS only: piggybacks Apple's `remoted`; faster host->device, but evicts and is evicted by `remoted`'s own connection ([#1994](https://github.com/doronz88/pymobiledevice3/issues/1994)) |
 | RSD, userspace | `UserspaceRsdTunnel` | 17+ | no | Cross-platform in-process tunnel; the tunnel address is reachable only from this process |
@@ -53,6 +54,29 @@ asyncio.run(main())
 ```
 
 `create_using_usbmux(serial=...)` targets a specific device by UDID; omit it to pick the first one.
+
+### Over the network (lockdown)
+
+```python
+import asyncio
+
+from pymobiledevice3.lockdown import create_using_mobdev2
+from pymobiledevice3.services.afc import AfcService
+
+
+async def main():
+    async with await create_using_mobdev2("192.168.0.2") as lockdown, AfcService(lockdown) as afc:
+        print(await afc.listdir("/"))
+
+
+asyncio.run(main())
+```
+
+`create_using_mobdev2()` without a hostname takes the first paired device found over bonjour
+(`udid=...` picks a specific one). The device must already be paired with this host, over USB or
+with `pymobiledevice3 lockdown pair-wireless`; otherwise it raises `NotPairedError`. Keep the client
+open for as long as its services are in use: it is what answers the device's heartbeat, and a device
+drops the services of a network host that stops answering.
 
 ### iOS 17+ developer services (tunnel)
 

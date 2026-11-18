@@ -32,6 +32,11 @@ pymobiledevice3 usbmux forward HOST_PORT DEVICE_PORT
 # Devices > Remote App and Devices on it first: it only takes lockdown connections from the network
 # while that screen is open. It is found over bonjour; pass its hostname or IP address to skip that
 pymobiledevice3 lockdown pair-wireless
+
+# Run a command against a device paired this way (or any device with Wi-Fi connections enabled),
+# found over bonjour or addressed directly
+pymobiledevice3 syslog live --mobdev2
+pymobiledevice3 syslog live --mobdev2-host HOSTNAME
 ```
 
 ## Logging and Diagnostics
