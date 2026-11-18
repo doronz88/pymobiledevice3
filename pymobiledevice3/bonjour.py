@@ -26,6 +26,7 @@ REMOTEPAIRING_SERVICE_NAME = "_remotepairing._tcp.local."
 REMOTEPAIRING_MANUAL_PAIRING_SERVICE_NAME = "_remotepairing-manual-pairing._tcp.local."
 REMOTEPAIRING_PAIRABLE_HOST_SERVICE_NAME = "_remotepairing-pairable-host._tcp.local."
 MOBDEV2_SERVICE_NAME = "_apple-mobdev2._tcp.local."
+PAIRABLE_SERVICE_NAME = "_apple-pairable._tcp.local."
 REMOTED_SERVICE_NAME = "_remoted._tcp.local."
 OSUTILS = get_os_utils()
 DEFAULT_BONJOUR_TIMEOUT = OSUTILS.bonjour_timeout
@@ -543,6 +544,11 @@ async def browse_remoted(
 
 async def browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[ServiceInstance]:
     return await browse_service(MOBDEV2_SERVICE_NAME, timeout=timeout)
+
+
+async def browse_pairable(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> list[ServiceInstance]:
+    """Browse for devices in wireless (PIN) pairing mode, e.g. an Apple TV showing its pairing screen."""
+    return await browse_service(PAIRABLE_SERVICE_NAME, timeout=timeout)
 
 
 def iter_browse_mobdev2(timeout: float = DEFAULT_BONJOUR_TIMEOUT) -> AsyncGenerator[ServiceInstance, None]:

@@ -5,14 +5,13 @@ from typing import Any
 import pytest
 
 from pymobiledevice3.exceptions import PairingError
-from pymobiledevice3.remote.tunnel_service import (
-    PairConsentResult,
+from pymobiledevice3.remote.pair_setup import (
     PairingDataComponentTLV8,
     PairingDataComponentTLVBuf,
     PairingDataComponentType,
-    RemotePairingProtocol,
-    _describe_pairing_error,
+    describe_pairing_error,
 )
+from pymobiledevice3.remote.tunnel_service import PairConsentResult, RemotePairingProtocol
 
 # M2 from issue #879, sent by a device in pairing backoff: ERROR=3, RETRY_DELAY=8316 (seconds), STATE=2
 BACKOFF_M2 = b"\x07\x01\x03\x08\x02\x7c\x20\x06\x01\x02"
@@ -104,7 +103,7 @@ async def test_pair_consent_asks_vision_pro_for_pin(monkeypatch):
         (b"\x7f", "127"),
     ],
 )
-def test_describe_pairing_error_names_code(error, expected):
+def testdescribe_pairing_error_names_code(error, expected):
     tlv = RemotePairingProtocol.decode_tlv(PairingDataComponentTLVBuf.parse(b"\x07\x01" + error + b"\x06\x01\x02"))
 
-    assert _describe_pairing_error(tlv) == f"The device rejected pairing: {expected}"
+    assert describe_pairing_error(tlv) == f"The device rejected pairing: {expected}"

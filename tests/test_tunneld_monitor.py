@@ -10,6 +10,7 @@ from bytestruct import TruncatedDataError, UnexpectedConstantError
 from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
     FatalPairingError,
+    InvalidServiceError,
     MuxException,
     NotPairedError,
     PasswordRequiredError,
@@ -863,3 +864,58 @@ async def test_close_stops_every_task_after_one_already_failed():
     await core.close()
 
     assert alive.cancelled()
+
+
+@pytest.mark.asyncio
+async def test_mobdev2_tunnel_keeps_its_lockdown_client_open_until_the_tunnel_ends(monkeypatch):
+    """The network lockdown client answers the heartbeat the device keeps the tunnel alive by, so it may
+    only be closed once the tunnel is gone -- or right away when no tunnel was started on it."""
+    events = []
+
+    class Lockdown:
+        def __init__(self, udid) -> None:
+            self.udid = udid
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args) -> None:
+            await self.close()
+
+        async def close(self) -> None:
+            events.append(f"closed {self.udid}")
+
+    async def get_mobdev2_lockdowns(only_paired):
+        yield "192.168.0.2", Lockdown("tunneled")
+        yield "192.168.0.3", Lockdown("unsupported")
+
+    async def create(lockdown):
+        if lockdown.udid == "unsupported":
+            raise InvalidServiceError("no CoreDeviceProxy", None, "17.0")
+        return Mock(remote_identifier=lockdown.udid)
+
+    tunnel_ended = asyncio.Event()
+
+    async def start_tunnel_task(task_identifier, tunnel_service):
+        events.append("tunnel up")
+        await tunnel_ended.wait()
+        events.append("tunnel down")
+
+    monkeypatch.setattr(tunneld_server, "get_mobdev2_lockdowns", get_mobdev2_lockdowns)
+    monkeypatch.setattr(tunneld_server.CoreDeviceTunnelProxy, "create", create)
+    core = tunneld_server.TunneldCore(
+        wifi_monitor=False, usb_monitor=False, usbmux_monitor=False, mobdev2_monitor=False
+    )
+    monkeypatch.setattr(core, "start_tunnel_task", start_tunnel_task)
+
+    monitor = asyncio.create_task(core.monitor_mobdev2_task())
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert events == ["closed unsupported", "tunnel up"]
+
+    tunnel_ended.set()
+    await core.tunnel_tasks["mobdev2-tunneled-192.168.0.2"].task
+    assert events == ["closed unsupported", "tunnel up", "tunnel down", "closed tunneled"]
+
+    monitor.cancel()
+    await asyncio.wait({monitor})

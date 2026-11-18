@@ -1,4 +1,5 @@
 import asyncio
+import atexit
 import datetime
 import io
 import json
@@ -29,7 +30,13 @@ from pymobiledevice3.exceptions import (
     NoDeviceConnectedError,
     UserspaceTunnelUnavailableError,
 )
-from pymobiledevice3.lockdown import LockdownClient, TcpLockdownClient, create_using_usbmux, get_mobdev2_lockdowns
+from pymobiledevice3.lockdown import (
+    LockdownClient,
+    TcpLockdownClient,
+    create_using_mobdev2,
+    create_using_usbmux,
+    get_mobdev2_lockdowns,
+)
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.osu.os_utils import get_os_utils
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
@@ -238,6 +245,18 @@ def _record_resolved(provider: LockdownServiceProvider) -> LockdownServiceProvid
     if provider.udid is not None:
         _resolved_udid = provider.udid
     return provider
+
+
+def _close_lockdown_at_exit(lockdown: LockdownClient) -> None:
+    """Close a network ``lockdown``, and with it its heartbeat: a command has no teardown hook to do it from."""
+    if cli_loop.is_closed() or cli_loop.is_running():
+        return  # nothing safe to run here
+    try:
+        cli_loop.run_until_complete(asyncio.wait_for(lockdown.close(), timeout=3))
+    except KeyboardInterrupt:
+        logging.getLogger(__name__).debug("closing %s at exit was interrupted", lockdown.identifier)
+    except Exception:
+        logging.getLogger(__name__).debug("closing %s at exit failed", lockdown.identifier, exc_info=True)
 
 
 cli_loop = get_asyncio_loop()
@@ -703,6 +722,14 @@ def any_service_provider_dependency(
             rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
         ),
     ] = False,
+    mobdev2_host: Annotated[
+        Optional[str],
+        typer.Option(
+            metavar="HOSTNAME",
+            help="Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.",
+            rich_help_panel=DEVICE_OPTIONS_PANEL_TITLE,
+        ),
+    ] = None,
     usbmux: Annotated[
         Optional[str],
         typer.Option(
@@ -724,18 +751,27 @@ def any_service_provider_dependency(
         # prevent lockdown connection establishment when in autocomplete mode
         return  # type: ignore[return-value]
 
+    if mobdev2_host is not None and (mobdev2 or rsd_service_provider is not None):
+        raise typer.BadParameter(
+            "--mobdev2-host is mutually exclusive with --mobdev2, --rsd, --tunnel, --userspace and --native."
+        )
+
     if rsd_service_provider is not None:
         return _record_resolved(rsd_service_provider)
+
+    if mobdev2_host is not None:
+        device = cli_loop.run_until_complete(create_using_mobdev2(mobdev2_host, udid=udid))
+        atexit.register(_close_lockdown_at_exit, device)
+        return _record_resolved(device)
 
     if mobdev2:
         devices = cli_loop.run_until_complete(get_mobdev2_devices(udid=udid))
         if not devices:
             raise NoDeviceConnectedError()
 
-        if len(devices) == 1:
-            return _record_resolved(devices[0])
-
-        return _record_resolved(_prompt_device(devices))
+        device = devices[0] if len(devices) == 1 else _prompt_device(devices)
+        atexit.register(_close_lockdown_at_exit, device)
+        return _record_resolved(device)
 
     return _usbmux_service_provider(udid, usbmux)
 

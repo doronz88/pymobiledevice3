@@ -408,8 +408,12 @@ class ServiceConnection:
         """Asynchronously close the connection."""
         await self.close()
 
-    async def close(self) -> None:
-        """Asynchronously close the connection."""
+    async def close(self, timeout: float = CLOSE_STREAM_WRITER_DEFAULT_TIMEOUT_SECONDS) -> None:
+        """Asynchronously close the connection.
+
+        :param timeout: How long the peer is given to complete a graceful close before the transport is
+            aborted; 0 drops the connection without waiting.
+        """
         self._closed = True
         upgrade = self._upgrade
         if upgrade is not None:
@@ -417,7 +421,7 @@ class ServiceConnection:
             # None transport (CPython 3.11+); cancelled first, it leaves the writer as it was.
             upgrade.cancel()
             await asyncio.wait([upgrade])
-        await close_stream_writer(self.writer)
+        await close_stream_writer(self.writer, timeout=timeout)
 
     async def recv_any(self, length: int = 4096) -> bytes:
         """
