@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Annotated, Any, Optional, cast
 
 import typer
+from apple_symbols import DeviceSupportSymbols, KernelSymbols, find_device_support_symbols
 from pykdebugparser.line_filter import MATCH_HELP, LineFilter, emphasize
 from pykdebugparser.pykdebugparser import PyKdebugParser
 from pykdebugparser.selection import GROUP_HELP, captured_events, parse_live_selection
@@ -37,12 +38,7 @@ from pymobiledevice3.cli.cli_common import (
 from pymobiledevice3.exceptions import DvtException, ExtractingStackshotError
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.dvt.instruments.core_profile_session_tap import CoreProfileSessionTap
-from pymobiledevice3.services.dvt.instruments.device_support_symbols import (
-    DeviceSupportSymbols,
-    find_device_support_symbols,
-)
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
-from pymobiledevice3.services.dvt.instruments.kernel_symbols import KernelSymbols
 from pymobiledevice3.services.dvt.instruments.stackshot import (
     StackshotFrame,
     StackshotProcess,
@@ -448,7 +444,15 @@ def _load_stackshot_symbols(
     service_provider: LockdownServiceProvider, symbols: Optional[Path]
 ) -> Optional[DeviceSupportSymbols]:
     if symbols is None:
-        symbols = find_device_support_symbols(service_provider)
+        symbols = (
+            find_device_support_symbols(
+                service_provider.product_type,
+                service_provider.product_build_version or "",
+                service_provider.product_version,
+            )
+            if service_provider.product_type is not None
+            else None
+        )
         if symbols is None:
             logger.warning(
                 f"No Xcode device support was found for {service_provider.product_type} "

@@ -35,6 +35,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
+    "apple-symbols>=0.0.1",
     "asn1",
     "IPython",
     "bpylist2>=4.0.1",
