@@ -3107,14 +3107,26 @@ itself, with no flag and no <code>sudo</code> (<a href="../ios17-tunnels/">iOS 1
 <a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="c1"># Pull crash reports</span>
 <a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>pull<span class="w"> </span>/path/to/crashes
 <a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>
-<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="c1"># Remove only matching crash reports, without copying them</span>
-<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>clear<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^MobileSafari'</span>
-<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>
-<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="c1"># Show the process list (no Developer Mode, DDI or tunnel needed)</span>
-<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>ps
-<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a>
-<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="c1"># Match process pids by name (like pgrep)</span>
-<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>pgrep<span class="w"> </span>SpringBoard
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="c1"># Print the latest panic report, with the call stack of the thread which panicked. Its user frames</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="c1"># are named using the Xcode device support of the device, which `developer fetch-symbols download`</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="c1"># creates; its kernel frames given the kernelcache the device ran (from its IPSW), and their</span>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="c1"># functions given the `kernel` directory of https://github.com/blacktop/symbolicator (requires `ipsw`)</span>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^panic-full'</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">    </span>--kernelcache<span class="w"> </span>kernelcache.release.iphone17<span class="w"> </span>--kernel-signatures<span class="w"> </span>symbolicator/kernel
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="c1"># Also list every thread of some processes of the panic (by name or pid), or of all of them.</span>
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="c1"># `parse` and `parse-latest` of `crash shell` take the same options</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^panic-full'</span><span class="w"> </span>-p<span class="w"> </span>logd<span class="w"> </span>-p<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^panic-full'</span><span class="w"> </span>--all
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="c1"># Remove only matching crash reports, without copying them</span>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>clear<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^MobileSafari'</span>
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a>
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="c1"># Show the process list (no Developer Mode, DDI or tunnel needed)</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>ps
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a>
+<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="c1"># Match process pids by name (like pgrep)</span>
+<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>pgrep<span class="w"> </span>SpringBoard
 </code></pre></div>
 <h2 id="network-sniffing-pcap">Network Sniffing (PCAP)<a class="headerlink" href="#network-sniffing-pcap" title="Permanent link">&para;</a></h2>
 <p>Every packet is labelled with the process that sent it; see

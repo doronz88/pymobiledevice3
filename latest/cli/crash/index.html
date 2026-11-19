@@ -2870,6 +2870,10 @@
 <p>Accepts the <a href="../#connection-options">connection options</a>: <code>--rsd</code>, <code>--tunnel</code>, <code>--userspace</code>, <code>--mobdev2</code>, <code>--usbmux</code>, <code>--udid</code>.</p>
 <h2 id="parse"><code>parse</code><a class="headerlink" href="#parse" title="Permanent link">&para;</a></h2>
 <p>Print a crash report from the device in a readable, parsed form.</p>
+<p>Userland frames the report left unnamed, such as the user stacks of a panic report, are named
+using the Xcode device support of the device the report came from, which
+<code>developer fetch-symbols download</code> creates. Kernel frames are named given --kernelcache.
+--process and --all list the threads of further processes of a panic report.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pymobiledevice3 crash parse [OPTIONS] {remote_file}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
@@ -2907,6 +2911,22 @@
 <tr>
 <td><code>--mobdev2-host HOSTNAME</code></td>
 <td>Connect over mobdev2 to the device at this hostname or IP address, without browsing for it.</td>
+</tr>
+<tr>
+<td><code>--kernelcache &lt;file&gt;</code></td>
+<td>Kernelcache of the firmware the device ran (as found in its IPSW), to name the kernel images of a panic report.</td>
+</tr>
+<tr>
+<td><code>--kernel-signatures &lt;dir&gt;</code></td>
+<td>Directory of <code>ipsw</code> kernel symbolication signatures (the <code>kernel</code> directory of https://github.com/blacktop/symbolicator), to name the kernel functions of a panic report. Requires --kernelcache and the <code>ipsw</code> tool.</td>
+</tr>
+<tr>
+<td><code>-p, --process &lt;list[str]&gt;</code></td>
+<td>Name or pid of a process of a panic report to print the call stack of every thread of. May be given several times.</td>
+</tr>
+<tr>
+<td><code>--all</code></td>
+<td>Print the threads of every process of a panic report.</td>
 </tr>
 </tbody>
 </table>
@@ -2962,6 +2982,22 @@
 <tr>
 <td><code>-n, --count &lt;int range&gt;</code></td>
 <td>Maximum number of latest reports to parse. [default: 1; x&gt;=1]</td>
+</tr>
+<tr>
+<td><code>--kernelcache &lt;file&gt;</code></td>
+<td>Kernelcache of the firmware the device ran (as found in its IPSW), to name the kernel images of a panic report.</td>
+</tr>
+<tr>
+<td><code>--kernel-signatures &lt;dir&gt;</code></td>
+<td>Directory of <code>ipsw</code> kernel symbolication signatures (the <code>kernel</code> directory of https://github.com/blacktop/symbolicator), to name the kernel functions of a panic report. Requires --kernelcache and the <code>ipsw</code> tool.</td>
+</tr>
+<tr>
+<td><code>-p, --process &lt;list[str]&gt;</code></td>
+<td>Name or pid of a process of a panic report to print the call stack of every thread of. May be given several times.</td>
+</tr>
+<tr>
+<td><code>--all</code></td>
+<td>Print the threads of every process of a panic report.</td>
 </tr>
 </tbody>
 </table>
