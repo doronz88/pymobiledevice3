@@ -63,6 +63,18 @@ pymobiledevice3 diagnostics restart
 # Pull crash reports
 pymobiledevice3 crash pull /path/to/crashes
 
+# Print the latest panic report, with the call stack of the thread which panicked. Its user frames
+# are named using the Xcode device support of the device, which `developer fetch-symbols download`
+# creates; its kernel frames given the kernelcache the device ran (from its IPSW), and their
+# functions given the `kernel` directory of https://github.com/blacktop/symbolicator (requires `ipsw`)
+pymobiledevice3 crash parse-latest --match '^panic-full' \
+    --kernelcache kernelcache.release.iphone17 --kernel-signatures symbolicator/kernel
+
+# Also list every thread of some processes of the panic (by name or pid), or of all of them.
+# `parse` and `parse-latest` of `crash shell` take the same options
+pymobiledevice3 crash parse-latest --match '^panic-full' -p logd -p 1
+pymobiledevice3 crash parse-latest --match '^panic-full' --all
+
 # Remove only matching crash reports, without copying them
 pymobiledevice3 crash clear --match '^MobileSafari'
 

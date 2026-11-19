@@ -5,10 +5,18 @@ import re
 import time
 from collections.abc import AsyncGenerator, Iterable
 from json import JSONDecodeError
+from pathlib import Path
 from types import TracebackType
 from typing import Annotated, Callable, ClassVar, Optional, Union
 
-from pycrashreport.crash_report import CrashReportBase, get_crash_report_from_buf
+from apple_symbols import KernelSymbols
+from pycrashreport.crash_report import (
+    CrashReportBase,
+    KernelModeCrashReport,
+    PanicProcess,
+    get_crash_report_from_buf,
+)
+from rich.console import Console
 
 from pymobiledevice3.exceptions import (
     AfcDeleteError,
@@ -18,7 +26,7 @@ from pymobiledevice3.exceptions import (
     ProtocolError,
     SysdiagnoseTimeoutError,
 )
-from pymobiledevice3.interactive_shell import Arg, shell_command
+from pymobiledevice3.interactive_shell import Arg, local_path_completer, shell_command
 from pymobiledevice3.lockdown import LockdownClient
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
 from pymobiledevice3.services.afc import AfcError, AfcService, AfcShell, RemotePath
@@ -33,6 +41,60 @@ SYSDIAGNOSE_IN_PROGRESS_MAX_TTL_SECS = 600
 
 # on iOS17, we need to wait for a moment before trying to fetch the sysdiagnose archive
 IOS17_SYSDIAGNOSE_DELAY = 3
+
+
+def load_kernel_symbols(kernelcache: Optional[Path], kernel_signatures: Optional[Path]) -> Optional[KernelSymbols]:
+    """
+    Load what names the kernel frames of a panic report.
+
+    :param kernelcache: Kernelcache of the firmware the device ran, as found in its IPSW.
+    :param kernel_signatures: Directory of `ipsw` kernel symbolication signatures, for a kernelcache
+        which holds no symbols. Requires the `ipsw` tool.
+    :raises ValueError: for signatures given without a kernelcache, or symbols which cannot be read.
+    """
+    if kernel_signatures is not None and kernelcache is None:
+        raise ValueError("--kernel-signatures requires --kernelcache")
+    if kernelcache is None:
+        return None
+    try:
+        return KernelSymbols.load(kernelcache, kernel_signatures)
+    except OSError as e:
+        raise ValueError(f"Reading the kernel symbols of {kernelcache} failed: {e}") from e
+
+
+def print_crash_report(
+    report: CrashReportBase,
+    kernel_symbols: Optional[KernelSymbols] = None,
+    processes: Iterable[str] = (),
+    all_processes: bool = False,
+) -> None:
+    """
+    Print a crash report the way the `pycrashreport` command does.
+
+    :param kernel_symbols: Names the kernel frames of a panic report.
+    :param processes: Name or pid of the processes of a panic report to print every thread of.
+    :param all_processes: Print the threads of every process of a panic report.
+    :raises ValueError: for processes asked of a report which is not a panic, or does not hold them.
+    """
+    selected: list[PanicProcess] = []
+    processes = list(processes)
+    if isinstance(report, KernelModeCrashReport):
+        if kernel_symbols is not None:
+            report.kernel_symbols = kernel_symbols
+        if all_processes:
+            selected = list(report.processes)
+        for process in processes:
+            found = report.find_processes(process)
+            if not found:
+                raise ValueError(f"The report holds no process {process}")
+            selected += [entry for entry in found if entry not in selected]
+    elif processes or all_processes:
+        raise ValueError("--process and --all apply to panic reports only")
+    # printed as a renderable, so colors follow the terminal: none when the output is piped
+    console = Console(highlight=False)
+    console.print(report, soft_wrap=True)
+    if selected and isinstance(report, KernelModeCrashReport):
+        console.print(report.render_processes(selected), soft_wrap=True)
 
 
 class CrashReportsManager:
@@ -442,13 +504,26 @@ class CrashReportsShell(AfcShell):
         self._manager = manager
 
     @shell_command
-    async def _do_parse(self, filename: RemotePath) -> None:
+    async def _do_parse(
+        self,
+        filename: RemotePath,
+        *,
+        kernelcache: Annotated[Optional[str], Arg(completer=local_path_completer)] = None,
+        kernel_signatures: Annotated[Optional[str], Arg(completer=local_path_completer)] = None,
+        process: Annotated[Optional[list[str]], Arg("-p")] = None,
+        all: Annotated[bool, Arg()] = False,  # noqa: A002
+    ) -> None:
         """
         Parse and print a crash report by filename.
 
         :param filename: Path to the crash report file
+        :param kernelcache: Local kernelcache of the firmware the device ran, to name the kernel images of a panic
+        :param kernel_signatures: Local directory of `ipsw` kernel signatures, to name the kernel functions of a panic
+        :param process: Name or pid of a process of a panic to print every thread of (repeatable)
+        :param all: Print the threads of every process of a panic
         """
-        print(await self._manager.parse(filename))
+        kernel_symbols = self._load_kernel_symbols(kernelcache, kernel_signatures)
+        print_crash_report(await self._manager.parse(filename), kernel_symbols, process or [], all)
 
     @shell_command
     async def _do_parse_latest(
@@ -458,6 +533,10 @@ class CrashReportsShell(AfcShell):
         match: Annotated[Optional[list[str]], Arg("-m")] = None,
         match_insensitive: Annotated[Optional[list[str]], Arg("-mi")] = None,
         count: Annotated[int, Arg("-n")] = 1,
+        kernelcache: Annotated[Optional[str], Arg(completer=local_path_completer)] = None,
+        kernel_signatures: Annotated[Optional[str], Arg(completer=local_path_completer)] = None,
+        process: Annotated[Optional[list[str]], Arg("-p")] = None,
+        all: Annotated[bool, Arg()] = False,  # noqa: A002
     ) -> None:
         """
         Parse latest top-level crash report(s) under a path, ordered by newest first
@@ -466,7 +545,12 @@ class CrashReportsShell(AfcShell):
         :param match: Only reports whose name contains this text (repeatable)
         :param match_insensitive: Same as --match, ignoring case (repeatable)
         :param count: How many reports to parse
+        :param kernelcache: Local kernelcache of the firmware the device ran, to name the kernel images of a panic
+        :param kernel_signatures: Local directory of `ipsw` kernel signatures, to name the kernel functions of a panic
+        :param process: Name or pid of a process of a panic to print every thread of (repeatable)
+        :param all: Print the threads of every process of a panic
         """
+        kernel_symbols = self._load_kernel_symbols(kernelcache, kernel_signatures)
         latest_reports = await self._manager.parse_latest(
             path=path,
             match=match or [],
@@ -474,7 +558,14 @@ class CrashReportsShell(AfcShell):
             count=count,
         )
         for report in latest_reports:
-            print(report)
+            print_crash_report(report, kernel_symbols, process or [], all)
+
+    @staticmethod
+    def _load_kernel_symbols(kernelcache: Optional[str], kernel_signatures: Optional[str]) -> Optional[KernelSymbols]:
+        return load_kernel_symbols(
+            Path(kernelcache).expanduser() if kernelcache is not None else None,
+            Path(kernel_signatures).expanduser() if kernel_signatures is not None else None,
+        )
 
     @shell_command
     async def _do_clear(self, path: RemotePath = "/") -> None:

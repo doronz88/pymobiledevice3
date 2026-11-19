@@ -21,7 +21,10 @@ Explicit tunnel setup is rarely needed: on iOS 17.4+, commands that require an R
 
 - `afc`: media-domain shell, pull, push, ls, rm.
 - `apps`: list/query/install/uninstall apps and work with app AFC/container helpers.
-- `crash`: browse, pull, clear, watch crash reports and sysdiagnose artifacts.
+- `crash`: browse, pull, parse, clear, watch crash reports and sysdiagnose artifacts. `parse`/`parse-latest` name the
+  user frames of a panic from the device's Xcode device support, and its kernel frames given `--kernelcache`
+  (plus `--kernel-signatures` for function names); `-p NAME/PID` (repeatable) or `--all` list every thread of
+  further processes of the panic.
 - `mobilesync`: dump, add, modify or delete contacts, calendars, Safari bookmarks and mail accounts without a backup.
 - Services to inspect when extending: `services/afc.py`, `services/house_arrest.py`, `services/installation_proxy.py`, `services/crash_reports.py`.
 
