@@ -5,10 +5,10 @@ from typing import Any, cast
 
 import pytest
 import typer
+from apple_symbols import KernelSymbols
 
 from pymobiledevice3.cli.developer.dvt import core_profile_session
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
-from pymobiledevice3.services.dvt.instruments.kernel_symbols import KernelSymbols
 from pymobiledevice3.services.dvt.instruments.stackshot import StackshotFrame, StackshotProcess, StackshotThread
 
 pytestmark = [pytest.mark.cli]
@@ -56,7 +56,7 @@ def fake_device(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(core_profile_session, "DvtProvider", lambda _service_provider: _AsyncContext())
     monkeypatch.setattr(core_profile_session, "CoreProfileSessionTap", FakeCoreProfileSessionTap)
     # No device support exists for the fake device
-    monkeypatch.setattr(core_profile_session, "find_device_support_symbols", lambda _service_provider: None)
+    monkeypatch.setattr(core_profile_session, "find_device_support_symbols", lambda *_args: None)
 
 
 def test_format_stackshot() -> None:

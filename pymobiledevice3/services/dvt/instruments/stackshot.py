@@ -5,8 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Optional, cast
 
-from pymobiledevice3.services.dvt.instruments.device_support_symbols import DeviceSupportSymbols, SymbolImage
-from pymobiledevice3.services.dvt.instruments.kernel_symbols import KernelSymbols
+from apple_symbols import DeviceSupportSymbols, KernelSymbols, SymbolImage
 
 SHARED_CACHE_IMAGE_NAME = "dyld_shared_cache"
 
