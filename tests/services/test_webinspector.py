@@ -219,6 +219,19 @@ async def testp_reattaching_immediately_after_a_session_succeeds(lockdown: Lockd
         await reattached.close()
 
 
+async def testp_an_evaluate_larger_than_one_webinspectord_read_is_answered(lockdown: LockdownClient) -> None:
+    """webinspectord takes a message in 8192 bytes at a time and picks up the rest of a larger
+    one only once more data arrives, so an evaluate carrying a long script was never answered."""
+    async with webinspector_service(lockdown) as inspector:
+        await inspector.open_app(SAFARI)
+        pages = await inspector.get_open_application_pages(timeout=4)
+        safari_page = next(page for page in pages if page.application.bundle == SAFARI)
+        session = await inspector.inspector_session(safari_page.application, safari_page.page)
+        for padding in (8192, 100_000):
+            script = f"1 + 1 /*{'A' * padding}*/"
+            assert await asyncio.wait_for(session.runtime_evaluate(script, return_by_value=True), 10) == 2
+
+
 class _ProbeableLockdown:
     """A lockdown stand-in whose liveness probe answers or fails on demand."""
 

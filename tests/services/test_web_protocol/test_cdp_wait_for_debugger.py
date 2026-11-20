@@ -25,7 +25,13 @@ from pymobiledevice3.services.web_protocol.cdp_browser import (
 from pymobiledevice3.services.web_protocol.cdp_server import app, targets_html
 from pymobiledevice3.services.web_protocol.cdp_target import CdpTarget
 from pymobiledevice3.services.web_protocol.session_protocol import SessionProtocol
-from pymobiledevice3.services.webinspector import Application, AutomationAvailability, Page, WebinspectorService
+from pymobiledevice3.services.webinspector import (
+    BLANK_FRAME,
+    Application,
+    AutomationAvailability,
+    Page,
+    WebinspectorService,
+)
 
 APP_ID = "PID:42"
 CANDIDATE_SESSION = "9D0D3D1E-2C5B-4B69-8E4F-2A6A0B8E1C11"
@@ -38,8 +44,9 @@ class FakeWebinspectord:
     def __init__(self) -> None:
         self.sent: list[dict[str, Any]] = []
 
-    async def send_plist(self, plist: dict[str, Any]) -> None:
-        self.sent.append(plist)
+    async def send_plist(self, plist: Any) -> None:
+        if plist != BLANK_FRAME:
+            self.sent.append(plist)
 
     def selectors(self) -> list[str]:
         return [message["__selector"] for message in self.sent]
