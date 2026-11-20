@@ -31,6 +31,11 @@ HANDSHAKE_RETRY_TIMEOUT = 20
 HANDSHAKE_RETRY_INTERVAL = 1
 # Safari hands out an automation page within a few seconds, including its own launch.
 AUTOMATION_SESSION_TIMEOUT = 10.0
+# Sent after every message. webinspectord takes a message in 8192 bytes at a time and picks up the
+# rest of a larger one only once more data arrives, so on its own such a message (an evaluate
+# carrying a long script) is never answered. A frame of its own is that data; webinspectord
+# ignores its content.
+BLANK_FRAME = " "
 
 
 def key_to_pid(key: str) -> int:
@@ -795,6 +800,7 @@ class WebinspectorService(LockdownService):
             return
         try:
             await self._service.send_plist({"__selector": selector, "__argument": args})
+            await self._service.send_plist(BLANK_FRAME)
         except (ConnectionError, ConnectionTerminatedError, OSError, EOFError) as error:
             self._note_connection_lost(error)
 
