@@ -2484,6 +2484,7 @@ class WebinspectorService(LockdownService):
             return
         try:
             await self._service.send_plist({"__selector": selector, "__argument": args})
+            await self._service.send_plist(BLANK_FRAME)
         except (ConnectionError, ConnectionTerminatedError, OSError, EOFError) as error:
             self._note_connection_lost(error)
 
