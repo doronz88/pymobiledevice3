@@ -220,8 +220,8 @@ async def testp_reattaching_immediately_after_a_session_succeeds(lockdown: Lockd
 
 
 async def testp_an_evaluate_larger_than_one_webinspectord_read_is_answered(lockdown: LockdownClient) -> None:
-    """webinspectord takes a message in 8192 bytes at a time and picks up the rest of a larger
-    one only once more data arrives, so an evaluate carrying a long script was never answered."""
+    """webinspectord leaves the end of a message whose last TLS record reached it in pieces
+    unread until more data arrives, so an evaluate carrying a long script was never answered."""
     async with webinspector_service(lockdown) as inspector:
         await inspector.open_app(SAFARI)
         pages = await inspector.get_open_application_pages(timeout=4)
