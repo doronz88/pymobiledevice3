@@ -31,10 +31,13 @@ HANDSHAKE_RETRY_TIMEOUT = 20
 HANDSHAKE_RETRY_INTERVAL = 1
 # Safari hands out an automation page within a few seconds, including its own launch.
 AUTOMATION_SESSION_TIMEOUT = 10.0
-# Sent after every message. webinspectord takes a message in 8192 bytes at a time and picks up the
-# rest of a larger one only once more data arrives, so on its own such a message (an evaluate
-# carrying a long script) is never answered. A frame of its own is that data; webinspectord
-# ignores its content.
+# Sent after every message, as a frame of its own. webinspectord reads its lockdown connection
+# with one SSLRead per socket event, into a buffer the size of what the socket held, and never
+# asks for what TLS decrypted beyond it. The end of a message whose last TLS record reached the
+# device in pieces (any message larger than the host's socket buffer or than one record) stays
+# unread until more data arrives, so on its own such a message (an evaluate carrying a long
+# script) is never answered. This frame is that data; webinspectord ignores its content.
+# MobileDevice.framework, which Safari uses, stalls the same way past one TLS record.
 BLANK_FRAME = " "
 
 
