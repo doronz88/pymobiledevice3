@@ -56,10 +56,8 @@ def test_a_silent_device_is_restarted_up_to_the_limit():
     assert len(restarts) == screen_stream._MAX_STALL_RESTARTS
     assert restarts[0] - 100.0 > screen_stream._STALL_RESTART_SECS
     assert all(b - a >= screen_stream._STALL_RESTART_COOLDOWN_SECS for a, b in zip(restarts, restarts[1:]))
-    # The grace period of each fresh session reads as "back", then "gone" again.
-    states = _online_states(queue)
-    assert states[0] is False
-    assert states[-1] is False
+    # Told once: the grace period of each fresh session is not the device coming back.
+    assert _online_states(queue) == [False]
 
 
 def test_a_device_that_answers_the_restart_is_forgiven():
@@ -71,7 +69,7 @@ def test_a_device_that_answers_the_restart_is_forgiven():
     _run(server, 112.0, 30.0, sender_reports=True)
 
     assert server._consecutive_restarts == 0
-    assert _online_states(queue)[-1] is True
+    assert _online_states(queue) == [False, True]
 
 
 def test_the_online_message_carries_the_current_state():

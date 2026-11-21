@@ -2846,7 +2846,9 @@ class ScreenStreamServer:
         return whether the media session should be restarted now."""
         silent_for = now - max(self._last_packet_t, self._stream_started_t)
         silent = silent_for > _STALL_RESTART_SECS
-        if silent != self._device_silent:
+        # A fresh session's grace period is not the device coming back: only a
+        # datagram of that session is.
+        if silent != self._device_silent and (silent or self._last_packet_t > self._stream_started_t):
             self._broadcast_device_silent(silent)
         if not silent:
             # Forgive prior restarts only once the device answered the last one; the
