@@ -861,6 +861,10 @@ class ScreenStreamServer:
         # has progressed within :data:`_STALL_RESTART_SECS` while we have
         # at least one subscriber attached.
         self._last_good_au_t: float = 0.0
+        # Time of the last AU that actually arrived. Unlike ``_last_good_au_t`` it is
+        # never seeded by a stream restart, so the watchdog can tell a real recovery
+        # from the grace period given to a fresh session.
+        self._last_real_au_t: float = 0.0
         self._last_restart_t: float = 0.0
         self._consecutive_restarts: int = 0
 
@@ -1120,7 +1124,7 @@ class ScreenStreamServer:
                                 self._reconfigure_pending = False
                                 for q in self._subscribers:
                                     q.put_nowait(config_msg)
-                    self._last_good_au_t = loop.time()
+                    self._last_good_au_t = self._last_real_au_t = loop.time()
                     # Feed the byte-rate window used by the decoder-refresh
                     # motion detector. Count DELTA AUs only: a forced IDR is
                     # ~200-300 KB and alone exceeds motion_threshold_bps, so
@@ -2862,8 +2866,10 @@ class ScreenStreamServer:
             # master's single AU-stall trigger. A genuinely wedged encoder that
             # ignores PLIs is still caught by the true AU stall.
             if not stalled:
-                # Stream is making progress -- prior restarts are forgiven.
-                self._consecutive_restarts = 0
+                # Forgive prior restarts only once an AU has arrived since the last one;
+                # the grace period of a fresh session is not progress.
+                if self._last_real_au_t > self._last_restart_t:
+                    self._consecutive_restarts = 0
                 continue
             if now - self._last_restart_t < _STALL_RESTART_COOLDOWN_SECS:
                 continue
