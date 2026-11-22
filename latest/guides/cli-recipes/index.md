@@ -64,6 +64,16 @@ pymobiledevice3 crash parse-latest --match '^panic-full' \
 pymobiledevice3 crash parse-latest --match '^panic-full' -p logd -p 1
 pymobiledevice3 crash parse-latest --match '^panic-full' --all
 
+# A stackshot (`stacks-*.ips`, as sysdiagnose takes) takes the same options, and so does a panic
+# take `--running`, which lists only the threads which were on a CPU
+pymobiledevice3 crash parse-latest --match '^stacks-' -p SpringBoard
+pymobiledevice3 crash parse-latest --match '^stacks-' --running
+
+# A report of a process over its disk writes, CPU or wakeups limit gets its frames named, with the
+# call tree of each process sampled. `--all` of a crash lists the call stack of every thread of it
+pymobiledevice3 crash parse-latest --match 'diskwrites_resource' --all
+pymobiledevice3 crash parse-latest --match '^MobileSafari' --all
+
 # Remove only matching crash reports, without copying them
 pymobiledevice3 crash clear --match '^MobileSafari'
 

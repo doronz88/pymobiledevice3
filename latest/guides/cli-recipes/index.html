@@ -3119,14 +3119,24 @@ itself, with no flag and no <code>sudo</code> (<a href="../ios17-tunnels/">iOS 1
 <a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^panic-full'</span><span class="w"> </span>-p<span class="w"> </span>logd<span class="w"> </span>-p<span class="w"> </span><span class="m">1</span>
 <a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^panic-full'</span><span class="w"> </span>--all
 <a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>
-<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="c1"># Remove only matching crash reports, without copying them</span>
-<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>clear<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^MobileSafari'</span>
-<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a>
-<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="c1"># Show the process list (no Developer Mode, DDI or tunnel needed)</span>
-<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>ps
-<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a>
-<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="c1"># Match process pids by name (like pgrep)</span>
-<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>pgrep<span class="w"> </span>SpringBoard
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="c1"># A stackshot (`stacks-*.ips`, as sysdiagnose takes) takes the same options, and so does a panic</span>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="c1"># take `--running`, which lists only the threads which were on a CPU</span>
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^stacks-'</span><span class="w"> </span>-p<span class="w"> </span>SpringBoard
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^stacks-'</span><span class="w"> </span>--running
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a>
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a><span class="c1"># A report of a process over its disk writes, CPU or wakeups limit gets its frames named, with the</span>
+<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="c1"># call tree of each process sampled. `--all` of a crash lists the call stack of every thread of it</span>
+<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'diskwrites_resource'</span><span class="w"> </span>--all
+<a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^MobileSafari'</span><span class="w"> </span>--all
+<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a>
+<a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a><span class="c1"># Remove only matching crash reports, without copying them</span>
+<a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>clear<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^MobileSafari'</span>
+<a id="__codelineno-1-46" name="__codelineno-1-46" href="#__codelineno-1-46"></a>
+<a id="__codelineno-1-47" name="__codelineno-1-47" href="#__codelineno-1-47"></a><span class="c1"># Show the process list (no Developer Mode, DDI or tunnel needed)</span>
+<a id="__codelineno-1-48" name="__codelineno-1-48" href="#__codelineno-1-48"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>ps
+<a id="__codelineno-1-49" name="__codelineno-1-49" href="#__codelineno-1-49"></a>
+<a id="__codelineno-1-50" name="__codelineno-1-50" href="#__codelineno-1-50"></a><span class="c1"># Match process pids by name (like pgrep)</span>
+<a id="__codelineno-1-51" name="__codelineno-1-51" href="#__codelineno-1-51"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>pgrep<span class="w"> </span>SpringBoard
 </code></pre></div>
 <h2 id="network-sniffing-pcap">Network Sniffing (PCAP)<a class="headerlink" href="#network-sniffing-pcap" title="Permanent link">&para;</a></h2>
 <p>Every packet is labelled with the process that sent it; see
