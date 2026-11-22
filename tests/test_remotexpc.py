@@ -10,7 +10,16 @@ from typing import Any, Optional, cast
 
 import pytest
 from bytestruct import BinaryBuildError, BinaryParseError, TruncatedDataError, UnexpectedConstantError
-from hyperframe.frame import DataFrame, Frame, HeadersFrame, RstStreamFrame, SettingsFrame, WindowUpdateFrame
+from hyperframe.frame import (
+    DataFrame,
+    Frame,
+    GoAwayFrame,
+    HeadersFrame,
+    PingFrame,
+    RstStreamFrame,
+    SettingsFrame,
+    WindowUpdateFrame,
+)
 
 from pymobiledevice3.exceptions import (
     ConnectionTerminatedError,
@@ -318,6 +327,38 @@ async def test_reset_of_a_finished_transfer_stream_is_not_an_error():
     connection._receive_frame = receive_frame
 
     assert await connection._pump_one_frame() is data_frame
+
+
+@pytest.mark.asyncio
+async def test_ping_waits_for_its_own_ack_and_keeps_the_data_read_meanwhile():
+    connection, writer = _sending_connection()
+    data_frame = DataFrame(stream_id=1, data=b"a reply nobody read yet")
+    replies: list[Any] = [data_frame, PingFrame(opaque_data=b"an older", flags=["ACK"])]
+
+    async def receive_frame():
+        if not replies:
+            (ping,) = [frame for frame in _parse_written_frames(writer) if isinstance(frame, PingFrame)]
+            replies.append(PingFrame(opaque_data=ping.opaque_data, flags=["ACK"]))
+        return replies.pop(0)
+
+    connection._receive_frame = receive_frame
+
+    await asyncio.wait_for(connection.ping(), 5.0)
+
+    assert list(connection._buffered_data_frames) == [data_frame]
+
+
+@pytest.mark.asyncio
+async def test_ping_reports_a_connection_the_device_closed():
+    connection, _ = _sending_connection()
+
+    async def receive_frame():
+        return GoAwayFrame(stream_id=0)
+
+    connection._receive_frame = receive_frame
+
+    with pytest.raises(StreamClosedError):
+        await asyncio.wait_for(connection.ping(), 5.0)
 
 
 @pytest.mark.asyncio

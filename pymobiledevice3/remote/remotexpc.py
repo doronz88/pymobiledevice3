@@ -17,6 +17,7 @@ from hyperframe.frame import (
     Frame,
     GoAwayFrame,
     HeadersFrame,
+    PingFrame,
     RstStreamFrame,
     SettingsFrame,
     WindowUpdateFrame,
@@ -438,6 +439,30 @@ class RemoteXPCConnection:
         async with self._request_lock:
             await self.send_request(data, wanting_reply=True)
             return await self.receive_response()
+
+    async def ping(self) -> None:
+        """Send an HTTP/2 PING and wait for the peer to acknowledge it.
+
+        The cheapest proof that the peer is still there: answered by its HTTP/2 layer, with no XPC
+        message involved. Data frames read meanwhile are kept for the next ``receive_response()``.
+        Bound it with ``asyncio.wait_for``: a peer that left without closing never answers.
+
+        :raises ConnectionTerminatedError: If the peer closed the connection or it failed.
+        :raises StreamClosedError: If the peer sent GOAWAY instead.
+        """
+        opaque_data = uuid.uuid4().bytes[:8]
+        async with self._request_lock:
+            await self._send_frame(PingFrame(opaque_data=opaque_data))
+            while True:
+                frame = await self._receive_frame()
+                if isinstance(frame, PingFrame) and "ACK" in frame.flags and frame.opaque_data == opaque_data:
+                    return
+                if isinstance(frame, GoAwayFrame):
+                    raise StreamClosedError(f"The device closed the connection: {frame}")
+                if isinstance(frame, DataFrame):
+                    self._buffered_data_frames.append(frame)
+                else:
+                    self._apply_flow_control_frame(frame)
 
     def shell(self) -> None:
         start_ipython_shell(
