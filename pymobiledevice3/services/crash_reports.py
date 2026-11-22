@@ -12,9 +12,9 @@ from typing import Annotated, Callable, ClassVar, Optional, Union
 from apple_symbols import KernelSymbols
 from pycrashreport.crash_report import (
     CrashReportBase,
-    KernelModeCrashReport,
-    PanicProcess,
+    StackshotReportBase,
     get_crash_report_from_buf,
+    render_processes,
 )
 from rich.console import Console
 
@@ -45,7 +45,7 @@ IOS17_SYSDIAGNOSE_DELAY = 3
 
 def load_kernel_symbols(kernelcache: Optional[Path], kernel_signatures: Optional[Path]) -> Optional[KernelSymbols]:
     """
-    Load what names the kernel frames of a panic report.
+    Load what names the kernel frames of a panic or a stackshot report.
 
     :param kernelcache: Kernelcache of the firmware the device ran, as found in its IPSW.
     :param kernel_signatures: Directory of `ipsw` kernel symbolication signatures, for a kernelcache
@@ -67,34 +67,27 @@ def print_crash_report(
     kernel_symbols: Optional[KernelSymbols] = None,
     processes: Iterable[str] = (),
     all_processes: bool = False,
+    running: bool = False,
 ) -> None:
     """
     Print a crash report the way the `pycrashreport` command does.
 
-    :param kernel_symbols: Names the kernel frames of a panic report.
-    :param processes: Name or pid of the processes of a panic report to print every thread of.
-    :param all_processes: Print the threads of every process of a panic report.
-    :raises ValueError: for processes asked of a report which is not a panic, or does not hold them.
+    Panic, stackshot and spindump reports hold processes, and a userland crash the threads of one.
+
+    :param kernel_symbols: Names the kernel frames of a panic or a stackshot report.
+    :param processes: Name or pid of the processes of the report to print the call stacks of.
+    :param all_processes: Print the call stacks of every process of the report, or of every thread of a crash.
+    :param running: Print the threads of a panic or a stackshot report which were on a CPU.
+    :raises ValueError: for processes asked of a report which holds none, or not the ones asked for.
     """
-    selected: list[PanicProcess] = []
-    processes = list(processes)
-    if isinstance(report, KernelModeCrashReport):
-        if kernel_symbols is not None:
-            report.kernel_symbols = kernel_symbols
-        if all_processes:
-            selected = list(report.processes)
-        for process in processes:
-            found = report.find_processes(process)
-            if not found:
-                raise ValueError(f"The report holds no process {process}")
-            selected += [entry for entry in found if entry not in selected]
-    elif processes or all_processes:
-        raise ValueError("--process and --all apply to panic reports only")
+    if kernel_symbols is not None and isinstance(report, StackshotReportBase):
+        report.kernel_symbols = kernel_symbols
+    selected = render_processes(report, processes, all_processes, running)
     # printed as a renderable, so colors follow the terminal: none when the output is piped
     console = Console(highlight=False)
     console.print(report, soft_wrap=True)
-    if selected and isinstance(report, KernelModeCrashReport):
-        console.print(report.render_processes(selected), soft_wrap=True)
+    if selected is not None:
+        console.print(selected, soft_wrap=True)
 
 
 class CrashReportsManager:
@@ -512,18 +505,20 @@ class CrashReportsShell(AfcShell):
         kernel_signatures: Annotated[Optional[str], Arg(completer=local_path_completer)] = None,
         process: Annotated[Optional[list[str]], Arg("-p")] = None,
         all: Annotated[bool, Arg()] = False,  # noqa: A002
+        running: Annotated[bool, Arg("-r")] = False,
     ) -> None:
         """
         Parse and print a crash report by filename.
 
         :param filename: Path to the crash report file
-        :param kernelcache: Local kernelcache of the firmware the device ran, to name the kernel images of a panic
-        :param kernel_signatures: Local directory of `ipsw` kernel signatures, to name the kernel functions of a panic
-        :param process: Name or pid of a process of a panic to print every thread of (repeatable)
-        :param all: Print the threads of every process of a panic
+        :param kernelcache: Local kernelcache of the firmware the device ran, to name the kernel images of a panic or a stackshot
+        :param kernel_signatures: Local directory of `ipsw` kernel signatures, to name the kernel functions of a panic or a stackshot
+        :param process: Name or pid of a process of a panic, a stackshot or a spindump to print the stacks of (repeatable)
+        :param all: Print the stacks of every process of a panic, a stackshot or a spindump, or of every thread of a crash
+        :param running: Print the threads of a panic or a stackshot which were on a CPU
         """
         kernel_symbols = self._load_kernel_symbols(kernelcache, kernel_signatures)
-        print_crash_report(await self._manager.parse(filename), kernel_symbols, process or [], all)
+        print_crash_report(await self._manager.parse(filename), kernel_symbols, process or [], all, running)
 
     @shell_command
     async def _do_parse_latest(
@@ -537,6 +532,7 @@ class CrashReportsShell(AfcShell):
         kernel_signatures: Annotated[Optional[str], Arg(completer=local_path_completer)] = None,
         process: Annotated[Optional[list[str]], Arg("-p")] = None,
         all: Annotated[bool, Arg()] = False,  # noqa: A002
+        running: Annotated[bool, Arg("-r")] = False,
     ) -> None:
         """
         Parse latest top-level crash report(s) under a path, ordered by newest first
@@ -545,10 +541,11 @@ class CrashReportsShell(AfcShell):
         :param match: Only reports whose name contains this text (repeatable)
         :param match_insensitive: Same as --match, ignoring case (repeatable)
         :param count: How many reports to parse
-        :param kernelcache: Local kernelcache of the firmware the device ran, to name the kernel images of a panic
-        :param kernel_signatures: Local directory of `ipsw` kernel signatures, to name the kernel functions of a panic
-        :param process: Name or pid of a process of a panic to print every thread of (repeatable)
-        :param all: Print the threads of every process of a panic
+        :param kernelcache: Local kernelcache of the firmware the device ran, to name the kernel images of a panic or a stackshot
+        :param kernel_signatures: Local directory of `ipsw` kernel signatures, to name the kernel functions of a panic or a stackshot
+        :param process: Name or pid of a process of a panic, a stackshot or a spindump to print the stacks of (repeatable)
+        :param all: Print the stacks of every process of a panic, a stackshot or a spindump, or of every thread of a crash
+        :param running: Print the threads of a panic or a stackshot which were on a CPU
         """
         kernel_symbols = self._load_kernel_symbols(kernelcache, kernel_signatures)
         latest_reports = await self._manager.parse_latest(
@@ -558,7 +555,7 @@ class CrashReportsShell(AfcShell):
             count=count,
         )
         for report in latest_reports:
-            print_crash_report(report, kernel_symbols, process or [], all)
+            print_crash_report(report, kernel_symbols, process or [], all, running)
 
     @staticmethod
     def _load_kernel_symbols(kernelcache: Optional[str], kernel_signatures: Optional[str]) -> Optional[KernelSymbols]:
