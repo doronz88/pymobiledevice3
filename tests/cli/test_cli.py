@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 import os
@@ -13,7 +14,12 @@ from typer.testing import CliRunner
 
 from pymobiledevice3 import __main__
 from pymobiledevice3.cli import cli_common
-from pymobiledevice3.exceptions import RSDRequiredError
+from pymobiledevice3.exceptions import (
+    DeviceNotFoundError,
+    NoDeviceConnectedError,
+    RSDRequiredError,
+    TunneldConnectionError,
+)
 
 pytestmark = [pytest.mark.cli]
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -581,6 +587,56 @@ def test_reconnect_reuses_interactively_selected_device(monkeypatch):
     assert captured.get("serial") == "PROMPTED-UDID"
     # Stamped so the re-invocation resolves the same device instead of prompting/auto-picking.
     assert os.environ[cli_common.UDID_ENV_VAR] == "PROMPTED-UDID"
+
+
+def test_reconnect_waits_for_a_tunnel_device_in_tunneld_not_on_usbmux(monkeypatch):
+    """Over Wi-Fi a --tunnel device never appears on usbmux: waiting for it there would never end."""
+    waited_for = []
+
+    async def fake_wait_for_tunneld_device(tunnel: str) -> None:
+        waited_for.append(tunnel)
+
+    async def usbmux_must_not_be_asked(*args, **kwargs):
+        raise AssertionError("waited on usbmux for a --tunnel device")
+
+    invocations = iter([(__main__.ExitCode.ERROR, True), (__main__.ExitCode.SUCCESS, False)])
+    monkeypatch.setattr(__main__, "invoke_cli_with_error_handling", lambda: next(invocations))
+    monkeypatch.setattr(__main__, "RECONNECT", True)
+    monkeypatch.setattr(__main__, "retry_create_using_usbmux", usbmux_must_not_be_asked)
+    monkeypatch.setattr(cli_common, "wait_for_tunneld_device", fake_wait_for_tunneld_device)
+    monkeypatch.setattr(cli_common, "_resolved_tunnel", "TARGET-UDID:1234")  # as recorded on dependency resolution
+    monkeypatch.delenv(cli_common.REMOTEPAIRING_ENV_VAR, raising=False)
+    monkeypatch.setattr(sys, "argv", ["pymobiledevice3", "--reconnect", "developer", "dvt", "ls", "/"])
+
+    assert __main__.main() == __main__.ExitCode.SUCCESS
+
+    assert waited_for == ["TARGET-UDID:1234"]
+
+
+async def test_the_tunneld_wait_polls_until_the_device_is_served(monkeypatch):
+    class _FakeRsd:
+        closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    rsd = _FakeRsd()
+    answers = iter([NoDeviceConnectedError(), DeviceNotFoundError("TARGET-UDID"), TunneldConnectionError(), rsd])
+
+    async def fake_tunneld(tunnel):
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(cli_common, "_tunneld", fake_tunneld)
+    monkeypatch.setattr(cli_common, "RECONNECT_RETRY_INTERVAL_SECONDS", 0)
+
+    await asyncio.wait_for(cli_common.wait_for_tunneld_device("TARGET-UDID"), 5.0)
+
+    # Served again, and the connection the check made is released.
+    assert rsd.closed
+    assert next(answers, None) is None
 
 
 def test_service_provider_dependency_records_resolved_udid(monkeypatch):
