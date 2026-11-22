@@ -1026,6 +1026,7 @@ function drawPending() {
 // does the recovering (session restart, reconnect), so nothing is asked of it
 // from here.
 const offlineOverlay = document.getElementById('offline-overlay');
+let deviceDisconnected = false;
 function setDeviceOnline(online) {
     offlineOverlay.classList.toggle('hidden', online);
     log(online ? 'device is back' : 'device stopped responding');
@@ -1462,8 +1463,13 @@ async function run() {
     let gotKey = false;
     let sentCount = 0;
     while (true) {
-        const { value, done } = await reader.read();
-        if (done) { log('stream ended'); break; }
+        let value, done;
+        try {
+            ({ value, done } = await reader.read());
+        } catch (e) {
+            log('stream read err: ' + (e.message || e)); return 'ended';
+        }
+        if (done) { log('stream ended'); return 'ended'; }
         const merged = new Uint8Array(buf.length + value.length);
         merged.set(buf); merged.set(value, buf.length);
         buf = merged;
@@ -1487,7 +1493,10 @@ async function run() {
             //   5 = the device went silent or came back: JSON {online}
             if (type === 5) {
                 try {
-                    setDeviceOnline(JSON.parse(new TextDecoder().decode(data)).online);
+                    const state = JSON.parse(new TextDecoder().decode(data));
+                    // The server's last word before it stops over a device that is gone.
+                    if (state.disconnected) deviceDisconnected = true;
+                    setDeviceOnline(state.online);
                 } catch (e) {
                     log('bad online state: ' + e.message);
                 }
@@ -1564,4 +1573,22 @@ async function run() {
         }
     }
 }
-run().catch(e => log('fatal: ' + e.message));
+// A stream that was running ended: the server stopped, over a device that is gone
+// or because it was told to. Say which, and nothing about what happens next: only a
+// server run with --reconnect comes back by itself, which is not known from here.
+// If it does (on the same address), start over. Asking for the page itself starts
+// nothing on the device, unlike /codec. (Any other way run() ends would end the same
+// way again, so it stays as it is.)
+async function waitForServerAndReload() {
+    offlineOverlay.querySelector('span').textContent =
+        deviceDisconnected ? 'The device disconnected' : 'The server stopped';
+    offlineOverlay.classList.remove('hidden');
+    for (;;) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+            if ((await fetch('/', {cache: 'no-store'})).ok) break;
+        } catch (e) {}
+    }
+    location.reload();
+}
+run().catch(e => log('fatal: ' + e.message)).then(r => { if (r === 'ended') waitForServerAndReload(); });

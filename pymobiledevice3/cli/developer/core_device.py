@@ -1357,6 +1357,9 @@ async def core_device_display_serve_web(
     HEVC support — recent versions enable it by default if the OS supports it).
     Pass ``--https`` when connecting from another LAN host (browsers gate
     WebCodecs on a secure context; only loopback origins bypass that).
+
+    Stops with a device-disconnected error when the device goes away; run it as
+    ``pymobiledevice3 --reconnect ...`` to have it wait for the device and start again.
     """
     server = ScreenStreamServer(
         service_provider,
