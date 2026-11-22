@@ -465,6 +465,13 @@ def main() -> ExitCode:
                 asyncio.run(userspace_tunnel.wait_for_remotepairing_device(_cli_udid()))
                 logger.info("Device connected")
                 continue
+            tunnel = cli_common.resolved_tunnel()
+            if tunnel is not None:
+                # A --tunnel device is back once tunneld serves it again, which over Wi-Fi is the
+                # only place it shows up.
+                asyncio.run(cli_common.wait_for_tunneld_device(tunnel))
+                logger.info("Device connected")
+                continue
             # Wait for the device the command targeted, not just any device. The target is the
             # explicit --udid / env value, or whichever device the command's dependency resolved
             # to (auto-pick or interactive prompt). RECONNECT_ANY_ENV_VAR opts out: accept the

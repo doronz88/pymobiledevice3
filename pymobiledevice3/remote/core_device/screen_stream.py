@@ -16,7 +16,6 @@ import asyncio
 import base64
 import contextlib
 import datetime
-import errno
 import hmac
 import importlib.resources
 import ipaddress
@@ -40,7 +39,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
 import pymobiledevice3.resources
-from pymobiledevice3.exceptions import CoreDeviceError
+from pymobiledevice3.exceptions import ConnectionTerminatedError, CoreDeviceError
 from pymobiledevice3.remote.core_device.aac_eld import AAC_ELD_ASC_48K_STEREO_480, AACELDDecoder
 from pymobiledevice3.remote.core_device.configuration_service import ConfigurationService
 from pymobiledevice3.remote.core_device.device_info import DeviceInfoService, display_rotation, select_display
@@ -69,40 +68,6 @@ from pymobiledevice3.remote.core_device.pasteboard_service import (
 from pymobiledevice3.remote.remote_service import require_service
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.power_assertion import PowerAssertionService
-from pymobiledevice3.tunneld.api import get_tunneld_device_by_udid
-
-_TUNNEL_DEAD_ERRNOS = {
-    errno.EHOSTUNREACH,
-    errno.EHOSTDOWN,
-    errno.ECONNREFUSED,
-    errno.ECONNRESET,
-    errno.ECONNABORTED,
-    errno.ENETUNREACH,
-    errno.ENETDOWN,
-    errno.ETIMEDOUT,
-    errno.EPIPE,
-}
-
-
-def _is_tunnel_dead_error(exc: BaseException) -> bool:
-    """Return True if *exc* (or any of its causes) is a "tunnel went away"
-    failure — i.e. the device-side QUIC endpoint is unreachable and no
-    amount of stream-level restart can recover. The caller should hand
-    off to the reconnect loop, which waits for tunneld to surface the
-    same UDID again."""
-    seen: set[int] = set()
-    cur: Optional[BaseException] = exc
-    while cur is not None and id(cur) not in seen:
-        seen.add(id(cur))
-        if isinstance(cur, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
-            return True
-        if isinstance(cur, asyncio.IncompleteReadError):
-            return True
-        if isinstance(cur, OSError) and cur.errno in _TUNNEL_DEAD_ERRNOS:
-            return True
-        cur = cur.__cause__ or cur.__context__
-    return False
-
 
 # Named iOS hardware buttons → (usage_page, usage_code, hold_seconds).
 # Mirrors the table in cli/developer/core_device.py so the browser viewer
@@ -643,9 +608,16 @@ class _SubState:
 # - ``_MAX_STALL_RESTARTS``: an absolute backstop -- if this many restarts in a row
 #   bring no datagram back, the device daemon is wedged and another restart will just
 #   make it worse. Bail and require a manual page reload.
+#
+# Silence alone never means the device left: that is decided by whether it still
+# answers a ping (:meth:`ScreenStreamServer._device_reachable`), asked after a
+# failed restart and every ``_REACHABILITY_PROBE_INTERVAL_SECS`` for as long as nothing
+# arrives.
 _STALL_RESTART_SECS = 5.0
 _STALL_RESTART_COOLDOWN_SECS = 15.0
 _MAX_STALL_RESTARTS = 3
+_REACHABILITY_PROBE_INTERVAL_SECS = 15.0
+_REACHABILITY_PROBE_TIMEOUT_SECS = 5.0
 
 
 def _respond(
@@ -868,6 +840,7 @@ class ScreenStreamServer:
         self._stream_started_t: float = 0.0
         self._last_restart_t: float = 0.0
         self._consecutive_restarts: int = 0
+        self._last_probe_t: float = 0.0
         # What the viewers were last told (framing type 5): the device went silent.
         self._device_silent = False
 
@@ -898,17 +871,10 @@ class ScreenStreamServer:
         # fresh DisplayService session cleanly.
         self._keep_awake_task: Optional[asyncio.Task[None]] = None
 
-        # Disconnect-recovery state. The stall watchdog sets
-        # ``_reconnect_signal`` when its restart fails with a "tunnel is dead" error
-        # (e.g. the device left Wi-Fi or the upstream VPN dropped);
-        # _reconnect_loop then tears the existing streams down, polls
-        # tunneld for the same UDID, and rebinds ``self._rsd`` once the
-        # device returns. Existing HTTP connections (viewer, /stream.bin)
-        # keep running through the gap -- the viewer shows its offline overlay
-        # meanwhile, and AUs resume after rebind.
-        self._reconnect_signal = asyncio.Event()
-        self._reconnect_task: Optional[asyncio.Task[None]] = None
-        self._reconnect_poll_interval = 2.0
+        # Set by the stall watchdog once the device no longer answers on the tunnel.
+        # :meth:`serve` then shuts down and raises, which is what the CLI's
+        # ``--reconnect`` retries on.
+        self._device_disconnected = asyncio.Event()
 
     # ----- per-session UDP receiver -----------------------------------------
     async def _udp_recv_and_depacketize(self, transport: UdpMediaTransport) -> None:
@@ -2831,14 +2797,19 @@ class ScreenStreamServer:
         self._fire_decoder_refresh(now, reason=reason)
 
     def _broadcast_device_silent(self, silent: bool) -> None:
-        """Framing type 5: ``{"online": bool}``, whether the device is still sending anything."""
+        """Framing type 5: ``{"online": bool}``, whether the device is still sending anything
+        (with ``"disconnected": true`` once it is gone and the server is stopping)."""
         self._device_silent = silent
         message = self._device_online_message()
         for q in self._subscribers:
             q.put_nowait(message)
 
     def _device_online_message(self) -> bytes:
-        body = json.dumps({"online": not self._device_silent}).encode()
+        state = {"online": not self._device_silent}
+        if self._device_disconnected.is_set():
+            # The last thing the viewers hear: why their stream is about to end.
+            state["disconnected"] = True
+        body = json.dumps(state).encode()
         return (len(body) + 1).to_bytes(4, "big") + b"\x05" + body
 
     def _stall_restart_due(self, now: float) -> bool:
@@ -2864,140 +2835,86 @@ class ScreenStreamServer:
             # cold /codec path will attempt a fresh start anyway.
             return False
         self._consecutive_restarts += 1
+        if self._consecutive_restarts == _MAX_STALL_RESTARTS:
+            logger.warning("last restart attempt: after it, reload the page or use Force Restart")
         logger.warning(
-            "nothing from the device in %.1fs (subscribers=%d, attempt %d/%d) - restarting stream",
+            "nothing from the device in %.1fs (attempt %d/%d) - restarting stream",
             silent_for,
-            len(self._subscribers),
             self._consecutive_restarts,
             _MAX_STALL_RESTARTS,
         )
         self._last_restart_t = now
         return True
 
+    def _reachability_probe_due(self, now: float) -> bool:
+        """Whether to ask if the device is still there: nothing arrives from it (or no
+        session ever started), and the last probe is an interval old."""
+        if now - max(self._last_packet_t, self._stream_started_t) <= _STALL_RESTART_SECS:
+            return False
+        return now - self._last_probe_t >= _REACHABILITY_PROBE_INTERVAL_SECS
+
+    async def _device_reachable(self) -> bool:
+        """Whether the device still answers on the tunnel: an HTTP/2 PING on the RSD
+        connection, which its ``remoted`` acknowledges. The media session and the display
+        daemon play no part in it, so a wedged daemon reads as reachable."""
+        try:
+            await asyncio.wait_for(self._rsd.service.ping(), timeout=_REACHABILITY_PROBE_TIMEOUT_SECS)
+        except Exception:
+            # No answer in time, or the connection is gone: unreachable either way.
+            logger.debug("reachability probe failed", exc_info=True)
+            return False
+        return True
+
     async def _stall_watchdog(self) -> None:
-        """Restart the media session when the device stops sending anything.
+        """Restart the media session when the device stops sending anything, and end
+        :meth:`serve` when the device itself is gone.
 
         Silence is measured on datagrams, not frames: an unchanged screen makes the
         encoder emit no frames for as long as it stays unchanged (a minute between two
         clock ticks is ordinary) and the stream resumes by itself, while the device's
         RTCP sender reports keep coming once a second. Only those stopping too means
-        the session or the link is gone. A restart that fails on a dead tunnel hands
-        off to :meth:`_reconnect_loop`.
+        the session or the link is gone; which of the two is what
+        :meth:`_device_reachable` tells. It is asked whatever left the stream down (a
+        start that never succeeded included), so a disconnect is noticed with no viewer
+        attached too.
         """
         loop = asyncio.get_running_loop()
         check_interval = max(_STALL_RESTART_SECS / 4, 0.25)
-        while True:
+        while not self._device_disconnected.is_set():
             try:
                 await asyncio.sleep(check_interval)
             except asyncio.CancelledError:
                 return
-            if not self._subscribers:
-                continue
-            if self._active_service is None:
-                continue
-            if not self._stall_restart_due(loop.time()):
-                continue
-            # Bound the whole restart so a hang on the device side
-            # (cleanup or start) can't hold _stream_lock forever and
-            # silently block subsequent /codec and /stream.bin paths.
-            # The inner _stop_active_stream already bounds its own
-            # XPC calls; this is the outer safety net covering the
-            # start side too (connect / start_video_stream).
-            try:
-                await asyncio.wait_for(self._ensure_fresh_stream(force=True), timeout=10.0)
-            except asyncio.TimeoutError:
-                logger.warning("stall-watchdog restart did not complete within 10s")
-            except Exception as exc:
-                if _is_tunnel_dead_error(exc):
-                    logger.warning("device appears disconnected (%s); handing off to reconnect loop", exc)
-                    self._reconnect_signal.set()
-                else:
-                    logger.exception("stall-watchdog restart failed")
-
-    async def _reconnect_loop(self) -> None:
-        """Wait for a disconnect signal, then poll tunneld until the
-        same UDID reappears, rebind ``self._rsd``, and resume streaming.
-
-        Triggered from the stall watchdog when restart fails with a
-        tunnel-level error (No route to host, Connection reset, etc.).
-        We tear down the active video/audio sessions (whose sockets and
-        XPC channels are pointing at the dead tunnel), mark every
-        subscriber as ``needs_key`` so the post-rebind IDR rebuilds
-        their decoders, then poll tunneld every
-        ``_reconnect_poll_interval`` seconds for the device. When it
-        comes back we swap in the fresh RSD and kick off a new media
-        stream; the browser-side offline overlay clears the moment AUs
-        flow again.
-        """
-        udid = str(self._rsd.udid)
-        while True:
-            try:
-                await self._reconnect_signal.wait()
-            except asyncio.CancelledError:
-                return
-            logger.warning("device %s disconnected; waiting for tunneld to surface it again", udid)
-            # Tear down anything pinned to the dead tunnel. Errors are
-            # expected here (the same disconnect that triggered us will
-            # make stop_media_stream raise) so suppress and move on.
-            with contextlib.suppress(Exception):
-                async with self._stream_lock:
-                    await self._stop_active_stream()
-            with contextlib.suppress(Exception):
-                await self._stop_audio_stream()
-            # Drop HID handles so the next /touch reopens against the
-            # fresh RSD; the worker task itself stays alive.
-            with contextlib.suppress(Exception):
-                await self._stop_hid()
-            # Force subscribers to wait for a fresh keyframe once the
-            # stream comes back -- their decoder state spans the gap
-            # and the post-rebind IDR is the only safe resync point.
-            for state in self._subscribers.values():
-                state.mark_needs_key(asyncio.get_running_loop().time())
-            # Poll tunneld until the device returns. ``get_tunneld_device_by_udid``
-            # returns None when it's not listed; any exception (tunneld
-            # itself down, transient HTTP error) is treated the same way.
-            new_rsd: Optional[RemoteServiceDiscoveryService] = None
-            while new_rsd is None:
+            restart_failed = False
+            # Never started: the first /codec starts it. A restart already in flight
+            # (Force Restart, a display switch) is not one more to queue behind.
+            if (
+                self._stream_started_t != 0.0
+                and not self._stream_lock.locked()
+                and self._stall_restart_due(loop.time())
+            ):
+                # Bound the whole restart so a hang on the device side
+                # (cleanup or start) can't hold _stream_lock forever and
+                # silently block subsequent /codec and /stream.bin paths.
+                # The inner _stop_active_stream already bounds its own
+                # XPC calls; this is the outer safety net covering the
+                # start side too (connect / start_video_stream).
                 try:
-                    new_rsd = await get_tunneld_device_by_udid(udid)
-                except Exception:
-                    logger.debug("tunneld poll failed", exc_info=True)
-                if new_rsd is not None:
-                    break
-                try:
-                    await asyncio.sleep(self._reconnect_poll_interval)
-                except asyncio.CancelledError:
-                    return
-            old_rsd = self._rsd
-            self._rsd = new_rsd
-            # Bound to the old RSD; the next /clipboard/events poll starts a fresh one.
-            await self._stop_clipboard_monitor()
-            with contextlib.suppress(Exception):
-                await old_rsd.close()
-            # Clear cached codec string so /codec re-derives it from the
-            # new SPS, and reset stall-restart bookkeeping so the
-            # watchdog doesn't refuse to recover.
-            self._codec_string = None
-            self._vps_nal = self._sps_nal = self._pps_nal = None
-            self._init_sequence = None
-            self._saw_first_key = False
-            self._stream_ready.clear()
-            self._consecutive_restarts = 0
-            self._last_restart_t = 0.0
-            self._reconnect_signal.clear()
-            logger.info("device %s back online via tunneld; resuming stream", udid)
-            try:
-                await asyncio.wait_for(self._ensure_fresh_stream(force=True), timeout=15.0)
-            except Exception as exc:
-                if _is_tunnel_dead_error(exc):
-                    # Tunnel died again between rebind and stream start
-                    # -- loop back and wait for another reappearance
-                    # instead of giving up. Don't `signal.set()` here
-                    # because we're already past wait(); just continue.
-                    logger.warning("device flapped during resume; re-entering wait")
-                    self._reconnect_signal.set()
-                else:
-                    logger.exception("post-reconnect stream start failed")
+                    await asyncio.wait_for(self._ensure_fresh_stream(force=True), timeout=10.0)
+                except asyncio.TimeoutError:
+                    restart_failed = True
+                    logger.warning("stall-watchdog restart did not complete within 10s")
+                except Exception as exc:
+                    restart_failed = True
+                    # (The probe below tells whether this was the device leaving.)
+                    logger.warning("stall-watchdog restart failed: %s", exc or type(exc).__name__)
+                    logger.debug("stall-watchdog restart failure", exc_info=True)
+            if restart_failed or self._reachability_probe_due(loop.time()):
+                self._last_probe_t = loop.time()
+                if not await self._device_reachable():
+                    logger.warning("the device is unreachable")
+                    self._device_disconnected.set()
+                    self._broadcast_device_silent(True)
 
     def _build_decoder_config_message(self) -> Optional[bytes]:
         """Framing type 3: the viewer's new decoder config, ``{codec, description}`` JSON.
@@ -3197,7 +3114,6 @@ class ScreenStreamServer:
         watchdog = asyncio.create_task(self._stall_watchdog())
         decoder_refresh = asyncio.create_task(self._decoder_refresh_loop())
         self._rctl_task = asyncio.create_task(self._rctl_feedback_loop())
-        self._reconnect_task = asyncio.create_task(self._reconnect_loop())
         self._keep_awake_task = asyncio.create_task(self._keep_awake_loop())
         self._display_monitor_task = asyncio.create_task(self._display_monitor_loop())
         # Eagerly start the HID worker so queued /touch requests are
@@ -3229,9 +3145,14 @@ class ScreenStreamServer:
             try:
                 await asyncio.wait_for(coro, timeout=timeout)
             except asyncio.TimeoutError:
-                logger.warning("shutdown: %s timed out after %.1fs", label, timeout)
+                # (After a disconnect both are expected: there is no device left to tell.)
+                level = logging.DEBUG if self._device_disconnected.is_set() else logging.WARNING
+                logger.log(level, "shutdown: %s timed out after %.1fs", label, timeout)
             except Exception:
-                logger.exception("shutdown: %s raised", label)
+                if self._device_disconnected.is_set():
+                    logger.debug("shutdown: %s raised", label, exc_info=True)
+                else:
+                    logger.exception("shutdown: %s raised", label)
 
         # Run the server until stop_event fires. Spawn serve_forever() as a
         # background task so we can cancel it cheaply from the signal path
@@ -3242,7 +3163,13 @@ class ScreenStreamServer:
         try:
             scheme = "https" if self._https else "http"
             logger.info(f"Open {scheme}://{self._bind}:{self._http_port}/ in Safari/Chrome. Ctrl-C to stop.")
-            await stop_event.wait()
+            stop_task = asyncio.create_task(stop_event.wait())
+            disconnect_task = asyncio.create_task(self._device_disconnected.wait())
+            try:
+                await asyncio.wait({stop_task, disconnect_task}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                stop_task.cancel()
+                disconnect_task.cancel()
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
@@ -3258,9 +3185,6 @@ class ScreenStreamServer:
             decoder_refresh.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await decoder_refresh
-            self._reconnect_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await self._reconnect_task
             self._keep_awake_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._keep_awake_task
@@ -3315,9 +3239,10 @@ class ScreenStreamServer:
             # daemon to stop: it runs stopRemoteObservation, releases the audit
             # assertion, and clears the screen-sharing indicator, so the device
             # is no longer "observed remotely" and its camera/microphone are
-            # freed.
-            logger.debug("shutdown: releasing device media session")
-            await _bounded(DisplayService.stop_all_streams(self._rsd), "stop_all_streams", timeout=6.0)
+            # freed. (Nothing to release on a device that is gone.)
+            if not self._device_disconnected.is_set():
+                logger.debug("shutdown: releasing device media session")
+                await _bounded(DisplayService.stop_all_streams(self._rsd), "stop_all_streams", timeout=6.0)
             # Close the accessibility audit rather than leaving its DTX reader
             # task to be cancelled, which logs a 'Channel reader loop cancelled'
             # ERROR-with-traceback. Closing sets _closed=True on the channel
@@ -3339,3 +3264,7 @@ class ScreenStreamServer:
                 with contextlib.suppress(Exception):
                     await asyncio.wait(stragglers, timeout=2.0)
             logger.info("shutdown complete")
+        if self._device_disconnected.is_set() and not stop_event.is_set():
+            # With the CLI's --reconnect this waits for the device and runs the command again.
+            # (Not after a Ctrl-C during the shutdown above: that asks to stop for good.)
+            raise ConnectionTerminatedError("The device disconnected.")

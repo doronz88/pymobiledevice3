@@ -28,9 +28,11 @@ from pymobiledevice3.exceptions import (
     AccessDeniedError,
     DeviceNotFoundError,
     NoDeviceConnectedError,
+    TunneldConnectionError,
     UserspaceTunnelUnavailableError,
 )
 from pymobiledevice3.lockdown import (
+    RECONNECT_RETRY_INTERVAL_SECONDS,
     LockdownClient,
     TcpLockdownClient,
     create_using_mobdev2,
@@ -239,6 +241,17 @@ def resolved_udid() -> Optional[str]:
     return _resolved_udid
 
 
+# The --tunnel value the running command reached its device through, when it names a device
+# (an empty one picks interactively). `--reconnect` waits for that device in tunneld's listing:
+# over Wi-Fi it never appears on usbmux.
+_resolved_tunnel: Optional[str] = None
+
+
+def resolved_tunnel() -> Optional[str]:
+    """The ``--tunnel`` value naming the device the current command runs against, if any."""
+    return _resolved_tunnel
+
+
 def _record_resolved(provider: LockdownServiceProvider) -> LockdownServiceProvider:
     """Remember which device a service-provider dependency picked (see ``resolved_udid``)."""
     global _resolved_udid
@@ -428,6 +441,21 @@ async def _tunneld(udid: Optional[str] = None) -> Optional[RemoteServiceDiscover
         await rsd.close()
 
     return service_provider
+
+
+async def wait_for_tunneld_device(tunnel: str) -> None:
+    """Wait until tunneld serves the device a ``--tunnel`` value names (the ``--reconnect`` wait).
+
+    :param tunnel: a ``--tunnel`` value naming a device (see `resolved_tunnel`).
+    """
+    while True:
+        # No tunnel for it yet, or tunneld itself not up: both may change.
+        with suppress(NoDeviceConnectedError, DeviceNotFoundError, TunneldConnectionError):
+            rsd = await _tunneld(tunnel)
+            if rsd is not None:
+                await rsd.close()
+                return
+        await asyncio.sleep(RECONNECT_RETRY_INTERVAL_SECONDS)
 
 
 def _cli_udid() -> Optional[str]:
@@ -626,6 +654,8 @@ def make_rsd_dependency(*, allow_none: bool) -> Callable[..., Optional[RemoteSer
             cli_loop.run_until_complete(rsd_service.connect())
             return rsd_service
         if tunnel is not None:
+            global _resolved_tunnel
+            _resolved_tunnel = tunnel if _parse_tunnel_spec(tunnel)[0] else None
             return cli_loop.run_until_complete(_tunneld(tunnel))
 
         # Opt-in userspace tunnel (--userspace / PYMOBILEDEVICE3_USERSPACE): establish the
