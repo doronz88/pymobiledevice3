@@ -57,13 +57,15 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion, PathCompleter
 from prompt_toolkit.document import Document
-from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.formatted_text import FormattedText, StyleAndTextTuples
 from prompt_toolkit.history import FileHistory, InMemoryHistory
+from prompt_toolkit.lexers import Lexer
 
 #: Returns candidate replacements for ``context.prefix``. May be a coroutine function.
 ArgCompleter = Callable[["CompletionContext"], Union[Iterable[str], Awaitable[Iterable[str]]]]
 _OPERATOR_CHARS = "|&;<>"
 _CONNECTORS = (";", "&&", "||")
+_REDIRECTIONS = (">", ">>")
 _SPECIAL_CHARS = re.compile(r"""([\s'"\\|&;<>])""")
 _PARAM_DOC = re.compile(r"^\s*:param (\w+):\s*(.+)$", re.MULTILINE)
 
@@ -114,6 +116,8 @@ class _Token(NamedTuple):
     text: str
     is_operator: bool
     start: int
+    #: Where the token ends in the line, quotes and escapes included.
+    end: int
 
 
 def _tokenize(text: str, escape: bool, partial: bool = False) -> list[_Token]:
@@ -132,7 +136,7 @@ def _tokenize(text: str, escape: bool, partial: bool = False) -> list[_Token]:
         if text[i] in _OPERATOR_CHARS:
             while i < len(text) and text[i] in _OPERATOR_CHARS:
                 i += 1
-            tokens.append(_Token(text[start:i], True, start))
+            tokens.append(_Token(text[start:i], True, start, i))
             continue
         word: list[str] = []
         while i < len(text) and not text[i].isspace() and text[i] not in _OPERATOR_CHARS:
@@ -153,7 +157,8 @@ def _tokenize(text: str, escape: bool, partial: bool = False) -> list[_Token]:
             else:
                 word.append(char)
                 i += 1
-        tokens.append(_Token("".join(word), False, start))
+        # an unterminated quote of a partial line ends with the line
+        tokens.append(_Token("".join(word), False, start, min(i, len(text))))
     return tokens
 
 
@@ -180,7 +185,7 @@ def parse_line(line: str, escape: bool = True) -> list[tuple[str, Pipeline]]:
                 raise ShellSyntaxError("unexpected '|' after the redirection")
             pipeline.stages.append(stage)
             stage = []
-        elif token.text in (">", ">>"):
+        elif token.text in _REDIRECTIONS:
             target = next(tokens, None)
             if target is None or target.is_operator or pipeline.redirect is not None:
                 raise ShellSyntaxError(f"expected a file name after {token.text!r}")
@@ -410,7 +415,7 @@ class ShellCompleter(Completer):
 
         completer: Optional[ArgCompleter] = None
         candidates: list[str] = []
-        if operators and tokens[operators[-1]].text in (">", ">>"):
+        if operators and tokens[operators[-1]].text in _REDIRECTIONS:
             completer = local_path_completer
         elif not words:
             # only host executables can follow a pipe
@@ -439,6 +444,57 @@ class ShellCompleter(Completer):
                 yield Completion(quote_word(candidate, escape), start_position=-raw_length, display=candidate)
 
 
+class ShellLexer(Lexer):
+    """Color the command line as it is typed: a command name shows whether it would run."""
+
+    COMMAND = "bold ansigreen"
+    UNKNOWN = "ansired"
+    OPERATOR = "ansimagenta"
+    OPTION = "ansicyan"
+    QUOTED = "ansiyellow"
+    REDIRECT_TARGET = "underline"
+
+    def __init__(self, shell: "InteractiveShell") -> None:
+        self.shell = shell
+
+    def lex_document(self, document: Document) -> Callable[[int], StyleAndTextTuples]:
+        lines = document.lines
+
+        def get_line(lineno: int) -> StyleAndTextTuples:
+            return self.highlight(lines[lineno]) if lineno < len(lines) else []
+
+        return get_line
+
+    def highlight(self, line: str) -> StyleAndTextTuples:
+        """Split ``line`` into styled fragments that add up to it."""
+        fragments: StyleAndTextTuples = []
+        position = 0
+        operator = ""
+        leads_stage = True
+        for token in _tokenize(line, self.shell.escape, partial=True):
+            raw = line[token.start : token.end]
+            if token.is_operator:
+                style = self.OPERATOR if token.text in ("|", *_REDIRECTIONS, *_CONNECTORS) else self.UNKNOWN
+                operator = token.text
+                leads_stage = operator in ("|", *_CONNECTORS)
+            elif leads_stage:
+                style = self.COMMAND if self.shell.is_runnable(token.text, piped=operator == "|") else self.UNKNOWN
+                leads_stage = False
+            elif operator in _REDIRECTIONS:
+                style = self.REDIRECT_TARGET
+            elif raw.startswith("-"):
+                style = self.OPTION
+            elif "'" in raw or '"' in raw:
+                style = self.QUOTED
+            else:
+                style = ""
+            fragments.append(("", line[position : token.start]))
+            fragments.append((style, raw))
+            position = token.end
+        fragments.append(("", line[position:]))
+        return [fragment for fragment in fragments if fragment[1]]
+
+
 class InteractiveShell:
     """Runs command lines and prompts for them. Subclass it and mark methods with :func:`shell_command`."""
 
@@ -451,6 +507,7 @@ class InteractiveShell:
         :raises ValueError: when one of ``host_tools`` is not installed
         """
         self._commands: dict[str, ShellCommand] = {}
+        self._host_executables: dict[str, Optional[str]] = {}
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._running: Optional[asyncio.Future[int]] = None
         self._processes: list[subprocess.Popen[bytes]] = []
@@ -524,6 +581,22 @@ class InteractiveShell:
     def get_command(self, name: str) -> Optional[ShellCommand]:
         return self._commands.get(name)
 
+    def is_runnable(self, name: str, piped: bool = False) -> bool:
+        """Whether ``name`` can start a pipeline, or with ``piped`` follow a ``|`` in one."""
+        if name.startswith("!"):
+            return self._host_executable(name[1:]) is not None
+        command = self._commands.get(name)
+        if command is None:
+            return False
+        # after a pipe, the name of a shell command can only mean the host's tool
+        return not piped or isinstance(command, str) or self._host_executable(name) is not None
+
+    def _host_executable(self, name: str) -> Optional[str]:
+        """Path of the host executable ``name``, looked up once: this is asked on every keystroke."""
+        if name not in self._host_executables:
+            self._host_executables[name] = shutil.which(name)
+        return self._host_executables[name]
+
     async def run_line(self, line: str) -> int:
         """Run a command line and return its exit status (130 when interrupted)."""
         self._loop = asyncio.get_running_loop()
@@ -556,6 +629,7 @@ class InteractiveShell:
         session: PromptSession[str] = PromptSession(
             history=InMemoryHistory() if history_path is None else FileHistory(str(history_path)),
             completer=ShellCompleter(self),
+            lexer=ShellLexer(self),
             complete_while_typing=False,
             auto_suggest=AutoSuggestFromHistory(),
         )
