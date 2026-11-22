@@ -7,7 +7,9 @@ from bpylist2 import archiver
 from pymobiledevice3.services.accessibilityaudit import (
     AccessibilityAudit,
     AXAuditInspectorFocus_v1,
+    AXAuditNode_v1,
     Direction,
+    deserialize_object,
 )
 
 ELEMENT = bytes.fromhex("27000000006441A27C0000020600000000000000")
@@ -102,6 +104,59 @@ async def test_element_attributes_invokes_value_for_attribute_and_decodes_reply(
 async def test_element_attribute_without_value_is_none() -> None:
     audit = _FakeAudit({}, [])
     assert await audit.element_attribute(ELEMENT, "Identifier") is None
+
+
+def _hierarchy_node_reply(element: bytes) -> dict[str, Any]:
+    """The archived ``AXAuditNode_v1`` shape the daemon returns for ``_AXHierarchyElementsAttribute``."""
+    return {
+        "ObjectType": "AXAuditNode_v1",
+        "Value": {
+            "ObjectType": "passthrough",
+            "Value": {
+                "HumanReadableRoleDescriptionValue_v1": {"ObjectType": "passthrough", "Value": "Button"},
+                "HumanReadableDescriptionValue_v1": {
+                    "ObjectType": "passthrough",
+                    "Value": "Show Notifications Button",
+                },
+                "IsIgnoredValue_v1": {"ObjectType": "passthrough", "Value": False},
+                "AuditElementValue_v1": {
+                    "ObjectType": "AXAuditElement_v1",
+                    "Value": {
+                        "ObjectType": "passthrough",
+                        "Value": {"PlatformElementValue_v1": {"ObjectType": "passthrough", "Value": element}},
+                    },
+                },
+            },
+        },
+    }
+
+
+def test_deserialize_hierarchy_node_does_not_raise() -> None:
+    # Regression: an AXAuditNode_v1 object (returned by _AXHierarchyElementsAttribute) used to raise
+    # KeyError('AXAuditNode_v1') because the type was missing from SERIALIZABLE_OBJECTS.
+    node = deserialize_object(_hierarchy_node_reply(ELEMENT))
+
+    assert isinstance(node, AXAuditNode_v1)
+    assert node.role_description == "Button"
+    assert node.description == "Show Notifications Button"
+    assert node.is_ignored is False
+    assert node.element is not None and node.element.identifier == ELEMENT
+    assert node.to_dict() == {
+        "platform_identifier": ELEMENT.hex().upper(),
+        "description": "Show Notifications Button",
+        "role_description": "Button",
+        "is_ignored": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_element_attribute_decodes_hierarchy_node() -> None:
+    audit = _FakeAudit({"deviceElement:valueForAttribute:": _hierarchy_node_reply(ELEMENT)}, [])
+
+    node = await audit.element_attribute(ELEMENT, "_AXHierarchyElementsAttribute")
+
+    assert isinstance(node, AXAuditNode_v1)
+    assert node.element is not None and node.element.identifier == ELEMENT
 
 
 @pytest.mark.asyncio

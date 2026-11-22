@@ -93,6 +93,42 @@ class AXAuditElement_v1(SerializedObject):
         return f"<Element: {self.identifier}>"
 
 
+class AXAuditNode_v1(SerializedObject):
+    """A node of the accessibility hierarchy tree (``_AXHierarchyElementsAttribute``)."""
+
+    def __init__(self, fields: dict[str, typing.Any]):
+        super().__init__(fields)
+
+    @property
+    def element(self) -> typing.Optional["AXAuditElement_v1"]:
+        return self._fields.get("AuditElementValue_v1")
+
+    @property
+    def description(self) -> typing.Optional[str]:
+        return self._fields.get("HumanReadableDescriptionValue_v1")
+
+    @property
+    def role_description(self) -> typing.Optional[str]:
+        return self._fields.get("HumanReadableRoleDescriptionValue_v1")
+
+    @property
+    def is_ignored(self) -> typing.Optional[bool]:
+        return self._fields.get("IsIgnoredValue_v1")
+
+    def to_dict(self) -> dict[str, typing.Any]:
+        """Serialize the node into a plain dictionary."""
+        element = self.element
+        return {
+            "platform_identifier": element.identifier.hex().upper() if element is not None else None,
+            "description": self.description,
+            "role_description": self.role_description,
+            "is_ignored": self.is_ignored,
+        }
+
+    def __repr__(self):
+        return f"<AXAuditNode_v1 {self.role_description!r}: {self.description!r}>"
+
+
 class AXAuditInspectorSection_v1(SerializedObject):
     def __init__(self, fields: dict[str, typing.Any]):
         super().__init__(fields)
@@ -221,6 +257,7 @@ SERIALIZABLE_OBJECTS: dict[str, type[SerializedObject]] = {
     "AXAuditDeviceSetting_v1": AXAuditDeviceSetting_v1,
     "AXAuditInspectorFocus_v1": AXAuditInspectorFocus_v1,
     "AXAuditElement_v1": AXAuditElement_v1,
+    "AXAuditNode_v1": AXAuditNode_v1,
     "AXAuditInspectorSection_v1": AXAuditInspectorSection_v1,
     "AXAuditElementAttribute_v1": AXAuditElementAttribute_v1,
     "AXAuditIssue_v1": AXAuditIssue_v1,
