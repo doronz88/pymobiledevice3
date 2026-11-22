@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, Optional, cast
+from typing import Annotated, Optional
 
 import typer
 from apple_symbols import KernelSymbols
@@ -33,7 +33,7 @@ KernelcacheOption = Annotated[
         exists=True,
         dir_okay=False,
         help="Kernelcache of the firmware the device ran (as found in its IPSW), to name the kernel "
-        "images of a panic report.",
+        "images of a panic or a stackshot report.",
     ),
 ]
 KernelSignaturesOption = Annotated[
@@ -42,7 +42,8 @@ KernelSignaturesOption = Annotated[
         exists=True,
         file_okay=False,
         help="Directory of `ipsw` kernel symbolication signatures (the `kernel` directory of "
-        "https://github.com/blacktop/symbolicator), to name the kernel functions of a panic report. "
+        "https://github.com/blacktop/symbolicator), to name the kernel functions of a panic or a stackshot "
+        "report. "
         "Requires --kernelcache and the `ipsw` tool.",
     ),
 ]
@@ -53,13 +54,22 @@ ProcessOption = Annotated[
     typer.Option(
         "--process",
         "-p",
-        help="Name or pid of a process of a panic report to print the call stack of every thread of. "
+        help="Name or pid of a process of a panic, a stackshot or a spindump report to print the call stacks "
+        "of. "
         "May be given several times.",
     ),
 ]
 AllProcessesOption = Annotated[
     bool,
-    typer.Option("--all", help="Print the threads of every process of a panic report."),
+    typer.Option(
+        "--all",
+        help="Print the call stacks of every process of a panic, a stackshot or a spindump report, or of every "
+        "thread of a crash.",
+    ),
+]
+RunningOption = Annotated[
+    bool,
+    typer.Option("--running", "-r", help="Print the threads of a panic or a stackshot report which were on a CPU."),
 ]
 
 
@@ -75,9 +85,10 @@ def _print_report(
     kernel_symbols: Optional[KernelSymbols],
     processes: Optional[list[str]] = None,
     all_processes: bool = False,
+    running: bool = False,
 ) -> None:
     try:
-        print_crash_report(report, kernel_symbols, processes or [], all_processes)
+        print_crash_report(report, kernel_symbols, processes or [], all_processes, running)
     except ValueError as e:
         raise typer.BadParameter(str(e)) from e
 
@@ -127,6 +138,7 @@ async def crash_parse(
     kernel_signatures: KernelSignaturesOption = None,
     process: ProcessOption = None,
     all_processes: AllProcessesOption = False,
+    running: RunningOption = False,
 ) -> None:
     """
     Print a crash report from the device in a readable, parsed form.
@@ -134,11 +146,13 @@ async def crash_parse(
     Userland frames the report left unnamed, such as the user stacks of a panic report, are named
     using the Xcode device support of the device the report came from, which
     `developer fetch-symbols download` creates. Kernel frames are named given --kernelcache.
-    --process and --all list the threads of further processes of a panic report.
+    --process, --all and --running list the threads of the processes of a panic or a stackshot
+    report (`stacks-*.ips`), --process and --all the call trees of a spindump report
+    (`*.diskwrites_resource-*.ips` and the like), and --all every thread of a crash.
     """
     kernel_symbols = _load_kernel_symbols(kernelcache, kernel_signatures)
     async with CrashReportsManager(service_provider) as crash_manager:
-        _print_report(await crash_manager.parse(remote_file), kernel_symbols, process, all_processes)
+        _print_report(await crash_manager.parse(remote_file), kernel_symbols, process, all_processes, running)
 
 
 @cli.command("parse-latest")
@@ -175,6 +189,7 @@ async def crash_parse_latest(
     kernel_signatures: KernelSignaturesOption = None,
     process: ProcessOption = None,
     all_processes: AllProcessesOption = False,
+    running: RunningOption = False,
 ) -> None:
     """Parse the latest top-level crash report(s) under a path, newest first."""
     kernel_symbols = _load_kernel_symbols(kernelcache, kernel_signatures)
@@ -186,7 +201,7 @@ async def crash_parse_latest(
             count=count,
         )
         for report in latest_reports:
-            _print_report(report, kernel_symbols, process, all_processes)
+            _print_report(report, kernel_symbols, process, all_processes, running)
 
 
 @cli.command("pull")
@@ -292,11 +307,7 @@ async def crash_watch(
                         "name": crash_report.name,
                         "bug_type": crash_report.bug_type,
                         "bug_type_str": crash_report.bug_type_str,
-                        # pycrashreport's incident_id property is untyped (metadata lookup)
-                        "incident_id": cast(
-                            Optional[str],
-                            crash_report.incident_id,  # pyright: ignore[reportUnknownMemberType]
-                        ),
+                        "incident_id": crash_report.incident_id,
                         "timestamp": crash_report.timestamp,
                     })
             else:
