@@ -22,6 +22,7 @@ from pymobiledevice3.interactive_shell import (
     InteractiveShell,
     Pipeline,
     ShellCompleter,
+    ShellLexer,
     ShellSyntaxError,
     build_parser,
     parse_line,
@@ -624,3 +625,50 @@ async def test_parameters_without_completer_complete_local_paths(tmp_path: Path)
     assert await _complete(shell, f"copy {prefix}") == expected
     # and so does the target of a redirection
     assert await _complete(shell, f"echo x > {prefix}") == expected
+
+
+def _highlight(shell: InteractiveShell, line: str) -> list[tuple[str, str]]:
+    """The styled words of ``line``, after checking the fragments add up to it."""
+    fragments = ShellLexer(shell).lex_document(Document(line))(0)
+    assert "".join(fragment[1] for fragment in fragments) == line
+    return [(fragment[0], fragment[1]) for fragment in fragments if fragment[0]]
+
+
+def test_highlight_tells_known_commands_from_unknown_ones() -> None:
+    shell = DemoShell()
+    assert _highlight(shell, "echo") == [(ShellLexer.COMMAND, "echo")]
+    assert _highlight(shell, "  ech") == [(ShellLexer.UNKNOWN, "ech")]
+    assert _highlight(shell, "'echo' hi") == [(ShellLexer.COMMAND, "'echo'")]
+    assert _highlight(shell, "") == []
+
+
+def test_highlight_styles_arguments_and_operators() -> None:
+    shell = DemoShell()
+    assert _highlight(shell, "eat-all --loudly 'blood orange' apple; nope && echo x >> out.txt") == [
+        (ShellLexer.COMMAND, "eat-all"),
+        (ShellLexer.OPTION, "--loudly"),
+        (ShellLexer.QUOTED, "'blood orange'"),
+        (ShellLexer.OPERATOR, ";"),
+        (ShellLexer.UNKNOWN, "nope"),
+        (ShellLexer.OPERATOR, "&&"),
+        (ShellLexer.COMMAND, "echo"),
+        (ShellLexer.OPERATOR, ">>"),
+        (ShellLexer.REDIRECT_TARGET, "out.txt"),
+    ]
+    assert _highlight(shell, "echo x &") == [(ShellLexer.COMMAND, "echo"), (ShellLexer.UNKNOWN, "&")]
+    # a line still being typed: the open quote runs to its end
+    assert _highlight(shell, 'echo "a b') == [(ShellLexer.COMMAND, "echo"), (ShellLexer.QUOTED, '"a b')]
+
+
+def test_highlight_knows_what_can_follow_a_pipe(python_on_path: str) -> None:
+    shell = DemoShell()
+    # only a host executable can read a pipe: `py` is registered as one, `eat-all` is a shell command
+    assert _highlight(shell, "echo x | py | eat-all") == [
+        (ShellLexer.COMMAND, "echo"),
+        (ShellLexer.OPERATOR, "|"),
+        (ShellLexer.COMMAND, "py"),
+        (ShellLexer.OPERATOR, "|"),
+        (ShellLexer.UNKNOWN, "eat-all"),
+    ]
+    assert _highlight(shell, f"echo x | !{python_on_path}")[-1] == (ShellLexer.COMMAND, f"!{python_on_path}")
+    assert _highlight(shell, "!pymobiledevice3-no-such-tool") == [(ShellLexer.UNKNOWN, "!pymobiledevice3-no-such-tool")]
