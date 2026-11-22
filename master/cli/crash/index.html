@@ -2873,7 +2873,9 @@
 <p>Userland frames the report left unnamed, such as the user stacks of a panic report, are named
 using the Xcode device support of the device the report came from, which
 <code>developer fetch-symbols download</code> creates. Kernel frames are named given --kernelcache.
---process and --all list the threads of further processes of a panic report.</p>
+--process, --all and --running list the threads of the processes of a panic or a stackshot
+report (<code>stacks-*.ips</code>), --process and --all the call trees of a spindump report
+(<code>*.diskwrites_resource-*.ips</code> and the like), and --all every thread of a crash.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pymobiledevice3 crash parse [OPTIONS] {remote_file}
 </code></pre></div>
 <p><strong>Arguments:</strong></p>
@@ -2914,19 +2916,23 @@ using the Xcode device support of the device the report came from, which
 </tr>
 <tr>
 <td><code>--kernelcache &lt;file&gt;</code></td>
-<td>Kernelcache of the firmware the device ran (as found in its IPSW), to name the kernel images of a panic report.</td>
+<td>Kernelcache of the firmware the device ran (as found in its IPSW), to name the kernel images of a panic or a stackshot report.</td>
 </tr>
 <tr>
 <td><code>--kernel-signatures &lt;dir&gt;</code></td>
-<td>Directory of <code>ipsw</code> kernel symbolication signatures (the <code>kernel</code> directory of https://github.com/blacktop/symbolicator), to name the kernel functions of a panic report. Requires --kernelcache and the <code>ipsw</code> tool.</td>
+<td>Directory of <code>ipsw</code> kernel symbolication signatures (the <code>kernel</code> directory of https://github.com/blacktop/symbolicator), to name the kernel functions of a panic or a stackshot report. Requires --kernelcache and the <code>ipsw</code> tool.</td>
 </tr>
 <tr>
 <td><code>-p, --process &lt;list[str]&gt;</code></td>
-<td>Name or pid of a process of a panic report to print the call stack of every thread of. May be given several times.</td>
+<td>Name or pid of a process of a panic, a stackshot or a spindump report to print the call stacks of. May be given several times.</td>
 </tr>
 <tr>
 <td><code>--all</code></td>
-<td>Print the threads of every process of a panic report.</td>
+<td>Print the call stacks of every process of a panic, a stackshot or a spindump report, or of every thread of a crash.</td>
+</tr>
+<tr>
+<td><code>-r, --running</code></td>
+<td>Print the threads of a panic or a stackshot report which were on a CPU.</td>
 </tr>
 </tbody>
 </table>
@@ -2985,19 +2991,23 @@ using the Xcode device support of the device the report came from, which
 </tr>
 <tr>
 <td><code>--kernelcache &lt;file&gt;</code></td>
-<td>Kernelcache of the firmware the device ran (as found in its IPSW), to name the kernel images of a panic report.</td>
+<td>Kernelcache of the firmware the device ran (as found in its IPSW), to name the kernel images of a panic or a stackshot report.</td>
 </tr>
 <tr>
 <td><code>--kernel-signatures &lt;dir&gt;</code></td>
-<td>Directory of <code>ipsw</code> kernel symbolication signatures (the <code>kernel</code> directory of https://github.com/blacktop/symbolicator), to name the kernel functions of a panic report. Requires --kernelcache and the <code>ipsw</code> tool.</td>
+<td>Directory of <code>ipsw</code> kernel symbolication signatures (the <code>kernel</code> directory of https://github.com/blacktop/symbolicator), to name the kernel functions of a panic or a stackshot report. Requires --kernelcache and the <code>ipsw</code> tool.</td>
 </tr>
 <tr>
 <td><code>-p, --process &lt;list[str]&gt;</code></td>
-<td>Name or pid of a process of a panic report to print the call stack of every thread of. May be given several times.</td>
+<td>Name or pid of a process of a panic, a stackshot or a spindump report to print the call stacks of. May be given several times.</td>
 </tr>
 <tr>
 <td><code>--all</code></td>
-<td>Print the threads of every process of a panic report.</td>
+<td>Print the call stacks of every process of a panic, a stackshot or a spindump report, or of every thread of a crash.</td>
+</tr>
+<tr>
+<td><code>-r, --running</code></td>
+<td>Print the threads of a panic or a stackshot report which were on a CPU.</td>
 </tr>
 </tbody>
 </table>
