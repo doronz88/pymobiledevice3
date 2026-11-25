@@ -245,6 +245,12 @@ pymobiledevice3 crash pull /path/to/crashes
 pymobiledevice3 crash parse-latest --match '^panic-full' \
     --kernelcache kernelcache.release.iphone17 --kernel-signatures symbolicator/kernel
 
+# Or name the frames with a https://github.com/netanelc305/symbolicator-server which scanned the
+# IPSW of the device, with neither its device support nor its kernelcache on this host. Frames the
+# server does not name are left to the symbols of this host. `export PYCRASHREPORT_SERVER=URL`
+# gives the server once, to these commands and to `parse` of the crash shell
+pymobiledevice3 crash parse-latest --match '^panic-full' --symbol-server http://localhost:3993
+
 # Also list every thread of some processes of the panic (by name or pid), or of all of them.
 # `parse` and `parse-latest` of `crash shell` take the same options
 pymobiledevice3 crash parse-latest --match '^panic-full' -p logd -p 1
@@ -688,6 +694,11 @@ pymobiledevice3 developer dvt core-profile-session stackshot --process SpringBoa
 # Requires `ipsw`; --kernelcache alone names the kernel image of each frame
 pymobiledevice3 developer dvt core-profile-session stackshot \
     --kernelcache kernelcache.release.iphone17 --kernel-signatures symbolicator/kernel
+
+# Symbolicate the user frames with a https://github.com/netanelc305/symbolicator-server instead of
+# the device support (also given once by `export PYCRASHREPORT_SERVER=URL`); the kernel frames
+# still take --kernelcache, since a stackshot does not tell which kernelcache the device runs
+pymobiledevice3 developer dvt core-profile-session stackshot --symbol-server http://localhost:3993
 
 # Device information
 pymobiledevice3 developer dvt device-information
@@ -1209,6 +1220,12 @@ export PYMOBILEDEVICE3_DEFAULT_FALLBACK=native
 | ----------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PYMOBILEDEVICE3_IPSW_DIR`    | directory           | Default for `--ipsw-dir` on the `restore` commands that take an IPSW: reuse a firmware build already downloaded there, and download new ones into it instead of a temporary directory.   |
 | `PYMOBILEDEVICE3_USB_BACKEND` | `iokit` or `libusb` | Same as `restore --libusb` when set to `libusb`: reach Recovery/DFU devices through libusb instead of IOKit on macOS. `iokit` is only valid on macOS; other platforms always use libusb. |
+
+## Symbolication
+
+| Variable               | Value                             | Effect                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PYCRASHREPORT_SERVER` | URL, e.g. `http://localhost:3993` | Default for `--symbol-server` of `crash parse`, `crash parse-latest` and `developer dvt core-profile-session stackshot`, and for `parse` of the crash shell: name frames with the symbols a [symbolicator-server](https://github.com/netanelc305/symbolicator-server) holds, before those of this host. Shared with the `pycrashreport` command. |
 
 ## Output
 

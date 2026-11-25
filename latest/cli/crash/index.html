@@ -2873,6 +2873,7 @@
 <p>Userland frames the report left unnamed, such as the user stacks of a panic report, are named
 using the Xcode device support of the device the report came from, which
 <code>developer fetch-symbols download</code> creates. Kernel frames are named given --kernelcache.
+--symbol-server asks a symbolicator server for both first.
 --process, --all and --running list the threads of the processes of a panic or a stackshot
 report (<code>stacks-*.ips</code>), --process and --all the call trees of a spindump report
 (<code>*.diskwrites_resource-*.ips</code> and the like), and --all every thread of a crash.</p>
@@ -2933,6 +2934,10 @@ report (<code>stacks-*.ips</code>), --process and --all the call trees of a spin
 <tr>
 <td><code>-r, --running</code></td>
 <td>Print the threads of a panic or a stackshot report which were on a CPU.</td>
+</tr>
+<tr>
+<td><code>--symbol-server &lt;str&gt;</code></td>
+<td>URL of a symbolicator server (https://github.com/netanelc305/symbolicator-server), e.g. http://localhost:3993, to name frames with the symbols it holds. Frames it does not name are left to the Xcode device support of this host and to --kernelcache. [env var: PYCRASHREPORT_SERVER]</td>
 </tr>
 </tbody>
 </table>
@@ -3008,6 +3013,10 @@ report (<code>stacks-*.ips</code>), --process and --all the call trees of a spin
 <tr>
 <td><code>-r, --running</code></td>
 <td>Print the threads of a panic or a stackshot report which were on a CPU.</td>
+</tr>
+<tr>
+<td><code>--symbol-server &lt;str&gt;</code></td>
+<td>URL of a symbolicator server (https://github.com/netanelc305/symbolicator-server), e.g. http://localhost:3993, to name frames with the symbols it holds. Frames it does not name are left to the Xcode device support of this host and to --kernelcache. [env var: PYCRASHREPORT_SERVER]</td>
 </tr>
 </tbody>
 </table>
