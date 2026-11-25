@@ -6,6 +6,7 @@ import pytest
 import typer
 from apple_symbols import KernelSymbols
 from pycrashreport.crash_report import CrashReportBase, get_crash_report_from_buf
+from pycrashreport.symbols import SymbolServerError
 
 from pymobiledevice3.cli import crash as crash_module
 from pymobiledevice3.lockdown_service_provider import LockdownServiceProvider
@@ -92,6 +93,30 @@ def test_crash_parse_reports_an_unreadable_kernelcache(monkeypatch: pytest.Monke
     monkeypatch.setattr(crash_module.KernelSymbols, "load", classmethod(load))
     with pytest.raises(typer.BadParameter, match="Reading the kernel symbols of kc failed"):
         crash_module.crash_parse(_FAKE_SERVICE_PROVIDER, "/panic-full.ips", kernelcache=Path("kc"))
+
+
+def test_crash_parse_gives_the_symbol_server_to_the_report(monkeypatch: pytest.MonkeyPatch) -> None:
+    panic = get_crash_report_from_buf(_PANIC, filename="/panic-full.ips")
+    monkeypatch.setattr(crash_module, "CrashReportsManager", _fake_manager([panic]))
+
+    crash_module.crash_parse(_FAKE_SERVICE_PROVIDER, "/panic-full.ips")
+    assert panic.symbol_server is None
+
+    crash_module.crash_parse(_FAKE_SERVICE_PROVIDER, "/panic-full.ips", symbol_server="http://server.invalid:3993")
+    assert panic.symbol_server == "http://server.invalid:3993"
+
+    crash_module.crash_parse_latest(_FAKE_SERVICE_PROVIDER, symbol_server="http://other.invalid:3993")
+    assert panic.symbol_server == "http://other.invalid:3993"
+
+
+def test_crash_parse_reports_a_symbol_server_which_cannot_be_reached(monkeypatch: pytest.MonkeyPatch) -> None:
+    def print_crash_report(*args: object) -> None:
+        raise SymbolServerError("The server cannot be reached")
+
+    monkeypatch.setattr(crash_module, "CrashReportsManager", _fake_manager([get_crash_report_from_buf(_PANIC)]))
+    monkeypatch.setattr(crash_module, "print_crash_report", print_crash_report)
+    with pytest.raises(typer.BadParameter, match="The server cannot be reached"):
+        crash_module.crash_parse(_FAKE_SERVICE_PROVIDER, "/panic-full.ips", symbol_server="http://server.invalid:3993")
 
 
 _PANIC_WITH_PROCESSES = _HEADER % "210" + json.dumps({

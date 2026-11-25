@@ -70,6 +70,12 @@ pymobiledevice3 crash pull /path/to/crashes
 pymobiledevice3 crash parse-latest --match '^panic-full' \
     --kernelcache kernelcache.release.iphone17 --kernel-signatures symbolicator/kernel
 
+# Or name the frames with a https://github.com/netanelc305/symbolicator-server which scanned the
+# IPSW of the device, with neither its device support nor its kernelcache on this host. Frames the
+# server does not name are left to the symbols of this host. `export PYCRASHREPORT_SERVER=URL`
+# gives the server once, to these commands and to `parse` of the crash shell
+pymobiledevice3 crash parse-latest --match '^panic-full' --symbol-server http://localhost:3993
+
 # Also list every thread of some processes of the panic (by name or pid), or of all of them.
 # `parse` and `parse-latest` of `crash shell` take the same options
 pymobiledevice3 crash parse-latest --match '^panic-full' -p logd -p 1
@@ -565,6 +571,11 @@ pymobiledevice3 developer dvt core-profile-session stackshot --process SpringBoa
 # Requires `ipsw`; --kernelcache alone names the kernel image of each frame
 pymobiledevice3 developer dvt core-profile-session stackshot \
     --kernelcache kernelcache.release.iphone17 --kernel-signatures symbolicator/kernel
+
+# Symbolicate the user frames with a https://github.com/netanelc305/symbolicator-server instead of
+# the device support (also given once by `export PYCRASHREPORT_SERVER=URL`); the kernel frames
+# still take --kernelcache, since a stackshot does not tell which kernelcache the device runs
+pymobiledevice3 developer dvt core-profile-session stackshot --symbol-server http://localhost:3993
 
 # Device information
 pymobiledevice3 developer dvt device-information

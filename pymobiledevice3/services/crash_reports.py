@@ -68,6 +68,7 @@ def print_crash_report(
     processes: Iterable[str] = (),
     all_processes: bool = False,
     running: bool = False,
+    symbol_server: Optional[str] = None,
 ) -> None:
     """
     Print a crash report the way the `pycrashreport` command does.
@@ -78,8 +79,13 @@ def print_crash_report(
     :param processes: Name or pid of the processes of the report to print the call stacks of.
     :param all_processes: Print the call stacks of every process of the report, or of every thread of a crash.
     :param running: Print the threads of a panic or a stackshot report which were on a CPU.
+    :param symbol_server: URL of a symbolicator server to name frames with, before the symbols of this
+        host. Defaults to the one of `PYCRASHREPORT_SERVER`.
     :raises ValueError: for processes asked of a report which holds none, or not the ones asked for.
+    :raises SymbolServerError: for a symbol server which cannot be reached.
     """
+    if symbol_server is not None:
+        report.symbol_server = symbol_server
     if kernel_symbols is not None and isinstance(report, StackshotReportBase):
         report.kernel_symbols = kernel_symbols
     selected = render_processes(report, processes, all_processes, running)
@@ -506,6 +512,7 @@ class CrashReportsShell(AfcShell):
         process: Annotated[Optional[list[str]], Arg("-p")] = None,
         all: Annotated[bool, Arg()] = False,  # noqa: A002
         running: Annotated[bool, Arg("-r")] = False,
+        symbol_server: Optional[str] = None,
     ) -> None:
         """
         Parse and print a crash report by filename.
@@ -516,9 +523,12 @@ class CrashReportsShell(AfcShell):
         :param process: Name or pid of a process of a panic, a stackshot or a spindump to print the stacks of (repeatable)
         :param all: Print the stacks of every process of a panic, a stackshot or a spindump, or of every thread of a crash
         :param running: Print the threads of a panic or a stackshot which were on a CPU
+        :param symbol_server: URL of a symbolicator server to name frames with, instead of the one of PYCRASHREPORT_SERVER
         """
         kernel_symbols = self._load_kernel_symbols(kernelcache, kernel_signatures)
-        print_crash_report(await self._manager.parse(filename), kernel_symbols, process or [], all, running)
+        print_crash_report(
+            await self._manager.parse(filename), kernel_symbols, process or [], all, running, symbol_server
+        )
 
     @shell_command
     async def _do_parse_latest(
@@ -533,6 +543,7 @@ class CrashReportsShell(AfcShell):
         process: Annotated[Optional[list[str]], Arg("-p")] = None,
         all: Annotated[bool, Arg()] = False,  # noqa: A002
         running: Annotated[bool, Arg("-r")] = False,
+        symbol_server: Optional[str] = None,
     ) -> None:
         """
         Parse latest top-level crash report(s) under a path, ordered by newest first
@@ -546,6 +557,7 @@ class CrashReportsShell(AfcShell):
         :param process: Name or pid of a process of a panic, a stackshot or a spindump to print the stacks of (repeatable)
         :param all: Print the stacks of every process of a panic, a stackshot or a spindump, or of every thread of a crash
         :param running: Print the threads of a panic or a stackshot which were on a CPU
+        :param symbol_server: URL of a symbolicator server to name frames with, instead of the one of PYCRASHREPORT_SERVER
         """
         kernel_symbols = self._load_kernel_symbols(kernelcache, kernel_signatures)
         latest_reports = await self._manager.parse_latest(
@@ -555,7 +567,7 @@ class CrashReportsShell(AfcShell):
             count=count,
         )
         for report in latest_reports:
-            print_crash_report(report, kernel_symbols, process or [], all, running)
+            print_crash_report(report, kernel_symbols, process or [], all, running, symbol_server)
 
     @staticmethod
     def _load_kernel_symbols(kernelcache: Optional[str], kernel_signatures: Optional[str]) -> Optional[KernelSymbols]:

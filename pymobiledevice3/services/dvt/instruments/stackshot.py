@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Optional, cast
 
-from apple_symbols import DeviceSupportSymbols, KernelSymbols, SymbolImage
+from apple_symbols import KernelSymbolSource, SymbolImage, UserlandSymbolSource
 
 SHARED_CACHE_IMAGE_NAME = "dyld_shared_cache"
 
@@ -103,8 +103,8 @@ class _Resolver:
     def __init__(
         self,
         stackshot: Mapping[str, Any],
-        symbols: Optional[DeviceSupportSymbols],
-        kernel_symbols: Optional[KernelSymbols],
+        symbols: Optional[UserlandSymbolSource],
+        kernel_symbols: Optional[KernelSymbolSource],
     ) -> None:
         self.symbols = symbols
         self.kernel_symbols = kernel_symbols
@@ -238,8 +238,8 @@ class _Resolver:
 
 def resolve_stackshot(
     stackshot: Mapping[str, Any],
-    symbols: Optional[DeviceSupportSymbols] = None,
-    kernel_symbols: Optional[KernelSymbols] = None,
+    symbols: Optional[UserlandSymbolSource] = None,
+    kernel_symbols: Optional[KernelSymbolSource] = None,
 ) -> list[StackshotProcess]:
     """
     Get the call stacks of every thread of every process in a stackshot.

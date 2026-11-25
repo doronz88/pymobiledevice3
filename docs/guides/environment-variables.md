@@ -60,6 +60,12 @@ export PYMOBILEDEVICE3_DEFAULT_FALLBACK=native
 | `PYMOBILEDEVICE3_IPSW_DIR` | directory | Default for `--ipsw-dir` on the `restore` commands that take an IPSW: reuse a firmware build already downloaded there, and download new ones into it instead of a temporary directory. |
 | `PYMOBILEDEVICE3_USB_BACKEND` | `iokit` or `libusb` | Same as `restore --libusb` when set to `libusb`: reach Recovery/DFU devices through libusb instead of IOKit on macOS. `iokit` is only valid on macOS; other platforms always use libusb. |
 
+## Symbolication
+
+| Variable | Value | Effect |
+| --- | --- | --- |
+| `PYCRASHREPORT_SERVER` | URL, e.g. `http://localhost:3993` | Default for `--symbol-server` of `crash parse`, `crash parse-latest` and `developer dvt core-profile-session stackshot`, and for `parse` of the crash shell: name frames with the symbols a [symbolicator-server](https://github.com/netanelc305/symbolicator-server) holds, before those of this host. Shared with the `pycrashreport` command. |
+
 ## Output
 
 | Variable | Value | Effect |

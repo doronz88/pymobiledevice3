@@ -15,7 +15,10 @@ from pathlib import Path
 from typing import Annotated, Any, Optional, cast
 
 import typer
-from apple_symbols import DeviceSupportSymbols, KernelSymbols, find_device_support_symbols
+from apple_symbols import DeviceSupportSymbols, KernelSymbols, UserlandSymbolSource, find_device_support_symbols
+from pycrashreport import server as symbol_server_client
+from pycrashreport.crash_report import SERVER_ENVVAR
+from pycrashreport.symbols import SymbolServerError, UserlandSymbolChain
 from pykdebugparser.line_filter import MATCH_HELP, LineFilter, emphasize
 from pykdebugparser.pykdebugparser import PyKdebugParser
 from pykdebugparser.selection import GROUP_HELP, captured_events, parse_live_selection
@@ -440,8 +443,37 @@ def format_stackshot(processes: list[StackshotProcess], colored: bool = False) -
     return "\n".join(lines)
 
 
+def _load_server_stackshot_symbols(
+    service_provider: LockdownServiceProvider, symbol_server: str
+) -> Optional[UserlandSymbolSource]:
+    if service_provider.product_type is None or service_provider.product_build_version is None:
+        return None
+    try:
+        return symbol_server_client.userland_symbols(
+            symbol_server_client.connect(symbol_server),
+            service_provider.product_type,
+            service_provider.product_build_version,
+        )
+    except SymbolServerError as e:
+        logger.error(str(e))
+        raise typer.Exit(1) from e
+
+
 def _load_stackshot_symbols(
-    service_provider: LockdownServiceProvider, symbols: Optional[Path]
+    service_provider: LockdownServiceProvider, symbols: Optional[Path], symbol_server: Optional[str] = None
+) -> Optional[UserlandSymbolSource]:
+    """Get what names user frames: the symbol server first, then the symbols of this host."""
+    server_symbols = (
+        _load_server_stackshot_symbols(service_provider, symbol_server) if symbol_server is not None else None
+    )
+    host_symbols = _load_host_stackshot_symbols(service_provider, symbols, quiet=server_symbols is not None)
+    if server_symbols is None or host_symbols is None:
+        return server_symbols or host_symbols
+    return UserlandSymbolChain([server_symbols, host_symbols])
+
+
+def _load_host_stackshot_symbols(
+    service_provider: LockdownServiceProvider, symbols: Optional[Path], quiet: bool = False
 ) -> Optional[DeviceSupportSymbols]:
     if symbols is None:
         symbols = (
@@ -454,6 +486,8 @@ def _load_stackshot_symbols(
             else None
         )
         if symbols is None:
+            if quiet:
+                return None
             logger.warning(
                 f"No Xcode device support was found for {service_provider.product_type} "
                 f"{service_provider.product_version} ({service_provider.product_build_version}), so call stacks are "
@@ -461,7 +495,7 @@ def _load_stackshot_symbols(
             )
             return None
     loaded_symbols = DeviceSupportSymbols.load(symbols)
-    if not loaded_symbols.has_shared_cache_images:
+    if not loaded_symbols.has_shared_cache_images and not quiet:
         logger.warning(
             f"{symbols} holds no images of the dyld shared cache, so call stacks are mostly not symbolicated. "
             f"Run `pymobiledevice3 developer fetch-symbols download --force` to get them."
@@ -537,13 +571,22 @@ async def stackshot(
             "Requires `ipsw`.",
         ),
     ] = None,
+    symbol_server: Annotated[
+        Optional[str],
+        typer.Option(
+            envvar=SERVER_ENVVAR,
+            help="URL of a symbolicator server (https://github.com/netanelc305/symbolicator-server), e.g. "
+            "http://localhost:3993, to symbolicate user frames with the symbols it holds. Frames it does not "
+            "name are left to the symbols of this host.",
+        ),
+    ] = None,
 ) -> None:
     """
     Print the call stacks of all threads of all processes.
 
     The call stacks are symbolicated using the Xcode device support of the device, which
-    `developer fetch-symbols download` creates. Kernel frames are symbolicated when given
-    --kernelcache and --kernel-signatures.
+    `developer fetch-symbols download` creates, or by a symbolicator server given --symbol-server.
+    Kernel frames are symbolicated when given --kernelcache and --kernel-signatures.
     """
     if kernel_signatures is not None and kernelcache is None:
         raise typer.BadParameter("--kernel-signatures requires --kernelcache")
@@ -586,7 +629,7 @@ async def stackshot(
 
     processes = resolve_stackshot(
         data,
-        _load_stackshot_symbols(service_provider, symbols),
+        _load_stackshot_symbols(service_provider, symbols, symbol_server),
         _load_stackshot_kernel_symbols(kernelcache, kernel_signatures, data),
     )
     if process is not None:
