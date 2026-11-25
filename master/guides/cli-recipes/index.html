@@ -3114,29 +3114,35 @@ itself, with no flag and no <code>sudo</code> (<a href="../ios17-tunnels/">iOS 1
 <a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^panic-full'</span><span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">    </span>--kernelcache<span class="w"> </span>kernelcache.release.iphone17<span class="w"> </span>--kernel-signatures<span class="w"> </span>symbolicator/kernel
 <a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a>
-<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="c1"># Also list every thread of some processes of the panic (by name or pid), or of all of them.</span>
-<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="c1"># `parse` and `parse-latest` of `crash shell` take the same options</span>
-<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^panic-full'</span><span class="w"> </span>-p<span class="w"> </span>logd<span class="w"> </span>-p<span class="w"> </span><span class="m">1</span>
-<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^panic-full'</span><span class="w"> </span>--all
-<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>
-<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="c1"># A stackshot (`stacks-*.ips`, as sysdiagnose takes) takes the same options, and so does a panic</span>
-<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="c1"># take `--running`, which lists only the threads which were on a CPU</span>
-<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^stacks-'</span><span class="w"> </span>-p<span class="w"> </span>SpringBoard
-<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^stacks-'</span><span class="w"> </span>--running
-<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a>
-<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a><span class="c1"># A report of a process over its disk writes, CPU or wakeups limit gets its frames named, with the</span>
-<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="c1"># call tree of each process sampled. `--all` of a crash lists the call stack of every thread of it</span>
-<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'diskwrites_resource'</span><span class="w"> </span>--all
-<a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^MobileSafari'</span><span class="w"> </span>--all
-<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a>
-<a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a><span class="c1"># Remove only matching crash reports, without copying them</span>
-<a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>clear<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^MobileSafari'</span>
-<a id="__codelineno-1-46" name="__codelineno-1-46" href="#__codelineno-1-46"></a>
-<a id="__codelineno-1-47" name="__codelineno-1-47" href="#__codelineno-1-47"></a><span class="c1"># Show the process list (no Developer Mode, DDI or tunnel needed)</span>
-<a id="__codelineno-1-48" name="__codelineno-1-48" href="#__codelineno-1-48"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>ps
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="c1"># Or name the frames with a https://github.com/netanelc305/symbolicator-server which scanned the</span>
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="c1"># IPSW of the device, with neither its device support nor its kernelcache on this host. Frames the</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="c1"># server does not name are left to the symbols of this host. `export PYCRASHREPORT_SERVER=URL`</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="c1"># gives the server once, to these commands and to `parse` of the crash shell</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^panic-full'</span><span class="w"> </span>--symbol-server<span class="w"> </span>http://localhost:3993
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="c1"># Also list every thread of some processes of the panic (by name or pid), or of all of them.</span>
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="c1"># `parse` and `parse-latest` of `crash shell` take the same options</span>
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^panic-full'</span><span class="w"> </span>-p<span class="w"> </span>logd<span class="w"> </span>-p<span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^panic-full'</span><span class="w"> </span>--all
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a>
+<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="c1"># A stackshot (`stacks-*.ips`, as sysdiagnose takes) takes the same options, and so does a panic</span>
+<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a><span class="c1"># take `--running`, which lists only the threads which were on a CPU</span>
+<a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^stacks-'</span><span class="w"> </span>-p<span class="w"> </span>SpringBoard
+<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^stacks-'</span><span class="w"> </span>--running
+<a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a>
+<a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a><span class="c1"># A report of a process over its disk writes, CPU or wakeups limit gets its frames named, with the</span>
+<a id="__codelineno-1-46" name="__codelineno-1-46" href="#__codelineno-1-46"></a><span class="c1"># call tree of each process sampled. `--all` of a crash lists the call stack of every thread of it</span>
+<a id="__codelineno-1-47" name="__codelineno-1-47" href="#__codelineno-1-47"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'diskwrites_resource'</span><span class="w"> </span>--all
+<a id="__codelineno-1-48" name="__codelineno-1-48" href="#__codelineno-1-48"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>parse-latest<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^MobileSafari'</span><span class="w"> </span>--all
 <a id="__codelineno-1-49" name="__codelineno-1-49" href="#__codelineno-1-49"></a>
-<a id="__codelineno-1-50" name="__codelineno-1-50" href="#__codelineno-1-50"></a><span class="c1"># Match process pids by name (like pgrep)</span>
-<a id="__codelineno-1-51" name="__codelineno-1-51" href="#__codelineno-1-51"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>pgrep<span class="w"> </span>SpringBoard
+<a id="__codelineno-1-50" name="__codelineno-1-50" href="#__codelineno-1-50"></a><span class="c1"># Remove only matching crash reports, without copying them</span>
+<a id="__codelineno-1-51" name="__codelineno-1-51" href="#__codelineno-1-51"></a>pymobiledevice3<span class="w"> </span>crash<span class="w"> </span>clear<span class="w"> </span>--match<span class="w"> </span><span class="s1">'^MobileSafari'</span>
+<a id="__codelineno-1-52" name="__codelineno-1-52" href="#__codelineno-1-52"></a>
+<a id="__codelineno-1-53" name="__codelineno-1-53" href="#__codelineno-1-53"></a><span class="c1"># Show the process list (no Developer Mode, DDI or tunnel needed)</span>
+<a id="__codelineno-1-54" name="__codelineno-1-54" href="#__codelineno-1-54"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>ps
+<a id="__codelineno-1-55" name="__codelineno-1-55" href="#__codelineno-1-55"></a>
+<a id="__codelineno-1-56" name="__codelineno-1-56" href="#__codelineno-1-56"></a><span class="c1"># Match process pids by name (like pgrep)</span>
+<a id="__codelineno-1-57" name="__codelineno-1-57" href="#__codelineno-1-57"></a>pymobiledevice3<span class="w"> </span>processes<span class="w"> </span>pgrep<span class="w"> </span>SpringBoard
 </code></pre></div>
 <h2 id="network-sniffing-pcap">Network Sniffing (PCAP)<a class="headerlink" href="#network-sniffing-pcap" title="Permanent link">&para;</a></h2>
 <p>Every packet is labelled with the process that sent it; see
@@ -3560,17 +3566,22 @@ plus a mounted DDI on iOS &lt; 17 (<a href="#developer-mode-and-ddi">above</a>).
 <a id="__codelineno-19-130" name="__codelineno-19-130" href="#__codelineno-19-130"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>stackshot<span class="w"> </span><span class="se">\</span>
 <a id="__codelineno-19-131" name="__codelineno-19-131" href="#__codelineno-19-131"></a><span class="w">    </span>--kernelcache<span class="w"> </span>kernelcache.release.iphone17<span class="w"> </span>--kernel-signatures<span class="w"> </span>symbolicator/kernel
 <a id="__codelineno-19-132" name="__codelineno-19-132" href="#__codelineno-19-132"></a>
-<a id="__codelineno-19-133" name="__codelineno-19-133" href="#__codelineno-19-133"></a><span class="c1"># Device information</span>
-<a id="__codelineno-19-134" name="__codelineno-19-134" href="#__codelineno-19-134"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>device-information
-<a id="__codelineno-19-135" name="__codelineno-19-135" href="#__codelineno-19-135"></a>
-<a id="__codelineno-19-136" name="__codelineno-19-136" href="#__codelineno-19-136"></a><span class="c1"># Energy monitor</span>
-<a id="__codelineno-19-137" name="__codelineno-19-137" href="#__codelineno-19-137"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>energy<span class="w"> </span>PID1<span class="w"> </span>PID2<span class="w"> </span>...
-<a id="__codelineno-19-138" name="__codelineno-19-138" href="#__codelineno-19-138"></a>
-<a id="__codelineno-19-139" name="__codelineno-19-139" href="#__codelineno-19-139"></a><span class="c1"># Per-process network traffic (bytes/packets, rx/tx)</span>
-<a id="__codelineno-19-140" name="__codelineno-19-140" href="#__codelineno-19-140"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>network-statistics<span class="w"> </span>PID1<span class="w"> </span>PID2<span class="w"> </span>...
-<a id="__codelineno-19-141" name="__codelineno-19-141" href="#__codelineno-19-141"></a>
-<a id="__codelineno-19-142" name="__codelineno-19-142" href="#__codelineno-19-142"></a><span class="c1"># Display frame rate (Core Animation FPS), once a second</span>
-<a id="__codelineno-19-143" name="__codelineno-19-143" href="#__codelineno-19-143"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>fps
+<a id="__codelineno-19-133" name="__codelineno-19-133" href="#__codelineno-19-133"></a><span class="c1"># Symbolicate the user frames with a https://github.com/netanelc305/symbolicator-server instead of</span>
+<a id="__codelineno-19-134" name="__codelineno-19-134" href="#__codelineno-19-134"></a><span class="c1"># the device support (also given once by `export PYCRASHREPORT_SERVER=URL`); the kernel frames</span>
+<a id="__codelineno-19-135" name="__codelineno-19-135" href="#__codelineno-19-135"></a><span class="c1"># still take --kernelcache, since a stackshot does not tell which kernelcache the device runs</span>
+<a id="__codelineno-19-136" name="__codelineno-19-136" href="#__codelineno-19-136"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>core-profile-session<span class="w"> </span>stackshot<span class="w"> </span>--symbol-server<span class="w"> </span>http://localhost:3993
+<a id="__codelineno-19-137" name="__codelineno-19-137" href="#__codelineno-19-137"></a>
+<a id="__codelineno-19-138" name="__codelineno-19-138" href="#__codelineno-19-138"></a><span class="c1"># Device information</span>
+<a id="__codelineno-19-139" name="__codelineno-19-139" href="#__codelineno-19-139"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>device-information
+<a id="__codelineno-19-140" name="__codelineno-19-140" href="#__codelineno-19-140"></a>
+<a id="__codelineno-19-141" name="__codelineno-19-141" href="#__codelineno-19-141"></a><span class="c1"># Energy monitor</span>
+<a id="__codelineno-19-142" name="__codelineno-19-142" href="#__codelineno-19-142"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>energy<span class="w"> </span>PID1<span class="w"> </span>PID2<span class="w"> </span>...
+<a id="__codelineno-19-143" name="__codelineno-19-143" href="#__codelineno-19-143"></a>
+<a id="__codelineno-19-144" name="__codelineno-19-144" href="#__codelineno-19-144"></a><span class="c1"># Per-process network traffic (bytes/packets, rx/tx)</span>
+<a id="__codelineno-19-145" name="__codelineno-19-145" href="#__codelineno-19-145"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>network-statistics<span class="w"> </span>PID1<span class="w"> </span>PID2<span class="w"> </span>...
+<a id="__codelineno-19-146" name="__codelineno-19-146" href="#__codelineno-19-146"></a>
+<a id="__codelineno-19-147" name="__codelineno-19-147" href="#__codelineno-19-147"></a><span class="c1"># Display frame rate (Core Animation FPS), once a second</span>
+<a id="__codelineno-19-148" name="__codelineno-19-148" href="#__codelineno-19-148"></a>pymobiledevice3<span class="w"> </span>developer<span class="w"> </span>dvt<span class="w"> </span>fps
 </code></pre></div>
 <h2 id="core-device-ios-17">Core Device (iOS 17+)<a class="headerlink" href="#core-device-ios-17" title="Permanent link">&para;</a></h2>
 <p>These commands talk to iOS 17+ <code>CoreDevice</code> services (the ones Xcode's <code>devicectl</code> uses) through

@@ -850,6 +850,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#symbolication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symbolication
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#output" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2678,6 +2689,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#symbolication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symbolication
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#output" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2847,6 +2869,23 @@ their variables; <code>--remotepairing</code> may be combined only with <code>--
 <td><code>PYMOBILEDEVICE3_USB_BACKEND</code></td>
 <td><code>iokit</code> or <code>libusb</code></td>
 <td>Same as <code>restore --libusb</code> when set to <code>libusb</code>: reach Recovery/DFU devices through libusb instead of IOKit on macOS. <code>iokit</code> is only valid on macOS; other platforms always use libusb.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="symbolication">Symbolication<a class="headerlink" href="#symbolication" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Value</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PYCRASHREPORT_SERVER</code></td>
+<td>URL, e.g. <code>http://localhost:3993</code></td>
+<td>Default for <code>--symbol-server</code> of <code>crash parse</code>, <code>crash parse-latest</code> and <code>developer dvt core-profile-session stackshot</code>, and for <code>parse</code> of the crash shell: name frames with the symbols a <a href="https://github.com/netanelc305/symbolicator-server">symbolicator-server</a> holds, before those of this host. Shared with the <code>pycrashreport</code> command.</td>
 </tr>
 </tbody>
 </table>
