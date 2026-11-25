@@ -572,6 +572,11 @@ pymobiledevice3 developer dvt core-profile-session stackshot --process SpringBoa
 pymobiledevice3 developer dvt core-profile-session stackshot \
     --kernelcache kernelcache.release.iphone17 --kernel-signatures symbolicator/kernel
 
+# Symbolicate the user frames with a https://github.com/netanelc305/symbolicator-server instead of
+# the device support (also given once by `export PYCRASHREPORT_SERVER=URL`); the kernel frames
+# still take --kernelcache, since a stackshot does not tell which kernelcache the device runs
+pymobiledevice3 developer dvt core-profile-session stackshot --symbol-server http://localhost:3993
+
 # Device information
 pymobiledevice3 developer dvt device-information
 

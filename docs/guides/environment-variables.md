@@ -64,7 +64,7 @@ export PYMOBILEDEVICE3_DEFAULT_FALLBACK=native
 
 | Variable | Value | Effect |
 | --- | --- | --- |
-| `PYCRASHREPORT_SERVER` | URL, e.g. `http://localhost:3993` | Default for `--symbol-server` of `crash parse` and `crash parse-latest`, and for `parse` of the crash shell: name frames with the symbols a [symbolicator-server](https://github.com/netanelc305/symbolicator-server) holds, before those of this host. Shared with the `pycrashreport` command. |
+| `PYCRASHREPORT_SERVER` | URL, e.g. `http://localhost:3993` | Default for `--symbol-server` of `crash parse`, `crash parse-latest` and `developer dvt core-profile-session stackshot`, and for `parse` of the crash shell: name frames with the symbols a [symbolicator-server](https://github.com/netanelc305/symbolicator-server) holds, before those of this host. Shared with the `pycrashreport` command. |
 
 ## Output
 
