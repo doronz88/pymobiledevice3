@@ -5,7 +5,7 @@ from typing import Any, Optional, cast
 
 import pytest
 import typer
-from apple_symbols import DeviceSupportSymbols, KernelSymbols, SymbolImage
+from apple_symbols import DeviceSupportSymbols, KernelImage, KernelSymbols, SymbolImage
 from pycrashreport.symbols import SymbolServerError
 
 from pymobiledevice3.cli.developer.dvt import core_profile_session
@@ -201,7 +201,23 @@ class _ServerSymbols:
         return ("foo", address - image.vmaddr)
 
 
+class _ServerKernelSymbols:
+    """Kernel symbols of a symbol server, which names one function of the kernel."""
+
+    has_symbols = True
+
+    def __init__(self) -> None:
+        self.images = [KernelImage("com.apple.kernel", KERNEL_UUID, 0xFFFFFFF007004000)]
+
+    def image_by_uuid(self, image_uuid: str) -> Optional[KernelImage]:
+        return next((image for image in self.images if image.uuid == image_uuid), None)
+
+    def symbolicate(self, address: int) -> Optional[tuple[str, int]]:
+        return ("panic", address - self.images[0].text_exec)
+
+
 SERVER = "http://server.invalid:3993"
+KERNEL_UUID = "99999999-8888-7777-6666-555555555555"
 
 
 @pytest.fixture
@@ -217,7 +233,15 @@ def symbol_server(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
         return _ServerSymbols()
 
     monkeypatch.setattr(core_profile_session.symbol_server_client, "connect", connect)
+
+    def kernel_symbols_of_build(
+        client: object, product_type: str, build_version: str, image_uuids: list[str]
+    ) -> Optional[_ServerKernelSymbols]:
+        asked.append((client, product_type, build_version, image_uuids))
+        return _ServerKernelSymbols() if KERNEL_UUID in image_uuids else None
+
     monkeypatch.setattr(core_profile_session.symbol_server_client, "userland_symbols", userland_symbols)
+    monkeypatch.setattr(core_profile_session.symbol_server_client, "kernel_symbols_of_build", kernel_symbols_of_build)
     return asked
 
 
@@ -226,7 +250,7 @@ def test_stackshot_symbolicates_with_a_symbol_server(
 ) -> None:
     core_profile_session.stackshot(service_provider=SERVICE_PROVIDER, symbol_server=SERVER)
 
-    assert symbol_server == [(SERVER,), (SERVER, "iPhone15,2", "20A362")]
+    assert symbol_server == [(SERVER,), (SERVER, "iPhone15,2", "20A362"), (SERVER, "iPhone15,2", "20A362", [])]
     assert capsys.readouterr().out.splitlines() == [
         "launchd [1]  1 threads",
         "  Thread 7",
@@ -280,3 +304,28 @@ def test_stackshot_exits_nonzero_when_the_symbol_server_cannot_be_reached(monkey
         core_profile_session.stackshot(service_provider=SERVICE_PROVIDER, symbol_server=SERVER)
 
     assert exc_info.value.exit_code == 1
+
+
+def test_stackshot_symbolicates_kernel_frames_with_a_symbol_server(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, symbol_server: list[tuple[object, ...]]
+) -> None:
+    # a stackshot tells its kernel images, by which the server finds the kernelcache of the device
+    monkeypatch.setitem(
+        cast(dict[int, Any], STACKSHOT["task_snapshots"]),
+        0,
+        {
+            "task_snapshot": {"ts_pid": 0, "ts_p_comm": "kernel_task"},
+            "dyld_load_info_text_exec": [{"imageLoadAddress": 0xFFFFFFF010000000, "imageUUID": KERNEL_UUID}],
+            "thread_snapshots": {3: {"kernel_stack_frames": [{"lr": 0xFFFFFFF010000020}]}},
+        },
+    )
+
+    core_profile_session.stackshot(service_provider=SERVICE_PROVIDER, symbol_server=SERVER, process="kernel_task")
+
+    assert symbol_server[-1] == (SERVER, "iPhone15,2", "20A362", [KERNEL_UUID])
+    assert capsys.readouterr().out.splitlines() == [
+        "kernel_task [0]  1 threads",
+        "  Thread 3",
+        "      0  com.apple.kernel  panic + 0x20  (kernel)",
+        "",
+    ]

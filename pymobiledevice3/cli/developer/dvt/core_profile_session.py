@@ -15,10 +15,16 @@ from pathlib import Path
 from typing import Annotated, Any, Optional, cast
 
 import typer
-from apple_symbols import DeviceSupportSymbols, KernelSymbols, UserlandSymbolSource, find_device_support_symbols
+from apple_symbols import (
+    DeviceSupportSymbols,
+    KernelSymbols,
+    KernelSymbolSource,
+    UserlandSymbolSource,
+    find_device_support_symbols,
+)
 from pycrashreport import server as symbol_server_client
 from pycrashreport.crash_report import SERVER_ENVVAR
-from pycrashreport.symbols import SymbolServerError, UserlandSymbolChain
+from pycrashreport.symbols import KernelSymbolChain, SymbolServerError, UserlandSymbolChain
 from pykdebugparser.line_filter import MATCH_HELP, LineFilter, emphasize
 from pykdebugparser.pykdebugparser import PyKdebugParser
 from pykdebugparser.selection import GROUP_HELP, captured_events, parse_live_selection
@@ -444,15 +450,21 @@ def format_stackshot(processes: list[StackshotProcess], colored: bool = False) -
 
 
 def _load_server_stackshot_symbols(
-    service_provider: LockdownServiceProvider, symbol_server: str
-) -> Optional[UserlandSymbolSource]:
-    if service_provider.product_type is None or service_provider.product_build_version is None:
-        return None
+    service_provider: LockdownServiceProvider, symbol_server: Optional[str], stackshot: Mapping[str, Any]
+) -> tuple[Optional[UserlandSymbolSource], Optional[KernelSymbolSource]]:
+    """Get what a symbol server names the user and the kernel frames of a stackshot with."""
+    product_type = service_provider.product_type
+    build_version = service_provider.product_build_version
+    if symbol_server is None or product_type is None or build_version is None:
+        return None, None
     try:
-        return symbol_server_client.userland_symbols(
-            symbol_server_client.connect(symbol_server),
-            service_provider.product_type,
-            service_provider.product_build_version,
+        client = symbol_server_client.connect(symbol_server)
+        return (
+            symbol_server_client.userland_symbols(client, product_type, build_version),
+            # A stackshot does not tell which kernelcache the device runs, only its kernel images
+            symbol_server_client.kernel_symbols_of_build(
+                client, product_type, build_version, kernel_image_uuids(stackshot)
+            ),
         )
     except SymbolServerError as e:
         logger.error(str(e))
@@ -460,12 +472,11 @@ def _load_server_stackshot_symbols(
 
 
 def _load_stackshot_symbols(
-    service_provider: LockdownServiceProvider, symbols: Optional[Path], symbol_server: Optional[str] = None
+    service_provider: LockdownServiceProvider,
+    symbols: Optional[Path],
+    server_symbols: Optional[UserlandSymbolSource] = None,
 ) -> Optional[UserlandSymbolSource]:
     """Get what names user frames: the symbol server first, then the symbols of this host."""
-    server_symbols = (
-        _load_server_stackshot_symbols(service_provider, symbol_server) if symbol_server is not None else None
-    )
     host_symbols = _load_host_stackshot_symbols(service_provider, symbols, quiet=server_symbols is not None)
     if server_symbols is None or host_symbols is None:
         return server_symbols or host_symbols
@@ -504,6 +515,19 @@ def _load_host_stackshot_symbols(
 
 
 def _load_stackshot_kernel_symbols(
+    kernelcache: Optional[Path],
+    signatures: Optional[Path],
+    stackshot: Mapping[str, Any],
+    server_symbols: Optional[KernelSymbolSource] = None,
+) -> Optional[KernelSymbolSource]:
+    """Get what names kernel frames: the symbol server first, then the kernelcache of this host."""
+    host_symbols = _load_host_stackshot_kernel_symbols(kernelcache, signatures, stackshot)
+    if server_symbols is None or host_symbols is None:
+        return server_symbols or host_symbols
+    return KernelSymbolChain([server_symbols, host_symbols])
+
+
+def _load_host_stackshot_kernel_symbols(
     kernelcache: Optional[Path], signatures: Optional[Path], stackshot: Mapping[str, Any]
 ) -> Optional[KernelSymbols]:
     if kernelcache is None:
@@ -576,8 +600,8 @@ async def stackshot(
         typer.Option(
             envvar=SERVER_ENVVAR,
             help="URL of a symbolicator server (https://github.com/netanelc305/symbolicator-server), e.g. "
-            "http://localhost:3993, to symbolicate user frames with the symbols it holds. Frames it does not "
-            "name are left to the symbols of this host.",
+            "http://localhost:3993, to symbolicate user and kernel frames with the symbols it holds. Frames it "
+            "does not name are left to the symbols of this host and to --kernelcache.",
         ),
     ] = None,
 ) -> None:
@@ -585,8 +609,9 @@ async def stackshot(
     Print the call stacks of all threads of all processes.
 
     The call stacks are symbolicated using the Xcode device support of the device, which
-    `developer fetch-symbols download` creates, or by a symbolicator server given --symbol-server.
-    Kernel frames are symbolicated when given --kernelcache and --kernel-signatures.
+    `developer fetch-symbols download` creates. Kernel frames are symbolicated when given
+    --kernelcache and --kernel-signatures. A symbolicator server given by --symbol-server
+    symbolicates both, with neither on this host.
     """
     if kernel_signatures is not None and kernelcache is None:
         raise typer.BadParameter("--kernel-signatures requires --kernelcache")
@@ -627,10 +652,11 @@ async def stackshot(
         print_json(data)
         return
 
+    server_symbols, server_kernel_symbols = _load_server_stackshot_symbols(service_provider, symbol_server, data)
     processes = resolve_stackshot(
         data,
-        _load_stackshot_symbols(service_provider, symbols, symbol_server),
-        _load_stackshot_kernel_symbols(kernelcache, kernel_signatures, data),
+        _load_stackshot_symbols(service_provider, symbols, server_symbols),
+        _load_stackshot_kernel_symbols(kernelcache, kernel_signatures, data, server_kernel_symbols),
     )
     if process is not None:
         processes = [p for p in processes if process in (str(p.pid), p.name)]
