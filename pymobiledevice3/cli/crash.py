@@ -3,7 +3,8 @@ from typing import Annotated, Optional
 
 import typer
 from apple_symbols import KernelSymbols
-from pycrashreport.crash_report import CrashReportBase
+from pycrashreport.crash_report import SERVER_ENVVAR, CrashReportBase
+from pycrashreport.symbols import SymbolServerError
 from typer_injector import InjectingTyper
 
 from pymobiledevice3.cli.cli_common import (
@@ -71,6 +72,15 @@ RunningOption = Annotated[
     bool,
     typer.Option("--running", "-r", help="Print the threads of a panic or a stackshot report which were on a CPU."),
 ]
+SymbolServerOption = Annotated[
+    Optional[str],
+    typer.Option(
+        envvar=SERVER_ENVVAR,
+        help="URL of a symbolicator server (https://github.com/netanelc305/symbolicator-server), e.g. "
+        "http://localhost:3993, to name frames with the symbols it holds. Frames it does not name are left to "
+        "the Xcode device support of this host and to --kernelcache.",
+    ),
+]
 
 
 def _load_kernel_symbols(kernelcache: Optional[Path], signatures: Optional[Path]) -> Optional[KernelSymbols]:
@@ -86,10 +96,11 @@ def _print_report(
     processes: Optional[list[str]] = None,
     all_processes: bool = False,
     running: bool = False,
+    symbol_server: Optional[str] = None,
 ) -> None:
     try:
-        print_crash_report(report, kernel_symbols, processes or [], all_processes, running)
-    except ValueError as e:
+        print_crash_report(report, kernel_symbols, processes or [], all_processes, running, symbol_server)
+    except (ValueError, SymbolServerError) as e:
         raise typer.BadParameter(str(e)) from e
 
 
@@ -139,6 +150,7 @@ async def crash_parse(
     process: ProcessOption = None,
     all_processes: AllProcessesOption = False,
     running: RunningOption = False,
+    symbol_server: SymbolServerOption = None,
 ) -> None:
     """
     Print a crash report from the device in a readable, parsed form.
@@ -146,13 +158,16 @@ async def crash_parse(
     Userland frames the report left unnamed, such as the user stacks of a panic report, are named
     using the Xcode device support of the device the report came from, which
     `developer fetch-symbols download` creates. Kernel frames are named given --kernelcache.
+    --symbol-server asks a symbolicator server for both first.
     --process, --all and --running list the threads of the processes of a panic or a stackshot
     report (`stacks-*.ips`), --process and --all the call trees of a spindump report
     (`*.diskwrites_resource-*.ips` and the like), and --all every thread of a crash.
     """
     kernel_symbols = _load_kernel_symbols(kernelcache, kernel_signatures)
     async with CrashReportsManager(service_provider) as crash_manager:
-        _print_report(await crash_manager.parse(remote_file), kernel_symbols, process, all_processes, running)
+        _print_report(
+            await crash_manager.parse(remote_file), kernel_symbols, process, all_processes, running, symbol_server
+        )
 
 
 @cli.command("parse-latest")
@@ -190,6 +205,7 @@ async def crash_parse_latest(
     process: ProcessOption = None,
     all_processes: AllProcessesOption = False,
     running: RunningOption = False,
+    symbol_server: SymbolServerOption = None,
 ) -> None:
     """Parse the latest top-level crash report(s) under a path, newest first."""
     kernel_symbols = _load_kernel_symbols(kernelcache, kernel_signatures)
@@ -201,7 +217,7 @@ async def crash_parse_latest(
             count=count,
         )
         for report in latest_reports:
-            _print_report(report, kernel_symbols, process, all_processes, running)
+            _print_report(report, kernel_symbols, process, all_processes, running, symbol_server)
 
 
 @cli.command("pull")
