@@ -1,4 +1,6 @@
+import contextlib
 import json
+from collections.abc import Generator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Optional, cast
@@ -240,8 +242,15 @@ def symbol_server(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, ...]]:
         asked.append((client, product_type, build_version, image_uuids))
         return _ServerKernelSymbols() if KERNEL_UUID in image_uuids else None
 
+    @contextlib.contextmanager
+    def collecting(server: str, sources: list[object]) -> Generator[None, None, None]:
+        asked.append((server, "collecting", [type(source).__name__ for source in sources]))
+        yield
+        asked.append((server, "collected"))
+
     monkeypatch.setattr(core_profile_session.symbol_server_client, "userland_symbols", userland_symbols)
     monkeypatch.setattr(core_profile_session.symbol_server_client, "kernel_symbols_of_build", kernel_symbols_of_build)
+    monkeypatch.setattr(core_profile_session.symbol_server_client, "collecting", collecting)
     return asked
 
 
@@ -250,7 +259,14 @@ def test_stackshot_symbolicates_with_a_symbol_server(
 ) -> None:
     core_profile_session.stackshot(service_provider=SERVICE_PROVIDER, symbol_server=SERVER)
 
-    assert symbol_server == [(SERVER,), (SERVER, "iPhone15,2", "20A362"), (SERVER, "iPhone15,2", "20A362", [])]
+    assert symbol_server == [
+        (SERVER,),
+        (SERVER, "iPhone15,2", "20A362"),
+        (SERVER, "iPhone15,2", "20A362", []),
+        # the frames are resolved once for the server to be asked for all of them at once
+        (SERVER, "collecting", ["_ServerSymbols", "NoneType"]),
+        (SERVER, "collected"),
+    ]
     assert capsys.readouterr().out.splitlines() == [
         "launchd [1]  1 threads",
         "  Thread 7",
@@ -294,6 +310,23 @@ def test_stackshot_leaves_what_the_symbol_server_does_not_name_to_this_host(
     assert "      0  libbar.dylib  bar + 0x8" in out
 
 
+def test_stackshot_exits_nonzero_when_the_symbol_server_cannot_name_frames_at_once(
+    monkeypatch: pytest.MonkeyPatch, caplog: Any, symbol_server: list[tuple[object, ...]]
+) -> None:
+    @contextlib.contextmanager
+    def collecting(server: str, sources: list[object]) -> Generator[None, None, None]:
+        yield
+        raise SymbolServerError(f"{server} speaks version None of /functions")
+
+    monkeypatch.setattr(core_profile_session.symbol_server_client, "collecting", collecting)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        core_profile_session.stackshot(service_provider=SERVICE_PROVIDER, symbol_server=SERVER)
+
+    assert exc_info.value.exit_code == 1
+    assert "of /functions" in caplog.text
+
+
 def test_stackshot_exits_nonzero_when_the_symbol_server_cannot_be_reached(monkeypatch: pytest.MonkeyPatch) -> None:
     def connect(server: str) -> object:
         raise SymbolServerError(f"Reaching {server} failed")
@@ -322,7 +355,7 @@ def test_stackshot_symbolicates_kernel_frames_with_a_symbol_server(
 
     core_profile_session.stackshot(service_provider=SERVICE_PROVIDER, symbol_server=SERVER, process="kernel_task")
 
-    assert symbol_server[-1] == (SERVER, "iPhone15,2", "20A362", [KERNEL_UUID])
+    assert symbol_server[2] == (SERVER, "iPhone15,2", "20A362", [KERNEL_UUID])
     assert capsys.readouterr().out.splitlines() == [
         "kernel_task [0]  1 threads",
         "  Thread 3",

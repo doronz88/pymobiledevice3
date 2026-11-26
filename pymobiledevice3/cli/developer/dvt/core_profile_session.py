@@ -653,11 +653,18 @@ async def stackshot(
         return
 
     server_symbols, server_kernel_symbols = _load_server_stackshot_symbols(service_provider, symbol_server, data)
-    processes = resolve_stackshot(
-        data,
-        _load_stackshot_symbols(service_provider, symbols, server_symbols),
-        _load_stackshot_kernel_symbols(kernelcache, kernel_signatures, data, server_kernel_symbols),
-    )
+    user_symbols = _load_stackshot_symbols(service_provider, symbols, server_symbols)
+    kernel_symbols = _load_stackshot_kernel_symbols(kernelcache, kernel_signatures, data, server_kernel_symbols)
+    if symbol_server is not None:
+        # The first lookup in an image fetches every function of it from the server. Resolving once ahead
+        # only has the server's symbols note every address, which they then fetch in one request.
+        try:
+            with symbol_server_client.collecting(symbol_server, [user_symbols, kernel_symbols]):
+                resolve_stackshot(data, user_symbols, kernel_symbols)
+        except SymbolServerError as e:
+            logger.error(str(e))
+            raise typer.Exit(1) from e
+    processes = resolve_stackshot(data, user_symbols, kernel_symbols)
     if process is not None:
         processes = [p for p in processes if process in (str(p.pid), p.name)]
     print(format_stackshot(processes, colored=user_requested_colored_output()))
