@@ -695,9 +695,10 @@ pymobiledevice3 developer dvt core-profile-session stackshot --process SpringBoa
 pymobiledevice3 developer dvt core-profile-session stackshot \
     --kernelcache kernelcache.release.iphone17 --kernel-signatures symbolicator/kernel
 
-# Symbolicate the user frames with a https://github.com/netanelc305/symbolicator-server instead of
-# the device support (also given once by `export PYCRASHREPORT_SERVER=URL`); the kernel frames
-# still take --kernelcache, since a stackshot does not tell which kernelcache the device runs
+# Symbolicate both the user and the kernel frames with a
+# https://github.com/netanelc305/symbolicator-server which scanned the IPSW of the device, with
+# neither its device support nor its kernelcache on this host (also given once by
+# `export PYCRASHREPORT_SERVER=URL`)
 pymobiledevice3 developer dvt core-profile-session stackshot --symbol-server http://localhost:3993
 
 # Device information
@@ -1312,6 +1313,8 @@ Open <http://127.0.0.1:9222/> in Google Chrome and pick a page. Prefer this land
 Debuggables are grouped by the process that owns them, with its icon, name, bundle identifier and pid as the device reports them; click a process header to fold its group. A process that accepts Remote Automation sessions carries an **automation** badge, and one that runs web content for another (a proxy) names the app it runs in. A badge next to a debuggable says whether it is paused, or who is already debugging it. Hovering a page highlights its view on the device screen, as Safari's Develop menu does, and the filter box narrows the list to targets matching every word typed, by title, URL, process name, bundle identifier or pid.
 
 The listing keeps itself current: a tab opened, closed or navigated on the device appears there within a couple of seconds, with no reload. Leave it open in a background tab and it stops polling until you come back to it.
+
+The Network panel's throttling menu slows the page's requests down on iOS 27.3 and later, where WebKit gained network throttling: the preset's latency and download speed apply to the whole page (WebKit takes a single bandwidth, and cannot throttle single requests or go offline). On earlier iOS versions the menu has no effect.
 
 The device screen (toggle the device toolbar) takes the keyboard: characters type into the focused field, held keys repeat, Cmd/Ctrl-A selects all, the arrow keys, Home and End move the caret (Shift extends the selection, Alt moves by word, Cmd by line), Backspace and Delete edit, Enter submits. The page's own `keydown` and `keyup` listeners see every key, and one that calls `preventDefault()` keeps its shortcut, as in a browser. Clipboard shortcuts (Cmd-C/V/X) are not relayed.
 
