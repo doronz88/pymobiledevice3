@@ -79,6 +79,11 @@ The listing keeps itself current: a tab opened, closed or navigated on the devic
 appears there within a couple of seconds, with no reload. Leave it open in a
 background tab and it stops polling until you come back to it.
 
+The Network panel's throttling menu slows the page's requests down on iOS 27.3 and
+later, where WebKit gained network throttling: the preset's latency and download
+speed apply to the whole page (WebKit takes a single bandwidth, and cannot throttle
+single requests or go offline). On earlier iOS versions the menu has no effect.
+
 The device screen (toggle the device toolbar) takes the keyboard: characters type
 into the focused field, held keys repeat, Cmd/Ctrl-A selects all, the arrow keys,
 Home and End move the caret (Shift extends the selection, Alt moves by word,
