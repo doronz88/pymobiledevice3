@@ -244,6 +244,12 @@ REPLAYED_SETUP_METHODS = frozenset({
     "Debugger.setPauseOnDebuggerStatements",
 })
 
+# WebKit's network throttling command (Network.setEmulatedConditions: `bandwidth` in bytes per
+# second, `latency` in milliseconds, 0 or absent for "no limit"; both replaced by every call).
+# The conditions outlive the target (iOS 27.3: still in effect after a cross-site navigation),
+# so it is not among REPLAYED_SETUP_METHODS.
+NETWORK_THROTTLING_METHOD = "Network.setEmulatedConditions"
+
 # Replayed setup methods that accumulate state entry-by-entry (one replay per distinct params).
 REPLAYED_MULTI_SETUP_METHODS = frozenset({
     "Debugger.setBreakpointByUrl",
@@ -706,10 +712,8 @@ class CdpTarget:
             "Runtime.globalLexicalScopeNames": self._runtime_global_lexical_scope_names,
             "Runtime.getProperties": self._runtime_get_properties,
             "Network.setBlockedURLs": partial(self._simple_response, value=None),
-            # The SDK reads ruleIds.length from this response inside the target-initialization
-            # Promise.all; a field-less response rejects it and silently kills the rest of the
-            # init chain (the console stops rendering results).
-            "Network.emulateNetworkConditionsByRule": partial(self._result_response, result={"ruleIds": []}),
+            "Network.emulateNetworkConditionsByRule": self._network_emulate_network_conditions_by_rule,
+            "Network.emulateNetworkConditions": self._network_emulate_network_conditions,
             "Network.overrideNetworkState": partial(self._simple_response, value=None),
             # The frontend queries this per frame and reads response.status.coep/.coop; WebKit has
             # no such method, so report a schema-valid "no isolation policies" status.
@@ -850,6 +854,10 @@ class CdpTarget:
         self._setup_messages: dict[Any, dict[str, Any]] = {}
         # WebKit user preferences currently overridden through Emulation.setEmulatedMedia features.
         self._emulated_preferences: set[str] = set()
+        # The network throttling the device last accepted, as Network.setEmulatedConditions
+        # parameters (empty: none), and whether its WebKit turned out not to know the command.
+        self._network_conditions: dict[str, int] = {}
+        self._network_throttling_unsupported = False
         self._setup_sent_targets: set[str] = {target_id}
         # Targets announced as pages - the only kind this session talks to (see _target_created).
         self._page_targets: set[str] = {target_id}
@@ -2696,6 +2704,92 @@ class CdpTarget:
         message["method"] = "Network.setResourceCachingDisabled"
         message["params"] = {"disabled": message["params"]["cacheDisabled"]}
         await self._send_message_to_target(message)
+
+    @staticmethod
+    def _webkit_network_conditions(conditions: dict[str, Any]) -> dict[str, int]:
+        """Chrome's network conditions as Network.setEmulatedConditions parameters. Chrome marks
+        "no limit" with a throughput of -1 (or 0) and a latency of 0; WebKit with 0 or an absent
+        parameter, and it rejects a negative one. WebKit takes integers and has a single
+        bandwidth, so the download throughput is the one that counts."""
+        params: dict[str, int] = {}
+        for name, key in (("bandwidth", "downloadThroughput"), ("latency", "latency")):
+            value = conditions.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                # A fraction below 1 must not truncate to 0, which lifts the limit.
+                params[name] = max(1, round(value))
+        return params
+
+    async def _set_emulated_network_conditions(
+        self, message: dict[str, Any], conditions: dict[str, Any], result: dict[str, Any], lenient: bool
+    ) -> None:
+        """Throttle the page's network with WebKit's Network.setEmulatedConditions and answer
+        `message` with `result`.
+
+        The command exists since iOS 27.3 only, and only on a page. Where it is missing a `lenient`
+        request is still answered with `result`, as before the bridge translated anything (a
+        frontend sends it while initializing and gives up on an error); any other one gets the
+        device's error, which is what it always got there. A device that lacks the command is
+        asked once per session, and never unless there is throttling to set or to lift - so a
+        frontend that never throttles sends such a device nothing.
+        """
+        params = self._webkit_network_conditions(conditions)
+        if not params and not self._network_conditions:
+            # No throttling asked for and none in effect.
+            await self._result_response(message, result)
+            return
+        if self._network_throttling_unsupported:
+            if lenient:
+                await self._result_response(message, result)
+            else:
+                await self._error_response(
+                    message, {"code": -32601, "message": f"'{NETWORK_THROTTLING_METHOD}' was not found"}
+                )
+            return
+
+        async def translate(reply: dict[str, Any]) -> None:
+            if "error" not in reply:
+                self._network_conditions = params
+                await self._result_response(message, result)
+                return
+            if str(reply["error"].get("message", "")).endswith("was not found"):
+                # "'Network.setEmulatedConditions' was not found" before iOS 27.3, "'Network'
+                # domain was not found" on a JSContext.
+                self._network_throttling_unsupported = True
+                logger.debug(f"The device has no network throttling: {reply['error']}")
+            if lenient:
+                await self._result_response(message, result)
+            else:
+                await self._error_response(message, reply["error"])
+
+        await self._forward_and_translate(message, {"method": NETWORK_THROTTLING_METHOD, "params": params}, translate)
+
+    async def _network_emulate_network_conditions(self, message: dict[str, Any]):
+        params: dict[str, Any] = message.get("params") or {}
+        if params.get("offline"):
+            # WebKit can slow the network down but not take it away; a success here would tell
+            # the client (Playwright's setOffline) that the page is offline while it is not.
+            await self._error_response(message, {"code": -32000, "message": "WebKit cannot emulate an offline network"})
+            return
+        await self._set_emulated_network_conditions(message, params, {}, lenient=False)
+
+    async def _network_emulate_network_conditions_by_rule(self, message: dict[str, Any]):
+        """Chrome's DevTools throttles through rules: one with an empty URL pattern for the whole
+        page (the Network panel's throttling menu) and others for single requests. WebKit only
+        throttles the whole page, so that rule is the one applied; `offline` cannot be honoured
+        (see _network_emulate_network_conditions).
+
+        The frontend reads ruleIds.length from the response inside the target-initialization
+        Promise.all; a field-less response - or an error - rejects it and silently kills the rest
+        of the init chain (the console stops rendering results). So this always succeeds.
+        """
+        params: dict[str, Any] = message.get("params") or {}
+        page_wide: dict[str, Any] = {}
+        for entry in cast(list[Any], params.get("matchedNetworkConditions") or []):
+            rule = cast(dict[str, Any], entry) if isinstance(entry, dict) else {}
+            if rule and not rule.get("urlPattern"):
+                page_wide = rule
+                break
+        await self._set_emulated_network_conditions(message, page_wide, {"ruleIds": []}, lenient=True)
 
     async def _network_load_network_resource(self, message: dict[str, Any]):
         await self.output_queue.put({"id": message["id"], "result": {"resource": {"success": True}}})

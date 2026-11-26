@@ -2870,6 +2870,122 @@ async def test_user_preference_overrides_are_translated_and_replayed(monkeypatch
         assert target._setup_messages["Page.setEmulatedMedia"] == {"media": ""}
 
 
+def _page_wide_rule(**conditions: Any) -> dict[str, Any]:
+    """The rule Chrome's DevTools sends for the Network panel's throttling menu."""
+    rule = {"urlPattern": "", "latency": 0, "downloadThroughput": 0, "uploadThroughput": 0, **conditions}
+    return {"offline": False, "matchedNetworkConditions": [rule]}
+
+
+async def test_network_throttling_is_translated(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chrome's network throttling - the page-wide rule of Network.emulateNetworkConditionsByRule
+    (DevTools) and Network.emulateNetworkConditions (Puppeteer, older frontends) - maps onto
+    WebKit's Network.setEmulatedConditions, which iOS 27.3 added. Chrome's "no limit" (-1) never
+    reaches WebKit, which rejects a negative value."""
+    with offline_cdp_target(monkeypatch) as (target, sent):
+
+        def device_messages() -> list[dict[str, Any]]:
+            return [json.loads(m["params"]["message"]) for m in sent]
+
+        # What DevTools sends while initializing: nothing to throttle, so nothing is sent.
+        await target._network_emulate_network_conditions_by_rule({
+            "id": 1,
+            "method": "Network.emulateNetworkConditionsByRule",
+            "params": {"offline": False, "matchedNetworkConditions": []},
+        })
+        assert sent == []
+        assert target.output_queue.get_nowait() == {"id": 1, "result": {"ruleIds": []}}
+
+        await target._network_emulate_network_conditions_by_rule({
+            "id": 2,
+            "method": "Network.emulateNetworkConditionsByRule",
+            "params": _page_wide_rule(latency=562.5, downloadThroughput=180000.4, uploadThroughput=84375),
+        })
+        assert device_messages()[-1] == {
+            "id": 2,
+            "method": "Network.setEmulatedConditions",
+            "params": {"bandwidth": 180000, "latency": 562},
+        }
+        assert target.output_queue.empty(), "answered only once the device did"
+        await target._dispatch_target_message({"id": 2, "result": {}})
+        assert target.output_queue.get_nowait() == {"id": 2, "result": {"ruleIds": []}}
+
+        # Only the latency is limited here, and a fraction must not become 0 ("no limit").
+        await target._network_emulate_network_conditions({
+            "id": 3,
+            "method": "Network.emulateNetworkConditions",
+            "params": {"offline": False, "latency": 0.2, "downloadThroughput": -1, "uploadThroughput": -1},
+        })
+        assert device_messages()[-1]["params"] == {"latency": 1}
+        await target._dispatch_target_message({"id": 3, "result": {}})
+        assert target.output_queue.get_nowait() == {"id": 3, "result": {}}
+
+        # A rule for single requests is not page-wide throttling, so this lifts it - once.
+        for id_ in (4, 5):
+            await target._network_emulate_network_conditions_by_rule({
+                "id": id_,
+                "method": "Network.emulateNetworkConditionsByRule",
+                "params": {
+                    "offline": False,
+                    "matchedNetworkConditions": [{"urlPattern": "https://a.test/*", "latency": 100}],
+                },
+            })
+            if id_ == 4:
+                assert device_messages()[-1] == {"id": 4, "method": "Network.setEmulatedConditions", "params": {}}
+                await target._dispatch_target_message({"id": 4, "result": {}})
+            assert target.output_queue.get_nowait() == {"id": id_, "result": {"ruleIds": []}}
+        assert len(sent) == 3
+
+        # WebKit cannot take the network away, and saying it did would mislead the client.
+        await target._network_emulate_network_conditions({
+            "id": 6,
+            "method": "Network.emulateNetworkConditions",
+            "params": {"offline": True, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1},
+        })
+        assert "error" in target.output_queue.get_nowait()
+        assert len(sent) == 3
+
+
+async def test_network_throttling_is_harmless_where_webkit_lacks_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Before iOS 27.3 WebKit answers "'Network.setEmulatedConditions' was not found". DevTools
+    must still get its ruleIds (an error there kills its initialization), a client asking through
+    Network.emulateNetworkConditions gets the error it always got, and the device is asked once."""
+    not_found = {"code": -32601, "message": "'Network.setEmulatedConditions' was not found"}
+    with offline_cdp_target(monkeypatch) as (target, sent):
+        await target._network_emulate_network_conditions_by_rule({
+            "id": 1,
+            "method": "Network.emulateNetworkConditionsByRule",
+            "params": _page_wide_rule(latency=400, downloadThroughput=50000),
+        })
+        assert len(sent) == 1
+        await target._dispatch_target_message({"id": 1, "error": dict(not_found)})
+        assert target.output_queue.get_nowait() == {"id": 1, "result": {"ruleIds": []}}
+
+        await target._network_emulate_network_conditions_by_rule({
+            "id": 2,
+            "method": "Network.emulateNetworkConditionsByRule",
+            "params": _page_wide_rule(latency=2000, downloadThroughput=400),
+        })
+        assert target.output_queue.get_nowait() == {"id": 2, "result": {"ruleIds": []}}
+
+        await target._network_emulate_network_conditions({
+            "id": 3,
+            "method": "Network.emulateNetworkConditions",
+            "params": {"offline": False, "latency": 400, "downloadThroughput": 50000, "uploadThroughput": 50000},
+        })
+        assert target.output_queue.get_nowait() == {"id": 3, "error": not_found}
+
+        # "No throttling" needs nothing from the device, so it succeeds for either client.
+        await target._network_emulate_network_conditions({
+            "id": 4,
+            "method": "Network.emulateNetworkConditions",
+            "params": {"offline": False, "latency": 0, "downloadThroughput": -1, "uploadThroughput": -1},
+        })
+        assert target.output_queue.get_nowait() == {"id": 4, "result": {}}
+
+        assert len(sent) == 1, "a device without the command is asked once"
+        assert target.output_queue.empty()
+
+
 async def test_stepping_gets_a_synthesized_resumed_between_pauses(monkeypatch: pytest.MonkeyPatch) -> None:
     """WebKit emits no Debugger.resumed when a step resumes then repauses (it sends none at all),
     so a client would see paused-after-paused; V8 always alternates, and WebStorm's step machine
@@ -3634,6 +3750,89 @@ async def testp_cdp_server_emulates_user_preferences(lockdown: LockdownClient) -
             assert await preferences() == matching(False, motion, contrast, True)
             await client.command(next(ids), "Emulation.setEmulatedMedia", {"media": "", "features": []})
             assert await preferences() == baseline
+        finally:
+            await client.close()
+
+
+async def testp_cdp_server_throttles_the_network(lockdown: LockdownClient) -> None:
+    """
+    The Network panel's throttling menu (Network.emulateNetworkConditionsByRule) and Puppeteer's
+    emulateNetworkConditions must slow the page's requests down where WebKit can - iOS 27.3 added
+    Network.setEmulatedConditions - and lifting the throttling must restore them. Before 27.3 the
+    DevTools command still has to succeed (its failure kills the frontend's initialization) and
+    simply leave the network alone.
+    """
+    supported = tuple(int(part) for part in lockdown.product_version.split(".")[:2]) >= (27, 3)
+    latency = 2000
+    fetch = (
+        "window.__throttle_probe = null; (async () => { const start = performance.now(); "
+        "const response = await fetch(location.origin + '/?' + Math.random(), {cache: 'no-store'}); "
+        "await response.arrayBuffer(); return Math.round(performance.now() - start); })()"
+        ".then((ms) => { window.__throttle_probe = ms; }, (e) => { window.__throttle_probe = String(e); })"
+    )
+    async with cdp_server_with_safari_page(lockdown) as (port, targets):
+        client = CdpWebsocketClient(port, targets[0]["id"])
+        await asyncio.wait_for(client.connect(), TIMEOUT)
+        ids = itertools.count(1)
+        try:
+            await client.command(next(ids), "Page.enable", {})
+            await client.command(next(ids), "Runtime.enable", {})
+            await client.command(next(ids), "Page.navigate", {"url": "https://example.com/"})
+            await asyncio.sleep(3)
+
+            async def fetch_duration() -> int:
+                """Milliseconds a same-origin fetch takes in the page."""
+                await client.command(next(ids), "Runtime.evaluate", {"expression": fetch})
+                for _ in range(100):
+                    reply = await client.command(
+                        next(ids), "Runtime.evaluate", {"expression": "window.__throttle_probe", "returnByValue": True}
+                    )
+                    value = reply["result"]["result"].get("value")
+                    if value is not None:
+                        assert isinstance(value, int), f"the fetch failed: {value}"
+                        return value
+                    await asyncio.sleep(0.2)
+                raise AssertionError("the fetch never finished")
+
+            await fetch_duration()  # the first one pays for the connection
+            unthrottled = await fetch_duration()
+            assert unthrottled < latency / 2, f"too slow a network to tell throttling apart: {unthrottled} ms"
+
+            no_limit = {"latency": 0, "downloadThroughput": -1, "uploadThroughput": -1}
+            slow = {**no_limit, "latency": latency}
+
+            # What DevTools sends when it attaches, and for its throttling menu.
+            reply = await client.command(
+                next(ids), "Network.emulateNetworkConditionsByRule", {"offline": False, "matchedNetworkConditions": []}
+            )
+            assert reply.get("result") == {"ruleIds": []}, reply
+            assert await fetch_duration() < latency / 2
+            reply = await client.command(
+                next(ids),
+                "Network.emulateNetworkConditionsByRule",
+                {"offline": False, "matchedNetworkConditions": [{"urlPattern": "", **slow}]},
+            )
+            assert reply.get("result") == {"ruleIds": []}, reply
+            throttled = await fetch_duration()
+            if not supported:
+                assert throttled < latency / 2, f"throttled without WebKit's command? {throttled} ms"
+                reply = await client.command(next(ids), "Network.emulateNetworkConditions", {"offline": False, **slow})
+                assert "error" in reply, reply
+                return
+            assert throttled >= latency, f"the latency did not reach the page: {throttled} ms"
+            reply = await client.command(
+                next(ids), "Network.emulateNetworkConditionsByRule", {"offline": False, "matchedNetworkConditions": []}
+            )
+            assert reply.get("result") == {"ruleIds": []}, reply
+            assert await fetch_duration() < latency / 2
+
+            # What Puppeteer's page.emulateNetworkConditions() sends.
+            reply = await client.command(next(ids), "Network.emulateNetworkConditions", {"offline": False, **slow})
+            assert reply.get("result") == {}, reply
+            assert await fetch_duration() >= latency
+            reply = await client.command(next(ids), "Network.emulateNetworkConditions", {"offline": False, **no_limit})
+            assert reply.get("result") == {}, reply
+            assert await fetch_duration() < latency / 2
         finally:
             await client.close()
 

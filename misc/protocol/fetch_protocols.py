@@ -22,7 +22,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
-WEBKIT_COMMIT = "587e3a7c563e482a45c3b186d9d5f093aadfb4a8"
+WEBKIT_COMMIT = "d0229bc3b4d184eaf51b4518f8704bcbfa2693aa"
 CDP_COMMIT = "90778954a4820558eb0a98194e89000d40087ba4"
 NODE_COMMIT = "ec564135f429b6eb0b82910cace8b29eb1868b2a"
 NODE_DOMAINS = ["domain_node_runtime", "domain_node_worker", "domain_node_tracing"]

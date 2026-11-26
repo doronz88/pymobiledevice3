@@ -307,7 +307,9 @@
       }
      },
      "returns": [
-      "primaryFont"
+      "primaryFont",
+      "renderedFonts",
+      "missingCharacterRanges"
      ]
     },
     "getInlineStylesForNode": {
@@ -328,6 +330,10 @@
        "optional": true,
        "type": "boolean"
       },
+      "includeKeyframes": {
+       "optional": true,
+       "type": "boolean"
+      },
       "includePseudo": {
        "optional": true,
        "type": "boolean"
@@ -340,7 +346,8 @@
      "returns": [
       "matchedCSSRules",
       "pseudoElements",
-      "inherited"
+      "inherited",
+      "keyframes"
      ]
     },
     "getStyleSheet": {
@@ -446,6 +453,9 @@
     }
    },
    "events": {
+    "fontDataChanged": {
+     "params": {}
+    },
     "mediaQueryResultChanged": {
      "params": {}
     },
@@ -660,6 +670,18 @@
       }
      }
     },
+    "canvasNameChanged": {
+     "params": {
+      "canvasId": {
+       "optional": false,
+       "type": "CanvasId"
+      },
+      "name": {
+       "optional": false,
+       "type": "string"
+      }
+     }
+    },
     "canvasRemoved": {
      "params": {
       "canvasId": {
@@ -730,6 +752,18 @@
     },
     "programDeleted": {
      "params": {
+      "programId": {
+       "optional": false,
+       "type": "ProgramId"
+      }
+     }
+    },
+    "programNameChanged": {
+     "params": {
+      "name": {
+       "optional": false,
+       "type": "string"
+      },
       "programId": {
        "optional": false,
        "type": "ProgramId"
@@ -1346,6 +1380,17 @@
       }
      },
      "returns": []
+    },
+    "requestFrameOwner": {
+     "params": {
+      "frameId": {
+       "optional": false,
+       "type": "Network.FrameId"
+      }
+     },
+     "returns": [
+      "nodeId"
+     ]
     },
     "requestNode": {
      "params": {
@@ -3077,7 +3122,11 @@
     },
     "setEmulatedConditions": {
      "params": {
-      "bytesPerSecondLimit": {
+      "bandwidth": {
+       "optional": true,
+       "type": "integer"
+      },
+      "latency": {
        "optional": true,
        "type": "integer"
       }
@@ -3319,6 +3368,14 @@
     },
     "webSocketCreated": {
      "params": {
+      "frameId": {
+       "optional": true,
+       "type": "FrameId"
+      },
+      "loaderId": {
+       "optional": true,
+       "type": "LoaderId"
+      },
       "requestId": {
        "optional": false,
        "type": "RequestId"
@@ -3637,6 +3694,10 @@
       "nodeId": {
        "optional": false,
        "type": "DOM.NodeId"
+      },
+      "targetId": {
+       "optional": true,
+       "type": "string"
       }
      },
      "returns": [
@@ -4185,6 +4246,22 @@
     }
    },
    "events": {
+    "debuggerPauseSessionChanged": {
+     "params": {
+      "sessionId": {
+       "optional": false,
+       "type": "string"
+      },
+      "state": {
+       "optional": false,
+       "type": "DebuggerPauseSessionState"
+      },
+      "stoppingTargetIds": {
+       "optional": false,
+       "type": "array"
+      }
+     }
+    },
     "didCommitProvisionalTarget": {
      "params": {
       "newTargetId": {
@@ -4373,8 +4450,8 @@
   }
  },
  "source": {
-  "commit": "587e3a7c563e482a45c3b186d9d5f093aadfb4a8",
-  "fetched": "2026-09-08",
+  "commit": "d0229bc3b4d184eaf51b4518f8704bcbfa2693aa",
+  "fetched": "2026-11-26",
   "path": "Source/JavaScriptCore/inspector/protocol",
   "repo": "WebKit/WebKit"
  }

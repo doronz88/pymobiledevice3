@@ -15,11 +15,13 @@ import json
 import re
 
 from pymobiledevice3.services.web_protocol.cdp_target import (
+    NETWORK_THROTTLING_METHOD,
     NOOP_ABSENT_DOMAINS,
     REPLAYED_KEYED_SETUP_METHODS,
     REPLAYED_MULTI_SETUP_METHODS,
     REPLAYED_SETUP_METHODS,
     WEBKIT_ONLY_EVENTS,
+    CdpTarget,
 )
 from tests.services.test_web_protocol.protocol_inventory import (
     REPO,
@@ -105,6 +107,12 @@ def test_literal_parameters_match_the_webkit_command() -> None:
         if unknown or missing:
             problems.append(f"{send.method} in {send.where}: unknown={unknown} missing={missing}")
     assert problems == []
+
+
+def test_network_throttling_parameters_are_the_webkit_command_parameters() -> None:
+    """Built from the client's conditions rather than from literals, so the check above skips it."""
+    sent = CdpTarget._webkit_network_conditions({"latency": 1, "downloadThroughput": 1, "uploadThroughput": 1})
+    assert set(sent) == set(command_params(webkit, NETWORK_THROTTLING_METHOD))
 
 
 def test_replayed_setup_methods_are_webkit_commands() -> None:
