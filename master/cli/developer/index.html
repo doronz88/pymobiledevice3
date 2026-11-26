@@ -7420,8 +7420,9 @@ For more information, please read:
 <h2 id="dvt-core-profile-session-stackshot"><code>dvt core-profile-session stackshot</code><a class="headerlink" href="#dvt-core-profile-session-stackshot" title="Permanent link">&para;</a></h2>
 <p>Print the call stacks of all threads of all processes.</p>
 <p>The call stacks are symbolicated using the Xcode device support of the device, which
-<code>developer fetch-symbols download</code> creates, or by a symbolicator server given --symbol-server.
-Kernel frames are symbolicated when given --kernelcache and --kernel-signatures.</p>
+<code>developer fetch-symbols download</code> creates. Kernel frames are symbolicated when given
+--kernelcache and --kernel-signatures. A symbolicator server given by --symbol-server
+symbolicates both, with neither on this host.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a>pymobiledevice3 developer dvt core-profile-session stackshot [OPTIONS]
 </code></pre></div>
 <p><strong>Options:</strong></p>
@@ -7471,7 +7472,7 @@ Kernel frames are symbolicated when given --kernelcache and --kernel-signatures.
 </tr>
 <tr>
 <td><code>--symbol-server &lt;str&gt;</code></td>
-<td>URL of a symbolicator server (https://github.com/netanelc305/symbolicator-server), e.g. http://localhost:3993, to symbolicate user frames with the symbols it holds. Frames it does not name are left to the symbols of this host. [env var: PYCRASHREPORT_SERVER]</td>
+<td>URL of a symbolicator server (https://github.com/netanelc305/symbolicator-server), e.g. http://localhost:3993, to symbolicate user and kernel frames with the symbols it holds. Frames it does not name are left to the symbols of this host and to --kernelcache. [env var: PYCRASHREPORT_SERVER]</td>
 </tr>
 </tbody>
 </table>
