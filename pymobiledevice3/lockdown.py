@@ -1578,34 +1578,6 @@ class RemoteLockdownClient(LockdownClient):
         """
         raise NotImplementedError("RemoteXPC lockdown version does not support pairing operations")
 
-    def __init__(
-        self,
-        service: ServiceConnection,
-        host_id: str,
-        identifier: Optional[str] = None,
-        label: str = DEFAULT_LABEL,
-        system_buid: str = SYSTEM_BUID,
-        pair_record: Optional[dict[str, Any]] = None,
-        pairing_records_cache_folder: Optional[Path] = None,
-        port: int = SERVICE_PORT,
-    ):
-        """Initialize a new RemoteLockdownClient instance.
-
-        :param service: Service.
-        :param host_id: Host id.
-        :param identifier: Identifier. Defaults to None.
-        :param label: Label. Defaults to DEFAULT_LABEL.
-        :param system_buid: System buid. Defaults to SYSTEM_BUID.
-        :param pair_record: Pair record. Defaults to None.
-        :param pairing_records_cache_folder: Pairing records cache folder. Defaults to None.
-        :param port: Port. Defaults to SERVICE_PORT.
-
-        :return: Result of the operation.
-        """
-        super().__init__(
-            service, host_id, identifier, label, system_buid, pair_record, pairing_records_cache_folder, port
-        )
-
 
 async def create_using_usbmux(
     serial: Optional[str] = None,
