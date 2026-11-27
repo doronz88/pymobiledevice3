@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Iterable, Iterator
 from contextlib import suppress
 from typing import Any, Callable, ClassVar, Optional, Union, cast, overload
 
@@ -359,28 +360,7 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
 
         Raises :exc:`asyncio.TimeoutError` if *timeout* elapses.
         """
-        if isinstance(predicate, type):
-            _cls = predicate
-
-            def _predicate(svc: DTXService, /) -> bool:
-                return isinstance(svc, _cls)
-
-        else:
-            _predicate = predicate
-
-        async def _find() -> DTXService:
-            async with self._service_condition:
-                while True:
-                    if self._closed:
-                        raise ConnectionTerminatedError(
-                            "The DTX connection closed before the device opened the expected service."
-                        )
-                    for svc in self._services.values():
-                        if _predicate(svc):
-                            return svc
-                    await self._service_condition.wait()
-
-        return cast(DTX_SERVICE_T, await asyncio.wait_for(_find(), timeout=timeout))
+        return cast(DTX_SERVICE_T, await self._wait_for(self._services.values, predicate, "service", timeout))
 
     async def wait_for_proxied_service(
         self,
@@ -404,6 +384,22 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
 
         Raises :exc:`asyncio.TimeoutError` if *timeout* elapses.
         """
+
+        def proxied() -> Iterator[DTXService]:
+            for svc in self._services.values():
+                if isinstance(svc, DTXProxyService):
+                    yield svc.remote_service if remote else svc.local_service
+
+        return cast(DTX_SERVICE_T, await self._wait_for(proxied, predicate, "proxied service", timeout))
+
+    async def _wait_for(
+        self,
+        candidates: Callable[[], Iterable[DTXService]],
+        predicate: Union[type[DTXService], Callable[[DTXService], bool]],
+        what: str,
+        timeout: Optional[float],
+    ) -> DTXService:
+        """Wait until one of *candidates*, read again on every wakeup, matches *predicate*."""
         if isinstance(predicate, type):
             _cls = predicate
 
@@ -418,16 +414,14 @@ class DTXConnection(_DTXSenderMixin, _DTXReaderMixin):
                 while True:
                     if self._closed:
                         raise ConnectionTerminatedError(
-                            "The DTX connection closed before the device opened the expected proxied service."
+                            f"The DTX connection closed before the device opened the expected {what}."
                         )
-                    for svc in self._services.values():
-                        if isinstance(svc, DTXProxyService):
-                            candidate = svc.remote_service if remote else svc.local_service
-                            if _predicate(candidate):
-                                return candidate
+                    for svc in candidates():
+                        if _predicate(svc):
+                            return svc
                     await self._service_condition.wait()
 
-        return cast(DTX_SERVICE_T, await asyncio.wait_for(_find(), timeout=timeout))
+        return await asyncio.wait_for(_find(), timeout=timeout)
 
     # ------------------------------------------------------------------
     # Internal channel callbacks (called by DTXControlService)

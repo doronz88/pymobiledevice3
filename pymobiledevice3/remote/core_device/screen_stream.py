@@ -65,6 +65,13 @@ from pymobiledevice3.remote.core_device.pasteboard_service import (
     data_item,
     read_pasteboard,
 )
+from pymobiledevice3.remote.core_device.rtp import (
+    extend_sequence,
+    rtcp_pli,
+    rtcp_receiver_report,
+    rtcp_sdes,
+    rtp_payload,
+)
 from pymobiledevice3.remote.remote_service import require_service
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 from pymobiledevice3.services.power_assertion import PowerAssertionService
@@ -103,7 +110,7 @@ _HEVC_NAL_AP = 48  # Aggregation Packet
 _HEVC_NAL_FU = 49  # Fragmentation Unit
 
 
-def _is_key_nal(nal_type: int) -> bool:
+def is_key_nal(nal_type: int) -> bool:
     return nal_type in (_HEVC_NAL_IDR_W_RADL, _HEVC_NAL_IDR_N_LP, _HEVC_NAL_CRA)
 
 
@@ -915,18 +922,10 @@ class ScreenStreamServer:
             # The device's once-a-second sender reports count too: they are what
             # keeps arriving while the screen is idle. See ``_stall_watchdog``.
             self._last_packet_t = loop.time()
-            if len(data) < 12:
-                continue
-            pt = data[1] & 0x7F
-            if 64 <= pt <= 95:  # RTCP
+            payload = rtp_payload(data)
+            if payload is None:
                 continue
             marker = (data[1] >> 7) & 1
-            cc = data[0] & 0x0F
-            header_len = 12 + cc * 4
-            if data[0] & 0x10:  # extension
-                ext_len = int.from_bytes(data[header_len + 2 : header_len + 4], "big")
-                header_len += 4 + ext_len * 4
-            payload = data[header_len:]
 
             # Any RTP gap → discard the in-flight FU buffer (don't stitch
             # non-contiguous payloads into a single NAL) AND mark the whole
@@ -975,14 +974,7 @@ class ScreenStreamServer:
                 ):
                     with contextlib.suppress(OSError):
                         await self._active_sock.sendto(self._build_rctl_companion_packet(), *self._rtcp_dest)
-            cur_ext = self._rtp_highest_seq
-            cycles = (cur_ext >> 16) & 0xFFFF
-            last_seq16 = cur_ext & 0xFFFF
-            if seq < last_seq16 and (last_seq16 - seq) > 0x8000:
-                cycles = (cycles + 1) & 0xFFFF  # seq number wrapped
-            new_ext = (cycles << 16) | seq
-            if cur_ext == 0 or ((new_ext - cur_ext) & 0xFFFFFFFF) < 0x80000000:
-                self._rtp_highest_seq = new_ext
+            self._rtp_highest_seq = extend_sequence(self._rtp_highest_seq, seq)
             if last_seq is not None and seq != ((last_seq + 1) & 0xFFFF):
                 forward = ((seq - last_seq) & 0xFFFF) < 0x8000  # heuristic for "ahead"
                 if forward:
@@ -1037,7 +1029,7 @@ class ScreenStreamServer:
                             logger.info(f"WebCodecs codec string: {self._codec_string}")
                         except Exception as exc:
                             logger.warning(f"failed to parse SPS: {exc}")
-                if _is_key_nal(nt):
+                if is_key_nal(nt):
                     au_is_key = True
                 current_au.append(nal)
 
@@ -1146,32 +1138,6 @@ class ScreenStreamServer:
                 au_corrupt = False
 
     # ----- RTCP feedback ----------------------------------------------------
-    def _build_rtcp_pli(self) -> bytes:
-        """Build an RTCP Picture Loss Indication (RFC 4585 §6.3.1).
-
-        Sent when we detect dropped AUs so the device-side encoder emits a
-        fresh IDR. Without this the browser's decoder gets stuck waiting
-        for a keyframe that, on a long-GOP stream, may never come.
-
-        Format (12 bytes total)::
-
-            byte 0  : V=2 P=0 FMT=1   (0x81)
-            byte 1  : PT=206 PSFB     (0xCE)
-            bytes 2-3: length=2 (3 words)
-            bytes 4-7: sender SSRC (ours)
-            bytes 8-11: media source SSRC (device's)
-        """
-        import struct as _struct
-
-        return _struct.pack(
-            "!BBHII",
-            0x81,
-            0xCE,
-            2,
-            self._local_ssrc & 0xFFFFFFFF,
-            self._remote_ssrc & 0xFFFFFFFF,
-        )
-
     async def _send_rtcp_pli(self) -> None:
         transport = self._active_sock
         if transport is None or self._rtcp_dest is None:
@@ -1179,7 +1145,7 @@ class ScreenStreamServer:
         if not (self._local_ssrc and self._remote_ssrc):
             return
         try:
-            await transport.sendto(self._build_rtcp_pli(), *self._rtcp_dest)
+            await transport.sendto(rtcp_pli(self._local_ssrc, self._remote_ssrc), *self._rtcp_dest)
             logger.debug("sent RTCP PLI (requested fresh keyframe)")
         except OSError as exc:
             logger.debug("PLI send failed (%s)", exc)
@@ -1265,75 +1231,12 @@ class ScreenStreamServer:
                 continue
             tick += 1
 
-    def _build_rtcp_rr(self) -> bytes:
-        """Build a minimal RTCP Receiver Report for the active stream.
-
-        The device's ``streamConfig`` says ``RTCPTimeoutEnabled=True`` -- if we
-        never send RTs the encoder stalls within ~25 s. A single Receiver
-        Report (32 bytes) every second is enough to keep it producing frames.
-
-        Format (RFC 3550 §6.4.2): one RR with one report block, followed by an
-        SDES/CNAME chunk to form a proper compound packet::
-
-            byte 0  : V=2 P=0 RC=1     (0x81)
-            byte 1  : PT=201 (RR)      (0xC9)
-            bytes 2-3: length=7 (8 words total)
-            bytes 4-7: sender SSRC      (our LocalSSRC)
-            bytes 8-11: SSRC_1          (device's SSRC = RemoteSSRC)
-            byte 12 : fraction lost (0)
-            13-15   : cumulative packets lost (0)
-            16-19   : extended highest seq received
-            20-23   : interarrival jitter (0)
-            24-27   : last SR timestamp (0 -- we never received SR)
-            28-31   : delay since last SR (0)
-
-        The trailing SDES matches Xcode's mirror exactly (confirmed by device
-        syslog: Xcode always sends ``RR`` + ``SDES`` compounds, never a bare RR)
-        and satisfies RFC 3550 §6.1, which requires every compound RTCP packet
-        to carry an SDES with a CNAME.
-        """
-        import struct as _struct
-
-        rr = _struct.pack(
-            "!BBHII BBBB IIII",
-            0x81,
-            0xC9,
-            7,
-            self._local_ssrc & 0xFFFFFFFF,
-            self._remote_ssrc & 0xFFFFFFFF,
-            0,  # fraction lost
-            0,
-            0,
-            0,  # cumulative loss (3 bytes — packed as 3x B)
-            self._rtp_highest_seq & 0xFFFFFFFF,
-            0,
-            0,
-            0,
-        )
-        return rr + self._build_rtcp_sdes(self._local_ssrc)
-
-    @staticmethod
-    def _build_rtcp_sdes(ssrc: int) -> bytes:
-        """Minimal RTCP SDES chunk (RFC 3550 §6.5) with an empty CNAME,
-        byte-identical to Xcode's mirror (``81 ca 0002 <ssrc> 01 00 00 00``):
-        V=2 SC=1, PT=202, one source chunk = SSRC + a zero-length CNAME item
-        (type 1, len 0) + null terminator + padding to a 32-bit boundary."""
-        import struct as _struct
-
-        return _struct.pack(
-            "!BBHI BBBB",
-            0x81,  # V=2, P=0, SC=1
-            0xCA,  # PT=202 (SDES)
-            2,  # length = 3 words
-            ssrc & 0xFFFFFFFF,
-            0x01,  # SDES item type 1 = CNAME
-            0x00,  # CNAME length 0 (empty, as Xcode sends)
-            0x00,  # item type 0 = END of items
-            0x00,  # padding to 32-bit boundary
-        )
-
     async def _rtcp_send_loop(self, transport: UdpMediaTransport) -> None:
-        """Periodically send RTCP RR to the device so the encoder doesn't time out."""
+        """Send a Receiver Report every second, or the encoder stalls within ~25 s (the device's
+        ``streamConfig`` says ``RTCPTimeoutEnabled``).
+
+        Each goes compound with an SDES, as Xcode's mirror always sends them (confirmed by device
+        syslog) and as RFC 3550 §6.1 requires."""
         while True:
             try:
                 await asyncio.sleep(1.0)
@@ -1341,36 +1244,13 @@ class ScreenStreamServer:
                 return
             if self._rtcp_dest is None or self._rtp_packets_received == 0:
                 continue
-            packet = self._build_rtcp_rr()
+            packet = rtcp_receiver_report(self._local_ssrc, self._remote_ssrc, self._rtp_highest_seq)
+            packet += rtcp_sdes(self._local_ssrc)
             try:
                 await transport.sendto(packet, *self._rtcp_dest)
             except OSError as exc:
                 logger.debug("RTCP send failed (%s); the socket may be torn down", exc)
                 return
-
-    def _build_audio_rtcp_rr(self) -> bytes:
-        """Audio-side counterpart of :meth:`_build_rtcp_rr` (RFC 3550 §6.4.2).
-        Same RR + SDES/CNAME compound shape (Xcode sends SDES on the audio
-        stream too); just uses the audio session's SSRCs and highest-seq."""
-        import struct as _struct
-
-        rr = _struct.pack(
-            "!BBHII BBBB IIII",
-            0x81,
-            0xC9,
-            7,
-            self._audio_local_ssrc & 0xFFFFFFFF,
-            self._audio_remote_ssrc & 0xFFFFFFFF,
-            0,
-            0,
-            0,
-            0,
-            self._audio_rtp_highest_seq & 0xFFFFFFFF,
-            0,
-            0,
-            0,
-        )
-        return rr + self._build_rtcp_sdes(self._audio_local_ssrc)
 
     async def _audio_rtcp_send_loop(self, transport: UdpMediaTransport) -> None:
         """Periodically send RTCP RR for the audio stream. Without this
@@ -1394,7 +1274,10 @@ class ScreenStreamServer:
             # (Video never hit this: the screen always emits video immediately.)
             if self._audio_rtcp_dest is None:
                 continue
-            packet = self._build_audio_rtcp_rr()
+            # compound with an SDES, as the video one: Xcode sends it on the audio stream too
+            packet = rtcp_receiver_report(
+                self._audio_local_ssrc, self._audio_remote_ssrc, self._audio_rtp_highest_seq
+            ) + rtcp_sdes(self._audio_local_ssrc)
             try:
                 await transport.sendto(packet, *self._audio_rtcp_dest)
             except OSError as exc:
@@ -1443,32 +1326,15 @@ class ScreenStreamServer:
             except Exception:
                 logger.exception("audio recv task crashed")
                 return
-            if len(data) < 12:
-                continue
-            pt = data[1] & 0x7F
-            if 64 <= pt <= 95:  # RTCP -- ignore
+            payload = rtp_payload(data)
+            if payload is None:
                 continue
             # Track sequence + receive count so our RR reports a sensible
             # extended-highest-seq field. Without this the encoder reaps
             # the audio session after 20 s (RTCPTimeoutInterval).
             self._audio_rtp_packets_received += 1
             seq = int.from_bytes(data[2:4], "big")
-            cur_ext = self._audio_rtp_highest_seq
-            cycles = (cur_ext >> 16) & 0xFFFF
-            last_seq16 = cur_ext & 0xFFFF
-            if seq < last_seq16 and (last_seq16 - seq) > 0x8000:
-                cycles = (cycles + 1) & 0xFFFF
-            new_ext = (cycles << 16) | seq
-            if cur_ext == 0 or ((new_ext - cur_ext) & 0xFFFFFFFF) < 0x80000000:
-                self._audio_rtp_highest_seq = new_ext
-            cc = data[0] & 0x0F
-            header_len = 12 + cc * 4
-            if data[0] & 0x10:  # extension
-                if header_len + 4 > len(data):
-                    continue
-                ext_len = int.from_bytes(data[header_len + 2 : header_len + 4], "big")
-                header_len += 4 + ext_len * 4
-            payload = data[header_len:]
+            self._audio_rtp_highest_seq = extend_sequence(self._audio_rtp_highest_seq, seq)
             if not payload:
                 continue
             try:
