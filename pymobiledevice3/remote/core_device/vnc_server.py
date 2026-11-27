@@ -79,7 +79,19 @@ from pymobiledevice3.remote.core_device.hid_service import (
     UniversalHIDServiceService,
 )
 from pymobiledevice3.remote.core_device.pasteboard_service import PasteboardContent, PasteboardMonitor
-from pymobiledevice3.remote.core_device.screen_stream import UdpMediaTransport, depacketize_hevc, open_media_receiver
+from pymobiledevice3.remote.core_device.rtp import (
+    extend_sequence,
+    rtcp_pli,
+    rtcp_receiver_report,
+    rtcp_sdes,
+    rtp_payload,
+)
+from pymobiledevice3.remote.core_device.screen_stream import (
+    UdpMediaTransport,
+    depacketize_hevc,
+    is_key_nal,
+    open_media_receiver,
+)
 from pymobiledevice3.remote.remote_service import require_service
 from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
 
@@ -111,16 +123,9 @@ def _resolve_decoder(choice: str):
     raise ValueError(f"unknown decoder choice: {choice!r}")
 
 
-_HEVC_NAL_IDR_W_RADL = 19
-_HEVC_NAL_IDR_N_LP = 20
-_HEVC_NAL_CRA = 21
 _HEVC_NAL_VPS = 32
 _HEVC_NAL_SPS = 33
 _HEVC_NAL_PPS = 34
-
-
-def _is_key_nal(nt: int) -> bool:
-    return nt in (_HEVC_NAL_IDR_W_RADL, _HEVC_NAL_IDR_N_LP, _HEVC_NAL_CRA)
 
 
 # RFB encoding identifiers
@@ -629,29 +634,14 @@ class VncStreamServer:
                 data = await transport.recv()
             except (OSError, asyncio.CancelledError):
                 return
-            if len(data) < 12:
-                continue
-            pt = data[1] & 0x7F
-            if 64 <= pt <= 95:
+            payload = rtp_payload(data)
+            if payload is None:
                 continue
             marker = (data[1] >> 7) & 1
-            cc = data[0] & 0x0F
-            header_len = 12 + cc * 4
-            if data[0] & 0x10:
-                ext_len = int.from_bytes(data[header_len + 2 : header_len + 4], "big")
-                header_len += 4 + ext_len * 4
-            payload = data[header_len:]
 
             seq = int.from_bytes(data[2:4], "big")
             # Maintain the extended highest-seq for the RR keepalive.
-            cur_ext = self._rtp_highest_seq
-            cycles = (cur_ext >> 16) & 0xFFFF
-            last_seq16 = cur_ext & 0xFFFF
-            if seq < last_seq16 and (last_seq16 - seq) > 0x8000:
-                cycles = (cycles + 1) & 0xFFFF
-            new_ext = (cycles << 16) | seq
-            if cur_ext == 0 or ((new_ext - cur_ext) & 0xFFFFFFFF) < 0x80000000:
-                self._rtp_highest_seq = new_ext
+            self._rtp_highest_seq = extend_sequence(self._rtp_highest_seq, seq)
             if last_seq is not None and seq != ((last_seq + 1) & 0xFFFF):
                 fu_buffer.clear()
                 au_corrupt = True
@@ -671,7 +661,7 @@ class VncStreamServer:
                     self._rps_tracker.feed_sps(cached_sps)
                 elif nt == _HEVC_NAL_PPS:
                     cached_pps = bytes(nal)
-                elif _is_key_nal(nt):
+                elif is_key_nal(nt):
                     au_is_key = True
                 current_au.append(nal)
 
@@ -792,22 +782,6 @@ class VncStreamServer:
                 last_stat_t = now
 
     # ----- RTCP PLI + decoder refresh ---------------------------------------
-    def _build_rtcp_pli(self) -> bytes:
-        """RTCP Picture Loss Indication (RFC 4585 §6.3.1). 12 bytes.
-
-        Asks the device's encoder to emit a fresh IDR. The PLI is what
-        gets us out from under stale long-term-reference state -- we
-        send it, the device sends a new IDR, we rebuild the decoder
-        from that IDR."""
-        return struct.pack(
-            "!BBHII",
-            0x81,  # V=2, P=0, FMT=1
-            0xCE,  # PT=206 (PSFB)
-            2,  # length = 2 (3 words after this header)
-            self._local_ssrc & 0xFFFFFFFF,
-            self._remote_ssrc & 0xFFFFFFFF,
-        )
-
     async def _send_rtcp_pli(self) -> None:
         transport = self._active_transport
         if transport is None or self._rtcp_dest is None:
@@ -815,45 +789,17 @@ class VncStreamServer:
         if not (self._local_ssrc and self._remote_ssrc):
             return
         try:
-            await transport.sendto(self._build_rtcp_pli(), *self._rtcp_dest)
+            await transport.sendto(rtcp_pli(self._local_ssrc, self._remote_ssrc), *self._rtcp_dest)
             logger.debug("sent RTCP PLI (requested fresh keyframe)")
         except OSError as exc:
             logger.debug("PLI send failed (%s)", exc)
 
-    def _build_rtcp_rr(self) -> bytes:
-        """RTCP Receiver Report (RFC 3550 §6.4.2) + SDES, byte-compatible with
-        screen_stream.py. The device's video streamConfig has RTCPTimeoutEnabled
-        with a ~25 s interval; PLIs alone don't reset it -- without periodic RRs
-        the device reaps the video session and stops emitting AUs, which froze
-        serve-vnc permanently (it has no stream-restart). One RR/s keeps it alive.
-        """
-        rr = struct.pack(
-            "!BBHII BBBB IIII",
-            0x81,  # V=2, RC=1
-            0xC9,  # PT=201 (RR)
-            7,
-            self._local_ssrc & 0xFFFFFFFF,
-            self._remote_ssrc & 0xFFFFFFFF,
-            0,  # fraction lost
-            0,
-            0,
-            0,  # 3-byte cumulative loss
-            self._rtp_highest_seq & 0xFFFFFFFF,
-            0,  # interarrival jitter
-            0,  # last SR
-            0,  # delay since last SR
-        )
-        return rr + self._build_rtcp_sdes(self._local_ssrc)
-
-    @staticmethod
-    def _build_rtcp_sdes(ssrc: int) -> bytes:
-        """Minimal SDES with an empty CNAME (matches Xcode's compound RR+SDES)."""
-        return struct.pack("!BBHI BBBB", 0x81, 0xCA, 2, ssrc & 0xFFFFFFFF, 0x01, 0x00, 0x00, 0x00)
-
     async def _rtcp_send_loop(self, transport: UdpMediaTransport) -> None:
-        """Send a video RR every second to keep the device's video session
-        alive (see _build_rtcp_rr). Not gated on packets-received: send from the
-        start so a brief no-frame window at bring-up can't let the session lapse."""
+        """Send a video RR + SDES every second, as serve-web does, to keep the device's video
+        session alive: its streamConfig has RTCPTimeoutEnabled with a ~25 s interval, and PLIs alone
+        don't reset it. Without the RRs the device reaps the session and stops emitting AUs, which
+        froze serve-vnc for good (it has no stream-restart). Not gated on packets-received: send
+        from the start so a brief no-frame window at bring-up can't let the session lapse."""
         while True:
             try:
                 await asyncio.sleep(1.0)
@@ -862,7 +808,8 @@ class VncStreamServer:
             if self._rtcp_dest is None or not (self._local_ssrc and self._remote_ssrc):
                 continue
             try:
-                await transport.sendto(self._build_rtcp_rr(), *self._rtcp_dest)
+                packet = rtcp_receiver_report(self._local_ssrc, self._remote_ssrc, self._rtp_highest_seq)
+                await transport.sendto(packet + rtcp_sdes(self._local_ssrc), *self._rtcp_dest)
             except OSError as exc:
                 logger.debug("video RTCP RR send failed (%s); socket may be torn down", exc)
                 return
@@ -986,32 +933,15 @@ class VncStreamServer:
                 data = await transport.recv()
             except (OSError, asyncio.CancelledError):
                 return
-            if len(data) < 12:
-                continue
-            pt = data[1] & 0x7F
-            if 64 <= pt <= 95:  # RTCP -- ignore
+            payload = rtp_payload(data)
+            if payload is None:
                 continue
             # Track sequence + receive count so our RR reports a sensible
             # extended-highest-seq field. Without this the device reaps
             # the audio session after 20 s (RTCPTimeoutInterval).
             self._audio_rtp_packets_received += 1
             seq = int.from_bytes(data[2:4], "big")
-            cur_ext = self._audio_rtp_highest_seq
-            cycles = (cur_ext >> 16) & 0xFFFF
-            last_seq16 = cur_ext & 0xFFFF
-            if seq < last_seq16 and (last_seq16 - seq) > 0x8000:
-                cycles = (cycles + 1) & 0xFFFF
-            new_ext = (cycles << 16) | seq
-            if cur_ext == 0 or ((new_ext - cur_ext) & 0xFFFFFFFF) < 0x80000000:
-                self._audio_rtp_highest_seq = new_ext
-            cc = data[0] & 0x0F
-            header_len = 12 + cc * 4
-            if data[0] & 0x10:  # extension
-                if header_len + 4 > len(data):
-                    continue
-                ext_len = int.from_bytes(data[header_len + 2 : header_len + 4], "big")
-                header_len += 4 + ext_len * 4
-            payload = data[header_len:]
+            self._audio_rtp_highest_seq = extend_sequence(self._audio_rtp_highest_seq, seq)
             if not payload:
                 continue
             decoder = self._audio_decoder
@@ -1051,28 +981,6 @@ class VncStreamServer:
                 pkt_count = 0
                 last_stat_t = now
 
-    def _build_audio_rtcp_rr(self) -> bytes:
-        """Audio-side counterpart of :meth:`_build_rtcp_pli` -- a minimal
-        Receiver Report. The device's audio session has
-        ``RTCPTimeoutInterval=20 s``; without these RRs the encoder
-        stops emitting silently after ~20 s."""
-        return struct.pack(
-            "!BBHII BBBB IIII",
-            0x81,  # V=2, P=0, RC=1
-            0xC9,  # PT=201 (RR)
-            7,
-            self._audio_local_ssrc & 0xFFFFFFFF,
-            self._audio_remote_ssrc & 0xFFFFFFFF,
-            0,
-            0,
-            0,
-            0,  # fraction lost / cumulative loss
-            self._audio_rtp_highest_seq & 0xFFFFFFFF,
-            0,
-            0,
-            0,  # jitter / lsr / dlsr
-        )
-
     async def _audio_rtcp_send_loop(self, transport: UdpMediaTransport) -> None:
         sent = 0
         while True:
@@ -1086,7 +994,10 @@ class VncStreamServer:
             if self._audio_rtcp_dest is None:
                 continue
             try:
-                await transport.sendto(self._build_audio_rtcp_rr(), *self._audio_rtcp_dest)
+                packet = rtcp_receiver_report(
+                    self._audio_local_ssrc, self._audio_remote_ssrc, self._audio_rtp_highest_seq
+                )
+                await transport.sendto(packet, *self._audio_rtcp_dest)
                 sent += 1
                 # One log line per 30 RRs (every 30 s) confirms the
                 # session keepalive is firing -- useful when triaging
