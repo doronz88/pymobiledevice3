@@ -9,9 +9,10 @@ import time
 import traceback
 import urllib.parse
 import warnings
+from collections.abc import Awaitable
 from contextlib import asynccontextmanager, suppress
 from ssl import SSLEOFError
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import requests
 
@@ -170,6 +171,55 @@ async def _close_quietly(websocket: fastapi.WebSocket, code: int = 1000, reason:
     """
     with suppress(RuntimeError, fastapi.WebSocketDisconnect):
         await websocket.close(code=code, reason=reason)
+
+
+async def _relay_websocket(
+    websocket: fastapi.WebSocket,
+    send: Callable[[bytes], Awaitable[None]],
+    receive: Callable[[], Awaitable[Optional[bytes]]],
+    name: str,
+) -> None:
+    """Copy binary messages between ``websocket`` and a peer until either side ends.
+
+    ``receive`` answers ``None`` once the peer has nothing more to send. Both forwarders are gone
+    when this returns, also when it is cancelled (e.g. server shutdown), so none is orphaned.
+    """
+
+    async def from_websocket() -> None:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                raise fastapi.WebSocketDisconnect(int(message.get("code") or 1000), message.get("reason"))
+            data = message.get("bytes")
+            if data is None:
+                # a text frame on what is strictly a binary bridge
+                await _close_quietly(
+                    websocket, code=WS_CLOSE_UNSUPPORTED_DATA, reason="only binary websocket messages are supported"
+                )
+                return
+            await send(data)
+
+    async def to_websocket() -> None:
+        while True:
+            data = await receive()
+            if data is None:
+                break
+            await websocket.send_bytes(data)
+
+    forwarders = [
+        asyncio.create_task(from_websocket(), name=f"{name}-from-websocket"),
+        asyncio.create_task(to_websocket(), name=f"{name}-to-websocket"),
+    ]
+    try:
+        await asyncio.wait(forwarders, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for forwarder in forwarders:
+            forwarder.cancel()
+        results = await asyncio.gather(*forwarders, return_exceptions=True)
+        for forwarder, result in zip(forwarders, results):
+            # disconnections from either side are expected; log anything else at debug
+            if isinstance(result, Exception) and not isinstance(result, (fastapi.WebSocketDisconnect, OSError)):
+                logger.debug(f"unexpected error in {forwarder.get_name()}", exc_info=result)
 
 
 @dataclasses.dataclass
@@ -1058,44 +1108,16 @@ class TunneldRunner:
             )
             return
 
-        async def forward_websocket_to_tcp() -> None:
-            while True:
-                message = await websocket.receive()
-                if message["type"] == "websocket.disconnect":
-                    raise fastapi.WebSocketDisconnect(int(message.get("code") or 1000), message.get("reason"))
-                data = message.get("bytes")
-                if data is None:
-                    # a text frame on what is strictly a binary bridge
-                    await _close_quietly(
-                        websocket, code=WS_CLOSE_UNSUPPORTED_DATA, reason="only binary websocket messages are supported"
-                    )
-                    return
-                writer.write(data)
-                await writer.drain()
+        async def send(data: bytes) -> None:
+            writer.write(data)
+            await writer.drain()
 
-        async def forward_tcp_to_websocket() -> None:
-            while True:
-                data = await reader.read(CONNECT_CHUNK_SIZE)
-                if not data:
-                    break
-                await websocket.send_bytes(data)
+        async def receive() -> Optional[bytes]:
+            return await reader.read(CONNECT_CHUNK_SIZE) or None
 
-        forwarders = [
-            asyncio.create_task(forward_websocket_to_tcp(), name=f"connect-websocket-to-tcp-{udid}-{port}"),
-            asyncio.create_task(forward_tcp_to_websocket(), name=f"connect-tcp-to-websocket-{udid}-{port}"),
-        ]
         try:
-            await asyncio.wait(forwarders, return_when=asyncio.FIRST_COMPLETED)
+            await _relay_websocket(websocket, send, receive, f"connect-{udid}-{port}")
         finally:
-            # the cleanup lives in the finally so a cancellation aimed at this task
-            # (e.g. server shutdown) can't orphan the forwarders
-            for forwarder in forwarders:
-                forwarder.cancel()
-            results = await asyncio.gather(*forwarders, return_exceptions=True)
-            for forwarder, result in zip(forwarders, results):
-                # disconnections from either side are expected; log anything else at debug
-                if isinstance(result, Exception) and not isinstance(result, (fastapi.WebSocketDisconnect, OSError)):
-                    logger.debug(f"unexpected error in {forwarder.get_name()}", exc_info=result)
             writer.close()
             with suppress(OSError):
                 await writer.wait_closed()
@@ -1177,42 +1199,9 @@ class TunneldRunner:
             )
             return True
 
-        async def forward_websocket_to_upstream() -> None:
-            while True:
-                message = await websocket.receive()
-                if message["type"] == "websocket.disconnect":
-                    raise fastapi.WebSocketDisconnect(int(message.get("code") or 1000), message.get("reason"))
-                data = message.get("bytes")
-                if data is None:
-                    # a text frame on what is strictly a binary bridge
-                    await _close_quietly(
-                        websocket, code=WS_CLOSE_UNSUPPORTED_DATA, reason="only binary websocket messages are supported"
-                    )
-                    return
-                await upstream.send_bytes(data)
-
-        async def forward_upstream_to_websocket() -> None:
-            while True:
-                data = await upstream.recv_bytes()
-                if data is None:
-                    break
-                await websocket.send_bytes(data)
-
-        forwarders = [
-            asyncio.create_task(forward_websocket_to_upstream(), name=f"upstream-websocket-to-upstream-{udid}-{port}"),
-            asyncio.create_task(forward_upstream_to_websocket(), name=f"upstream-to-websocket-{udid}-{port}"),
-        ]
         try:
-            await asyncio.wait(forwarders, return_when=asyncio.FIRST_COMPLETED)
+            await _relay_websocket(websocket, upstream.send_bytes, upstream.recv_bytes, f"upstream-{udid}-{port}")
         finally:
-            # mirrors _bridge_websocket: cleanup in the finally so a cancellation aimed at this
-            # task can't orphan the forwarders
-            for forwarder in forwarders:
-                forwarder.cancel()
-            results = await asyncio.gather(*forwarders, return_exceptions=True)
-            for forwarder, result in zip(forwarders, results):
-                if isinstance(result, Exception) and not isinstance(result, (fastapi.WebSocketDisconnect, OSError)):
-                    logger.debug(f"unexpected error in {forwarder.get_name()}", exc_info=result)
             upstream.close()
             # pass the upstream's own close code through, so a client debugging a federated
             # topology sees 4404/4502 from the tunneld that actually refused
