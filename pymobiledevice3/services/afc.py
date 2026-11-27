@@ -502,12 +502,12 @@ class AfcService(LockdownService):
 
             for filename in await self.listdir(src):
                 src_filename = posixpath.join(src, filename)
-                src_filename = await self.resolve_path(src_filename)
-
-                if match is not None and not match.search(posixpath.basename(src_filename)):
-                    continue
 
                 try:
+                    src_filename = await self.resolve_path(src_filename)
+                    if match is not None and not match.search(posixpath.basename(src_filename)):
+                        continue
+
                     dst_filename = device_file_path(dst_path, filename)
                     # A link is pulled under its target's name, which is just as device-supplied
                     validate_device_filename(posixpath.basename(src_filename))
@@ -532,6 +532,8 @@ class AfcService(LockdownService):
                         progress_bar=progress_bar,
                     )
 
+                except ConnectionTerminatedError:
+                    raise
                 except Exception as afc_exception:
                     if not ignore_errors:
                         raise
@@ -1284,7 +1286,10 @@ class AfcService(LockdownService):
         entries. Symbolic links to directories are classified as files (not descended into).
 
         As with `os.walk`, the caller may modify ``dirnames`` in place to prune the descent:
-        only the names still listed when the generator resumes are walked.
+        only the names still listed when the generator resumes are walked. Subdirectories
+        that cannot be listed are logged and skipped. Entries that cannot be stat'ed (deleted
+        after the listing, or dangling links) are logged and classified as files, as `os.walk`
+        keeps them. Errors listing the root propagate to the caller.
 
         :param dirname: Root directory to walk.
         :yields: ``(dirpath, dirnames, filenames)`` tuples.
@@ -1294,7 +1299,13 @@ class AfcService(LockdownService):
         for fd in await self.listdir(dirname):
             if fd in (".", "..", ""):
                 continue
-            infos = await self.stat(posixpath.join(dirname, fd))
+            path = posixpath.join(dirname, fd)
+            try:
+                infos = await self.stat(path)
+            except AfcException as e:
+                self.logger.warning(f"Can't stat: {e}")
+                files.append(fd)
+                continue
             if infos and infos.get("st_ifmt") == "S_IFDIR":
                 dirs.append(fd)
             else:
@@ -1302,10 +1313,12 @@ class AfcService(LockdownService):
 
         yield dirname, dirs, files
 
-        if dirs:
-            for d in dirs:
+        for d in dirs:
+            try:
                 async for item in self.walk(posixpath.join(dirname, d)):
                     yield item
+            except AfcException as e:
+                self.logger.warning(f"Skipping: {e}")
 
     @path_to_str()
     async def dirlist(self, root: str, depth: int = -1) -> AsyncIterator[str]:
@@ -1313,13 +1326,14 @@ class AfcService(LockdownService):
         Recursively yield paths under a directory up to a maximum depth.
 
         Yields ``root`` itself first, followed by the full path of every entry found while
-        walking, pruning descent once a directory's depth (in path separators) reaches
+        walking, pruning descent once a directory's depth relative to ``root`` reaches
         ``depth``.
 
         :param root: Root directory to list.
         :param depth: Maximum traversal depth; ``-1`` for unlimited, ``0`` to yield only ``root``.
         :yields: Full paths of files and directories.
         """
+        prefix = posixpath.join(root, "")
         async for folder, dirs, files in self.walk(root):
             if folder == root:
                 yield folder
@@ -1329,7 +1343,7 @@ class AfcService(LockdownService):
                 yield posixpath.join(folder, entry)
             if depth != -1:
                 # Prune in place so `walk` never reads directories beyond the requested depth
-                dirs[:] = [d for d in dirs if posixpath.join(folder, d).count(posixpath.sep) < depth]
+                dirs[:] = [d for d in dirs if posixpath.join(folder, d)[len(prefix) :].count(posixpath.sep) < depth - 1]
 
     async def lock(self, handle: int, operation: int):
         """
