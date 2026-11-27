@@ -1,0 +1,34 @@
+# pymobiledevice3
+
+> Pure Python 3 implementation for working with iOS devices (iPhone, iPad, ...)
+
+Pure Python 3 implementation for working with iOS devices (iPhone, iPad, ...); ships a CLI and a Python API.
+
+## Getting started
+
+- [Home](https://doronz88.github.io/pymobiledevice3/latest/index.md)
+- [Installation](https://doronz88.github.io/pymobiledevice3/latest/installation/index.md)
+
+## Guides
+
+- [CLI recipes](https://doronz88.github.io/pymobiledevice3/latest/guides/cli-recipes/index.md)
+- [iOS 17+ tunnels](https://doronz88.github.io/pymobiledevice3/latest/guides/ios17-tunnels/index.md)
+- [Environment variables](https://doronz88.github.io/pymobiledevice3/latest/guides/environment-variables/index.md)
+- [WebView debugging](https://doronz88.github.io/pymobiledevice3/latest/guides/webview-debugging/index.md)
+- [Machine-readable output](https://doronz88.github.io/pymobiledevice3/latest/guides/machine-readable-output/index.md)
+- [Python API](https://doronz88.github.io/pymobiledevice3/latest/guides/python-api/index.md)
+- [Writing CLI commands](https://doronz88.github.io/pymobiledevice3/latest/guides/writing-commands-with-service-provider/index.md)
+- [Troubleshooting](https://doronz88.github.io/pymobiledevice3/latest/guides/troubleshooting/index.md)
+- [Restoring and updating devices](https://doronz88.github.io/pymobiledevice3/latest/guides/restore/index.md)
+
+## API reference
+
+- [Overview](https://doronz88.github.io/pymobiledevice3/latest/api/index.md)
+- [Connecting to a device](https://doronz88.github.io/pymobiledevice3/latest/api/connection/index.md)
+- [Lockdown services](https://doronz88.github.io/pymobiledevice3/latest/api/services/index.md)
+- [System & device](https://doronz88.github.io/pymobiledevice3/latest/api/system/index.md)
+- [Apps, files & profiles](https://doronz88.github.io/pymobiledevice3/latest/api/apps-files/index.md)
+- [Capture, logging & automation](https://doronz88.github.io/pymobiledevice3/latest/api/capture/index.md)
+- [Backup, symbols & location](https://doronz88.github.io/pymobiledevice3/latest/api/backup-symbols/index.md)
+- [Developer / DVT](https://doronz88.github.io/pymobiledevice3/latest/api/dvt/index.md)
+
