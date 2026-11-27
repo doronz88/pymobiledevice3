@@ -92,6 +92,36 @@ def build_root_certificate(root_key: RSAPrivateKey, alg: hashes.HashAlgorithm) -
     return builder.sign(root_key, alg)  # pyright: ignore[reportArgumentType]
 
 
+def _leaf_certificate_builder(public_key: RSAPublicKey, root_cert: Certificate) -> x509.CertificateBuilder:
+    """What the host and the device certificates share: all but the subject key identifier and the signature."""
+    not_before, not_after = get_validity_bounds()
+    return (
+        x509
+        .CertificateBuilder()
+        .subject_name(x509.Name([]))
+        .issuer_name(root_cert.subject)  # empty
+        .public_key(public_key)
+        .serial_number(_SERIAL)
+        .not_valid_before(not_before)
+        .not_valid_after(not_after)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                key_encipherment=True,
+                key_cert_sign=False,
+                crl_sign=False,
+                content_commitment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+    )
+
+
 def build_host_certificate(
     host_key: RSAPrivateKey,
     root_cert: Certificate,
@@ -113,32 +143,7 @@ def build_host_certificate(
     :param alg: Hash algorithm (SHA-1 or SHA-256).
     :returns: Host certificate (leaf).
     """
-    not_before, not_after = get_validity_bounds()
-    builder = (
-        x509
-        .CertificateBuilder()
-        .subject_name(x509.Name([]))
-        .issuer_name(root_cert.subject)  # empty
-        .public_key(host_key.public_key())
-        .serial_number(_SERIAL)
-        .not_valid_before(not_before)
-        .not_valid_after(not_after)
-        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(
-            x509.KeyUsage(
-                digital_signature=True,
-                key_encipherment=True,
-                key_cert_sign=False,
-                crl_sign=False,
-                content_commitment=False,
-                data_encipherment=False,
-                key_agreement=False,
-                encipher_only=False,
-                decipher_only=False,
-            ),
-            critical=True,
-        )
-    )
+    builder = _leaf_certificate_builder(host_key.public_key(), root_cert)
     # SHA-1 (needed for iOS < 4) is accepted at runtime but excluded from cryptography's type stubs.
     return builder.sign(root_key, alg)  # pyright: ignore[reportArgumentType]
 
@@ -165,32 +170,8 @@ def build_device_certificate(
     :param alg: Hash algorithm (SHA-1 or SHA-256).
     :returns: Device certificate (leaf).
     """
-    not_before, not_after = get_validity_bounds()
-    builder = (
-        x509
-        .CertificateBuilder()
-        .subject_name(x509.Name([]))
-        .issuer_name(root_cert.subject)  # empty
-        .public_key(device_public_key)
-        .serial_number(_SERIAL)
-        .not_valid_before(not_before)
-        .not_valid_after(not_after)
-        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(
-            x509.KeyUsage(
-                digital_signature=True,
-                key_encipherment=True,
-                key_cert_sign=False,
-                crl_sign=False,
-                content_commitment=False,
-                data_encipherment=False,
-                key_agreement=False,
-                encipher_only=False,
-                decipher_only=False,
-            ),
-            critical=True,
-        )
-        .add_extension(x509.SubjectKeyIdentifier.from_public_key(device_public_key), critical=False)
+    builder = _leaf_certificate_builder(device_public_key, root_cert).add_extension(
+        x509.SubjectKeyIdentifier.from_public_key(device_public_key), critical=False
     )
     # SHA-1 (needed for iOS < 4) is accepted at runtime but excluded from cryptography's type stubs.
     return builder.sign(root_key, alg)  # pyright: ignore[reportArgumentType]
