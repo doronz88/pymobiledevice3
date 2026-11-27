@@ -549,6 +549,34 @@ class StartTcpTunnel(ABC):
     async def close(self) -> None:
         pass
 
+    @asynccontextmanager
+    async def _established(
+        self, tunnel: RemotePairingTcpTunnel, auxiliary_metadata: dict[str, dict[str, Any]]
+    ) -> AsyncGenerator[TunnelResult, None]:
+        """Establish ``tunnel`` over its connected stream and keep it up for the body."""
+        try:
+            handshake_response = await tunnel.request_tunnel_establish()
+            await tunnel.start_tunnel(
+                handshake_response["clientParameters"]["address"],
+                handshake_response["clientParameters"]["mtu"],
+                interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
+            )
+        except BaseException:
+            with suppress(Exception):
+                await tunnel.stop_tunnel()
+            raise
+        try:
+            yield TunnelResult(
+                tunnel.tun.name,
+                handshake_response["serverAddress"],
+                handshake_response["serverRSDPort"],
+                TunnelProtocol.TCP,
+                tunnel,
+                auxiliary_metadata,
+            )
+        finally:
+            await tunnel.stop_tunnel()
+
 
 class RemotePairingProtocol(StartTcpTunnel):
     WIRE_PROTOCOL_VERSION = 19
@@ -743,29 +771,8 @@ class RemotePairingProtocol(StartTcpTunnel):
             sock.close()
             raise
         tunnel = RemotePairingTcpTunnel(reader, writer)
-        try:
-            handshake_response = await tunnel.request_tunnel_establish()
-            await tunnel.start_tunnel(
-                handshake_response["clientParameters"]["address"],
-                handshake_response["clientParameters"]["mtu"],
-                interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
-            )
-        except BaseException:
-            with suppress(Exception):
-                await tunnel.stop_tunnel()
-            raise
-
-        try:
-            yield TunnelResult(
-                tunnel.tun.name,
-                handshake_response["serverAddress"],
-                handshake_response["serverRSDPort"],
-                TunnelProtocol.TCP,
-                tunnel,
-                self.auxiliary_metadata,
-            )
-        finally:
-            await tunnel.stop_tunnel()
+        async with self._established(tunnel, self.auxiliary_metadata) as result:
+            yield result
 
     def save_pair_record(self) -> None:
         pair_record: dict[str, Any] = {
@@ -1406,27 +1413,9 @@ class CoreDeviceTunnelProxy(StartTcpTunnel):
     async def start_tcp_tunnel(self) -> AsyncGenerator["TunnelResult", None]:
         assert self._service is not None, "service must be connected first"
         tunnel = RemotePairingTcpTunnel(service=self._service)
-        try:
-            handshake_response = await tunnel.request_tunnel_establish()
-            await tunnel.start_tunnel(
-                handshake_response["clientParameters"]["address"],
-                handshake_response["clientParameters"]["mtu"],
-                interface_name=f"{DEFAULT_INTERFACE_NAME}-{self.remote_identifier}",
-            )
-        except BaseException:
-            with suppress(Exception):
-                await tunnel.stop_tunnel()
-            raise
-        try:
-            yield TunnelResult(
-                tunnel.tun.name,
-                handshake_response["serverAddress"],
-                handshake_response["serverRSDPort"],
-                TunnelProtocol.TCP,
-                tunnel,
-            )
-        finally:
-            await tunnel.stop_tunnel()
+        # no pairing handshake on this path, so the device gave no auxiliary metadata
+        async with self._established(tunnel, {}) as result:
+            yield result
 
     async def close(self) -> None:
         await self._service.close()
